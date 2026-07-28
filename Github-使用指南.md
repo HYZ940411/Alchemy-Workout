@@ -1,6 +1,7 @@
 ## 當第一次使用專案
 1. 複製專案到本機：git clone https://github.com/HYZ940411/Alchemy-Workout.git
-2. 創建分支（請改自己的學號）：git checkout -b "學號"
+2. 進入專案：cd Alchemy-Workout
+3. 創建分支（請改自己的學號）：git checkout -b "學號"
 
 ## 以後每一次使用時
 1. 先看自己在哪條分支：git branch
