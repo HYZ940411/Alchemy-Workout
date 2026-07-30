@@ -371,6 +371,16 @@ Command、Actor、Rules（Preconditions / Postconditions）、Aggregate、Read M
 
 ---
 
+## Formulation 進度（2026-07-30 更新）
+
+第一階段 1-A（Event High，29 項）已全數解決，歸檔於 `.clarify/resolved/event/`。
+全模型完成度 29 / 140。下一批為第二階段 Command / Actor（9 項）。
+
+本輪答案新產生了 5 個 discovery 未涵蓋的缺口，已記錄於 `.clarify/pending-gaps.md`，
+**下一輪 `/es-discovery` 應據該檔比對，避免漏掃**。
+
+---
+
 ## 下一步
 
 執行 `/es-formulation` 進入互動釐清階段。
