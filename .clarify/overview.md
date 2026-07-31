@@ -371,13 +371,39 @@ Command、Actor、Rules（Preconditions / Postconditions）、Aggregate、Read M
 
 ---
 
-## Formulation 進度（2026-07-30 更新）
+## Formulation 進度（2026-07-31 更新）
 
-第一階段 1-A（Event High，29 項）已全數解決，歸檔於 `.clarify/resolved/event/`。
-全模型完成度 29 / 140。下一批為第二階段 Command / Actor（9 項）。
+**第一至第三階段已全數完成，完成度 85 / 140（60.7%）。**
 
-本輪答案新產生了 5 個 discovery 未涵蓋的缺口，已記錄於 `.clarify/pending-gaps.md`，
-**下一輪 `/es-discovery` 應據該檔比對，避免漏掃**。
+| 階段 | 內容 | 進度 |
+|------|------|------|
+| 1-A | Event High | ✅ 29 / 29 |
+| 1-B | Event Medium | ✅ 16 / 17 |
+| 2 | Command / Actor | ✅ 9 / 9 |
+| 3 | Aggregate | ✅ 31 / 31 |
+| 4-5 | Rules | 0 / 50 |
+| 5-B | Read Model | 0 / 4 |
+
+**1-B 未完的 1 項**：`event/使用者已受處罰_申訴與解除處罰的Event缺失.md` —— 依 3.3「依賴優先」
+原則移出第一階段，須與 `rule/使用者已受處罰_處罰的種類與級距為何.md` 併題處理（需先確定是否有限期處罰）。
+
+**下一批為第四階段 Rules（High 26 項）**，起點建議為時間基準統一組
+（簽到換日 → 每日任務 04:00 → 連簽中斷 → 連續訓練中斷 → 排行榜週期）。
+
+### 累積缺口
+
+formulation 過程中新產生、discovery 未涵蓋的缺口已達 **30 項**（G1–G32，其中 G10、G22 已於過程中消解），
+記錄於 `.clarify/pending-gaps.md`。**下一輪 `/es-discovery` 應據該檔比對，避免漏掃**。
+
+其中 High 12 項，多數為「結構已定但數值未給定」（階級門檻、能力值升降幅度、
+教官測驗配分、排行榜分數值等），以及三個結構性空洞（G13 系統套用調整無 Event、
+G23 金幣儲值無流程、G27 貼文狀態機）。
+
+### 模型檔的變化
+
+`00_全域規範.md` 由 3 個章節擴充為 20 餘個章節，現已涵蓋：
+Event 共通攜帶資訊、冪等原則、Actor 清單（5 種）、Aggregate 邊界（使用者 + 32 項獨立 Aggregate）、
+14 個 Aggregate 的欄位與規則定義、4 個狀態機、標準術語詞彙表。
 
 ---
 
