@@ -55,3 +55,22 @@ High
 # 解決日期
 
 2026-08-01
+
+---
+
+# [裁決修正 2026-08-11] 「軟刪除、內容全數保留」已被推翻
+
+本檔原裁決的兩條——「冷靜期屆滿執行軟刪除：內容全數保留，僅個人識別資料匿名化」與
+「不採硬刪除，理由為貼文軟刪除與 AI 調整對話永久保存兩條既有稽核鏈」——**已於第十輪推翻**。
+
+**推翻理由：與 App Store 的帳號刪除要求直接牴觸。** Apple 官方文件明文要求刪除
+「the entire account record, along with associated personal data」，且明確涵蓋
+「user-generated content that's shared with others, such as photos, video, text posts, and reviews」，
+並指出僅提供停用是不足的。平台自身的稽核便利不屬於 Apple 承認的「法律要求」保留例外。
+
+**新裁決**：帳號、個人資料、訓練紀錄、成長數值、貼文、留言、私訊、AI 調整對話一律刪除；
+僅「已成案且處理中」的檢舉／申訴所需最小證據暫留至結案，並須告知使用者。
+冷靜期 30 天維持不變（Apple 允許刪除流程需時，但須明確告知所需時間）。
+
+詳見 `.clarify/resolved/aggregate/使用者_帳號刪除時個人識別資料匿名化的具體欄位範圍未定.md`
+與 `00_全域規範.md`〈帳號生命週期〉之〈刪除範圍〉。

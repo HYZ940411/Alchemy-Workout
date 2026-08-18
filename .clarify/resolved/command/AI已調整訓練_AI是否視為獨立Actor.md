@@ -49,7 +49,7 @@ AI 僅負責產出建議（AI 已微調訓練強度 / AI 已調整訓練 / AI �
 
 - `Event-Storming_事件風暴/00_全域規範.md` → Actor 清單擴為五種，新增 AI 一列與 2 條規則
 - `Event-Storming_事件風暴/AI訓練前調整流程.md` → 新增 [串聯] 一行
-- `Event-Storming_事件風暴/AI ​訓練​中​調​整流程​（插入​訓練​紀錄​流程循環）​.md` → 新增 [串聯] 一行
+- `Event-Storming_事件風暴/AI 訓練中調整流程（插入訓練紀錄流程循環）.md` → 新增 [串聯] 一行
 - `Event-Storming_事件風暴/AI自動優化訓練流程.md` → 新增 [串聯] 一行
 
 # 解決日期

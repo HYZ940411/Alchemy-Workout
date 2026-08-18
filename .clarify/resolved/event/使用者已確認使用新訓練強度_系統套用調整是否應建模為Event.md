@@ -43,7 +43,7 @@ High
 
 - `Event-Storming_事件風暴/00_全域規範.md`〈跨流程同名 Event〉：表格新增 1 列、規則新增 5 條
 - `Event-Storming_事件風暴/AI訓練前調整流程.md`：新增 [串聯]、Precondition、Event 共 3 行（作用範圍＝本次訓練）
-- `Event-Storming_事件風暴/AI ​訓練​中​調​整流程​（插入​訓練​紀錄​流程循環）​.md`：同上 3 行（作用範圍＝本次訓練）
+- `Event-Storming_事件風暴/AI 訓練中調整流程（插入訓練紀錄流程循環）.md`：同上 3 行（作用範圍＝本次訓練）
 - `Event-Storming_事件風暴/AI自動優化訓練流程.md`：同上 3 行（作用範圍＝課表範本）
 
 # 解決日期

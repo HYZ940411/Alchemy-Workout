@@ -40,7 +40,7 @@ High
 
 - `Event-Storming_事件風暴/00_全域規範.md`〈跨流程同名 Event〉：表格新增 5 列、規則新增 3 條、來源註記新增 1 行
 - `Event-Storming_事件風暴/AI訓練前調整流程.md`：5 個 Event 加註〔攜帶資訊：來源＝訓練前調整〕
-- `Event-Storming_事件風暴/AI ​訓練​中​調​整流程​（插入​訓練​紀錄​流程循環）​.md`：4 個 Event 加註〔攜帶資訊：來源＝訓練中調整〕
+- `Event-Storming_事件風暴/AI 訓練中調整流程（插入訓練紀錄流程循環）.md`：4 個 Event 加註〔攜帶資訊：來源＝訓練中調整〕
 - `Event-Storming_事件風暴/AI自動優化訓練流程.md`：2 個 Event 加註〔攜帶資訊：來源＝自動優化〕
 
 # 解決日期
