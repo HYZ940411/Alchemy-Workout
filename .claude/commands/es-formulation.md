@@ -1,14 +1,14 @@
 ---
-description: 讀取 .clarify/ 中的釐清項目，依 overview.md 的順序逐題與使用者互動問答，將答案回寫至事件風暴模型，並把已解決的釐清項目歸檔至 .clarify/resolved/。
+description: 讀取 .es-clarify/ 中的釐清項目，依 overview.md 的順序逐題與使用者互動問答，將答案回寫至事件風暴模型，並把已解決的釐清項目歸檔至 .es-clarify/resolved/。
 ---
 
 目標：把 `/es-discovery` 偵測出來的釐清項目，透過**一次一題**的互動問答收斂成明確答案，並立即回寫到事件風暴模型檔中，使模型逐步達到可驗收的完整度。
 
 # 前置檢查
 
-1. 讀取 `.clarify/overview.md`。若不存在，回報「請先執行 `/es-discovery`」並停止。
-2. 讀取 `.clarify/` 下所有釐清項目檔案（`event/`、`command/`、`rule/`、`aggregate/`、`read-model/`）。
-3. 讀取 `.clarify/resolved/` 下所有已解決項目，作為回答時的既有共識，避免推翻或重複。
+1. 讀取 `.es-clarify/overview.md`。若不存在，回報「請先執行 `/es-discovery`」並停止。
+2. 讀取 `.es-clarify/` 下所有釐清項目檔案（`event/`、`command/`、`rule/`、`aggregate/`、`read-model/`）。
+3. 讀取 `.es-clarify/resolved/` 下所有已解決項目，作為回答時的既有共識，避免推翻或重複。
 4. 讀取事件風暴模型檔（流程與 Event 清單）作為回寫標的。
 
 # 執行步驟
@@ -44,7 +44,7 @@ description: 讀取 .clarify/ 中的釐清項目，依 overview.md 的順序逐�
 
 **回答驗證**：
 - 若答案模糊、含未量化形容詞、或仍存在兩種解讀，**追問一次**以收斂，追問後仍模糊則記錄為 `Partial` 並繼續。
-- 若答案與 `.clarify/resolved/` 中的既有共識矛盾，**明確指出矛盾點**並請使用者裁決要保留哪一個；使用者裁決後，一併更新被推翻的那個 resolved 檔案。
+- 若答案與 `.es-clarify/resolved/` 中的既有共識矛盾，**明確指出矛盾點**並請使用者裁決要保留哪一個；使用者裁決後，一併更新被推翻的那個 resolved 檔案。
 - 若答案會連帶影響其他尚未提問的釐清項目，即時告知使用者，並在該項目檔案中註記。
 
 ## 3. 回寫模型
@@ -67,7 +67,7 @@ description: 讀取 .clarify/ 中的釐清項目，依 overview.md 的順序逐�
 
 ## 4. 歸檔已解決項目
 
-答案回寫成功後，將該釐清項目檔案移至 `.clarify/resolved/<原資料夾名>/`，並在檔案末端追加：
+答案回寫成功後，將該釐清項目檔案移至 `.es-clarify/resolved/<原資料夾名>/`，並在檔案末端追加：
 
 ```markdown
 # 解決結果

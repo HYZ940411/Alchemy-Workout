@@ -313,7 +313,7 @@
     本次核實發現型別、門檻、推算方式與退回規則皆已完備於 `訓練紀錄流程.md`，
     缺的僅是移除本標記。〕
 
-*來源：`.clarify/resolved/aggregate/使用者_偏好訓練時段欄位的型別與值域.md`
+*來源：`.es-clarify/resolved/aggregate/使用者_偏好訓練時段欄位的型別與值域.md`
 （使用者自述結構 ＋ 粒度 30 分鐘、不可跨日、提醒於區間起點發送）*
 
 #### 累積訓練次數
@@ -330,7 +330,7 @@
 - 本欄位為兩處 Precondition 的判定依據：教官資格初審門檻、自訂訓練功能解鎖。
 - 「訓練成就的累積門檻」與「AI 每 3 次自動優化」**皆不共用本欄位**〔2026-08-20 移除過期的待決策標記〕：訓練成就改用**累積訓練天數**（見〈累積訓練成就與連續訓練成就的門檻皆以天數計數〉），AI 自動優化另有自己的計數器。
 
-*來源：`.clarify/resolved/aggregate/使用者_累積訓練次數欄位的定義與計入條件.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/使用者_累積訓練次數欄位的定義與計入條件.md`（選項 A）*
 
 - 粉絲數為儲存欄位，隨「使用者已關注帳號」與「使用者已取消關注」同步增減。
 - 不變條件：粉絲數 ＝ 關注關係中被關注者為本人的筆數。
@@ -518,8 +518,8 @@ Apple 官方文件明文：
   不另設「待刪除者不計入名額」的例外 —— 該例外須為每一處名額判定各加一條狀態檢查，
   且會使待刪除者取消刪除時面臨「名額已被別人補走」的新問題。
 
-*來源：`.clarify/resolved/event/使用者帳號已建立_帳號刪除與註銷的Event全數缺失.md`（選項 A ＋ C，冷靜期 30 天）；
-刪除範圍之修正來源：`.clarify/resolved/aggregate/使用者_帳號刪除時個人識別資料匿名化的具體欄位範圍未定.md`（選項 A′）*
+*來源：`.es-clarify/resolved/event/使用者帳號已建立_帳號刪除與註銷的Event全數缺失.md`（選項 A ＋ C，冷靜期 30 天）；
+刪除範圍之修正來源：`.es-clarify/resolved/aggregate/使用者_帳號刪除時個人識別資料匿名化的具體欄位範圍未定.md`（選項 A′）*
 
 ### 獨立 Aggregate 清單
 
@@ -563,7 +563,7 @@ Apple 官方文件明文：
   獨立的判準為「是否有一套自成體系的規則」，而非筆數。
   完整定義見03_能力值.md〈能力值 Aggregate〉。
 
-*來源：`.clarify/resolved/aggregate/使用者_使用者Aggregate的欄位與邊界尚未定義.md`（選項 B-1）*
+*來源：`.es-clarify/resolved/aggregate/使用者_使用者Aggregate的欄位與邊界尚未定義.md`（選項 B-1）*
 
 ### 管理員 Aggregate
 
@@ -657,7 +657,7 @@ Apple 官方文件明文：
 皆要求執行者為生效中且具平台設定權限的管理員，故系統中的第一位管理員
 須由部署時的初始設定產生，不經本路徑。
 
-*來源：`.clarify/resolved/aggregate/管理員_管理員的帳號與權限尚未建模.md`（選項 C）*
+*來源：`.es-clarify/resolved/aggregate/管理員_管理員的帳號與權限尚未建模.md`（選項 C）*
 
 ### 回歸任務 Aggregate
 
@@ -691,8 +691,8 @@ Apple 官方文件明文：
 - 停止期間不產生「回歸任務已指派」，故亦不發送該推播。
 - 本上限與 7 天指派頻率、7 天完成時限三者並存，互不取代。
 
-*來源：`.clarify/resolved/rule/回歸任務已指派_限時的時限長度為何.md`（選項 C）、
-`.clarify/resolved/rule/回歸任務已指派_從未訓練者是否無限期每7天重複指派.md`（選項 B）*
+*來源：`.es-clarify/resolved/rule/回歸任務已指派_限時的時限長度為何.md`（選項 C）、
+`.es-clarify/resolved/rule/回歸任務已指派_從未訓練者是否無限期每7天重複指派.md`（選項 B）*
 
 ### 成就結構
 
@@ -879,9 +879,9 @@ Apple 官方文件明文：
 - 兩者的計入條件一致：三種訓練終止狀態皆計入。
 - 採天數而非次數：一日內連開多場訓練即可快速推進成就門檻，以次數計會使成就可被短時間刷完。
 
-*來源：`.clarify/resolved/aggregate/成就_各類成就的統一資料結構.md`（選項 B）；*
-*`.clarify/resolved/rule/訓練成就門檻_累積門檻計算的是天數或次數.md`（選項 C）；*
-*`.clarify/resolved/rule/連簽成就已解鎖_同一門檻重複達成時是否重複發放.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/成就_各類成就的統一資料結構.md`（選項 B）；*
+*`.es-clarify/resolved/rule/訓練成就門檻_累積門檻計算的是天數或次數.md`（選項 C）；*
+*`.es-clarify/resolved/rule/連簽成就已解鎖_同一門檻重複達成時是否重複發放.md`（選項 A）*
 
 ### 獎勵信箱 Aggregate
 
@@ -956,9 +956,9 @@ Apple 官方文件明文：
   不以刪除資料解決 → 見待釐清項目 `read-model/獎勵信箱頁_領取信箱獎勵前需看到哪些資訊.md`。
 - 已領取的紀錄不刪除，領取狀態轉為已領取後永久保留。
 
-*來源：`.clarify/resolved/aggregate/獎勵信箱_信箱獎勵的有效期限與容量上限.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/獎勵信箱_信箱獎勵的有效期限與容量上限.md`（選項 A）*
 
-*來源：`.clarify/resolved/rule/每日任務已重置_重置時已完成未領取的獎勵如何處理.md`*
+*來源：`.es-clarify/resolved/rule/每日任務已重置_重置時已完成未領取的獎勵如何處理.md`*
 
 ### 訓練體驗評分 Aggregate（2026-08-11 定案；2026-08-20 自 `04_ReadModel清單.md` 移入）
 
@@ -1011,7 +1011,7 @@ Apple 官方文件明文：
 - 修改不另立 Event，比照02_Aggregate定義.md〈訓練進度條〉「修改已記錄的重量與次數不另建 Event」的既有處理
   —— 其不改變評分是否存在，僅改實際值。
 
-*來源：`.clarify/resolved/read-model/管理員評分彙總_管理員如何檢視訓練體驗評分.md`（選項 C ＋ 甲：共用同一張彙總表）*
+*來源：`.es-clarify/resolved/read-model/管理員評分彙總_管理員如何檢視訓練體驗評分.md`（選項 C ＋ 甲：共用同一張彙總表）*
 
 ### 排行榜歷史紀錄 Aggregate
 
@@ -1034,7 +1034,7 @@ Apple 官方文件明文：
 - 保留歷史的理由：排行獎勵依組內名次發放，使用者質疑名次與獎勵不符時需可查證，
   否則排行獎勵將成為不可稽核的發放，而模型已有申訴機制。
 
-*來源：`.clarify/resolved/rule/排行榜已重置_重置時分數歸零或保留歷史.md`（選項 A）*
+*來源：`.es-clarify/resolved/rule/排行榜已重置_重置時分數歸零或保留歷史.md`（選項 A）*
 
 ### 通知類 Event 的發送規則
 
@@ -1151,7 +1151,7 @@ Apple 官方文件明文：
   逐一指派等同無人真正決定哪則該讓步給哪則；且新增 Event 時無人記得去後台設定，
   其預設值又成為新的未定義。
 
-*來源：`.clarify/resolved/rule/通知類Event_同日多個通知重疊時的合併與優先序.md`（選項 A ＋ 優先序）*
+*來源：`.es-clarify/resolved/rule/通知類Event_同日多個通知重疊時的合併與優先序.md`（選項 A ＋ 優先序）*
 
 ### 動作 Aggregate
 
@@ -1295,7 +1295,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 寫回其持有器材明細，未勾選者不改動任何設定。
 解鎖後系統另行詢問是否請 AI 調整本次訓練，接受者佔用一個自訂訓練名額。
 規則見〈訓練紀錄流程〉的「使用者已選擇訓練課表」區段。
-*來源：`.clarify/resolved/rule/AI已調整訓練_AI依可用器材替換動作的能力尚未建模.md`（選項 C）*
+*來源：`.es-clarify/resolved/rule/AI已調整訓練_AI依可用器材替換動作的能力尚未建模.md`（選項 C）*
 > 來源：`resolved/aggregate/動作_所需器材明細的值域清單與粗細兩層的對應關係.md`
 
 **自建動作的欄位必填規則**
@@ -1312,7 +1312,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
   而自建動作不參與推薦比對，留空無後果。
 - 所需器材為空值的自建動作，於動作庫依器材篩選時不出現於任何器材分類。
 
-*來源：`.clarify/resolved/rule/使用者已建立自訂動作_自建動作的所屬肌群是否必填.md`（選項 C）*
+*來源：`.es-clarify/resolved/rule/使用者已建立自訂動作_自建動作的所屬肌群是否必填.md`（選項 C）*
 - 預設組間休息秒數為動作層級的屬性；平台動作庫由管理員於後台維護，使用者自建動作由建立者設定。
 - 管理員調整某動作的預設休息秒數，不改動任何已產生的本次訓練課表快照。
 
@@ -1411,8 +1411,8 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 〈Read Model：訓練歷史〉的訓練清單同時呈現總訓練量與消耗大卡，
   有氧場次的總訓練量為 0，其運動量由消耗大卡承載。
 
-*來源：`.clarify/resolved/aggregate/動作_動作清單的來源與欄位定義.md`（選項 B）；
-有氧一節之增列來源：`.clarify/resolved/aggregate/動作_有氧與心肺是否納入模型及第七個能力值維度.md`（選項 B）*
+*來源：`.es-clarify/resolved/aggregate/動作_動作清單的來源與欄位定義.md`（選項 B）；
+有氧一節之增列來源：`.es-clarify/resolved/aggregate/動作_有氧與心肺是否納入模型及第七個能力值維度.md`（選項 B）*
 
 ### AI 功能的付費邊界
 
@@ -1623,7 +1623,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 而 AI 點數是模型中唯一有真實邊際成本（LLM API 費用）的資源。
 掛在新手任務完成，使贈點與「已實際開始使用平台」綁定，也讓新手任務多一個完成誘因。
 
-*來源：`.clarify/aggregate/AI點數_貨幣定位與扣點規則.md`（子題 2 與子題 3，選項 A）*
+*來源：`.es-clarify/aggregate/AI點數_貨幣定位與扣點規則.md`（子題 2 與子題 3，選項 A）*
 
 ### AI 調整幅度的安全上下限
 
@@ -1702,8 +1702,8 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
   退還不另立 Event，理由與規則見〈AI 功能的付費邊界〉之〈扣點時點與退還〉。
   自動優化不扣點，故無此後置條件。
 
-*來源：`.clarify/resolved/rule/AI已微調訓練強度_AI回應逾時或失敗時的處理.md`（選項 A）、
-`.clarify/resolved/rule/AI調整已失敗_是否自動重試與重試次數上限.md`（選項 B）*
+*來源：`.es-clarify/resolved/rule/AI已微調訓練強度_AI回應逾時或失敗時的處理.md`（選項 A）、
+`.es-clarify/resolved/rule/AI調整已失敗_是否自動重試與重試次數上限.md`（選項 B）*
 
 ### AI 調整對話 Aggregate
 
@@ -1728,7 +1728,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - AI 自動優化訓練流程無對話往返，不產生本 Aggregate。
 - 「AI 已再次確認需求」與「使用者已確認需求」發生時，逐則寫入往返序列。
 
-*來源：`.clarify/resolved/aggregate/AI已再次確認需求_調整對話內容的Aggregate歸屬與保存規則.md`（選項 A，錨點與基數經修正）*
+*來源：`.es-clarify/resolved/aggregate/AI已再次確認需求_調整對話內容的Aggregate歸屬與保存規則.md`（選項 A，錨點與基數經修正）*
 
 ### 課表內容結構（共用）
 
@@ -1825,7 +1825,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 不採離線整批豁免：開啟飛航模式即可無限制快速勾選，該漏洞無技術門檻。
 - 不採後端收訊時間為時戳：一批離線組於同一秒上傳，間隔為 0 秒，使用者確實完成的組會全數被阻擋。
 
-*離線相容性之來源：`.clarify/resolved/rule/使用者已完成該組_離線記錄與後端時戳判定的相容性.md`（選項 B）*
+*離線相容性之來源：`.es-clarify/resolved/rule/使用者已完成該組_離線記錄與後端時戳判定的相容性.md`（選項 B）*
 
 **範例**
 
@@ -1856,8 +1856,8 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 本機制為**事前阻擋**，與 AI 訓練品質評分「紀錄合理性」維度的**事後偵測**並存，
   兩者不互相取代：前者及於所有使用者，後者僅用於教官資格初審。
 
-*來源：`.clarify/resolved/rule/組間休息已開始_休息時長由誰決定可否跳過.md`（原裁決）；
-防作弊機制之增列來源：`.clarify/resolved/rule/使用者已完成該組_連續快速勾選的防作弊阻擋.md`
+*來源：`.es-clarify/resolved/rule/組間休息已開始_休息時長由誰決定可否跳過.md`（原裁決）；
+防作弊機制之增列來源：`.es-clarify/resolved/rule/使用者已完成該組_連續快速勾選的防作弊阻擋.md`
 （使用者主動提出，2026-08-02）*
 
 #### 快照產生時的目標重量帶入規則
@@ -1874,11 +1874,11 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
   ＋ DOTS 正規化**，六階門檻為平台自訂；授權風險已解除。見03_能力值.md〈能力值的判定基礎〉。
   〔2026-08-20 移除過期的待決策標記。〕
 
-  *來源：`.clarify/resolved/rule/AI已調整訓練_AI依可用器材替換動作的能力尚未建模.md`（第 3 題）*
+  *來源：`.es-clarify/resolved/rule/AI已調整訓練_AI依可用器材替換動作的能力尚未建模.md`（第 3 題）*
 - 〔推導〕組序對應：以組序逐一對應；本次組數多於上次時，超出的組沿用上次最後一組的重量。
 - 帶入只影響快照，不改動來源課表的目標重量。
 
-*來源：`.clarify/resolved/aggregate/訓練計畫_訓練計畫與自訂訓練的動作與組數結構為何.md`（選項 A ＋ 使用者補充：逐組不同重量、徒手以 0 表示、建議起始重量、帶入上次重量）*
+*來源：`.es-clarify/resolved/aggregate/訓練計畫_訓練計畫與自訂訓練的動作與組數結構為何.md`（選項 A ＋ 使用者補充：逐組不同重量、徒手以 0 表示、建議起始重量、帶入上次重量）*
 
 ### 本次訓練課表 Aggregate
 
@@ -1925,8 +1925,8 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 **總計畫組數整體仍非單調遞增**：本 Command 只增，但 AI 訓練中調整可使其下降。
 既有規則〈訓練進度條〉「AI 調整導致總計畫組數變動時，進度百分比允許下降」不受本次裁決影響。
 
-*來源：`.clarify/resolved/aggregate/訓練課表_本次訓練課表是否為獨立Aggregate與其快照機制.md`（選項 A）；*
-*`.clarify/resolved/rule/使用者已開始訓練_空白課表如何新增動作與組數.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/訓練課表_本次訓練課表是否為獨立Aggregate與其快照機制.md`（選項 A）；*
+*`.es-clarify/resolved/rule/使用者已開始訓練_空白課表如何新增動作與組數.md`（選項 A）*
 
 ### 訓練紀錄 Aggregate
 
@@ -2035,8 +2035,8 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 能力值提升所需的「依肌群分別累加的訓練量」，由組紀錄的動作 ID 取其所屬肌群後分組累加，
   不另存六維訓練量欄位。
 
-*來源：`.clarify/resolved/aggregate/訓練紀錄_重量的單位精度與零或負值是否合法.md`（選項 A）；
-完整欄位與狀態機之來源：`.clarify/resolved/aggregate/訓練紀錄_訓練紀錄的完整欄位與狀態機為何.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/訓練紀錄_重量的單位精度與零或負值是否合法.md`（選項 A）；
+完整欄位與狀態機之來源：`.es-clarify/resolved/aggregate/訓練紀錄_訓練紀錄的完整欄位與狀態機為何.md`（選項 A）*
 
 ### 訓練進度條 Aggregate
 
@@ -2060,9 +2060,9 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
   維度的判讀依據之一（該維度需判讀是否一路直接勾選預帶值），不建模將使該評分少一項輸入。
 - 修改已記錄的重量與次數**不另建 Event**：其不改變已完成組數，僅改實績值。
 
-*來源：`.clarify/resolved/event/使用者已完成該組_取消勾選與修改成績是否建模為獨立Event.md`（選項 B）*
+*來源：`.es-clarify/resolved/event/使用者已完成該組_取消勾選與修改成績是否建模為獨立Event.md`（選項 B）*
 
-*來源：`.clarify/resolved/aggregate/訓練進度條_進度百分比的計算公式為何.md`（選項 D①）*
+*來源：`.es-clarify/resolved/aggregate/訓練進度條_進度百分比的計算公式為何.md`（選項 D①）*
 
 ### 連續訓練 Aggregate
 
@@ -2100,7 +2100,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 永不停止（一年 216 個）。
 保留「觸及下限的那一次」而非完全不產生，是因為本 Event 為「回歸任務已指派」的唯一觸發源
 —— 完全不產生會使本節上方剛建立的召回路徑當場斷裂。
-*來源：`.clarify/resolved/rule/能力值已退步_點數已在退步下限時是否仍重複產生本Event.md`（選項 C）*
+*來源：`.es-clarify/resolved/rule/能力值已退步_點數已在退步下限時是否仍重複產生本Event.md`（選項 C）*
 
 #### 規則
 
@@ -2136,14 +2136,14 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 若不重設，連續訓練 10 天自建動作者會收到「能力值退步」通知 —— 退步機制的目的為
   召回流失使用者，而該使用者並未流失；且會使使用者為保住能力值而避免建立自建動作。
 
-*來源：`.clarify/resolved/rule/能力值已退步_自建動作與有氧動作是否重置該維的240小時計時.md`（選項 B）*
+*來源：`.es-clarify/resolved/rule/能力值已退步_自建動作與有氧動作是否重置該維的240小時計時.md`（選項 B）*
 
 - 獎勵加成為連續訓練天數的衍生值：每連續一天 +1%，上限 30%。
 - 加成雖為衍生值，「使用者已失去獎勵加成」與「使用者已獲得獎勵加成」仍各為獨立 Event。
 - 不建模「使用者已恢復獎勵加成」：加成的重新累積由「使用者已獲得獎勵加成」承接。
 
-*來源：`.clarify/resolved/aggregate/連續訓練_連續訓練天數的判定基準.md`（選項 C）；
-計時起點由時戳修正為日界之來源：`.clarify/resolved/rule/連續訓練中斷判定_24至120小時的計時起點為何.md`（選項 C）*
+*來源：`.es-clarify/resolved/aggregate/連續訓練_連續訓練天數的判定基準.md`（選項 C）；
+計時起點由時戳修正為日界之來源：`.es-clarify/resolved/rule/連續訓練中斷判定_24至120小時的計時起點為何.md`（選項 C）*
 
 ### 連續簽到 Aggregate
 
@@ -2180,7 +2180,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 計時基準取自連續簽到 Aggregate 的「上次簽到日期」欄位（使用者當地日期），非時戳。
 - 三個門檻對應「錯過 1 天 / 1.5 天 / 2 天」，與既有的 24 / 36 / 48 小時設定一致，不改寫數值。
 
-*來源：`.clarify/resolved/aggregate/連續簽到_連續天數與累計天數的定義與型別.md`（選項 D′）*
+*來源：`.es-clarify/resolved/aggregate/連續簽到_連續天數與累計天數的定義與型別.md`（選項 D′）*
 
 ### 虛擬貨幣 Aggregate
 
@@ -2460,9 +2460,9 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 儲值成功產生「使用者已儲值金幣」，失敗產生「儲值已失敗」。
 - 儲值面額與贈送規則已定案：4 檔 NT$90 / 330 / 990 / 1,690，加贈 0～12%，見〈金幣儲值流程〉〔2026-08-20 移除過期標記〕。
 
-*來源：`.clarify/resolved/aggregate/虛擬貨幣_虛擬貨幣的種類取得與消耗規則.md`（選項 A）；
-儲值路徑之增列來源：`.clarify/resolved/event/金幣_金幣儲值的流程與Event全數缺失.md`（選項 A）；
-比率之增列來源：`.clarify/resolved/aggregate/虛擬貨幣_金幣對法幣的補差額比率為何.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/虛擬貨幣_虛擬貨幣的種類取得與消耗規則.md`（選項 A）；
+儲值路徑之增列來源：`.es-clarify/resolved/event/金幣_金幣儲值的流程與Event全數缺失.md`（選項 A）；
+比率之增列來源：`.es-clarify/resolved/aggregate/虛擬貨幣_金幣對法幣的補差額比率為何.md`（選項 A）*
 
 ### 補簽券 Aggregate
 
@@ -2476,7 +2476,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 持有上限為 5 張，達上限後不再取得，購買亦受此上限限制。
 - 補簽券無有效期限，不會過期，故無「補簽券已到期」Event。
 
-*來源：`.clarify/resolved/aggregate/補簽券_補簽券的取得來源與持有上限.md`（選項 B + 第 38 題之使用者更正）*
+*來源：`.es-clarify/resolved/aggregate/補簽券_補簽券的取得來源與持有上限.md`（選項 B + 第 38 題之使用者更正）*
 
 ### 自訂訓練 Aggregate 狀態機
 
@@ -2656,7 +2656,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
   〈管理員管理社群流程〉的「管理員已下架違規內容」，其對象類型已定案為貼文 / 留言 / 私訊。
   是否將自訂訓練納入該對象清單為另一個決策點，本節不裁決。
 
-*來源：`.clarify/resolved/aggregate/自訂訓練_已儲存與已發布與已申請公開三個狀態的狀態機.md`（選項 B）*
+*來源：`.es-clarify/resolved/aggregate/自訂訓練_已儲存與已發布與已申請公開三個狀態的狀態機.md`（選項 B）*
 
 ### 新手任務範本 Aggregate
 
@@ -2732,11 +2732,11 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 新手任務含有氧動作（如開合跳）時，其課表內容第三層依動作類型填入**目標時長**，
   承〈課表內容結構（共用）〉的多型結構；新手任務不產生訓練量，故不涉及係數換算。
 
-*來源：`.clarify/resolved/aggregate/新手任務_任務項目內容與數量由誰定義.md`（選項 B）；
-任務項目結構與執行機制之來源：`.clarify/resolved/aggregate/每日任務池_任務項目的結構與完成判定來源為何.md`
+*來源：`.es-clarify/resolved/aggregate/新手任務_任務項目內容與數量由誰定義.md`（選項 B）；
+任務項目結構與執行機制之來源：`.es-clarify/resolved/aggregate/每日任務池_任務項目的結構與完成判定來源為何.md`
 （第 15a 題，選項 B）*
 
-*來源：`.clarify/resolved/aggregate/新手任務_任務項目內容與數量由誰定義.md`（選項 B）*
+*來源：`.es-clarify/resolved/aggregate/新手任務_任務項目內容與數量由誰定義.md`（選項 B）*
 
 ### 每日任務池 Aggregate
 
@@ -2816,8 +2816,8 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
   某類未放則分散規則卡死。此與既有「不做跨日去重」的裁決理由相同 ——
   該規則會隱含要求任務池維持特定的項目結構，管理員調整池子時系統將抽不出來。
 
-*來源：`.clarify/resolved/aggregate/每日任務_任務項目與數量由誰定義.md`（選項 B）；
-任務項目結構與完成判定之來源：`.clarify/resolved/aggregate/每日任務池_任務項目的結構與完成判定來源為何.md`
+*來源：`.es-clarify/resolved/aggregate/每日任務_任務項目與數量由誰定義.md`（選項 B）；
+任務項目結構與完成判定之來源：`.es-clarify/resolved/aggregate/每日任務池_任務項目的結構與完成判定來源為何.md`
 （第 15b 題，選項 A）*
 
 ### 個人排行榜分數 Aggregate
@@ -2944,8 +2944,8 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 已知代價：於週期初升階者，該週期仍與舊組競爭，舊組其他人這一輪較吃虧。
 此偏差最多持續一個週期，且方向單一（強者暫留弱組）。
 
-*來源：`.clarify/resolved/aggregate/個人排行榜分數_分數的計算公式為何.md`（選項 A）；*
-*`.clarify/resolved/rule/排行榜週期已結算_週期中升階跨組時分數與名次如何處理.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/個人排行榜分數_分數的計算公式為何.md`（選項 A）；*
+*`.es-clarify/resolved/rule/排行榜週期已結算_週期中升階跨組時分數與名次如何處理.md`（選項 A）*
 
 ### 團隊 Aggregate
 
@@ -3012,10 +3012,10 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 採軟刪除的理由：排行榜歷史紀錄 Aggregate 存有團隊 ID 與最終名次，
   實體刪除會使歷史紀錄指向不存在的 ID。
 
-*來源：`.clarify/resolved/aggregate/團隊_團隊人數上限與角色設定.md`（選項 A，上限 5 人）；*
-*`.clarify/resolved/rule/使用者已建立團隊_一位使用者可否同時加入多個團隊.md`；*
-*`.clarify/resolved/rule/隊長已邀請成員_團隊邀請與加入申請是否逾期失效.md`（選項 B）；*
-*`.clarify/resolved/rule/團隊已解散_解散時既有團隊分數與排行榜名次如何處理.md`（選項 D）*
+*來源：`.es-clarify/resolved/aggregate/團隊_團隊人數上限與角色設定.md`（選項 A，上限 5 人）；*
+*`.es-clarify/resolved/rule/使用者已建立團隊_一位使用者可否同時加入多個團隊.md`；*
+*`.es-clarify/resolved/rule/隊長已邀請成員_團隊邀請與加入申請是否逾期失效.md`（選項 B）；*
+*`.es-clarify/resolved/rule/團隊已解散_解散時既有團隊分數與排行榜名次如何處理.md`（選項 D）*
 
 ### 團隊成員資格申請 Aggregate（2026-08-20 新增）
 
@@ -3077,7 +3077,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 （其請求識別碼推導式為「排程名稱 ＋ 目標 Aggregate ID」，已預設兩者各有 ID）。
 且「自送出起算 168 小時」所需的**送出時戳無處存放**，該 Precondition 原本無法驗收。本次補上。
 
-*來源：`.clarify/resolved/aggregate/團隊邀請_團隊邀請與團隊加入申請尚無Aggregate定義.md`（選項 B）*
+*來源：`.es-clarify/resolved/aggregate/團隊邀請_團隊邀請與團隊加入申請尚無Aggregate定義.md`（選項 B）*
 
 ### 貼文 Aggregate
 
@@ -3123,7 +3123,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 編輯後已編輯旗標為真，Read Model 須對讀者顯示「已編輯」。
 - 留言 Aggregate 的狀態值域與刪除編輯規則比照本節，不另定義。
 
-*來源：`.clarify/resolved/aggregate/貼文_貼文的欄位內容型態與可見範圍.md`（選項 C）*
+*來源：`.es-clarify/resolved/aggregate/貼文_貼文的欄位內容型態與可見範圍.md`（選項 C）*
 
 ### 留言 Aggregate
 
@@ -3159,7 +3159,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 關聯的唯一鍵為 貼文 ID ＋ 互動者 ID，同一人對同一貼文只能有一筆。
 - 貼文 Aggregate 的「按讚數」為衍生欄位，來源為關聯集合的筆數。
 
-*來源：`.clarify/resolved/aggregate/留言_留言與按讚是否為獨立Aggregate及其欄位.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/留言_留言與按讚是否為獨立Aggregate及其欄位.md`（選項 A）*
 
 ### 師徒關係 Aggregate
 
@@ -3284,10 +3284,10 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 **提問仍為獨立 Command，師徒問答仍為獨立 Aggregate**，不因不評分而併入私訊 ——
 問答與閒聊為兩種不同的互動，教官需區分何者需要回答。
 
-*來源：`.clarify/resolved/aggregate/教官已指派師徒任務_師徒任務與問答的Aggregate歸屬與欄位.md`（選項 A，評分部分已於 2026-08-02 推翻）；
-`.clarify/resolved/rule/學徒已提問_提問與閒聊如何區分及問答是否評分.md`（選項乙）*
+*來源：`.es-clarify/resolved/aggregate/教官已指派師徒任務_師徒任務與問答的Aggregate歸屬與欄位.md`（選項 A，評分部分已於 2026-08-02 推翻）；
+`.es-clarify/resolved/rule/學徒已提問_提問與閒聊如何區分及問答是否評分.md`（選項乙）*
 
-*來源：`.clarify/resolved/aggregate/教官已指派師徒任務_師徒任務與問答的Aggregate歸屬與欄位.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/教官已指派師徒任務_師徒任務與問答的Aggregate歸屬與欄位.md`（選項 A）*
 
 ### 教官聲望 Aggregate
 
@@ -3377,7 +3377,7 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 - 因帶徒上限不降低，不需要「帶徒上限已降低」Event，亦不需處理既有師徒關係超出上限的情境。
 - 聲望低於門檻不觸發教官資格自動撤銷（見第 12 題裁決）。
 
-*來源：`.clarify/resolved/aggregate/教官聲望_聲望的計算公式與可否下降.md`（選項 B-2 + 地板值）*
+*來源：`.es-clarify/resolved/aggregate/教官聲望_聲望的計算公式與可否下降.md`（選項 B-2 + 地板值）*
 
 ### 商品 Aggregate
 
@@ -3448,9 +3448,9 @@ Compendium of Physical Activities 的 MET 值（公開發表的學術彙編，�
 Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Command清單.md，串聯完整，無缺口。
 〔2026-08-20 移除過期的待決策標記。〕
 
-*來源：`.clarify/resolved/aggregate/商品_商品的欄位定義與價格庫存設定.md`（選項 D，尺寸層級）；
-`.clarify/resolved/aggregate/進階訓練計畫_三種解鎖方式與管理員設定.md`（三方式 ＋ 購買路徑 A）；
-`.clarify/resolved/rule/管理員已下架商品_下架時既有未出貨訂單如何處理.md`（選項 B）*
+*來源：`.es-clarify/resolved/aggregate/商品_商品的欄位定義與價格庫存設定.md`（選項 D，尺寸層級）；
+`.es-clarify/resolved/aggregate/進階訓練計畫_三種解鎖方式與管理員設定.md`（三方式 ＋ 購買路徑 A）；
+`.es-clarify/resolved/rule/管理員已下架商品_下架時既有未出貨訂單如何處理.md`（選項 B）*
 
 ### 訂單 Aggregate 狀態機
 
@@ -3535,7 +3535,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 發放失敗時系統自動重試，重試次數上限 3 次。
 - 達重試上限仍失敗者轉人工處理，不自動退款。
 
-*來源：`.clarify/resolved/aggregate/訂單_訂單的欄位與狀態機定義.md`（選項 C）*
+*來源：`.es-clarify/resolved/aggregate/訂單_訂單的欄位與狀態機定義.md`（選項 C）*
 
 ### 會員權益 Aggregate
 
@@ -3619,7 +3619,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 > 保留「已取消待到期」。
 > 來源：`resolved/aggregate/會員權益_生效狀態的值域為二值或四值兩處定義互相矛盾.md`
 
-*來源：`.clarify/resolved/aggregate/會員權益_會員權益的內容與方案設計.md`（選項 D + B）*
+*來源：`.es-clarify/resolved/aggregate/會員權益_會員權益的內容與方案設計.md`（選項 D + B）*
 
 ### 團隊分數 Aggregate
 
@@ -3754,8 +3754,8 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 與換隊冷卻期**並存，不互相取代**：換隊冷卻防止同一人反覆跳隊，
   重新分隊期提供所有人一個對齊的換隊窗口，兩者解決不同問題。
 
-*來源：`.clarify/resolved/aggregate/團隊日常分數_日常分數與限時分數的計算公式.md`（選項 A + 使用者補充）；
-`.clarify/resolved/rule/團隊日常分數已增加_重新分隊期的天數與計分規則.md`（選項 A，2 天）*
+*來源：`.es-clarify/resolved/aggregate/團隊日常分數_日常分數與限時分數的計算公式.md`（選項 A + 使用者補充）；
+`.es-clarify/resolved/rule/團隊日常分數已增加_重新分隊期的天數與計分規則.md`（選項 A，2 天）*
 
 ### 帶徒上限設定 Aggregate
 
@@ -3846,7 +3846,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 「師徒關係已解除」發生時，釋放所佔名額。
 - 「師徒關係已恢復」發生時，重新佔用名額；名額已滿者不得恢復。
 
-*來源：`.clarify/resolved/aggregate/教官帶徒上限_帶徒上限的初始值與提升幅度.md`（選項 C 之機制 + 使用者給定的數值 + 代號①）*
+*來源：`.es-clarify/resolved/aggregate/教官帶徒上限_帶徒上限的初始值與提升幅度.md`（選項 C 之機制 + 使用者給定的數值 + 代號①）*
 
 ### 教官申請 Aggregate
 
@@ -3913,9 +3913,9 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 「AI 已產出訓練品質評分」的請求識別碼（＝使用者 ID ＋ 教官申請 ID）不受影響：
   每一筆新申請有各自的申請 ID，故仍維持「同一筆申請只評分一次」。
 
-*來源：`.clarify/resolved/aggregate/教官申請_教官申請Aggregate的狀態機與教官測驗的關聯基數.md`（選項 B）*
+*來源：`.es-clarify/resolved/aggregate/教官申請_教官申請Aggregate的狀態機與教官測驗的關聯基數.md`（選項 B）*
 
-*來源：`.clarify/resolved/event/AI已產出訓練品質評分_攜帶資訊與去重鍵與評分是否保存.md`（選項 D）*
+*來源：`.es-clarify/resolved/event/AI已產出訓練品質評分_攜帶資訊與去重鍵與評分是否保存.md`（選項 D）*
 
 ### 教官初審設定 Aggregate（2026-08-20 新增）
 
@@ -3966,7 +3966,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 其「資料來源」欄卻只列使用者 Aggregate 與教官測驗設定 Aggregate ——
 兩者皆不含該參數，該 Read Model 的欄位來源無從推導。本次補上。
 
-*來源：`.clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-1 題，選項 A）*
+*來源：`.es-clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-1 題，選項 A）*
 
 ### 能力值設定 Aggregate（2026-08-20 新增）
 
@@ -4011,7 +4011,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 `03_能力值.md` 原記「六階門檻、退步百分比、退步間隔、初始值皆為平台級可調參數，
 **不存於本 Aggregate**」——明言不存於能力值 Aggregate，卻未說存於何處。本表補上。
 
-*來源：`.clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
+*來源：`.es-clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
 
 ### 檢舉理由設定 Aggregate（2026-08-20 新增）
 
@@ -4078,7 +4078,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 而01_Command清單.md〈平台級設定的軟體邊界〉右欄列其為邊界外組態，兩處記載相反；
 且該 Aggregate 全模型無定義、無欄位表、不在〈獨立 Aggregate 清單〉中。本次補上。
 
-*來源：`.clarify/resolved/aggregate/檢舉理由設定_流程檔稱其為Aggregate而核心檔列為邊界外組態.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/檢舉理由設定_流程檔稱其為Aggregate而核心檔列為邊界外組態.md`（選項 A）*
 
 ### 內容過濾設定 Aggregate（2026-08-20 新增）
 
@@ -4099,7 +4099,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
   故本表的兩個門檻成立。不採自建關鍵字黑名單 —— 黑名單只有命中與否、無分數，
   兩個門檻將不存在，且擋不掉未使用違規字詞的擦邊內容與圖片。
 - **兩個門檻的初始值待選定過濾服務後給定**：各服務的輸出尺度不一（0–1、0–100、或僅二元判定），
-  未選型前所填之值無依據。已列入 `.clarify/overview.md` §7 上線前追蹤清單。
+  未選型前所填之值無依據。已列入 `.es-clarify/overview.md` §7 上線前追蹤清單。
 - **本 Aggregate 於〈平台級設定的軟體邊界〉歸右欄**（2026-08-20 定案）：
   不建 Command 與 Event，維持後台人工維護 —— 承同表下方「門檻調整不追溯既有內容」，
   改動不動任何已發生的事實。
@@ -4111,7 +4111,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 
 `[待決策 Partial]` 三個參數的初始值尚未給定，須於上線前由內容與法務團隊訂定。
 
-*來源：`.clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
+*來源：`.es-clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
 
 ### 防作弊設定 Aggregate（2026-08-20 新增）
 
@@ -4134,7 +4134,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 參數調整**不追溯既有訓練紀錄**，亦不重新判定已完成的組。
 - **本表的參數值不對使用者揭露**：承既有裁決「揭露給申請者等同公開防作弊判準」。
 
-*來源：`.clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
+*來源：`.es-clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
 
 ### 通知設定 Aggregate（2026-08-20 新增）
 
@@ -4156,7 +4156,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
   （承既有裁決「不採由管理員後台逐一開關並指派優先序」）。
 - 上限僅約束推播類；App 內通知類與電子郵件通知不受其約束。
 
-*來源：`.clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
+*來源：`.es-clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
 
 ### 審核時限設定 Aggregate（2026-08-20 新增）
 
@@ -4180,7 +4180,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 逾期的處理見〈四類審核的時限與逾期處理〉：僅產生「審核已逾期」，**不改變案件狀態**。
 - 時限調整**不追溯既有案件**：已產生「審核已逾期」者不因時限放寬而撤銷該 Event。
 
-*來源：`.clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
+*來源：`.es-clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
 
 ### 補簽設定 Aggregate（2026-08-20 新增）
 
@@ -4203,7 +4203,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 回補範圍調整**不追溯既有補簽**：已完成的補簽不因範圍縮小而撤銷。
 - 可補回的天數上限由回補範圍界定，不另設張數上限（承既有規則）。
 
-*來源：`.clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
+*來源：`.es-clarify/resolved/aggregate/平台參數設定_大量宣告為平台級可調的參數無任何Aggregate承載.md`（第 4-2 題，選項 A）*
 
 ### 教官測驗設定 Aggregate
 
@@ -4236,7 +4236,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 題目一律自題庫隨機抽取，不固定；固定題目將使題庫答案外流後測驗淪為背誦。
 - 隨機抽取亦為重考機制的前提，否則重考等於重看同一份考卷。
 
-*來源：`.clarify/resolved/aggregate/教官測驗_題數配分與及格標準.md`（選項 C）*
+*來源：`.es-clarify/resolved/aggregate/教官測驗_題數配分與及格標準.md`（選項 C）*
 
 ### 關注關係 Aggregate
 
@@ -4255,7 +4255,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 關注關係不併入使用者 Aggregate：清單無上限成長，且「我關注誰」與「誰關注我」兩個方向皆需查詢。
 - 貼文可見範圍「僅關注者」的判定依據為本 Aggregate。
 
-*來源：`.clarify/resolved/aggregate/對方帳號粉絲數已增加_粉絲數與關注關係的Aggregate歸屬.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/對方帳號粉絲數已增加_粉絲數與關注關係的Aggregate歸屬.md`（選項 A）*
 
 ### 對話 Aggregate
 
@@ -4322,7 +4322,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
 - 封鎖的影響範圍超出私訊，其連帶效果由 `rule/使用者已封鎖對象_封鎖是否連帶解除關注與師徒與團隊關係.md` 定案。
 - 「使用者已封鎖對象」新增一筆封鎖；「使用者已解除封鎖」移除該筆封鎖。
 
-*來源：`.clarify/resolved/aggregate/使用者已建立對話_對話與私訊的Aggregate歸屬與欄位.md`（選項 B ＋ D）*
+*來源：`.es-clarify/resolved/aggregate/使用者已建立對話_對話與私訊的Aggregate歸屬與欄位.md`（選項 B ＋ D）*
 
 ### 檢舉 Aggregate
 
@@ -4361,7 +4361,7 @@ Command「因商品下架取消訂單」與其狀態轉換皆已存在於01_Comm
   已改為正式 Event 並補上 Command「標記疑似違規內容」（Actor：系統），
   見01_Command清單.md〈發文與互動流程〉與發文與互動流程〈發布前的內容過濾〉。
 
-*來源：`.clarify/resolved/aggregate/檢舉_檢舉的欄位與狀態機.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/檢舉_檢舉的欄位與狀態機.md`（選項 A）*
 
 ### 申訴 Aggregate
 
@@ -4530,7 +4530,7 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
 - [注意] 檢舉的「7 天」與教官測驗簡答題的「7 個工作天」為**不同長度**（後者不含例假日），
   兩者並非同一數值，勿於實作時混用。
 
-*來源：`.clarify/resolved/rule/四類審核_審核時限與逾期處理規則全數缺失.md`（選項 A —— 設時限、僅升級提示）*
+*來源：`.es-clarify/resolved/rule/四類審核_審核時限與逾期處理規則全數缺失.md`（選項 A —— 設時限、僅升級提示）*
 
 #### 申訴期限與證據保存期限的區別
 
@@ -4545,7 +4545,7 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
 - 一則兩年前的貼文可能今日才被檢舉、今日才受處罰，30 天內申訴時仍需調閱兩年前的編輯歷史。
 - 故 AI 調整對話與編輯歷史的永久保存規則維持不變，不因申訴期限有上限而改為定期清除。
 
-*來源：`.clarify/resolved/aggregate/申訴_申訴是否為獨立Aggregate及其欄位與狀態機.md`（選項 A ＋ 使用者給定的 30 天期限）*
+*來源：`.es-clarify/resolved/aggregate/申訴_申訴是否為獨立Aggregate及其欄位與狀態機.md`（選項 A ＋ 使用者給定的 30 天期限）*
 
 ### 健身目標設定 Aggregate
 
@@ -4564,7 +4564,7 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
 - 管理員新增目標項目時，既有訓練計畫的適用條件不自動更新。
 - 值域調整不改動任何使用者已填入的健身目標。
 
-*來源：`.clarify/resolved/command/使用者已填入健身目標_動機類與常見目標類的完整值域清單為何.md`（選項 B）*
+*來源：`.es-clarify/resolved/command/使用者已填入健身目標_動機類與常見目標類的完整值域清單為何.md`（選項 B）*
 
 ### 健身經驗設定 Aggregate
 
@@ -4590,7 +4590,7 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
 - 值域不寫死於系統：健身目標已採平台級可調，兩個比對維度的處理方式應一致；
   性別寫死是因其為二元事實不會變，經驗分級則為產品判斷。
 
-*來源：`.clarify/resolved/command/使用者已選擇健身經驗_健身經驗的值域與型別為何.md`（選項 A）*
+*來源：`.es-clarify/resolved/command/使用者已選擇健身經驗_健身經驗的值域與型別為何.md`（選項 A）*
 
 ### 器材設定 Aggregate
 
@@ -4620,7 +4620,7 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
   承01_Command清單.md〈平台級設定的軟體邊界〉的既有判準。
 - 註冊流程的 3 級器材（健身房 / 居家器材 / 徒手）與本表的「可得場所」為同一組值域。
 
-*來源：`.clarify/resolved/aggregate/動作_所需器材明細的值域清單與粗細兩層的對應關係.md`（選項 C″）*
+*來源：`.es-clarify/resolved/aggregate/動作_所需器材明細的值域清單與粗細兩層的對應關係.md`（選項 C″）*
 
 ### 教官專長設定 Aggregate
 
@@ -4676,7 +4676,7 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
   - 值域調整不改動任何教官已填入的專長（承既有規則）。
 - 本節的排除判斷為產品層面的風險篩選，**非法律意見**，上線前應經法務確認。
 
-*來源：`.clarify/resolved/aggregate/教官申請_專長肌群的可選數量上限為何.md`（選項 A ＋ 使用者的法規顧慮）*
+*來源：`.es-clarify/resolved/aggregate/教官申請_專長肌群的可選數量上限為何.md`（選項 A ＋ 使用者的法規顧慮）*
 
 ### 階級設定 Aggregate
 
@@ -4760,7 +4760,7 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
 - 並非每一階都解鎖進階訓練計畫，僅指定階級解鎖。
 - 門檻調整不改動任何使用者既有的階級。
 
-*來源：`.clarify/resolved/aggregate/階級設定_階級總數與各階門檻初始值為何.md`（選項甲：99 階、p ＝ 2、365 天下限）*
+*來源：`.es-clarify/resolved/aggregate/階級設定_階級總數與各階門檻初始值為何.md`（選項甲：99 階、p ＝ 2、365 天下限）*
 
 ### 訓練計畫 Aggregate
 
@@ -4876,13 +4876,13 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
   「未解鎖進階計畫一併呈現」為三種解鎖方式的**唯一曝光點**，
   無進階計畫則金幣提前購買與會員身分解鎖兩條路徑等同不存在。
 
-*來源：`.clarify/resolved/aggregate/訓練計畫_各階級對應解鎖哪些計畫的初始清單為何.md`（選項 E）*
+*來源：`.es-clarify/resolved/aggregate/訓練計畫_各階級對應解鎖哪些計畫的初始清單為何.md`（選項 E）*
 
 #### 統一語言
 
 「進階訓練計畫」為描述性用語，非獨立 Aggregate 名稱；模型中的 Aggregate 一律稱「訓練計畫」。
 
-*來源：`.clarify/resolved/aggregate/進階訓練計畫_解鎖的計畫內容與階級對應關係.md`（選項 A）*
+*來源：`.es-clarify/resolved/aggregate/進階訓練計畫_解鎖的計畫內容與階級對應關係.md`（選項 A）*
 
 ### 獎勵結構
 
@@ -5116,7 +5116,7 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
   代價只落在誠實訓練者身上，刷取者每場皆完成，不受影響。
 - 365 天經驗值下限的驗算不受本上限影響：原假設為每週 3 次，遠低於每日 1 次的上限。
 
-*來源：`.clarify/resolved/rule/訓練獎勵已發放_訓練獎勵是否設每日發放上限.md`（選項 B）*
+*來源：`.es-clarify/resolved/rule/訓練獎勵已發放_訓練獎勵是否設每日發放上限.md`（選項 B）*
 
 #### 個人排行榜分數（訓練結算來源）的每日計分上限
 
@@ -5136,11 +5136,11 @@ AI 失敗率為須監控的指標，只在前端吐錯誤則後端無從得知�
   （門檻 1 / 3 / 5 / 7 / 10 / 15 / 20 / 25 / 30 天），再做遞增等於同一件事給兩次，
   會稀釋成就那條線。
 
-*來源：`.clarify/resolved/aggregate/獎勵_獎勵的種類與統一資料結構.md`（選項 B）；
-第一批初始值之來源：`.clarify/resolved/aggregate/獎勵定義_第一批_訓練與簽到類的獎勵初始值為何.md`
+*來源：`.es-clarify/resolved/aggregate/獎勵_獎勵的種類與統一資料結構.md`（選項 B）；
+第一批初始值之來源：`.es-clarify/resolved/aggregate/獎勵定義_第一批_訓練與簽到類的獎勵初始值為何.md`
 （選項 A ＋ 使用者調整：新手任務金幣 200 → 100、能力值暫緩）*
 
-*來源：`.clarify/resolved/aggregate/獎勵_獎勵的種類與統一資料結構.md`（選項 B）*
+*來源：`.es-clarify/resolved/aggregate/獎勵_獎勵的種類與統一資料結構.md`（選項 B）*
 
 #### 各來源的初始內容（第三批：排行與師徒類，進行中）
 

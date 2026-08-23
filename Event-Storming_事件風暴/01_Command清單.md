@@ -54,7 +54,7 @@ Command 的輸入參數**不逐一列表**，一律由下式推導：
   由該 Read Model 的定義承載，不套用本推導規則。
 - 本規則不適用時，該 Command 逐一補問並於本節列為例外；本輪盤點未發現例外。
 
-*來源：`.clarify/resolved/command/全流程Command_226個Command的輸入參數尚未定義.md`（選項 A）*
+*來源：`.es-clarify/resolved/command/全流程Command_226個Command的輸入參數尚未定義.md`（選項 A）*
 
 ### 註冊流程
 
@@ -624,6 +624,6 @@ Command 的輸入參數**不逐一列表**，一律由下式推導：
 - **不採單一泛用 Command「設定平台參數」**：承本節既有裁決 ——
   其攜帶值域為任意設定的任意變更，Precondition 與 Postcondition 皆寫不出來，為不可驗收的 Event。
 
-*來源：`.clarify/resolved/command/全流程Command_各Event對應的Command清單與命名尚未建立.md`（選項 A）；
-系統排程一節之增列來源：`.clarify/resolved/event/能力值日快照_日快照的產生是否建模為Event與其冪等去重鍵.md`（選項 A）*
+*來源：`.es-clarify/resolved/command/全流程Command_各Event對應的Command清單與命名尚未建立.md`（選項 A）；
+系統排程一節之增列來源：`.es-clarify/resolved/event/能力值日快照_日快照的產生是否建模為Event與其冪等去重鍵.md`（選項 A）*
 

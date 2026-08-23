@@ -46,9 +46,9 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
   即超出本通則，須另立條目。例：〈管理員商品清單〉需呈現「未出貨訂單筆數」
   （取自訂單 Aggregate），故獨立列出而不適用本通則。
 
-*來源：`.clarify/resolved/read-model/管理員平台設定頁_設定類Command是否需要ReadModel.md`（選項 A）*
+*來源：`.es-clarify/resolved/read-model/管理員平台設定頁_設定類Command是否需要ReadModel.md`（選項 A）*
 
-*來源：`.clarify/resolved/read-model/全流程ReadModel_各流程尚未定義任何Read Model.md`（選項 A）*
+*來源：`.es-clarify/resolved/read-model/全流程ReadModel_各流程尚未定義任何Read Model.md`（選項 A）*
 
 ### Read Model：六維能力值雷達圖
 
@@ -82,7 +82,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
   該維於區塊中呈現為空白或「—」，不以 0 表示。
 - 六維皆為空值時（新使用者尚未做過大重量訓練）**不呈現本區塊**。
 
-*來源：`.clarify/resolved/aggregate/能力值_耐力值的呈現位置與雷達圖是否畫第二圈輪廓.md`（選項 B）*
+*來源：`.es-clarify/resolved/aggregate/能力值_耐力值的呈現位置與雷達圖是否畫第二圈輪廓.md`（選項 B）*
 
 **能力值日快照**
 
@@ -119,7 +119,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
   **本項現階段不處理，待實際遇到再議**（2026-08-11 使用者裁示）。
 - 帳號刪除時該使用者的全部快照一併刪除，見02_Aggregate定義.md〈帳號生命週期〉之02_Aggregate定義.md〈刪除範圍〉。
 
-*來源：`.clarify/resolved/event/能力值日快照_日快照的產生是否建模為Event與其冪等去重鍵.md`（選項 A）*
+*來源：`.es-clarify/resolved/event/能力值日快照_日快照的產生是否建模為Event與其冪等去重鍵.md`（選項 A）*
 
 - 雷達圖一次只呈現一個輪廓，不疊層對比：時間維度的切換已能表達成長與退步，
   疊層是同一件事的重複表達。
@@ -129,7 +129,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - **雷達圖不顯示各維距下次退步的剩餘時數**：退步提醒的職責已由「退步預告已發送」承擔
   （該維滿 96 小時未訓練時發送），不在雷達圖重複表達。
 
-*來源：`.clarify/resolved/read-model/六維能力值雷達圖_欄位來源與即時性為何.md`（選項 D ＋ 每日快照）*
+*來源：`.es-clarify/resolved/read-model/六維能力值雷達圖_欄位來源與即時性為何.md`（選項 D ＋ 每日快照）*
 
 ### Read Model：個人排行榜
 
@@ -168,7 +168,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - 即時性採延遲更新：名次為跨使用者比較，每次分數變動即重算全組成本高，而使用者不會盯著
   名次跳動；畫面標明更新時間以免延遲被誤認為異常。
 
-*來源：`.clarify/resolved/read-model/排行榜_排行榜的顯示範圍排序與即時性要求.md`（選項 A ＋ 階級分組）*
+*來源：`.es-clarify/resolved/read-model/排行榜_排行榜的顯示範圍排序與即時性要求.md`（選項 A ＋ 階級分組）*
 
 ### Read Model：簽到頁
 
@@ -190,7 +190,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
   不納入本 Read Model；UI 仍可顯示，但不列為決策依據。
 - **補簽不在簽到頁進行**，由獨立畫面承載，另立 Read Model。
 
-*來源：`.clarify/resolved/read-model/每日簽到_使用者簽到前需看到哪些資訊.md`*
+*來源：`.es-clarify/resolved/read-model/每日簽到_使用者簽到前需看到哪些資訊.md`*
 
 ### Read Model：補簽頁
 
@@ -216,7 +216,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
   使用者可能想保留券以補更關鍵的日期。
 - 「可補簽」狀態依已定案的可回補時間範圍判定。
 
-*來源：`.clarify/resolved/read-model/補簽頁_補簽前需看到哪些資訊.md`（選項 A）*
+*來源：`.es-clarify/resolved/read-model/補簽頁_補簽前需看到哪些資訊.md`（選項 A）*
 
 ### Read Model：訓練結算頁
 
@@ -422,8 +422,8 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
   單一動作的重量走勢屬於**看自己的紀錄**，跨時間彙總與月報屬於**分析**。
 - 〔本結論為依既有權益清單推導，非新裁決；若與原意不符須另行更正。〕
 
-*來源：`.clarify/resolved/read-model/訓練歷史_使用者可查看的訓練歷史為何.md`（選項 C ＋ 排序 A）；
-`.clarify/resolved/read-model/訓練歷史_可回溯時間範圍與圖表與搜尋.md`（選項 A）*
+*來源：`.es-clarify/resolved/read-model/訓練歷史_使用者可查看的訓練歷史為何.md`（選項 C ＋ 排序 A）；
+`.es-clarify/resolved/read-model/訓練歷史_可回溯時間範圍與圖表與搜尋.md`（選項 A）*
 
 ### Read Model：新手任務清單
 
@@ -487,7 +487,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - 本頁為成就獎勵的唯一領取入口，承〈成就獎勵的領取與發放〉「採點擊領取但不進信箱，
   因成就頁永久保留」的既有裁決。
 
-*來源：`.clarify/resolved/read-model/成就頁_成就頁尚無ReadModel定義.md`（選項 B）*
+*來源：`.es-clarify/resolved/read-model/成就頁_成就頁尚無ReadModel定義.md`（選項 B）*
 
 ### Read Model：獎勵信箱頁
 
@@ -598,7 +598,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - 〈建立原則〉不需修訂：三者皆有使用者 Command（「領取每日任務獎勵」與
   「查看回歸任務」為後續輪次新增），皆通過現行判準。
 
-*來源：`.clarify/resolved/read-model/任務清單頁_新手任務與每日任務是否成立ReadModel.md`（選項 C）*
+*來源：`.es-clarify/resolved/read-model/任務清單頁_新手任務與每日任務是否成立ReadModel.md`（選項 C）*
 
 ### Read Model：使用者個人檔案頁
 
@@ -703,7 +703,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
   隱藏點數並不降低比較的強度（E 對 S 的落差在等級上更醒目），
   卻使使用者看不到自己距下一階還差多少。
 
-*來源：`.clarify/resolved/read-model/使用者個人檔案頁_關注帳號前需看到哪些資訊.md`（選項 B ＋ 可見性設定）*
+*來源：`.es-clarify/resolved/read-model/使用者個人檔案頁_關注帳號前需看到哪些資訊.md`（選項 B ＋ 可見性設定）*
 
 ### Read Model：管理員評分彙總
 
@@ -795,7 +795,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
   Read Model 的欄位清單為同一份，模型層不預先切分。
 - 本頁不呈現能力值、階級、成就等成長數值 —— 其歸〈使用者個人檔案頁〉與〈成就頁〉。
 
-*來源：`.clarify/resolved/read-model/設定頁_設定頁尚無ReadModel定義.md`（選項 A）*
+*來源：`.es-clarify/resolved/read-model/設定頁_設定頁尚無ReadModel定義.md`（選項 A）*
 
 ### Read Model：我的訂單頁
 
@@ -966,7 +966,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 > 教官測驗簡答題 7 個工作天／公開訓練審核 14 天），
 > 逾期僅產生 Event 與升級提示，不自動改變案件狀態。
 
-*來源：`.clarify/resolved/read-model/管理員待審佇列_審視檢舉與各類審核前需看到哪些資訊.md`（選項 D）*
+*來源：`.es-clarify/resolved/read-model/管理員待審佇列_審視檢舉與各類審核前需看到哪些資訊.md`（選項 D）*
 
 ### Read Model：管理員訂單佇列（2026-08-21 新增）
 
@@ -1013,7 +1013,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - 「已出貨」分頁保留終止態訂單：出貨後的查詢與客訴追溯需要，
   且該分頁不支撐任何 Command，僅供讀取。
 
-*來源：`.clarify/resolved/read-model/管理員訂單佇列_出貨與退款前需看到哪些資訊.md`（選項 E）*
+*來源：`.es-clarify/resolved/read-model/管理員訂單佇列_出貨與退款前需看到哪些資訊.md`（選項 E）*
 
 ### Read Model：管理員商品清單（2026-08-21 新增）
 
@@ -1042,7 +1042,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - 呈現全部商品（含已下架）：上架 Command 的對象正是已下架商品。
 - 本 Read Model 不含訂單明細，明細見〈管理員訂單佇列〉。
 
-*來源：`.clarify/resolved/read-model/管理員訂單佇列_出貨與退款前需看到哪些資訊.md`（選項 E）*
+*來源：`.es-clarify/resolved/read-model/管理員訂單佇列_出貨與退款前需看到哪些資訊.md`（選項 E）*
 
 ### Read Model：AI 點數頁（2026-08-20 新增）
 
@@ -1091,7 +1091,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - **不併入〈會員訂閱頁〉**：非會員亦持有永久點數（新手任務贈 3 點、可購買），
   併入將使非會員看不到自己的餘額。
 
-*來源：`.clarify/resolved/read-model/AI點數餘額頁_AI點數餘額與購買頁尚無ReadModel定義.md`（選項 A）*
+*來源：`.es-clarify/resolved/read-model/AI點數餘額頁_AI點數餘額與購買頁尚無ReadModel定義.md`（選項 A）*
 
 ### Read Model：會員訂閱頁
 
@@ -1181,7 +1181,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - **不呈現購買人數或熱門度**：須新增跨訂單的統計欄位，
   而商城品項少且多為平台自營，不具大型電商「靠銷量排除劣質賣家」的需求。
 
-*來源：`.clarify/resolved/read-model/商品頁_選擇規格與確認購買前需看到哪些資訊.md`（選項 C）*
+*來源：`.es-clarify/resolved/read-model/商品頁_選擇規格與確認購買前需看到哪些資訊.md`（選項 C）*
 
 ### Read Model：我的團隊頁
 
@@ -1253,7 +1253,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 兩者的決策內容不同：前者是「管理自己的隊」，後者是「找一支隊加入」。
 合為單一 Read Model 會使欄位表同時服務兩種互不相干的決策。
 
-*來源：`.clarify/resolved/read-model/團隊頁_邀請成員與申請加入團隊前需看到哪些資訊.md`（選項 B ＋ 拆為兩個 Read Model ＋ 關注對象優先）*
+*來源：`.es-clarify/resolved/read-model/團隊頁_邀請成員與申請加入團隊前需看到哪些資訊.md`（選項 B ＋ 拆為兩個 Read Model ＋ 關注對象優先）*
 
 ### Read Model：我的師徒頁
 
@@ -1391,7 +1391,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - ② 的呈現不洩漏任何個別評分內容（只顯示次數，不顯示星等），
   與〈評分對教官的揭露界線〉「教官看不到任何個別學徒給的評分」不衝突。
 
-*來源：`.clarify/resolved/read-model/師徒互動頁_教官回答與指派任務前需看到哪些資訊.md`（選項 C）*
+*來源：`.es-clarify/resolved/read-model/師徒互動頁_教官回答與指派任務前需看到哪些資訊.md`（選項 C）*
 
 ### Read Model：教官申請頁
 
@@ -1441,7 +1441,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - 該評分含「疑慮標記」，為供審核使用的內部依據；
   揭露給申請者等同公開防作弊偵測的判準。
 
-*來源：`.clarify/resolved/read-model/教官申請頁_申請教官權限前需看到哪些資訊.md`（選項 C）*
+*來源：`.es-clarify/resolved/read-model/教官申請頁_申請教官權限前需看到哪些資訊.md`（選項 C）*
 
 ### Read Model：教官清單
 
@@ -1494,7 +1494,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - 值域刻意排除具專業執照門檻的項目，見02_Aggregate定義.md〈教官專長設定 Aggregate〉之
   02_Aggregate定義.md〈值域的界線：不收錄具專業執照門檻的項目〉。
 
-*來源：`.clarify/resolved/read-model/教官清單_申請師徒關係前需看到哪些資訊.md`（選項 D ＋ 乙：自行填寫 ＋ 教官不可隱藏能力值）*
+*來源：`.es-clarify/resolved/read-model/教官清單_申請師徒關係前需看到哪些資訊.md`（選項 D ＋ 乙：自行填寫 ＋ 教官不可隱藏能力值）*
 
 ### Read Model：對話清單
 
@@ -1552,7 +1552,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - 不呈現「我是否已封鎖對方」：該資訊屬封鎖管理的職責，非對話頁的決策依據。
 - 承02_Aggregate定義.md〈對話 Aggregate〉既有規則「對話不儲存封鎖狀態」，本 Read Model 亦不查詢封鎖 Aggregate。
 
-*來源：`.clarify/resolved/read-model/對話清單與對話內容_發送與讀取私訊前需看到哪些資訊.md`（選項 C）*
+*來源：`.es-clarify/resolved/read-model/對話清單與對話內容_發送與讀取私訊前需看到哪些資訊.md`（選項 C）*
 
 ### Read Model：社群動態牆
 
@@ -1612,7 +1612,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - 與既有裁決〈訓練歷史不對外可見〉不衝突：該裁決的標的為**逐組重量與次數的原始紀錄**，
   本項呈現的是彙總層，且分享為作者主動發起（Event「發文者已分享訓練成果」）。
 
-*來源：`.clarify/resolved/read-model/社群動態牆_按讚與留言前需看到哪些資訊.md`（選項 D ＋ 使用者修正：作者資訊只到階級與聲望）*
+*來源：`.es-clarify/resolved/read-model/社群動態牆_按讚與留言前需看到哪些資訊.md`（選項 D ＋ 使用者修正：作者資訊只到階級與聲望）*
 
 ### Read Model：動作庫
 
@@ -1667,7 +1667,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
   `rule/個人排行榜分數已增加_各來源的分數值與換算率為何.md` 定案，
   但**分頁歸屬與係數無關**，不受其阻擋。
 
-*來源：`.clarify/resolved/read-model/動作庫_選擇動作前需看到哪些資訊.md`（選項 D ＋ 器材兩層粒度 B）*
+*來源：`.es-clarify/resolved/read-model/動作庫_選擇動作前需看到哪些資訊.md`（選項 D ＋ 器材兩層粒度 B）*
 
 ### Read Model：自訂訓練管理頁
 
@@ -1815,7 +1815,7 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 - **不採**依註冊時推薦 Policy 標示「推薦給你」：該 Policy 依註冊當下的健身經驗、目標、器材判定，
   使用者訓練數月後該標記多半過時，反而誤導。如需推薦，應另立依現況重算者，非本 Read Model 範圍。
 
-*來源：`.clarify/resolved/read-model/課表選擇頁_選擇訓練課表前需看到哪些資訊.md`（選項 B ＋ 上次訓練日期與上次完成度）*
+*來源：`.es-clarify/resolved/read-model/課表選擇頁_選擇訓練課表前需看到哪些資訊.md`（選項 B ＋ 上次訓練日期與上次完成度）*
 
 ### Read Model：訓練進行中頁
 
@@ -1887,4 +1887,4 @@ Read Model 的存在意義是**支撐 Actor 的決策**，而非描述畫面。
 [已知風險] 逾時中斷維持不預警：使用者可能在無提示下被判定中斷。
 已完成組數等於總計畫組數者仍給 100% 完成度獎勵，故該風險的影響已被既有規則削減。
 
-*來源：`.clarify/resolved/read-model/訓練進行中頁_記錄該組成績前需看到哪些資訊.md`（選項 B ＋ 使用者三項修正）*
+*來源：`.es-clarify/resolved/read-model/訓練進行中頁_記錄該組成績前需看到哪些資訊.md`（選項 B ＋ 使用者三項修正）*

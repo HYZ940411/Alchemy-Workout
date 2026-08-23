@@ -1,8 +1,8 @@
 ---
-description: 掃描當前事件風暴（Event Storming）模型，識別 Event / Command / Actor / Rules / Aggregate / Read Model 六大元素中未釐清、未覆蓋之處，並將釐清項目以結構化格式記錄於 .clarify/ 資料夾中，供後續 formulation 階段使用。
+description: 掃描當前事件風暴（Event Storming）模型，識別 Event / Command / Actor / Rules / Aggregate / Read Model 六大元素中未釐清、未覆蓋之處，並將釐清項目以結構化格式記錄於 .es-clarify/ 資料夾中，供後續 formulation 階段使用。
 ---
 
-目標：偵測作用中事件風暴模型的歧義或遺漏決策點，將釐清問題以檔案形式記錄到 `.clarify/` 資料夾，產生 `overview.md` 說明釐清優先順序策略。
+目標：偵測作用中事件風暴模型的歧義或遺漏決策點，將釐清問題以檔案形式記錄到 `.es-clarify/` 資料夾，產生 `overview.md` 說明釐清優先順序策略。
 
 # 前置：確認掃描標的
 
@@ -233,9 +233,9 @@ description: 掃描當前事件風暴（Event Storming）模型，識別 Event /
 - [ ] 是否有句子後半的理由在補標時被刪去？
 
 **本分類的釐清項目歸檔原則**：
-G1 的缺口歸入該 Event 所屬的 `.clarify/event/` 或 `.clarify/rule/`；
+G1 的缺口歸入該 Event 所屬的 `.es-clarify/event/` 或 `.es-clarify/rule/`；
 G2、G5 屬文件訂正，於 `overview.md` 列為訂正清單，不建為釐清項目；
-G3 的缺口若為「參數未定案」，歸入 `.clarify/aggregate/`。
+G3 的缺口若為「參數未定案」，歸入 `.es-clarify/aggregate/`。
 ---
 
 **釐清項目篩選原則**：
@@ -246,8 +246,8 @@ G3 的缺口若為「參數未定案」，歸入 `.clarify/aggregate/`。
 僅納入其答案會實質影響**軟體邊界判斷、事件時序、Aggregate 建模、規則驗收、Actor 權限或 Read Model 設計**的問題。
 
 **避免重複提問原則**：
-在建立新的釐清項目前，必須先檢查 `.clarify/resolved/` 目錄：
-- 掃描 `.clarify/resolved/` 下所有已解決的釐清項目
+在建立新的釐清項目前，必須先檢查 `.es-clarify/resolved/` 目錄：
+- 掃描 `.es-clarify/resolved/` 下所有已解決的釐清項目
 - 檢查問題主題是否已被回答（即使問法略有不同）
 - 若該問題已在 resolved 中有解決記錄，則不重複建立新的釐清項目
 - 若問題角度不同但相關，應在新釐清項目的「定位」或「影響範圍」中註記相關的已解決項目
@@ -257,7 +257,7 @@ G3 的缺口若為「參數未定案」，歸入 `.clarify/aggregate/`。
 **前置步驟：檢查已解決項目**
 
 在建立任何釐清項目檔案前：
-1. 讀取 `.clarify/resolved/` 目錄結構
+1. 讀取 `.es-clarify/resolved/` 目錄結構
 2. 列出所有已解決的釐清項目檔案名稱
 3. 對於每個待建立的釐清項目，比對其問題主題是否已存在於 resolved 中
 4. 若已存在，跳過該釐清項目的建立
@@ -270,11 +270,11 @@ G3 的缺口若為「參數未定案」，歸入 `.clarify/aggregate/`。
 
 | 資料夾 | 收納對象 | 範例 |
 |--------|----------|------|
-| `.clarify/event/` | Event 的識別、命名、時序、軟體邊界（檢查項 A） | `.clarify/event/訓練課表已完成_逾期未完成是否算完成.md` |
-| `.clarify/command/` | Command 的識別、輸入、以及執行它的 Actor 與權限（檢查項 B） | `.clarify/command/記錄訓練組數_誰可以代替學員記錄.md` |
-| `.clarify/rule/` | 前置條件、後置條件、邊界條件、例外路徑（檢查項 C） | `.clarify/rule/記錄訓練組數_重量為零時是否合法.md` |
-| `.clarify/aggregate/` | Aggregate 的欄位、不變條件、關係、狀態機（檢查項 D1–D5） | `.clarify/aggregate/訓練紀錄_總訓練量如何計算.md` |
-| `.clarify/read-model/` | Read Model 的欄位、來源、即時性（檢查項 D6） | `.clarify/read-model/本週訓練總覽_週的起算日為何.md` |
+| `.es-clarify/event/` | Event 的識別、命名、時序、軟體邊界（檢查項 A） | `.es-clarify/event/訓練課表已完成_逾期未完成是否算完成.md` |
+| `.es-clarify/command/` | Command 的識別、輸入、以及執行它的 Actor 與權限（檢查項 B） | `.es-clarify/command/記錄訓練組數_誰可以代替學員記錄.md` |
+| `.es-clarify/rule/` | 前置條件、後置條件、邊界條件、例外路徑（檢查項 C） | `.es-clarify/rule/記錄訓練組數_重量為零時是否合法.md` |
+| `.es-clarify/aggregate/` | Aggregate 的欄位、不變條件、關係、狀態機（檢查項 D1–D5） | `.es-clarify/aggregate/訓練紀錄_總訓練量如何計算.md` |
+| `.es-clarify/read-model/` | Read Model 的欄位、來源、即時性（檢查項 D6） | `.es-clarify/read-model/本週訓練總覽_週的起算日為何.md` |
 
 命名格式：`<元素名>_<問題全句，以底線代替分隔符號>.md`
 
@@ -312,7 +312,7 @@ G3 的缺口若為「參數未定案」，歸入 `.clarify/aggregate/`。
 # 影響範圍
 
 <說明此釐清將影響哪些 Event、Command、Actor、Rule、Aggregate 欄位或 Read Model；
- 若與 .clarify/resolved/ 中的已解決項目相關，於此註記。>
+ 若與 .es-clarify/resolved/ 中的已解決項目相關，於此註記。>
 
 # 優先級
 
@@ -324,7 +324,7 @@ G3 的缺口若為「參數未定案」，歸入 `.clarify/aggregate/`。
 
 ## 3. 產生 Overview 文件
 
-在 `.clarify/overview.md` 中產生釐清策略總覽，內容包含：
+在 `.es-clarify/overview.md` 中產生釐清策略總覽，內容包含：
 
 ### 3.1 釐清項目統計
 
@@ -346,23 +346,23 @@ G3 的缺口若為「參數未定案」，歸入 `.clarify/aggregate/`。
 **核心原則**：順著事件風暴的推導方向 —「先確定發生了什麼，再問誰做了什麼、要遵守什麼、狀態長什麼樣」。不可跳過前一層直接問後一層。
 
 1. **第一階段：Event 與軟體邊界**
-   - 列出 `.clarify/event/` 中的 High 優先級項目
+   - 列出 `.es-clarify/event/` 中的 High 優先級項目
    - 原因：Event 是切入點，也決定了哪些流程要進系統。若 Event 本身不成立，後續 Command 與 Aggregate 全部白做。
 
 2. **第二階段：Command 與 Actor**
-   - 列出 `.clarify/command/` 中的 High 優先級項目
+   - 列出 `.es-clarify/command/` 中的 High 優先級項目
    - 原因：確認「誰在與系統互動」以及互動的觸發源，才能定義規則的檢核對象。
 
 3. **第三階段：核心 Aggregate 與狀態機**
-   - 列出 `.clarify/aggregate/` 中的 High 優先級項目
+   - 列出 `.es-clarify/aggregate/` 中的 High 優先級項目
    - 原因：Command 的目的是修改 Aggregate 狀態，欄位與狀態機不清則規則無從寫起。
 
 4. **第四階段：Rules 的前置 / 後置條件**
-   - 列出 `.clarify/rule/` 中的 High 與 Medium 優先級項目
+   - 列出 `.es-clarify/rule/` 中的 High 與 Medium 優先級項目
    - 原因：規則即驗收標準，需建立在已確定的 Command 與 Aggregate 之上。
 
 5. **第五階段：邊界條件與 Read Model**
-   - 交錯列出 `.clarify/rule/`（邊界、例外）與 `.clarify/read-model/` 的 Medium 項目
+   - 交錯列出 `.es-clarify/rule/`（邊界、例外）與 `.es-clarify/read-model/` 的 Medium 項目
    - 原因：補足臨界案例，並確認 Actor 決策所需的資訊來源。
 
 6. **第六階段：命名、術語與細節**
@@ -403,7 +403,7 @@ G3 的缺口若為「參數未定案」，歸入 `.clarify/aggregate/`。
 - 掃描完成的模型檔案清單
 - 釐清項目總數（分 Event / Command / Rule / Aggregate / Read Model）
 - 優先級分佈（High / Medium / Low）
-- `.clarify/` 資料夾結構概覽
+- `.es-clarify/` 資料夾結構概覽
 - 提示使用者執行 `/es-formulation` 進行下一階段釐清互動
 
 # 行為規則
@@ -419,8 +419,8 @@ G3 的缺口若為「參數未定案」，歸入 `.clarify/aggregate/`。
 
 # 輸出格式要求
 
-1. **釐清項目檔案** → `.clarify/event/*.md`、`.clarify/command/*.md`、`.clarify/rule/*.md`、`.clarify/aggregate/*.md`、`.clarify/read-model/*.md`
-2. **總覽文件** → `.clarify/overview.md`
+1. **釐清項目檔案** → `.es-clarify/event/*.md`、`.es-clarify/command/*.md`、`.es-clarify/rule/*.md`、`.es-clarify/aggregate/*.md`、`.es-clarify/read-model/*.md`
+2. **總覽文件** → `.es-clarify/overview.md`
 3. **完成報告** → 終端輸出或回覆訊息
 
 # 與 Formulation 階段的銜接
