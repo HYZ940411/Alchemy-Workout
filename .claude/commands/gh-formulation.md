@@ -9,7 +9,10 @@ description: 讀取 .gh-clarify/ 中的翻譯釐清項目，依 overview.md 的�
 1. 讀取 `.gh-clarify/overview.md`。若不存在，回報「請先執行 `/gh-discovery`」並停止。
 2. 讀取 `.gh-clarify/` 下所有釐清項目檔案（`feature/`、`when/`、`given/`、`then/`、`outline/`、`query/`、`organization/`）。
 3. 讀取 `.gh-clarify/resolved/` 下所有已解決項目，作為本階段的既有翻譯慣例。
-4. 讀取 `.es-clarify/resolved/` 下所有已解決項目，作為**業務面的既有共識**。回答任何一題時都不得與其矛盾。
+4. **比對業務面既有共識**：`.es-clarify/resolved/` 有 392 檔、約 27,600 行，**不得整批讀取**。
+   改為先讀 `.es-clarify/overview.md`，再於**每一題出題前**，以該題的 Command / Event / Aggregate 名稱
+   對 resolved 檔名做關鍵字比對，命中者才開檔細讀。回答任何一題時都不得與其矛盾。
+   （這一步也是〈推薦選項〉的依據來源——推薦理由若聲稱「模型已有某慣例」，必須來自實際開過的那個檔案。）
 5. 讀取事件風暴模型檔（`Event-Storming_事件風暴/` 全部檔案）作為翻譯素材來源。
 6. 讀取 `Gherkin_行為規格/00_翻譯規約.md`（若不存在，於第一次回寫時建立）。
 7. 讀取已產出的 `Gherkin_行為規格/features/**/*.feature`（若有）。
