@@ -1,0 +1,69 @@
+graph TD
+    %% ============================================================
+    %% 統一流程（Greenfield / 新功能 / 改變需求 共用）
+    %% ============================================================
+
+    subgraph "Step 1-2: 理解意圖 + 流程對齊"
+        IDEA["Idea (raw text)"]
+        CA["Composition Analysis\n組成盤點表\n/aibdd.composition-analysis"]
+        FT["Flow Alignment\n(Flow Tree / Delta Review)"]
+    end
+
+    subgraph "Step 3-4: 掃描 + 影響分析"
+        SR["Structural Read\n(Greenfield = 空集)"]
+        IA["Impact Analysis\n→ Execution Plan\n(create / modify / delete)"]
+    end
+
+    subgraph "Step 5-7: 行為設計 + 品質驗收"
+        ACT["activities/*.activity\n(或 *.mmd)\n/aibdd.form.activity"]
+        FEAT["features/**/*.feature\n(Rules only, @ignore)\n/aibdd.form.feature-spec"]
+        ACTOR["specs/actors/*.md"]
+        QG["Quality Gate\nActor 合法 + F1-F6 + CiC=0"]
+    end
+
+    subgraph "Phase 01 Output"
+        EP["Execution Plan\n(Phase 02-08 scope)"]
+    end
+
+    %% 正向推導
+    IDEA -->|"拆解"| CA
+    CA -->|"意圖摘要"| FT
+    FT -->|"user confirm"| SR
+    SR -->|"Spec Inventory\n+ Cross-Ref Map"| IA
+    IA -->|"scope 指引"| ACT
+    ACT -->|"STEP binding"| FEAT
+    ACT -->|"ACTOR 宣告"| ACTOR
+    IA -->|"產出"| EP
+
+    %% 品質門檻
+    FEAT --> QG
+    ACT --> QG
+    QG -->|"通過"| EP
+
+    %% 逆向回饋（Clarify Loop）
+    FEAT -.->|"CiC 澄清"| FEAT
+    ACT -.->|"CiC 澄清"| ACT
+    FEAT -.->|"Rule 變動"| ACT
+    QG -.->|"掃描失敗\n→ 回退 Clarify"| FEAT
+
+    %% Structural Read 讀取既有規格（Existing 時）
+    ACT -.->|"讀取既有"| SR
+    FEAT -.->|"讀取既有"| SR
+
+    %% ============================================================
+    %% 後續 Phase（由 Execution Plan 驅動）
+    %% ============================================================
+
+    subgraph "Phase 02-04: External Quality (Reconcilers)"
+        ERM["Phase 02: entity/erm.dbml\n/aibdd.form.entity-spec"]
+        BDD["Phase 03: BDD Analysis\n系統抽象 + 句型 + Examples\n/aibdd.form.bdd-analysis"]
+        API["Phase 04: api/api.yml\n/aibdd.form.api-spec"]
+    end
+
+    EP -->|"scope"| ERM
+    EP -->|"scope"| BDD
+    EP -->|"scope"| API
+    FEAT -->|"Rules + DataTable"| ERM
+    FEAT -->|"Rules + DataTable"| BDD
+    FEAT -->|"command/query"| API
+    ERM -->|"Boundary 偵測\n(web-backend)"| BDD

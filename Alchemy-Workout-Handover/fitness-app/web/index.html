@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+  <!-- 部署到子路徑時要改這裡，前後都要有斜線。
+       `flutter build web --base-href` 會覆寫它。 -->
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="description"
+        content="把訓練變成看得見的六維能力值 —— 健身記錄、遊戲化階級與師徒社群。">
+
+  <!-- 加到 iOS 主畫面時的樣子。標題不設會變成網址。 -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="健金術">
+  <meta name="theme-color" content="#F5A623">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <title>健金術 Alchemy Workout</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* 載入畫面。
+       首次載入要抓約 4 MB（程式碼 ＋ 字型 ＋ CanvasKit），在手機網路上
+       是好幾秒的白畫面 —— 測試者會以為壞了就關掉。用的顏色與字級
+       都取自 App 自己的設計 token（C.bgPage / C.actionPrimary），
+       銜接才不會突兀。 */
+    html, body { margin: 0; padding: 0; height: 100%; background: #F9F9F9; }
+    #boot {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #F9F9F9;
+      font-family: -apple-system, BlinkMacSystemFont, "Noto Sans TC",
+                   "PingFang TC", "Microsoft JhengHei", sans-serif;
+      /* 淡出而不是瞬間消失：Flutter 的第一幀與這層之間會有一瞬間的落差 */
+      transition: opacity .25s ease-out;
+    }
+    #boot.done { opacity: 0; pointer-events: none; }
+    #boot .ring {
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 3px solid #F0E2C8; border-top-color: #F5A623;
+      animation: spin .9s linear infinite;
+    }
+    #boot .name {
+      margin-top: 18px; font-size: 15px; font-weight: 600; color: #1C1C1E;
+      letter-spacing: .04em;
+    }
+    #boot .hint { margin-top: 6px; font-size: 12px; color: #6E6E73; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* 使用者要求減少動態時就不要轉 */
+    @media (prefers-reduced-motion: reduce) {
+      #boot .ring { animation: none; border-top-color: #F0E2C8; }
+    }
+  </style>
+</head>
+<body>
+  <div id="boot">
+    <div class="ring"></div>
+    <div class="name">健金術</div>
+    <div class="hint">首次開啟需要載入資源，請稍候</div>
+  </div>
+
+  <script>
+    // Flutter 畫出第一幀就把載入層收掉。
+    // 另外壓一個 20 秒的保險：萬一事件沒來（舊瀏覽器、載入失敗），
+    // 也不要讓使用者永遠盯著一個轉圈 —— 那比看到錯誤更難處理。
+    (function () {
+      var boot = document.getElementById('boot');
+      if (!boot) return;
+      function dismiss() {
+        boot.classList.add('done');
+        setTimeout(function () { boot.remove(); }, 300);
+      }
+      window.addEventListener('flutter-first-frame', dismiss, { once: true });
+      setTimeout(dismiss, 20000);
+    })();
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

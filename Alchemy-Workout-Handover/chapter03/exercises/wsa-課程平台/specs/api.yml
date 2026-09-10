@@ -1,0 +1,1214 @@
+openapi: 3.0.3
+info:
+  title: WSA 課程平台 API
+  description: WSA 課程平台的 RESTful API 規範
+  version: 1.0.0
+  contact:
+    name: WSA Team
+
+servers:
+  - url: https://api.wsa-platform.com/v1
+    description: 生產環境
+  - url: https://api-staging.wsa-platform.com/v1
+    description: 測試環境
+
+tags:
+  - name: 課程進度
+    description: 課程進度相關操作
+  - name: 課程查詢
+    description: 課程查詢相關操作
+  - name: 商品
+    description: 商品相關操作
+  - name: 訂單
+    description: 訂單相關操作
+  - name: 用戶角色
+    description: 用戶角色相關操作
+
+paths:
+  /courses/{courseId}/progress:
+    post:
+      tags:
+        - 課程進度
+      summary: 用戶 "{username}" 更新課程 {courseId} 的影片進度為 {progress}%
+      description: |
+        更新用戶的影片課程進度
+        
+        **對應 Feature**: 01-增加影片進度.dsl.feature
+        
+        **業務規則**:
+        - 用戶必須同時擁有「旅程購買」和「旅程訂閱狀態」角色
+        - 影片進度必須單調遞增
+        - 進度值必須在 0-100% 之間
+        - 觀看至 100% 則課程完成
+        - 已交付的課程仍可更新進度，但狀態不變
+      operationId: updateCourseProgress
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          description: 課程 ID
+          schema:
+            type: integer
+            example: 1
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - progress
+              properties:
+                progress:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                  description: 影片進度百分比
+                  example: 80
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      courseId:
+                        type: integer
+                        example: 1
+                      progress:
+                        type: integer
+                        example: 80
+                      status:
+                        type: string
+                        enum: [未開始, 進行中, 已完成, 已交付]
+                        example: 進行中
+        '400':
+          description: 請求參數錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                progressDecreased:
+                  value:
+                    success: false
+                    error:
+                      code: PROGRESS_DECREASED
+                      message: 進度不可倒退
+                outOfRange:
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_PROGRESS
+                      message: 進度值必須在 0-100 之間
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error:
+                  code: PERMISSION_DENIED
+                  message: 權限不足
+
+    get:
+      tags:
+        - 課程查詢
+      summary: 用戶 "{username}" 查詢課程 {courseId} 的進度
+      description: |
+        查詢用戶的課程進度資訊
+        
+        **對應 Feature**: 04-查詢課程進度.dsl.feature
+        
+        **業務規則**:
+        - 學生必須同時擁有「旅程購買」和「旅程訂閱狀態」角色
+        - 成功查詢應回傳完整的課程進度資訊
+      operationId: getCourseProgress
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          description: 課程 ID
+          schema:
+            type: integer
+            example: 1
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CourseProgress'
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /courses/{courseId}/submissions:
+    post:
+      tags:
+        - 課程進度
+      summary: 用戶 "{username}" 提交課程 {courseId} 的挑戰題作業
+      description: |
+        提交挑戰題課程的作業
+        
+        **對應 Feature**: 02-提交挑戰題作業.dsl.feature
+        
+        **業務規則**:
+        - 用戶必須同時擁有「旅程購買」和「旅程訂閱狀態」角色
+        - 提交挑戰題作業直接完成
+        - 只能提交挑戰題課程類型的作業
+      operationId: submitChallengeAssignment
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          description: 課程 ID
+          schema:
+            type: integer
+            example: 3
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                submissionData:
+                  type: object
+                  description: 作業提交資料
+                  additionalProperties: true
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      courseId:
+                        type: integer
+                        example: 3
+                      status:
+                        type: string
+                        example: 已完成
+        '400':
+          description: 請求錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error:
+                  code: INVALID_COURSE_TYPE
+                  message: 無法提交非挑戰題課程的作業
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /courses/{courseId}/deliveries:
+    post:
+      tags:
+        - 課程進度
+      summary: 用戶 "{username}" 交付課程 {courseId}
+      description: |
+        交付已完成的課程並獲得經驗值獎勵
+        
+        **對應 Feature**: 03-交付課程.dsl.feature
+        
+        **業務規則**:
+        - 用戶必須同時擁有「旅程購買」和「旅程訂閱狀態」角色
+        - 課程完成後才能交付
+        - 交付課程後獲得經驗值和升級
+        - 無法重複交付課程
+      operationId: deliverCourse
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          description: 課程 ID
+          schema:
+            type: integer
+            example: 1
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      courseId:
+                        type: integer
+                        example: 1
+                      status:
+                        type: string
+                        example: 已交付
+                      experienceGained:
+                        type: integer
+                        description: 獲得的經驗值
+                        example: 300
+                      newLevel:
+                        type: integer
+                        description: 新的用戶等級
+                        example: 3
+                      leveledUp:
+                        type: boolean
+                        description: 是否升級
+                        example: true
+        '400':
+          description: 請求錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notCompleted:
+                  value:
+                    success: false
+                    error:
+                      code: COURSE_NOT_COMPLETED
+                      message: 課程未完成，無法交付
+                alreadyDelivered:
+                  value:
+                    success: false
+                    error:
+                      code: ALREADY_DELIVERED
+                      message: 課程已交付，無法重複交付
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /journeys/{journeyId}/courses:
+    get:
+      tags:
+        - 課程查詢
+      summary: 用戶 "{username}" 查詢旅程 {journeyId} 的課程清單
+      description: |
+        查詢指定旅程的所有課程清單
+        
+        **對應 Feature**: 05-查詢課程清單.dsl.feature
+        
+        **業務規則**:
+        - 學生必須同時擁有「旅程購買」和「旅程訂閱狀態」角色
+        - 查詢結果應包含學生的進度狀態
+      operationId: getJourneyCourses
+      parameters:
+        - name: journeyId
+          in: path
+          required: true
+          description: 旅程 ID
+          schema:
+            type: integer
+            example: 1
+        - name: chapterId
+          in: query
+          required: false
+          description: 章節 ID（可選，用於查詢特定章節的課程）
+          schema:
+            type: integer
+            example: 1
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      journeyId:
+                        type: integer
+                        example: 1
+                      chapterId:
+                        type: integer
+                        nullable: true
+                        example: 1
+                      courses:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CourseWithProgress'
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /journeys/{journeyId}/chapters/{chapterId}/courses:
+    get:
+      tags:
+        - 課程查詢
+      summary: 用戶 "{username}" 查詢旅程 {journeyId} 章節 {chapterId} 的課程清單
+      description: |
+        查詢指定旅程特定章節的課程清單
+        
+        **對應 Feature**: 05-查詢課程清單.dsl.feature
+        
+        **業務規則**:
+        - 學生必須同時擁有「旅程購買」和「旅程訂閱狀態」角色
+        - 查詢結果應包含學生的進度狀態
+      operationId: getChapterCourses
+      parameters:
+        - name: journeyId
+          in: path
+          required: true
+          description: 旅程 ID
+          schema:
+            type: integer
+            example: 1
+        - name: chapterId
+          in: path
+          required: true
+          description: 章節 ID
+          schema:
+            type: integer
+            example: 1
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      journeyId:
+                        type: integer
+                        example: 1
+                      chapterId:
+                        type: integer
+                        example: 1
+                      courses:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CourseWithProgress'
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /products:
+    get:
+      tags:
+        - 商品
+      summary: 用戶 "{username}" 查詢商品清單
+      description: |
+        查詢平台上的商品清單
+        
+        **對應 Feature**: 06-查詢商品清單.dsl.feature
+        
+        **業務規則**:
+        - 查詢商品無特殊前置狀態條件
+        - 可透過狀態參數篩選商品
+        - 查詢結果應包含所有商品資訊及方案項目
+      operationId: getProducts
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: 商品狀態篩選
+          schema:
+            type: string
+            enum: [上架中, 已下架]
+            example: 上架中
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      products:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Product'
+        '400':
+          description: 請求參數錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: 狀態篩選參數必須有效
+
+  /orders:
+    post:
+      tags:
+        - 訂單
+      summary: 用戶 "{username}" 建立訂單，商品 ID 為 {productId}，數量為 {quantity}
+      description: |
+        建立新的訂單
+        
+        **對應 Feature**: 07-建立訂單.dsl.feature
+        
+        **業務規則**:
+        - 已有「旅程購買」角色的用戶不可購買包含該角色的商品
+        - 商品必須存在且上架中
+        - 訂單項目不可重複
+        - 折扣券必須有效且屬於用戶
+        - 成功建立訂單應回傳訂單編號和付款期限
+      operationId: createOrder
+      parameters:
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - items
+              properties:
+                items:
+                  type: array
+                  description: 訂單項目清單
+                  items:
+                    type: object
+                    required:
+                      - productId
+                      - quantity
+                    properties:
+                      productId:
+                        type: integer
+                        description: 商品 ID
+                        example: 1
+                      quantity:
+                        type: integer
+                        minimum: 1
+                        description: 數量
+                        example: 1
+                couponIds:
+                  type: array
+                  description: 使用的折扣券 ID 清單
+                  items:
+                    type: integer
+                  example: [1, 2]
+      responses:
+        '201':
+          description: 訂單建立成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      orderNumber:
+                        type: string
+                        description: 訂單編號（18位數字）
+                        pattern: '^\d{18}$'
+                        example: "202312151430220001"
+                      totalPrice:
+                        type: number
+                        description: 訂單總價
+                        example: 8800
+                      paymentDeadline:
+                        type: string
+                        format: date-time
+                        description: 付款期限（建立時間+3天）
+                        example: "2023-12-18T14:30:22Z"
+                      status:
+                        type: string
+                        example: 已建立
+        '400':
+          description: 請求錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                productNotFound:
+                  value:
+                    success: false
+                    error:
+                      code: PRODUCT_NOT_FOUND
+                      message: 商品不存在
+                productOffShelf:
+                  value:
+                    success: false
+                    error:
+                      code: PRODUCT_OFF_SHELF
+                      message: 商品已下架
+                duplicateItems:
+                  value:
+                    success: false
+                    error:
+                      code: DUPLICATE_ITEMS
+                      message: 訂單項目重複
+                invalidCoupon:
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_COUPON
+                      message: 折扣券無效
+                alreadyPurchased:
+                  value:
+                    success: false
+                    error:
+                      code: ALREADY_PURCHASED
+                      message: 已購買此旅程，無法再次購買包含首購的商品
+
+  /orders/{orderNumber}:
+    get:
+      tags:
+        - 訂單
+      summary: 用戶 "{username}" 查詢訂單編號為 "{orderNumber}" 的訂單
+      description: |
+        查詢指定訂單的詳細資訊
+        
+        **對應 Feature**: 08-查詢訂單.dsl.feature
+        
+        **業務規則**:
+        - 只能查詢自己的訂單
+        - 訂單編號必須存在
+        - 查詢結果應包含完整訂單資訊
+      operationId: getOrder
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          description: 訂單編號
+          schema:
+            type: string
+            pattern: '^\d{18}$'
+            example: "20231215143022AB12"
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error:
+                  code: PERMISSION_DENIED
+                  message: 權限不足
+        '404':
+          description: 訂單不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error:
+                  code: ORDER_NOT_FOUND
+                  message: 訂單不存在
+
+  /orders/{orderId}/payments:
+    post:
+      tags:
+        - 訂單
+      summary: 用戶 "{username}" 對訂單 {orderId} 進行付款，付款方式為 "{paymentMethod}"
+      description: |
+        對訂單進行付款
+        
+        **對應 Feature**: 09-訂單付款.dsl.feature
+        
+        **業務規則**:
+        - 只能為已建立狀態的訂單付款
+        - 只能付款自己的訂單
+        - 付款後訂單狀態應更新為處理中
+        - 付款完成後應根據商品的方案項目授予旅程角色
+      operationId: payOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          description: 訂單 ID
+          schema:
+            type: integer
+            example: 1
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - paymentMethod
+              properties:
+                paymentMethod:
+                  type: string
+                  enum: [信用卡, ATM轉帳, 無卡分期]
+                  description: 付款方式
+                  example: 信用卡
+                paymentProvider:
+                  type: string
+                  enum: [藍新金流, 中租零卡分期]
+                  description: 付款服務提供商
+                  example: 藍新金流
+      responses:
+        '200':
+          description: 付款請求成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      orderId:
+                        type: integer
+                        example: 1
+                      paymentMethod:
+                        type: string
+                        example: 信用卡
+                      paymentAmount:
+                        type: number
+                        example: 9800
+                      paymentProvider:
+                        type: string
+                        example: 藍新金流
+                      orderStatus:
+                        type: string
+                        example: 處理中
+                      rolesGranted:
+                        type: array
+                        description: 授予的旅程角色
+                        items:
+                          type: object
+                          properties:
+                            journeyId:
+                              type: integer
+                            roleType:
+                              type: string
+                              enum: [旅程購買, 旅程訂閱狀態]
+        '400':
+          description: 請求錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error:
+                  code: INVALID_ORDER_STATUS
+                  message: 訂單狀態不允許付款
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orders/{orderId}/cancellations:
+    post:
+      tags:
+        - 訂單
+      summary: 用戶 "{username}" 取消訂單 {orderId}
+      description: |
+        取消訂單
+        
+        **對應 Feature**: 10-取消訂單.dsl.feature
+        
+        **業務規則**:
+        - 只能取消已建立或處理中的訂單
+        - 只能取消自己的訂單
+        - 訂單必須存在
+        - 取消訂單後狀態應更新為已取消
+        - 取消訂單後應釋放使用的折扣券
+      operationId: cancelOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          description: 訂單 ID
+          schema:
+            type: integer
+            example: 1
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+      responses:
+        '200':
+          description: 取消成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      orderId:
+                        type: integer
+                        example: 1
+                      status:
+                        type: string
+                        example: 已取消
+                      couponsReleased:
+                        type: array
+                        description: 釋放的折扣券 ID
+                        items:
+                          type: integer
+                        example: [1]
+        '400':
+          description: 請求錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidStatus:
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_ORDER_STATUS
+                      message: 訂單狀態不允許取消
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 訂單不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error:
+                  code: ORDER_NOT_FOUND
+                  message: 訂單不存在
+
+  /users/{username}/roles:
+    get:
+      tags:
+        - 用戶角色
+      summary: 用戶 "{username}" 查詢角色清單
+      description: |
+        查詢用戶的所有有效角色清單
+        
+        **對應 Feature**: 11-查詢用戶角色清單.dsl.feature
+        
+        **業務規則**:
+        - 只能查詢自己的角色清單
+        - 查詢結果應包含所有有效角色（不包含已撤銷的角色）
+      operationId: getUserRoles
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: 用戶名稱
+          schema:
+            type: string
+            example: Alice
+        - name: X-User-Name
+          in: header
+          required: true
+          description: 請求用戶名稱（必須與路徑參數相同）
+          schema:
+            type: string
+            example: Alice
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      username:
+                        type: string
+                        example: Alice
+                      roles:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UserRole'
+        '403':
+          description: 權限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                success: false
+                error:
+                  code: PERMISSION_DENIED
+                  message: 權限不足
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: 錯誤代碼
+              example: PERMISSION_DENIED
+            message:
+              type: string
+              description: 錯誤訊息
+              example: 權限不足
+
+    CourseProgress:
+      type: object
+      properties:
+        username:
+          type: string
+          description: 用戶名稱
+          example: Alice
+        courseId:
+          type: integer
+          description: 課程 ID
+          example: 1
+        courseName:
+          type: string
+          description: 課程名稱
+          example: 物件導向基礎
+        courseType:
+          type: string
+          enum: [影片課程, 問卷課程, 挑戰題課程]
+          description: 課程類型
+          example: 影片課程
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 進度百分比（影片課程適用）
+          example: 70
+        status:
+          type: string
+          enum: [未開始, 進行中, 已完成, 已交付]
+          description: 課程狀態
+          example: 進行中
+
+    CourseWithProgress:
+      type: object
+      properties:
+        courseId:
+          type: integer
+          description: 課程 ID
+          example: 1
+        name:
+          type: string
+          description: 課程名稱
+          example: 物件導向基礎
+        type:
+          type: string
+          enum: [影片課程, 問卷課程, 挑戰題課程]
+          description: 課程類型
+          example: 影片課程
+        chapterName:
+          type: string
+          description: 章節名稱
+          example: 基礎篇
+        experiencePoints:
+          type: integer
+          description: 獎勵經驗值
+          example: 300
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 學生的進度
+          example: 80
+        status:
+          type: string
+          enum: [未開始, 進行中, 已完成, 已交付]
+          description: 學生的課程狀態
+          example: 進行中
+
+    Product:
+      type: object
+      properties:
+        productId:
+          type: integer
+          description: 商品 ID
+          example: 1
+        name:
+          type: string
+          description: 商品名稱
+          example: 軟體設計模式精通之旅
+        price:
+          type: number
+          description: 商品價格
+          example: 9800
+        description:
+          type: string
+          description: 商品描述
+          example: 學習 23 種設計模式
+        status:
+          type: string
+          enum: [上架中, 已下架]
+          description: 商品狀態
+          example: 上架中
+        planItems:
+          type: array
+          description: 方案項目
+          items:
+            type: object
+            properties:
+              planType:
+                type: string
+                enum: [旅程購買, 旅程訂閱]
+                description: 方案類型
+                example: 旅程購買
+              journeyId:
+                type: integer
+                description: 旅程 ID
+                example: 1
+              subscriptionDays:
+                type: integer
+                nullable: true
+                description: 訂閱天數（僅旅程訂閱適用）
+                example: 30
+
+    Order:
+      type: object
+      properties:
+        orderNumber:
+          type: string
+          description: 訂單編號
+          example: "20231215143022AB12"
+        status:
+          type: string
+          enum: [已建立, 處理中, 已付款, 已完成, 已取消]
+          description: 訂單狀態
+          example: 已建立
+        totalPrice:
+          type: number
+          description: 訂單總價
+          example: 9800
+        createdAt:
+          type: string
+          format: date-time
+          description: 建立時間
+          example: "2023-12-15T14:30:22Z"
+        paymentDeadline:
+          type: string
+          format: date-time
+          description: 付款期限
+          example: "2023-12-18T14:30:22Z"
+        items:
+          type: array
+          description: 訂單項目
+          items:
+            type: object
+            properties:
+              productId:
+                type: integer
+                description: 商品 ID
+                example: 1
+              productName:
+                type: string
+                description: 商品名稱
+                example: 軟體設計模式精通之旅
+              unitPrice:
+                type: number
+                description: 單價
+                example: 9800
+              quantity:
+                type: integer
+                description: 數量
+                example: 1
+
+    UserRole:
+      type: object
+      properties:
+        roleId:
+          type: integer
+          description: 角色 ID
+          example: 1
+        roleType:
+          type: string
+          enum: [旅程購買, 旅程訂閱狀態, 旅程老師]
+          description: 角色類型
+          example: 旅程購買
+        journeyId:
+          type: integer
+          description: 旅程 ID
+          example: 1
+        journeyName:
+          type: string
+          description: 旅程名稱
+          example: 軟體設計模式精通之旅
+        grantedAt:
+          type: string
+          format: date-time
+          description: 授予時間
+          example: "2023-12-01T10:00:00Z"
+
+  securitySchemes:
+    UserHeader:
+      type: apiKey
+      in: header
+      name: X-User-Name
+      description: 用戶名稱（用於識別當前操作用戶）
+
+security:
+  - UserHeader: []
+
+
+

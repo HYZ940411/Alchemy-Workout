@@ -1,0 +1,667 @@
+part of 'app_state.dart';
+
+/// 存檔格式版本。欄位語意改變時 +1 —— 舊版存檔一律整份忽略，重新開始。
+///
+/// 不做「盡量套用能認得的欄位」：半套的存檔會讓使用者拿到一個
+/// 自相矛盾的狀態（例如金幣還在、但購買紀錄不見了），比重來一次更難解釋。
+/// 存檔格式版本。**改動任何欄位的形狀就要升這個數字。**
+///
+/// v1 → v2：`MailReward` 由「存一句顯示文字」改為「存數額」。
+/// 當時沒升版本，於是舊存檔的 `content` 被新讀取器忽略、四個數額欄位
+/// 各自預設為 0，下一次自動存檔再把 0 寫回去 —— 信箱裡的獎勵被靜默清空，
+/// 而且不可回復。版本不符時整份忽略、回到假資料，比留下歸零的資料好。
+const int kSnapshotVersion = 2;
+
+String? _iso(DateTime? d) => d?.toIso8601String();
+DateTime? _date(Object? v) =>
+    v is String ? DateTime.tryParse(v) : null;
+
+/// 一筆存檔的識別鍵：類別 ＋ 門檻。用索引的話，成就表一改順序，
+/// 已解鎖的紀錄就會套到別的成就上。
+String _achievementKey(Achievement a) => '${a.category}#${a.threshold}';
+
+
+extension AppStateSnapshot on AppState {
+  // ===========================================================================
+  // 匯出
+  // ===========================================================================
+
+  /// 整份使用者狀態的快照。
+  ///
+  /// **不含**平台目錄與社群假資料（動作庫、貼文、訂單、團隊、後台佇列）——
+  /// 那些在真實系統裡本來就來自伺服器，不是這台裝置上的東西。
+  Map<String, dynamic> toSnapshot() => {
+        'v': kSnapshotVersion,
+        'savedAt': DateTime.now().toIso8601String(),
+
+        // --- 身分與身體數據 ---
+        'displayName': displayName,
+        'bodyweightKg': bodyweightKg,
+        'heightCm': heightCm,
+        'isMale': isMale,
+        'registeredOn': _iso(registeredOn),
+        'signUpCompleted': signUpCompleted,
+
+        // --- 註冊問卷的四個欄位（已落地的值） ---
+        'daysPerWeek': daysPerWeek,
+        'duration': duration,
+        'commonGoal': commonGoal,
+        'experience': experience,
+        'equipmentTier': equipmentTier,
+        'weightUpdatedAt': _iso(weightUpdatedAt),
+        'surveyUpdatedAt': _iso(surveyUpdatedAt),
+        'weightAskSkippedAt': _iso(_weightAskSkippedAt),
+        'surveyAskSkippedAt': _iso(_surveyAskSkippedAt),
+
+        // --- 能力值 ---
+        'points': {for (final e in points.entries) e.key.name: e.value},
+        'pending': {for (final e in pending.entries) e.key.name: e.value},
+        'trainedDims': [for (final d in trainedDims) d.name],
+        'snapshots': {
+          for (final e in snapshots.entries)
+            '${e.key}': {for (final p in e.value.entries) p.key.name: p.value},
+        },
+        'decayTimers': {
+          for (final e in decayTimers.entries)
+            e.key.name: {
+              'lastTrainedDate': _iso(e.value.lastTrainedDate),
+              'nextDecayAt': _iso(e.value.nextDecayAt),
+              'cumulative': e.value.cumulative,
+              'floorReached': e.value.floorReached,
+            },
+        },
+
+        // --- 進度與經濟 ---
+        'totalExp': totalExp,
+        'coins': coins,
+        'trainingStreakDays': trainingStreakDays,
+        // 中斷預告發到哪一階。存起來，重開 App 才不會把同一則預告再發一次。
+        'trainNoticeStage': _trainNoticeStage.name,
+        'checkInNoticeStage': _checkInNoticeStage.name,
+        'totalWorkouts': totalWorkouts,
+        'totalWorkoutDays': totalWorkoutDays,
+        'lastTrainedDate': _iso(lastTrainedDate),
+        // 連續簽到天數不存 —— 它由每日簽到紀錄推算而來。
+        // 存下來就會有兩份可能對不起來的事實，那正是原本的毛病。
+        'checkInTotal': checkInTotal,
+        'checkInLongest': checkInLongest,
+        // 上次簽到日期不存 —— 它就是簽到紀錄裡最晚的那一天。
+        'weeklyScore': weeklyScore,
+        'monthlyScore': monthlyScore,
+        'lockedRankGroup': lockedRankGroup,
+        'lockedMonthlyGroup': lockedMonthlyGroup,
+        'makeupTickets': makeupTickets,
+        'aiMonthly': aiMonthly,
+        'aiPermanent': aiPermanent,
+
+        // --- 當日計數（換日即歸零，但同一天內重開 App 不該重置） ---
+        'expGrantedOn': _iso(_expGrantedOn),
+        'rewardCounterDay': _iso(_rewardCounterDay),
+        'coinsGrantedToday': _coinsGrantedToday,
+        'scoreGrantedToday': _scoreGrantedToday,
+        'maxCompletionToday': _maxCompletionToday,
+        'dailyTaskDay': _iso(_dailyTaskDay),
+        'allTasksBonusGiven': _allTasksBonusGiven,
+        'interactDay': _iso(_interactDay),
+        'interactCounts': {..._interactCounts},
+        'aiResetMonth': _iso(_aiResetMonth),
+        'lastSnapshotOn': _iso(_lastSnapshotOn),
+
+        // --- 任務與成就 ---
+        'dailyTasks': [
+          for (final t in dailyTasks)
+            {
+              'name': t.name,
+              'sourceEvent': t.sourceEvent,
+              'target': t.target,
+              'progress': t.progress,
+              'claimed': t.claimed,
+            },
+        ],
+        'achievements': {
+          for (final a in achievements)
+            if (a.unlocked || a.claimed)
+              _achievementKey(a): {
+                'unlocked': a.unlocked,
+                'claimed': a.claimed,
+                'at': _iso(a.unlockedAt),
+              },
+        },
+        'interactionTotals': {...interactionTotals},
+        // 互動獎勵的請求識別碼。不存的話重開 App 即可對同一篇再領一次。
+        'rewardedRequests': rewardedRequests.toList(),
+        // 等我回應的請求。不存的話重開 App 就消失了，而它們各自有
+        // 168 小時的期限 —— 「還剩幾天」要跨啟動才算得準。
+        'inbox': [for (final r in inbox) r.toJson()],
+        'autoOptimizeCount': autoOptimizeCount,
+        'followTotal': followTotal,
+        'mentorUnlocked': mentorUnlocked,
+
+        // --- 新手 / 回歸任務 ---
+        'noviceStarted': noviceStarted,
+        'noviceSelected': noviceSelected,
+        'noviceChecked': noviceChecked,
+        'noviceFinished': noviceFinished,
+        'noviceRewardClaimed': noviceRewardClaimed,
+        'socialUnlocked': socialUnlocked,
+        'returnTaskAssigned': returnTaskAssigned,
+        'returnTaskAssignedAt': _iso(returnTaskAssignedAt),
+        'returnTaskViewedAt': _iso(returnTaskViewedAt),
+        'returnTaskDone': returnTaskDone,
+        'returnTaskDim': returnTaskDim?.name,
+        'returnRewardClaimed': returnRewardClaimed,
+        // 存紀錄不存計數 —— 連續逾期次數為衍生值。
+        'returnTaskLog': [
+          for (final r in returnTaskLog)
+            {'at': _iso(r.assignedAt), 'overdue': r.overdue},
+        ],
+
+        // --- 訂閱與購買 ---
+        'membership': membership.name,
+        'membershipExpiry': _iso(membershipExpiry),
+        'membershipLockedPlanIds': membershipLockedPlanIds,
+        'purchasedPlanIds': purchasedPlanIds.toList(),
+        'currentPlanId': currentPlan?.id,
+
+        // --- 關注 ---
+        'following': following.toList(),
+        'followers': followers,
+        'peakFollowerCount': peakFollowerCount,
+
+        // --- 訓練歷史與信箱（會隨使用累積，丟了最有感） ---
+        'history': [
+          for (final h in history)
+            {
+              'date': _iso(h.date),
+              'planName': h.planName,
+              'volume': h.volume,
+              'minutes': h.minutes,
+              'calories': h.calories,
+              'exercises': [
+                for (final e in h.exercises)
+                  {
+                    'id': e.id,
+                    'name': e.name,
+                    'isTimed': e.isTimed,
+                    'sets': [
+                      for (final t in e.sets) [t.$1, t.$2],
+                    ],
+                  },
+              ],
+            },
+        ],
+        'mailbox': [
+          for (final m in mailbox)
+            {
+              'source': m.source,
+              // 存數額，不存顯示文字 —— 文字由數額推導。
+              'exp': m.exp,
+              'coins': m.coins,
+              'makeupTickets': m.makeupTickets,
+              'aiCredits': m.aiCredits,
+              'at': _iso(m.at),
+              'claimed': m.claimed,
+            },
+        ],
+        // 每日簽到紀錄：只存已簽到的日子。
+        'checkInRecords': [
+          for (final e in checkInRecords.entries)
+            {'date': _iso(e.key), 'method': e.value.name},
+        ],
+
+        // --- 自建動作 ---
+        'myExercises': [
+          for (final e in myExercises)
+            if (e.isCustom)
+              {
+                'id': e.id,
+                'name': e.name,
+                'dim': e.dim?.name,
+                'equipment': e.equipment,
+                'isBodyweight': e.isBodyweight,
+                'type': e.type.name,
+                'defaultRestSeconds': e.defaultRestSeconds,
+              },
+        ],
+
+        // --- 教官 ---
+        'isInstructor': isInstructor,
+        'instructorReputation': instructorReputation,
+        'peakReputation': peakReputation,
+        'instructorSpecialties': instructorSpecialties.toList(),
+
+        // --- 師徒的週期計數器 ---
+        // 一併存檔，否則重開 App 就等於過了一個新的週 ——
+        // 「每週最多 N 次」的上限會從另一道門重新變成無上限。
+        'mentorWeek': _iso(_mentorWeek),
+        'weeklyQuestionCount': weeklyQuestionCount,
+        'weeklyAnswerCount': weeklyAnswerCount,
+        'weeklyAssigned': weeklyAssigned,
+        'weeklyCompleted': weeklyCompleted,
+        'ratedThisWeek': ratedThisWeek,
+        'taskRatingsThisWeek': taskRatingsThisWeek,
+        'mentorRewardsThisWeek': mentorRewardsThisWeek,
+
+        // 累計違規次數**不隨時間清零**，故必須跨重啟保留 ——
+        // 不存的話每次重開 App 都從警告重新起算。
+        'myViolations': myViolations,
+
+        // --- 設定 ---
+        'ownedEquipment': ownedEquipment.toList(),
+        'aiAutoOptimize': aiAutoOptimize,
+        'abilityPublic': abilityPublic,
+        'overallGradePublic': overallGradePublic,
+        'email': email,
+        'metricUnits': metricUnits,
+        'deletionRequestedAt': _iso(deletionRequestedAt),
+        'deletionCoolingDays': deletionCoolingDays,
+
+        // --- 示範時鐘 ---
+        // 存它是因為退步、冷卻、到期全掛在它身上；不存的話重開就跳回現在，
+        // 剛快轉出來的那些狀態會整批消失。
+        'demoClockOffsetMs': demoClockOffset.inMilliseconds,
+      };
+
+  // ===========================================================================
+  // 匯入
+  // ===========================================================================
+
+  /// 套用一份快照。版本不符即整份忽略，回傳 false。
+  bool applySnapshot(Map<String, dynamic> j) {
+    if (j['v'] != kSnapshotVersion) return false;
+
+    T? pick<T>(String key) => j[key] is T ? j[key] as T : null;
+    int intOf(String key, int fallback) =>
+        j[key] is num ? (j[key] as num).round() : fallback;
+    double dblOf(String key, double fallback) =>
+        j[key] is num ? (j[key] as num).toDouble() : fallback;
+    bool boolOf(String key, bool fallback) => pick<bool>(key) ?? fallback;
+    List<String> strs(String key) => [
+          for (final v in (pick<List>(key) ?? const [])) if (v is String) v,
+        ];
+
+    displayName = pick<String>('displayName') ?? displayName;
+    bodyweightKg = dblOf('bodyweightKg', bodyweightKg);
+    heightCm = dblOf('heightCm', heightCm);
+    isMale = boolOf('isMale', isMale);
+    registeredOn = _date(j['registeredOn']) ?? registeredOn;
+    signUpCompleted = boolOf('signUpCompleted', signUpCompleted);
+
+    daysPerWeek = intOf('daysPerWeek', daysPerWeek);
+    duration = pick<String>('duration') ?? duration;
+    commonGoal = pick<String>('commonGoal') ?? commonGoal;
+    experience = pick<String>('experience') ?? experience;
+    equipmentTier = pick<String>('equipmentTier') ?? equipmentTier;
+    weightUpdatedAt = _date(j['weightUpdatedAt']);
+    surveyUpdatedAt = _date(j['surveyUpdatedAt']);
+    _weightAskSkippedAt = _date(j['weightAskSkippedAt']);
+    _surveyAskSkippedAt = _date(j['surveyAskSkippedAt']);
+
+    void readDims(String key, Map<Dim, int> target) {
+      final m = pick<Map>(key);
+      if (m == null) return;
+      for (final d in Dim.values) {
+        final v = m[d.name];
+        if (v is num) target[d] = v.round();
+      }
+    }
+
+    readDims('points', points);
+    readDims('pending', pending);
+    final dims = strs('trainedDims');
+    if (pick<List>('trainedDims') != null) {
+      trainedDims
+        ..clear()
+        ..addAll(Dim.values.where((d) => dims.contains(d.name)));
+    }
+
+    final snaps = pick<Map>('snapshots');
+    if (snaps != null) {
+      snapshots.clear();
+      snaps.forEach((k, v) {
+        final day = int.tryParse('$k');
+        if (day == null || v is! Map) return;
+        snapshots[day] = {
+          for (final d in Dim.values)
+            if (v[d.name] is num) d: (v[d.name] as num).round(),
+        };
+      });
+    }
+
+    final timers = pick<Map>('decayTimers');
+    if (timers != null) {
+      for (final d in Dim.values) {
+        final t = timers[d.name];
+        if (t is! Map) continue;
+        final last = _date(t['lastTrainedDate']);
+        if (last == null) continue;
+        decayTimers[d] = DimDecay(lastTrainedDate: last)
+          ..nextDecayAt = _date(t['nextDecayAt'])
+          ..cumulative = t['cumulative'] is num
+              ? (t['cumulative'] as num).round()
+              : 0
+          ..floorReached = t['floorReached'] == true;
+      }
+    }
+
+    totalExp = intOf('totalExp', totalExp);
+    coins = intOf('coins', coins);
+    trainingStreakDays = intOf('trainingStreakDays', trainingStreakDays);
+    _trainNoticeStage =
+        _enumByName(DecayStage.values, j['trainNoticeStage']) ??
+            _trainNoticeStage;
+    _checkInNoticeStage =
+        _enumByName(CheckInStage.values, j['checkInNoticeStage']) ??
+            _checkInNoticeStage;
+    totalWorkouts = intOf('totalWorkouts', totalWorkouts);
+    totalWorkoutDays = intOf('totalWorkoutDays', totalWorkoutDays);
+    lastTrainedDate = _date(j['lastTrainedDate']) ?? lastTrainedDate;
+    // 舊存檔可能仍帶著 checkInStreak，一律忽略：以簽到紀錄推算為準。
+    checkInTotal = intOf('checkInTotal', checkInTotal);
+    checkInLongest = intOf('checkInLongest', checkInLongest);
+    // 舊存檔可能仍帶著 lastCheckInDate，一律忽略：以簽到紀錄為準。
+    weeklyScore = intOf('weeklyScore', weeklyScore);
+    monthlyScore = intOf('monthlyScore', monthlyScore);
+    // 空值有意義（本週期尚未鎖定），故不能用「取不到就沿用」的寫法。
+    lockedRankGroup =
+        j['lockedRankGroup'] is num ? (j['lockedRankGroup'] as num).round() : null;
+    lockedMonthlyGroup = j['lockedMonthlyGroup'] is num
+        ? (j['lockedMonthlyGroup'] as num).round()
+        : null;
+    makeupTickets = intOf('makeupTickets', makeupTickets);
+    aiMonthly = intOf('aiMonthly', aiMonthly);
+    aiPermanent = intOf('aiPermanent', aiPermanent);
+
+    _expGrantedOn = _date(j['expGrantedOn']);
+    _rewardCounterDay = _date(j['rewardCounterDay']);
+    _coinsGrantedToday = intOf('coinsGrantedToday', 0);
+    _scoreGrantedToday = intOf('scoreGrantedToday', 0);
+    _maxCompletionToday = dblOf('maxCompletionToday', 0);
+    _dailyTaskDay = _date(j['dailyTaskDay']);
+    _allTasksBonusGiven = boolOf('allTasksBonusGiven', false);
+    _interactDay = _date(j['interactDay']);
+    final counts = pick<Map>('interactCounts');
+    if (counts != null) {
+      _interactCounts
+        ..clear()
+        ..addAll({
+          for (final e in counts.entries)
+            if (e.value is num) '${e.key}': (e.value as num).round(),
+        });
+    }
+    _aiResetMonth = _date(j['aiResetMonth']);
+    _lastSnapshotOn = _date(j['lastSnapshotOn']);
+
+    final tasks = pick<List>('dailyTasks');
+    if (tasks != null) {
+      dailyTasks = [
+        for (final t in tasks)
+          if (t is Map && t['name'] is String)
+            DailyTask(
+              name: t['name'] as String,
+              sourceEvent: '${t['sourceEvent']}',
+              target: t['target'] is num ? (t['target'] as num).round() : 1,
+              progress:
+                  t['progress'] is num ? (t['progress'] as num).round() : 0,
+              claimed: t['claimed'] == true,
+            ),
+      ];
+      if (dailyTasks.isEmpty) dailyTasks = buildDailyTasks();
+    }
+
+    final unlocked = pick<Map>('achievements');
+    if (unlocked != null) {
+      for (final a in achievements) {
+        final e = unlocked[_achievementKey(a)];
+        // **存檔是權威**：先一律歸為未解鎖，再套用存檔說的。
+        //
+        // 不能寫成 `存檔 || 現況` —— 建構子會先對**假資料**跑一次
+        // [_syncAchievements]（預設 totalExp 1700 ＝ 45 階），
+        // 那一次解鎖的成就會被 `|| 現況` 保留下來，蓋在真實存檔之上。
+        // 結果就是成就頁寫「達到 45 階 ✓」，個人頁寫「38 階」。
+        // 解鎖為單調遞增指的是**同一個帳號存續期間**，不是跨存檔載入。
+        a.unlocked = e is Map && e['unlocked'] == true;
+        a.claimed = e is Map && e['claimed'] == true;
+        a.unlockedAt = e is Map ? _date(e['at']) : null;
+      }
+      // 載入後再依真實進度補上該解的 —— 存檔沒記到的（如舊版存檔）不漏掉。
+      syncAchievementsAfterLoad();
+    }
+
+    final box = pick<List>('inbox');
+    if (box != null) {
+      inbox
+        ..clear()
+        ..addAll(box.map(InboundRequest.fromJson).nonNulls);
+    }
+    final reqs = pick<List>('rewardedRequests');
+    if (reqs != null) {
+      rewardedRequests
+        ..clear()
+        ..addAll(reqs.map((e) => '$e'));
+    }
+    final totals = pick<Map>('interactionTotals');
+    if (totals != null) {
+      for (final e in totals.entries) {
+        if (e.value is num) {
+          interactionTotals['${e.key}'] = (e.value as num).round();
+        }
+      }
+    }
+
+    followTotal = intOf('followTotal', followTotal);
+    autoOptimizeCount = intOf('autoOptimizeCount', autoOptimizeCount);
+    // 單調遞增：存檔說解鎖過就是解鎖過。
+    if (boolOf('mentorUnlocked', false)) markMentorUnlocked();
+
+    noviceStarted = boolOf('noviceStarted', noviceStarted);
+    noviceSelected = pick<String>('noviceSelected');
+    noviceChecked = boolOf('noviceChecked', noviceChecked);
+    noviceFinished = boolOf('noviceFinished', noviceFinished);
+    noviceRewardClaimed = boolOf('noviceRewardClaimed', noviceRewardClaimed);
+    socialUnlocked = boolOf('socialUnlocked', socialUnlocked);
+    returnTaskAssigned = boolOf('returnTaskAssigned', returnTaskAssigned);
+    returnTaskAssignedAt = _date(j['returnTaskAssignedAt']);
+    returnTaskViewedAt = _date(j['returnTaskViewedAt']);
+    returnTaskDone = boolOf('returnTaskDone', returnTaskDone);
+    returnTaskDim = _enumByName(Dim.values, j['returnTaskDim']);
+    returnRewardClaimed = boolOf('returnRewardClaimed', returnRewardClaimed);
+    if (pick<List>('returnTaskLog') case final rows?) {
+      returnTaskLog
+        ..clear()
+        ..addAll([
+          for (final r in rows.whereType<Map>())
+            if (_date(r['at']) case final at?)
+              (assignedAt: at, overdue: r['overdue'] == true),
+        ]);
+    }
+
+    membership =
+        _enumByName(MembershipState.values, j['membership']) ?? membership;
+    membershipExpiry = _date(j['membershipExpiry']);
+    membershipLockedPlanIds = strs('membershipLockedPlanIds');
+    if (pick<List>('purchasedPlanIds') != null) {
+      purchasedPlanIds
+        ..clear()
+        ..addAll(strs('purchasedPlanIds'));
+    }
+    final planId = pick<String>('currentPlanId');
+    currentPlan = planId == null
+        ? null
+        : platformPlans.where((p) => p.id == planId).firstOrNull;
+
+    if (pick<List>('following') != null) {
+      following
+        ..clear()
+        ..addAll(strs('following'));
+    }
+    if (pick<List>('followers') != null) followers = strs('followers');
+    peakFollowerCount = intOf('peakFollowerCount', peakFollowerCount);
+
+    final hist = pick<List>('history');
+    if (hist != null) {
+      history = [
+        for (final h in hist)
+          if (h is Map && _date(h['date']) != null)
+            HistoryEntry(
+              _date(h['date'])!,
+              '${h['planName']}',
+              h['volume'] is num ? (h['volume'] as num).toDouble() : 0,
+              h['minutes'] is num ? (h['minutes'] as num).round() : 0,
+              h['calories'] is num ? (h['calories'] as num).round() : 0,
+              [
+                for (final e in (h['exercises'] as List? ?? const []))
+                  if (e is Map)
+                    HistoryExercise(
+                      '${e['name']}',
+                      [
+                        for (final t in (e['sets'] as List? ?? const []))
+                          if (t is List && t.length == 2)
+                            ((t[0] as num).toDouble(), (t[1] as num).round()),
+                      ],
+                      id: e['id'] is String ? e['id'] as String : null,
+                      isTimed: e['isTimed'] == true,
+                    ),
+              ],
+            ),
+      ];
+    }
+
+    final mails = pick<List>('mailbox');
+    if (mails != null) {
+      mailbox = [
+        for (final m in mails)
+          if (m is Map && _date(m['at']) != null)
+            MailReward(
+              source: '${m['source']}',
+              exp: (m['exp'] as num?)?.round() ?? 0,
+              coins: (m['coins'] as num?)?.round() ?? 0,
+              makeupTickets: (m['makeupTickets'] as num?)?.round() ?? 0,
+              aiCredits: (m['aiCredits'] as num?)?.round() ?? 0,
+              at: _date(m['at'])!,
+              claimed: m['claimed'] == true,
+            ),
+      ];
+      // 不變條件：信箱裡不該有數額為 0 的獎勵。
+      // 有的話代表讀取端與寫入端的欄位對不上（v1→v2 就是這樣把獎勵清空的），
+      // 留著只會讓使用者領到「無」。丟掉比留著一筆領了沒東西的假獎勵好。
+      mailbox.removeWhere((m) => m.isEmpty);
+    }
+
+    if (pick<List>('checkInRecords') case final rows?) {
+      checkInRecords
+        ..clear()
+        ..addEntries([
+          for (final r in rows.whereType<Map>())
+            if (_date(r['date']) case final d?)
+              MapEntry(
+                DateTime(d.year, d.month, d.day),
+                _enumByName(CheckInMethod.values, r['method']) ??
+                    CheckInMethod.real,
+              ),
+        ]);
+    }
+
+    final mine = pick<List>('myExercises');
+    if (mine != null) {
+      // 平台動作庫來自伺服器，只把自建動作放回去。
+      myExercises = [
+        for (final e in mine)
+          if (e is Map && e['id'] is String)
+            Exercise(
+              id: e['id'] as String,
+              name: '${e['name']}',
+              dim: _enumByName(Dim.values, e['dim']),
+              relativeIntensity: 1.0,
+              isBodyweight: e['isBodyweight'] == true,
+              type: _enumByName(ExerciseType.values, e['type']) ??
+                  ExerciseType.strength,
+              equipment: '${e['equipment']}',
+              isCustom: true,
+              defaultRestSeconds: e['defaultRestSeconds'] is num
+                  ? (e['defaultRestSeconds'] as num).round()
+                  : null,
+            ),
+      ];
+    }
+
+    isInstructor = boolOf('isInstructor', isInstructor);
+    instructorReputation = intOf('instructorReputation', instructorReputation);
+    peakReputation = intOf('peakReputation', peakReputation);
+    _mentorWeek = _date(j['mentorWeek']) ?? _mentorWeek;
+    weeklyQuestionCount = intOf('weeklyQuestionCount', weeklyQuestionCount);
+    weeklyAnswerCount = intOf('weeklyAnswerCount', weeklyAnswerCount);
+    weeklyAssigned = intOf('weeklyAssigned', weeklyAssigned);
+    weeklyCompleted = intOf('weeklyCompleted', weeklyCompleted);
+    ratedThisWeek = boolOf('ratedThisWeek', ratedThisWeek);
+    taskRatingsThisWeek = intOf('taskRatingsThisWeek', taskRatingsThisWeek);
+    mentorRewardsThisWeek =
+        intOf('mentorRewardsThisWeek', mentorRewardsThisWeek);
+    myViolations = intOf('myViolations', myViolations);
+    if (pick<List>('instructorSpecialties') != null) {
+      instructorSpecialties
+        ..clear()
+        ..addAll(strs('instructorSpecialties'));
+    }
+
+    if (pick<List>('ownedEquipment') != null) {
+      ownedEquipment
+        ..clear()
+        ..addAll(strs('ownedEquipment'));
+    }
+    aiAutoOptimize = boolOf('aiAutoOptimize', aiAutoOptimize);
+    abilityPublic = boolOf('abilityPublic', abilityPublic);
+    overallGradePublic = boolOf('overallGradePublic', overallGradePublic);
+    email = j['email'] as String?;
+    metricUnits = boolOf('metricUnits', metricUnits);
+    deletionRequestedAt = _date(j['deletionRequestedAt']);
+    deletionCoolingDays =
+        j['deletionCoolingDays'] is num ? intOf('deletionCoolingDays', 30) : null;
+
+    demoClockOffset = Duration(milliseconds: intOf('demoClockOffsetMs', 0));
+    repairLoadedState();
+    return true;
+  }
+
+  /// 載入後的針對性修復。
+  ///
+  /// **不是升版本**：升版本會把整份存檔丟掉，而這裡要救的正是那份存檔。
+  /// 只修「兩個欄位彼此矛盾、而正確答案唯一」的情形 ——
+  /// 需要猜的一律不動。
+  void repairLoadedState() {
+    // 已訓練過的維度，訓練歷史裡要找得到證據。
+    //
+    // [AppState.resetToNewAccount] 曾漏清 [trainedDims] 與 [pending]，
+    // 於是那時開的新帳號會宣稱六維全都練過。後果是每一維真正的第一場
+    // 都走成「非首場」：首場可直接對齊實測值，非首場只能爬到下一個
+    // 節點的上緣 —— 實測 296 分的第一場只給到 69。
+    //
+    // 只**移除**沒有證據的，不新增 —— 歷史不設上限、每場結算都寫一筆，
+    // 所以「歷史裡沒有」就是真的沒練過。自建動作不計，與結算時同一條規則。
+    final evidenced = <Dim>{};
+    for (final h in history) {
+      for (final e in h.exercises) {
+        final ex = _exerciseOf(e);
+        if (ex.isCustom || ex.dim == null) continue;
+        evidenced.add(ex.dim!);
+      }
+    }
+    final ghosts = trainedDims.difference(evidenced);
+    if (ghosts.isNotEmpty) {
+      trainedDims.removeAll(ghosts);
+      // 待兌現分數同樣是那一維訓練史的產物，一起清掉。
+      for (final d in ghosts) {
+        pending[d] = 0;
+      }
+    }
+  }
+}
+
+/// 依名稱還原列舉。找不到時回傳空值 —— 存檔裡的舊值域不該讓整份讀取失敗。
+T? _enumByName<T extends Enum>(List<T> values, Object? name) {
+  if (name is! String) return null;
+  for (final v in values) {
+    if (v.name == name) return v;
+  }
+  return null;
+}

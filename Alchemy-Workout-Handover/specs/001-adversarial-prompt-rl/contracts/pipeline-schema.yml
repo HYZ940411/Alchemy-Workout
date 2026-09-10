@@ -1,0 +1,78 @@
+# Pipeline Configuration Schema
+# Defines the structure of pipeline.yml files used by the Controller agent.
+#
+# Usage: The user creates a pipeline.yml following this schema.
+# The Controller validates it before starting any experiment (FR-016).
+
+# JSON Schema representation (for validation tooling)
+# ---
+# $schema: "http://json-schema.org/draft-07/schema#"
+# title: "Prompt Pipeline Configuration"
+
+version: "1"
+
+pipeline:
+  # Required. Human-readable pipeline name.
+  # Used in review reports and optimization summaries.
+  name: string  # e.g., "customer-support-triage"
+
+  # Optional. Description of what this pipeline does.
+  description: string  # e.g., "Classify, draft, and review support tickets"
+
+  steps:
+    # Required. Ordered list of steps. Min 1 step.
+    # Execution order = list order (sequential, no branching).
+    - id: string          # Required. Stable identifier. Unique within pipeline.
+                          # Used by rubric to reference this step.
+                          # Convention: lowercase, hyphenated (e.g., "classify-intent")
+
+      prompt: string      # Required. Relative path to prompt file from workspace root.
+                          # File must exist at validation time.
+                          # e.g., "prompts/classify-intent.md"
+
+      args:               # Optional. Default arguments passed to Worker.
+                          # Key-value pairs. Values can be string, number, boolean.
+                          # Overridable at runtime without modifying pipeline file.
+        key: value        # e.g., language: "zh-TW", max_categories: 3
+
+---
+# Example: customer-support-triage pipeline
+
+version: "1"
+
+pipeline:
+  name: "customer-support-triage"
+  description: "Classify, draft, and review support tickets"
+
+  steps:
+    - id: classify
+      prompt: prompts/classify-intent.md
+      args:
+        language: "zh-TW"
+        max_categories: 3
+
+    - id: draft-reply
+      prompt: prompts/draft-reply.md
+      args:
+        tone: "professional"
+        max_words: 150
+        language: "zh-TW"
+
+    - id: review-reply
+      prompt: prompts/review-output.md
+      args:
+        criteria: "accuracy,tone,completeness"
+        strict_mode: false
+
+---
+# Validation Rules (FR-016)
+#
+# Controller MUST reject the pipeline if:
+# 1. `version` is missing or unsupported
+# 2. `pipeline.name` is missing
+# 3. `pipeline.steps` is empty (zero steps)
+# 4. Any step is missing `id` or `prompt`
+# 5. Duplicate `id` values exist across steps
+# 6. Any `prompt` path does not resolve to an existing file
+#
+# On rejection: descriptive error, no experiment folder created, no Workers dispatched.

@@ -1,0 +1,43 @@
+Feature: 交付課程
+
+  Background:
+    Given 系統中有以下課程：
+      | 課程 ID | 名稱 | 類型 | 旅程 ID | 章節 ID | 獎勵.經驗值 |
+      | 1 | 物件導向基礎 | 影片課程 | 1 | 1 | 300 |
+      | 2 | 設計模式問卷 | 問卷課程 | 1 | 1 | 300 |
+      | 3 | 實作練習 | 挑戰題課程 | 1 | 1 | 200 |
+    And 系統中有以下用戶：
+      | 名稱 | 等級 | 經驗值 |
+      | Alice | 1 | 0 |
+    And 用戶 "Alice" 已訂閱旅程 1
+
+  Rule: 課程完成後才能交付，交付課程後獲得經驗值和升級
+    
+    Example: 成功交付已完成的影片課程
+      Given 用戶 "Alice" 在課程 1 的狀態為 "已完成"
+      When 用戶 "Alice" 交付課程 1
+      Then 課程 1 交付成功，用戶 "Alice" 收到獎勵經驗值 300，新等級 3
+    
+    Example: 無法交付未完成的課程
+      Given 用戶 "Alice" 在課程 1 的狀態為 "進行中"
+      When 用戶 "Alice" 交付課程 1
+      Then 操作失敗
+      And 用戶 "Alice" 在課程 1 的狀態應為 "進行中"
+      And 用戶 "Alice" 的經驗值應為 0
+    
+    Example: 無法重複交付課程
+      Given 用戶 "Alice" 在課程 1 的狀態為 "已完成"
+      When 用戶 "Alice" 交付課程 1
+      And 用戶 "Alice" 交付課程 1
+      Then 操作失敗
+      And 用戶 "Alice" 在課程 1 的狀態應為 "已交付"
+      And 用戶 "Alice" 的經驗值應為 300
+    
+    Example: 交付多個課程累積經驗值並多次升級
+      Given 用戶 "Alice" 在課程 1 的狀態為 "已完成"
+      And 用戶 "Alice" 在課程 2 的狀態為 "已完成"
+      When 用戶 "Alice" 交付課程 1
+      And 用戶 "Alice" 交付課程 2
+      Then 用戶 "Alice" 收到總經驗值 600，新等級 5，升級狀態為 true
+      And 用戶 "Alice" 在課程 1 的狀態應為 "已交付"
+      And 用戶 "Alice" 在課程 2 的狀態應為 "已交付"

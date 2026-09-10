@@ -1,0 +1,9 @@
+behave==1.2.6
+behave-html-formatter==0.9.10
+pytest==7.4.3
+requests==2.31.0
+SQLAlchemy==2.0.35
+python-dateutil==2.8.2
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0

@@ -1,0 +1,87 @@
+services:
+  # Frontend - Mock Mode (default, no backend)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_MODE: mock
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8080/api/v1
+    container_name: wsa-frontend
+    profiles: ["mock"]
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_MODE=mock
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1
+
+  # Frontend - API Mode (with backend)
+  frontend-api:
+    profiles: ["java", "python"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_MODE: api
+        NEXT_PUBLIC_API_BASE_URL: http://backend-java:8080/api/v1
+    container_name: wsa-frontend-api
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_MODE=api
+      - NEXT_PUBLIC_API_BASE_URL=http://backend-java:8080/api/v1
+
+  # Database - used when running with a real backend
+  postgres:
+    image: postgres:15
+    container_name: wsa-postgres
+    profiles: ["java", "python"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chapter04_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Java Backend
+  backend-java:
+    profiles: ["java"]
+    build:
+      context: ./java
+      dockerfile: Dockerfile
+    container_name: wsa-backend-java
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chapter04_dev
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Python Backend
+  backend-python:
+    profiles: ["python"]
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    container_name: wsa-backend-python
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/chapter04_dev
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
