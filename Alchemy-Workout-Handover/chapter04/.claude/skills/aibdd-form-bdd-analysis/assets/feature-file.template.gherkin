@@ -1,0 +1,42 @@
+Feature: {Entity} — {operation}
+  作為 {角色}
+  我要 {操作描述}
+  以便 {目的}
+
+  # {spec_reference}
+
+  Background:
+    Given {前置狀態}
+
+  Rule: 前置 - {precondition 驗證規則}
+    Scenario Outline: {失敗行為摘要}
+      When {operation}:
+        | col_a       | col_b   |
+        | <col_a_val> | <col_b> |
+      Then 操作失敗，violation_type 為 "<violation>"
+
+      Examples:
+        | col_a_val | col_b | violation        |
+        | ...       | ...   | INVALID_ARGUMENT |
+
+  Rule: 後置 - {postcondition 行為規則}
+    # 單行用 Example，多行 data-driven 用 Scenario Outline
+    Example: {單行成功行為}
+      When ...
+      Then ...
+
+    Scenario Outline: {多行成功行為摘要}
+      When {operation}:
+        | col_a       | col_b   |
+        | <col_a_val> | <col_b> |
+      Then 操作成功，結果符合:
+        | col_x        | col_y        |
+        | <expected_x> | <expected_y> |
+
+      Examples:
+        | col_a_val | col_b | expected_x | expected_y |
+        | ...       | ...   | ...        | ...        |
+
+  # 變數參照範例：
+  #   | actor_id   | name |
+  #   | $使用者.id | A    |    ← 引用 Background 中建立的「使用者」actor 的 id

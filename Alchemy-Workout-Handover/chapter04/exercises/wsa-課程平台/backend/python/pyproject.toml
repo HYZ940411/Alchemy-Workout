@@ -1,0 +1,35 @@
+[project]
+name = "bdd-workshop"
+version = "1.0.0"
+description = "BDD Workshop - Python behave Unit Test Version"
+requires-python = ">=3.9"
+dependencies = [
+    "behave>=1.2.6",
+    "typing-extensions>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.behave]
+format = ["pretty"]
+color = true
+

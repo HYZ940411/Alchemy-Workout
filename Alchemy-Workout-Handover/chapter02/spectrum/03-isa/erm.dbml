@@ -1,0 +1,201 @@
+// ============================================
+// WSA 水球軟體學院 - 課程進度系統 ERM
+// ============================================
+// 
+// 此 DBML 描述課程進度管理系統的資料模型
+// 分析來源：ISA Feature Files (01-增加影片進度, 02-提交挑戰題作業, 03-交付課程)
+//
+// 核心實體：
+// 1. User（用戶）- 學生帳號與等級經驗值
+// 2. Journey（旅程）- 學習旅程（課程群組）
+// 3. Chapter（章節）- 旅程下的章節
+// 4. Lesson（課程）- 具體的課程單元
+// 5. LessonProgress（課程進度）- 學生的課程學習狀態
+// 6. JourneySubscription（旅程訂閱）- 學生訂閱的旅程記錄
+//
+// ============================================
+
+Project WSA_LessonProgress {
+  database_type: 'SQLite'
+  Note: '水球軟體學院課程進度管理系統'
+}
+
+// ============================================
+// 核心實體定義
+// ============================================
+
+Table users {
+  id integer [primary key, increment, note: '用戶唯一識別碼']
+  name varchar(100) [not null, note: '用戶名稱']
+  level integer [not null, default: 1, note: '用戶等級']
+  exp integer [not null, default: 0, note: '累積經驗值']
+  created_at timestamp [default: `CURRENT_TIMESTAMP`, note: '建立時間']
+  updated_at timestamp [default: `CURRENT_TIMESTAMP`, note: '更新時間']
+  
+  Note: '用戶（學生）基本資料與遊戲化數據'
+  
+  indexes {
+    id [name: 'idx_users_id']
+  }
+}
+
+Table journeys {
+  id integer [primary key, increment, note: '旅程唯一識別碼']
+  name varchar(200) [not null, note: '旅程名稱']
+  description text [note: '旅程描述']
+  created_at timestamp [default: `CURRENT_TIMESTAMP`, note: '建立時間']
+  
+  Note: '學習旅程（如：物件導向學習地圖）'
+  
+  indexes {
+    id [name: 'idx_journeys_id']
+  }
+}
+
+Table chapters {
+  id integer [primary key, increment, note: '章節唯一識別碼']
+  journey_id integer [not null, ref: > journeys.id, note: '所屬旅程']
+  name varchar(200) [not null, note: '章節名稱']
+  order_index integer [not null, default: 0, note: '章節排序']
+  created_at timestamp [default: `CURRENT_TIMESTAMP`, note: '建立時間']
+  
+  Note: '旅程中的章節單元'
+  
+  indexes {
+    (journey_id, order_index) [name: 'idx_chapters_journey_order']
+  }
+}
+
+Table lessons {
+  lesson_id integer [primary key, increment, note: '課程唯一識別碼']
+  journey_id integer [not null, ref: > journeys.id, note: '所屬旅程']
+  chapter_id integer [not null, ref: > chapters.id, note: '所屬章節']
+  name varchar(200) [not null, note: '課程名稱']
+  type integer [not null, note: '課程類型：0=問卷, 1=Boss挑戰題, 2=影片, 3=挑戰題']
+  reward_exp integer [not null, default: 0, note: '完成後可獲得的經驗值']
+  created_at timestamp [default: `CURRENT_TIMESTAMP`, note: '建立時間']
+  
+  Note: '''
+  課程單元（Lesson）
+  
+  type 定義：
+  - 0: 問卷表單（Form/Quiz）
+  - 1: Boss 挑戰題（需人工批改）
+  - 2: 影片課程（Video）
+  - 3: 一般挑戰題（Challenge - 自動完成）
+  '''
+  
+  indexes {
+    lesson_id [name: 'idx_lessons_id']
+    (journey_id, chapter_id) [name: 'idx_lessons_journey_chapter']
+  }
+}
+
+Table lesson_progress {
+  id integer [primary key, increment, note: '進度記錄唯一識別碼']
+  user_id integer [not null, ref: > users.id, note: '學生 ID']
+  lesson_id integer [not null, ref: > lessons.lesson_id, note: '課程 ID']
+  progress integer [default: 0, note: '觀看進度（0-100%）僅影片課程使用']
+  status varchar(50) [not null, default: 'IN_PROGRESS', note: '課程狀態']
+  submitted_files text [note: '提交的作業檔案（挑戰題使用）']
+  created_at timestamp [default: `CURRENT_TIMESTAMP`, note: '建立時間']
+  updated_at timestamp [default: `CURRENT_TIMESTAMP`, note: '更新時間']
+  completed_at timestamp [note: '完成時間']
+  delivered_at timestamp [note: '交付時間（領取經驗值時間）']
+  
+  Note: '''
+  課程學習進度記錄
+  
+  status 狀態流轉：
+  - IN_PROGRESS: 進行中
+  - COMPLETED: 已完成（但尚未交付領取獎勵）
+  - WAITING_FOR_REVIEW: 等待批改（Boss 挑戰題專用）
+  - BOSS_SUCCESS: Boss 挑戰題批改通過
+  - DELIVERED: 已交付（已領取經驗值獎勵）
+  
+  狀態轉換規則：
+  1. 影片課程：IN_PROGRESS → (progress=100%) → COMPLETED → DELIVERED
+  2. 一般挑戰題：IN_PROGRESS → (提交作業) → COMPLETED → DELIVERED
+  3. Boss 挑戰題：IN_PROGRESS → (提交作業) → WAITING_FOR_REVIEW → (批改通過) → BOSS_SUCCESS → DELIVERED
+  4. 問卷表單：IN_PROGRESS → (提交表單) → COMPLETED → DELIVERED
+  '''
+  
+  indexes {
+    (user_id, lesson_id) [unique, name: 'idx_lesson_progress_user_lesson']
+    user_id [name: 'idx_lesson_progress_user']
+    status [name: 'idx_lesson_progress_status']
+  }
+}
+
+Table journey_subscriptions {
+  id integer [primary key, increment, note: '訂閱記錄唯一識別碼']
+  user_id integer [not null, ref: > users.id, note: '學生 ID']
+  journey_id integer [not null, ref: > journeys.id, note: '旅程 ID']
+  subscribed_at timestamp [default: `CURRENT_TIMESTAMP`, note: '訂閱時間']
+  
+  Note: '學生訂閱旅程的記錄'
+  
+  indexes {
+    (user_id, journey_id) [unique, name: 'idx_journey_sub_user_journey']
+    user_id [name: 'idx_journey_sub_user']
+  }
+}
+
+// ============================================
+// 關聯關係說明
+// ============================================
+
+// Journey (1) --< (N) Chapter
+// 一個旅程包含多個章節
+
+// Journey (1) --< (N) Lesson
+// 一個旅程包含多個課程
+
+// Chapter (1) --< (N) Lesson
+// 一個章節包含多個課程
+
+// User (1) --< (N) LessonProgress
+// 一個學生有多筆課程進度記錄
+
+// Lesson (1) --< (N) LessonProgress
+// 一個課程對應多個學生的進度記錄
+
+// User (N) --< (M) Journey through JourneySubscription
+// 學生與旅程的多對多關係（透過訂閱表）
+
+// ============================================
+// 業務規則與約束
+// ============================================
+
+// 1. 影片進度規則（來自 01-增加影片進度.isa.feature）
+//    - progress 必須單調遞增（不可倒退）
+//    - progress 範圍：0-100
+//    - progress 達到 100 時，status 自動更新為 COMPLETED
+//    - 已 DELIVERED 的課程仍可更新 progress，但 status 不變
+
+// 2. 挑戰題提交規則（來自 02-提交挑戰題作業.isa.feature）
+//    - 只有 type=3 的課程可以提交挑戰題作業
+//    - 提交後直接將 status 更新為 COMPLETED
+//    - 非挑戰題課程提交作業會失敗
+
+// 3. 課程交付規則（來自 03-交付課程.isa.feature）
+//    - 只有 status=COMPLETED 或 BOSS_SUCCESS 的課程可以交付
+//    - 交付後 status 更新為 DELIVERED
+//    - 交付時將 lesson.reward_exp 加到 user.exp
+//    - 經驗值累積可能觸發升級（level 計算邏輯）
+//    - 同一課程不可重複交付
+
+// 4. 等級計算規則（推導自 feature 範例）
+//    - Level 1 (0-99 exp)
+//    - Level 2 (100-199 exp)
+//    - Level 3 (200-299 exp)
+//    - Level 4 (300-599 exp)
+//    - Level N: 每 100 或 200 exp 一級（具體公式需確認）
+
+// 5. 課程類型與進度追蹤（type 欄位）
+//    - type=0 (問卷): 提交表單後完成
+//    - type=1 (Boss挑戰題): 需要批改流程
+//    - type=2 (影片): 透過 progress 追蹤
+//    - type=3 (挑戰題): 提交作業後自動完成
+
+

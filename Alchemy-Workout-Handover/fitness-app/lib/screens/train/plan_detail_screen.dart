@@ -1,0 +1,577 @@
+import '../../domain/clock.dart';
+import 'package:flutter/material.dart';
+
+import '../../domain/models.dart';
+import '../../domain/commerce.dart';
+import '../../domain/community.dart';
+import '../../domain/rewards.dart';
+import '../../mock/mock_data.dart';
+import '../../state/app_state.dart';
+import '../../theme.dart';
+import '../../widgets/common.dart';
+import '../ai/ai_adjust_screen.dart';
+import '../workout_screen.dart';
+import 'exercise_detail_screen.dart';
+
+/// 訓練計畫詳情 —— 〈Read Model：課表選擇頁〉每份課表的欄位，
+/// 加上清單卡放不下的「課表內容」本身（逐動作 × 組數 × 目標重量與次數）。
+///
+/// 未解鎖的進階計畫**一併呈現，不隱藏**：未解鎖計畫是三種解鎖方式的唯一曝光點，
+/// 使用者若看不到有哪些計畫可解，金幣購買與會員解鎖兩條路徑等同不存在。
+class PlanDetailScreen extends StatelessWidget {
+  final WorkoutPlan plan;
+  const PlanDetailScreen({super.key, required this.plan});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    // 三種解鎖方式為 OR 關係，任一成立即解鎖。
+    final locked = !s.planUnlocked(plan);
+    final srcFactor = planSourceFactor(plan.source);
+
+    return Scaffold(
+      backgroundColor: C.bgPage,
+      appBar: AppBar(
+        backgroundColor: C.bgPage,
+        surfaceTintColor: Colors.transparent,
+        title: Text(plan.name, style: T.h3()),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(
+          S.base,
+          S.md,
+          S.base,
+          S.scrollBottom,
+        ),
+        children: [
+          Wrap(
+            spacing: S.sm,
+            runSpacing: S.sm,
+            children: [
+              Pill(planSourceNames[plan.source]!, color: AppColors.textDim),
+              Pill(
+                '${plan.exercises.length} 動作 · ${plan.totalSets} 組',
+                color: AppColors.textDim,
+              ),
+              Pill('器材：${plan.equipmentTier}', color: AppColors.textDim),
+              if (srcFactor != null)
+                Pill(
+                  '排行係數 ${(srcFactor * 100).round()}%',
+                  color: AppColors.accentSoft,
+                )
+              else
+                const Pill('不計入排行榜', color: AppColors.textFaint),
+            ],
+          ),
+          if (plan.lastTrainedAt != null) ...[
+            const SizedBox(height: S.md),
+            AppCard(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: StatField(
+                      label: '上次訓練',
+                      value: _ago(plan.lastTrainedAt!),
+                    ),
+                  ),
+                  Expanded(
+                    child: StatField(
+                      label: '上次完成度',
+                      value: plan.lastCompletion == null
+                          ? '—'
+                          : '${(plan.lastCompletion! * 100).round()}',
+                      unit: plan.lastCompletion == null ? null : '%',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (plan.hasOptimizationSuggestion) ...[
+            const SizedBox(height: S.md),
+            _OptimizationCard(),
+          ],
+          if (locked) ...[
+            const SizedBox(height: S.md),
+            _UnlockCard(plan: plan, userRank: s.rank, isMember: s.isMember),
+          ] else if (s.planMemberOnly(plan)) ...[
+            // 靠會員權益解得開、但不是永久取得的那一批。計畫可以用了，
+            // 購買入口卻不能跟著消失 —— 權益失效當天才發現買不到就太晚了。
+            const SizedBox(height: S.md),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.workspace_premium_outlined,
+                        size: Sz.iconDense,
+                        color: C.statusWarning,
+                      ),
+                      const SizedBox(width: S.sm),
+                      Text('會員權益解鎖中', style: T.h3()),
+                    ],
+                  ),
+                  const SizedBox(height: S.md),
+                  if (plan.unlockCoins != null) _BuyButton(plan: plan),
+                ],
+              ),
+            ),
+          ],
+          if (plan.disclaimer != null) ...[
+            const SizedBox(height: S.md),
+            AppCard(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.info_outline,
+                    size: Sz.iconDense,
+                    color: C.statusWarning,
+                  ),
+                  const SizedBox(width: S.sm),
+                  Expanded(
+                    child: Text(
+                      plan.disclaimer!,
+                      style: T.body(color: C.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // 課表的說明性內容。**只有《健身計劃.csv》那 27 份有** ——
+          // 七份示範用假課表沒有這些欄位，所以整段是條件呈現，
+          // 不是每份課表都硬擠出一塊空白。
+          if (kPlanSpecById[plan.id] case final spec?) ...[
+            const SizedBox(height: S.lg),
+            const SectionTitle('這份課表在做什麼'),
+            AppCard(child: Text(spec.intro, style: T.body())),
+            for (final (title, text) in [
+              ('怎麼練', spec.howTo),
+              ('負荷大小', spec.load),
+              ('訓練效果', spec.effect),
+              ('技術重點', spec.technique),
+            ])
+              if (text.trim().isNotEmpty) ...[
+                const SizedBox(height: S.md),
+                _Section(title: title, text: text),
+              ],
+            const SizedBox(height: S.md),
+            // 依據要單獨呈現，不塞在段落裡 ——
+            // 一份說得出依據的課表與一份憑空編的，對使用者是兩件事。
+            AppCard(
+              color: C.bgPage,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.menu_book_outlined,
+                        size: Sz.iconDense,
+                        color: C.textSecondary,
+                      ),
+                      const SizedBox(width: S.sm),
+                      Text('依據', style: T.caption(color: C.textSecondary)),
+                      const Spacer(),
+                      Pill(spec.level),
+                    ],
+                  ),
+                  const SizedBox(height: S.sm),
+                  Text(spec.reference, style: T.caption()),
+                  const SizedBox(height: S.xs),
+                  Text('預估時長：${spec.duration}', style: T.caption()),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: S.lg),
+          const SectionTitle('課表內容'),
+          if (plan.exercises.isEmpty)
+            const AppCard(
+              child: EmptyState(
+                icon: Icons.playlist_add_rounded,
+                title: '空白課表',
+                message:
+                    '沒有預先排好的內容。開始之後於訓練頁逐一加入動作，'
+                    '總計畫組數自加入第一個動作起成立。',
+              ),
+            )
+          else
+            for (final pe in plan.exercises) ...[
+              _PlanExerciseCard(pe: pe),
+              const SizedBox(height: S.md),
+            ],
+          const SizedBox(height: S.xs),
+          if (!locked) ...[
+            if (plan.exercises.isNotEmpty) ...[
+              AppButton(
+                label: 'AI 訓練前調整',
+                kind: BtnKind.secondary,
+                icon: Icons.auto_awesome_outlined,
+                onPressed: () {
+                  // 訓練前調整改的是**本次訓練課表快照**，故先選定課表把
+                  // 快照產生出來。重複選同一份不會重建，調整不會被洗掉。
+                  s.startWorkout(plan);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const AiAdjustScreen(source: AiSource.beforeTraining),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: S.md),
+            ],
+            AppButton(
+              // 空白課表恆為已解鎖，且必須呈現 —— 自由訓練以它為入口。
+              label: plan.exercises.isEmpty ? '開始自由訓練' : '開始訓練',
+              onPressed: () {
+                s.startWorkout(plan);
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (_) => const WorkoutScreen()),
+                );
+              },
+            ),
+          ],
+          const SizedBox(height: S.md),
+        ],
+      ),
+    );
+  }
+
+  static String _ago(DateTime d) {
+    final n = appNow().difference(d).inDays;
+    return n == 0 ? '今天' : '$n 天前';
+  }
+}
+
+/// 三種解鎖方式的當前狀態。金幣價格為空值者不呈現該項。
+class _UnlockCard extends StatelessWidget {
+  final WorkoutPlan plan;
+  final int userRank;
+  final bool isMember;
+  const _UnlockCard({
+    required this.plan,
+    required this.userRank,
+    required this.isMember,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final gap = plan.requiredRank! - userRank;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.lock_outline,
+                size: Sz.iconDense,
+                color: C.textSecondary,
+              ),
+              const SizedBox(width: S.sm),
+              Text('尚未解鎖', style: T.h3()),
+            ],
+          ),
+          const SizedBox(height: S.md),
+          _Way(
+            icon: Icons.trending_up_rounded,
+            title: '階級達標',
+            detail: '尚差 $gap 階（目前 $userRank 階，需 ${plan.requiredRank} 階）',
+          ),
+          if (plan.unlockCoins != null)
+            _Way(
+              icon: Icons.paid_outlined,
+              title: '金幣提前購買',
+              detail: '${plan.unlockCoins} 金幣．永久取得',
+            ),
+          if (plan.memberUnlockable)
+            _Way(
+              icon: Icons.workspace_premium_outlined,
+              title: '會員身分',
+              // 會員解鎖為續約生效，權益失效即回退 —— 說「可直接使用」
+              // 會讓人以為和另外兩條一樣是永久的。
+              detail: isMember ? '你是會員，權益生效中可用' : '會員可用',
+            ),
+          if (plan.unlockCoins != null) ...[
+            const SizedBox(height: S.xs),
+            _BuyButton(plan: plan),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 「金幣提前購買」不能只是一行字 —— 它是三條解鎖路徑中唯一能當場走完的一條。
+class _BuyButton extends StatelessWidget {
+  final WorkoutPlan plan;
+  const _BuyButton({required this.plan});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    final price = plan.unlockCoins!;
+    final short = price - (s.coins >= price ? price : s.coins);
+    final cash = cashForShortfall(short);
+    // 僅以會員身分解鎖者仍可購買 —— 用途正是在權益失效前轉為永久取得。
+    final memberOnly = s.planMemberOnly(plan);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (memberOnly) ...[
+          Text(
+            '你現在是靠會員權益使用這份計畫，權益失效就會鎖回去。'
+            '買下來即為永久取得。',
+            style: T.caption(),
+          ),
+          const SizedBox(height: S.sm),
+        ],
+        // 補差額寫在按鈕外 —— 按鈕標籤塞得下的長度有限，
+        // 塞進去在 375 寬就會爆版。
+        if (cash > 0) ...[
+          Text(
+            '金幣餘額 ${s.coins}，不足 $short 金幣，將以現金補 $cash 元。',
+            style: T.caption(),
+          ),
+          const SizedBox(height: S.sm),
+        ],
+        AppButton(
+          label: '以 $price 金幣購買解鎖',
+          kind: BtnKind.secondary,
+          icon: Icons.paid_outlined,
+          onPressed: () async {
+            final ok = await showAppDialog(
+              context,
+              title: '購買「${plan.name}」？',
+              message: cash > 0
+                  ? '金幣餘額 ${s.coins}，不足 $short 金幣，'
+                        '將以現金補差額 $cash 元（1 元 ＝ $kCoinsPerNtd 金幣）。'
+                        '永久取得，不因會員權益失效而回退。'
+                  : '將扣除 $price 金幣，餘額 ${s.coins} → ${s.coins - price}。'
+                        '永久取得，不因會員權益失效而回退。',
+              confirmLabel: '確認購買',
+            );
+            if (ok != true || !context.mounted) return;
+            final fail = s.purchasePlan(plan);
+            if (!context.mounted) return;
+            showToast(
+              context,
+              fail == null ? '已解鎖「${plan.name}」，永久取得' : '購買失敗',
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _Way extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String detail;
+  const _Way({required this.icon, required this.title, required this.detail});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: S.md),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: Sz.iconDense, color: C.textSecondary),
+        const SizedBox(width: S.sm),
+        // 解鎖說明可能很長（「尚差 18 階（目前 37 階，需 55 階）」），
+        // 與標題同一行會爆版 —— 改為上下兩行。
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: T.body()),
+              const SizedBox(height: 2),
+              Text(detail, style: T.caption()),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _OptimizationCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => AppCard(
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Pill('新的優化建議', color: AppColors.cool),
+              const SizedBox(height: S.sm),
+              Text('AI 已依你的紀錄調整訓練強度。常駐標記，未處理前一直存在。', style: T.caption()),
+            ],
+          ),
+        ),
+        const SizedBox(width: S.md),
+        AppButton(
+          label: '查看',
+          kind: BtnKind.secondary,
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  const AiAdjustScreen(source: AiSource.autoOptimize),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _PlanExerciseCard extends StatelessWidget {
+  final PlanExercise pe;
+  const _PlanExerciseCard({required this.pe});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(R.card),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(R.card),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ExerciseDetailScreen(exercise: pe.exercise),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(S.base),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text(pe.exercise.name, style: T.h3())),
+                    Text('休息 ${s.restSecondsFor(pe)} 秒', style: T.caption()),
+                    const SizedBox(width: S.xs),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: AppColors.textFaint,
+                    ),
+                  ],
+                ),
+                if (pe.replacedFrom != null) ...[
+                  const SizedBox(height: S.xs),
+                  Row(
+                    children: [
+                      Text('AI 已替換：', style: T.caption()),
+                      // §8.20：刪除線文字只出現在已替換動作檢視，不抽成共用元件。
+                      Text(
+                        pe.replacedFrom!.name,
+                        style: T
+                            .caption(color: C.textDisabled)
+                            .copyWith(decoration: TextDecoration.lineThrough),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: S.sm),
+                Text(pe.exercise.equipment, style: T.caption()),
+                const SizedBox(height: S.md),
+                Wrap(
+                  spacing: S.sm,
+                  runSpacing: S.sm,
+                  children: [
+                    for (final (i, set) in pe.planned.indexed)
+                      _SetChip(index: i + 1, set: set),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SetChip extends StatelessWidget {
+  final int index;
+  final PlannedSet set;
+  const _SetChip({required this.index, required this.set});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: S.md, vertical: 6),
+    decoration: BoxDecoration(
+      color: C.bgPage,
+      borderRadius: BorderRadius.circular(R.child),
+    ),
+    child: Text(
+      set.targetWeight == 0
+          ? '第 $index 組　${set.targetReps} 秒'
+          : '第 $index 組　${_kg(set.targetWeight)} kg × ${set.targetReps}',
+      style: T.caption(color: C.textPrimary),
+    ),
+  );
+
+  static String _kg(double v) =>
+      v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(1);
+}
+
+/// 課表說明的一節。長文字要能收合 —— 使用說明平均 295 字，
+/// 全部展開的話「課表內容」會被推到很下面，而那才是要按開始的地方。
+class _Section extends StatefulWidget {
+  final String title;
+  final String text;
+  const _Section({required this.title, required this.text});
+
+  @override
+  State<_Section> createState() => _SectionState();
+}
+
+class _SectionState extends State<_Section> {
+  bool open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // 短的就不必收合 —— 一個只有兩行的段落配一顆「展開」很蠢。
+    final long = widget.text.length > 90;
+    return AppCard(
+      onTap: long ? () => setState(() => open = !open) : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(widget.title, style: T.body(weight: FontWeight.w600)),
+              const Spacer(),
+              if (long)
+                Icon(
+                  open ? Icons.expand_less : Icons.expand_more,
+                  size: Sz.iconDense,
+                  color: C.textSecondary,
+                ),
+            ],
+          ),
+          const SizedBox(height: S.sm),
+          Text(
+            widget.text,
+            style: T.caption(),
+            maxLines: (long && !open) ? 3 : null,
+            overflow: (long && !open) ? TextOverflow.ellipsis : null,
+          ),
+        ],
+      ),
+    );
+  }
+}

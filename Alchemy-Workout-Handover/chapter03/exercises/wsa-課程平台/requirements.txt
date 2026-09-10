@@ -1,0 +1,10 @@
+fastapi==0.126.0
+uvicorn[standard]==0.38.0
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+pydantic==2.10.4
+pydantic-settings==2.6.1
+python-jose[cryptography]==3.3.0
+PyJWT==2.10.1
+python-multipart==0.0.20
+alembic==1.14.0

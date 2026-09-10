@@ -1,0 +1,291 @@
+# ISA (Instruction Set Architecture) 指令集定義
+# 
+# 此檔案定義 ISA-Level Feature File 的可執行指令集
+# 每個指令對應到特定的測試程式碼生成器
+#
+# 設計原則：
+# 1. 每個指令都有明確的執行語意
+# 2. 每個指令都有固定的 DataTable 結構
+# 3. 指令參數來自 API Spec 或 ERM Spec
+
+# ==================== 指令集版本 ====================
+version: "1.0"
+domain: "wsa-lesson-progress"  # 領域標識
+
+# ==================== 核心指令集 ====================
+instructions:
+  
+  # ---------- 資料準備指令 (Given) ----------
+  
+  - name: "準備一個{entity}, with table:"
+    description: "在資料庫中插入測試資料（fixture）"
+    context: "Given"
+    syntax: "準備一個{entity}, with table:"
+    parameters:
+      entity:
+        type: "string"
+        description: "實體名稱（來自 ERM spec）"
+        examples: ["課程", "用戶", "課程進度"]
+    datatable:
+      required: true
+      structure: "entity-based"
+      description: "根據 entity 的 schema 決定欄位"
+      headers:
+        source: "erm_spec"
+        description: "欄位名稱來自 ERM 定義"
+      values:
+        types: ["literal", "variable", "mapping"]
+        description: "支援字面值、變數引用($var)、映射(${mapping[key]})"
+    test_generator: "db_insert"
+    examples:
+      - |
+        Given 準備一個課程, with table:
+          | journey_id | chapter_id | lesson_id | name | type | reward.exp |
+          | 1 | 1 | 1 | Python 基礎 | 2 | 300 |
+      - |
+        Given 準備一個用戶, with table:
+          | >$[名稱].id | name | level | exp |
+          | <id | Alice | 1 | 0 |
+      - |
+        Given 準備一個課程進度, with table:
+          | userId | lessonId | progress | status |
+          | $Alice.id | 1 | 50 | IN_PROGRESS |
+
+  # ---------- API 呼叫指令 (When) ----------
+  
+  - name: "(UID=$userId) {api_action}, call table:"
+    description: "呼叫 API endpoint"
+    context: "When"
+    syntax: "(UID=$userId) {api_action}, call table:"
+    parameters:
+      userId:
+        type: "variable"
+        description: "用戶 ID 變數（用於認證）"
+        examples: ["$Alice.id", "$Bob.id"]
+      api_action:
+        type: "string"
+        description: "API 動作描述（來自 API Spec 的 summary）"
+        examples: ["更新課程影片進度", "提交問卷表單", "交付課程"]
+    datatable:
+      required: true
+      structure: "api-based"
+      description: "根據 API endpoint 的 request body 決定欄位"
+      headers:
+        source: "api_spec.requestBody"
+        description: "欄位名稱來自 API 請求參數"
+        special:
+          - name: ">contextKey"
+            description: "將 API 回應的 <executionKey> 存入 context"
+      values:
+        types: ["literal", "variable", "execution"]
+        description: "支援字面值、變數引用($var)、執行變數(<key>)"
+    test_generator: "api_call"
+    examples:
+      - |
+        When (UID=$Alice.id) 更新課程影片進度, call table:
+          | lessonId | progress |
+          | 1 | 80 |
+      - |
+        When (UID=$Alice.id) 用戶登入系統, call table:
+          | >AliceToken |
+          | <token |
+      - |
+        When (UID=$Alice.id) 交付課程, call table:
+          | lessonId |
+          | 1 |
+
+  # ---------- API 回應驗證指令 (Then) ----------
+  
+  - name: "回應, with table:"
+    description: "驗證 API 回應的 payload 內容"
+    context: "Then"
+    syntax: "回應, with table:"
+    parameters: {}
+    datatable:
+      required: true
+      structure: "api-response-based"
+      description: "根據 API endpoint 的 response schema 決定欄位"
+      headers:
+        source: "api_spec.responseBody"
+        description: "欄位名稱來自 API 回應結構"
+      values:
+        types: ["literal", "variable", "constraint"]
+        description: "支援字面值、變數引用($var)、約束斷言(&operator)"
+        constraints:
+          - "&isNum - 驗證為數字型別"
+          - "&isStr - 驗證為字串型別"
+          - "&isBool - 驗證為布林型別"
+          - "&contains(text) - 驗證包含指定文字"
+          - "&hasKey(key) - 驗證包含指定鍵"
+    test_generator: "api_response_validator"
+    examples:
+      - |
+        Then 回應, with table:
+          | lessonId | progress | status |
+          | 1 | 80 | IN_PROGRESS |
+      - |
+        Then 回應, with table:
+          | lessonId | status | reward.exp | reward.newLevel |
+          | 1 | DELIVERED | 300 | 3 |
+      - |
+        Then 回應, with table:
+          | reward.exp | reward.newLevel | reward.levelUp |
+          | 600 | 4 | "true" |
+
+  # ---------- 資料庫驗證指令 (Then) ----------
+  
+  - name: "驗證存在一個{entity}, with table:"
+    description: "從資料庫查詢並驗證實體狀態"
+    context: "Then"
+    syntax: "驗證存在一個{entity}, with table:"
+    parameters:
+      entity:
+        type: "string"
+        description: "實體名稱（來自 ERM spec）"
+        examples: ["課程", "用戶", "課程進度"]
+    datatable:
+      required: true
+      structure: "entity-based-validation"
+      description: "可以有 1-N 行，每行都是獨立的查詢條件"
+      headers:
+        source: "erm_spec"
+        description: "欄位名稱來自 ERM 定義"
+      rows:
+        description: "可以有多行，每行代表一個查詢條件或約束斷言"
+        row_types:
+          - type: "查詢條件"
+            values: ["literal", "variable"]
+            description: "用於 WHERE clause 的查詢條件"
+          - type: "約束斷言"
+            values: ["constraint"]
+            description: "用於型別或格式驗證（如 &isNum）"
+        note: "可以只有查詢條件行，也可以有多行查詢條件加約束斷言"
+    test_generator: "db_query_validator"
+    examples:
+      - |
+        And 驗證存在一個課程進度, with table:
+          | userId | lessonId | progress | status |
+          | $Alice.id | 1 | 80 | IN_PROGRESS |
+          | &isNum | 1 | 80 | IN_PROGRESS |
+      - |
+        And 驗證存在一個用戶, with table:
+          | id | exp | level |
+          | $Alice.id | 300 | 3 |
+          | $Alice.id | 300 | 3 |
+
+  # ---------- 操作失敗驗證指令 (Then) ----------
+  
+  - name: "操作失敗"
+    description: "驗證 API 呼叫失敗（HTTP 4xx/5xx）"
+    context: "Then"
+    syntax: "操作失敗"
+    parameters: {}
+    datatable:
+      required: false
+      description: "不需要 DataTable"
+    test_generator: "api_error_validator"
+    examples:
+      - |
+        Then 操作失敗
+
+# ==================== 規格來源對應 ====================
+spec_sources:
+  
+  api_spec:
+    format: "OpenAPI 3.0"
+    purpose: "定義 API endpoints、request/response schema"
+    used_by:
+      - "(UID=$userId) {api_action}, call table:"
+      - "回應, with table:"
+    mapping:
+      summary: "對應到 {api_action} 參數"
+      requestBody: "對應到 call table 的 headers"
+      responseBody: "對應到 回應 table 的 headers"
+  
+  erm_spec:
+    format: "DBML (Database Markup Language)"
+    purpose: "定義資料庫實體結構"
+    used_by:
+      - "準備一個{entity}, with table:"
+      - "驗證存在一個{entity}, with table:"
+    mapping:
+      table_name: "對應到 {entity} 參數"
+      columns: "對應到 DataTable 的 headers"
+
+# ==================== 測試生成器對應 ====================
+test_generators:
+  description: "每個指令對應一個測試程式碼生成器"
+  tech_stack: "python"
+  
+  generators:
+    - name: "db_insert"
+      instruction: "準備一個{entity}, with table:"
+      output: "資料庫插入語句（INSERT）"
+      technology: 
+        orm: "SQLAlchemy"
+        example: |
+          # 產生類似這樣的程式碼
+          lesson = Lesson(
+              journey_id=1,
+              chapter_id=1,
+              lesson_id=1,
+              name="Python 基礎",
+              type=2,
+              reward_exp=300
+          )
+          db.session.add(lesson)
+          db.session.commit()
+    
+    - name: "api_call"
+      instruction: "(UID=$userId) {api_action}, call table:"
+      output: "HTTP 請求程式碼"
+      technology:
+        http_client: "requests"
+        auth: "JWT Bearer Token"
+        example: |
+          # 產生類似這樣的程式碼
+          response = requests.post(
+              f"{BASE_URL}/api/lessons/progress",
+              headers={"Authorization": f"Bearer {alice_token}"},
+              json={"lessonId": 1, "progress": 80}
+          )
+    
+    - name: "api_response_validator"
+      instruction: "回應, with table:"
+      output: "JSON 結構驗證程式碼"
+      technology:
+        assertion: "pytest assert"
+        json_path: "jsonpath-ng / dict access"
+        example: |
+          # 產生類似這樣的程式碼
+          assert response.status_code == 200
+          data = response.json()
+          assert data["lessonId"] == 1
+          assert data["progress"] == 80
+          assert data["status"] == "IN_PROGRESS"
+    
+    - name: "db_query_validator"
+      instruction: "驗證存在一個{entity}, with table:"
+      output: "資料庫查詢與斷言程式碼（SELECT + assert）"
+      technology:
+        orm: "SQLAlchemy"
+        assertion: "pytest assert"
+        example: |
+          # 產生類似這樣的程式碼
+          progress = db.session.query(LessonProgress).filter_by(
+              user_id=alice_id,
+              lesson_id=1
+          ).first()
+          assert progress is not None
+          assert progress.progress == 80
+          assert progress.status == "IN_PROGRESS"
+    
+    - name: "api_error_validator"
+      instruction: "操作失敗"
+      output: "HTTP 錯誤狀態碼驗證"
+      technology:
+        assertion: "pytest assert"
+        status_codes: "4xx or 5xx"
+        example: |
+          # 產生類似這樣的程式碼
+          assert response.status_code >= 400

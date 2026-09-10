@@ -1,0 +1,19 @@
+.DS_Store
+
+# 建置產物
+build/
+fitness-app/build/
+fitness-app/.dart_tool/
+健金術.app/
+*.apk
+*.zip
+
+# 工具的虛擬環境（tools/build_web.sh 會自己重建）
+fitness-app/tools/.venv/
+
+# 測試覆蓋率報告
+fitness-app/coverage/
+
+# 注意：fitness-app/shots/ 的 17 張截圖**刻意保留進版控**。
+# 它們是整合測試的產物，但也是目前唯一有中文字型的畫面紀錄
+# —— widget 測試沒有中文字型，只會畫出豆腐。

@@ -1,0 +1,278 @@
+// WSA 課程平台 - Entity Relationship Model (SSOT)
+// 用於 TDD 練武單元：課程平台單元進度功能實戰
+//
+// IMPORTANT:
+// - 本檔案需與 app/models/* 與 alembic migration 保持一致
+
+// =========
+// 列舉型別
+// =========
+Enum lesson_type {
+  VIDEO [note: '影片課程']
+  SURVEY [note: '問卷課程']
+  CHALLENGE [note: '挑戰題課程']
+}
+
+Enum lesson_progress_status {
+  IN_PROGRESS [note: '進行中']
+  COMPLETED [note: '已完成']
+  DELIVERED [note: '已交付']
+}
+
+Enum role_type {
+  journey_purchased [note: '旅程購買：已購買旅程（完成付款的訂單）']
+  journey_subscription [note: '旅程訂閱狀態：旅程訂閱中（有效的訂閱資格）']
+  journey_teacher [note: '旅程老師']
+}
+
+Enum product_status {
+  ACTIVE [note: '上架中']
+  INACTIVE [note: '已下架']
+}
+
+Enum order_status {
+  CREATED [note: '已建立']
+  PROCESSING [note: '處理中']
+  PAID [note: '已付款']
+  COMPLETED [note: '已完成']
+  CANCELLED [note: '已取消']
+}
+
+Enum coupon_type {
+  DISCOUNT [note: '折扣']
+  VOUCHER [note: '抵用券']
+}
+
+Enum payment_method {
+  CREDIT [note: '信用卡']
+  ATM [note: 'ATM轉帳']
+  BNPL [note: '無卡分期']
+}
+
+Enum payment_provider {
+  SYSPAY [note: '藍新金流']
+  ZINGALA [note: '中租零卡分期']
+}
+
+// =========
+// 用戶
+// =========
+Table users {
+  id integer [primary key, increment]
+  name varchar [not null]
+  level integer [default: 1, note: '用戶等級']
+  exp integer [default: 0, note: '經驗值']
+
+  indexes {
+    name
+  }
+}
+
+// =========
+// 旅程 / 章節 / 課程
+// =========
+Table journeys {
+  id integer [primary key, increment]
+  name varchar [not null]
+}
+
+Table chapters {
+  id integer [primary key, increment]
+  journey_id integer [ref: > journeys.id, not null]
+  name varchar [not null]
+  order_index integer [not null, note: '章節順序']
+}
+
+Table lessons {
+  id integer [primary key, increment]
+  name varchar [not null]
+  type lesson_type [not null]
+  journey_id integer [ref: > journeys.id, not null]
+  chapter_id integer [ref: > chapters.id, not null]
+  reward_exp integer [default: 0, note: '獎勵經驗值']
+
+  indexes {
+    journey_id
+    chapter_id
+  }
+}
+
+// =========
+// 課程進度
+// =========
+Table lesson_progress {
+  id integer [primary key, increment]
+  user_id integer [ref: > users.id, not null]
+  lesson_id integer [ref: > lessons.id, not null]
+  progress integer [default: 0, note: '進度百分比 0-100']
+  status lesson_progress_status [not null]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (user_id, lesson_id) [unique]
+    user_id
+    lesson_id
+  }
+}
+
+// =========
+// 角色
+// =========
+Table roles {
+  id integer [primary key, increment]
+  user_id integer [ref: > users.id, not null]
+  role_type role_type [not null]
+  journey_id integer [ref: > journeys.id, not null, note: '關聯的旅程 ID']
+  granted_at timestamp [default: `now()`, note: '授予時間']
+  revoked_at timestamp [null, note: '撤銷時間，null 表示角色仍有效']
+
+  indexes {
+    (user_id, role_type, journey_id) [unique]
+    user_id
+    journey_id
+    role_type
+  }
+
+  Note: '''
+  角色表，記錄用戶在特定旅程中的角色
+
+  約束：
+  - 同一用戶在同一旅程中不可重複擁有同一 role_type
+  - revoked_at 為 null 時表示角色有效
+  '''
+}
+
+// =========
+// 商品 / 訂單
+// =========
+Table products {
+  id integer [primary key, increment]
+  name varchar [not null, note: '商品名稱']
+  price decimal(10,0) [not null, note: '商品價格']
+  description varchar [note: '商品描述']
+  plan_items json [not null, note: '商品包含的方案項目陣列']
+  status product_status [not null, default: 'ACTIVE']
+
+  indexes {
+    status
+  }
+
+  Note: '''
+  商品實體，代表可購買的課程產品
+
+  plan_items 結構（JSON Array）：
+  [
+    {
+      "plan_type": "journey_purchased" | "journey_subscription" | "journey_teacher",
+      "journey_id": integer,
+      "duration_days": integer (選填，僅 journey_subscription 使用，表示訂閱天數)
+    }
+  ]
+
+  約束（規格層）：
+  - price > 0
+  - plan_items 至少包含一個項目
+  - plan_type 只能是 role_type 列舉中的值
+  '''
+}
+
+Table orders {
+  id integer [primary key, increment]
+  user_id integer [ref: > users.id, not null]
+  order_number varchar(18) [unique, not null, note: '訂單編號，格式: yyyyMMddHHmmss+4位隨機碼']
+  status order_status [not null, default: 'CREATED']
+  total_price decimal(10,0) [not null, note: '訂單總價']
+  created_at timestamp [default: `now()`, note: '建立時間']
+  payment_deadline timestamp [note: '付款期限，建立後 3 天']
+  paid_at timestamp [note: '付款時間']
+
+  indexes {
+    user_id
+    order_number [unique]
+    status
+    payment_deadline
+  }
+
+  Note: '''
+  訂單實體
+
+  狀態流轉（規格層）：
+  - CREATED → PROCESSING → PAID → COMPLETED
+  - CREATED → CANCELLED
+  - PROCESSING → CANCELLED
+
+  約束（規格層）：
+  - total_price >= 0
+  - payment_deadline = created_at + 3 天
+  '''
+}
+
+Table order_items {
+  id integer [primary key, increment]
+  order_id integer [ref: > orders.id, not null]
+  product_id integer [ref: > products.id, not null]
+  product_name varchar [not null, note: '商品名稱快照']
+  price decimal(10,0) [not null, note: '購買時的單價']
+  quantity integer [not null, default: 1, note: '購買數量']
+
+  indexes {
+    order_id
+    product_id
+  }
+
+  Note: '''
+  訂單項目實體
+
+  約束（規格層）：
+  - quantity > 0
+  - price >= 0
+  '''
+}
+
+Table coupons {
+  id integer [primary key, increment]
+  user_id integer [ref: > users.id, not null]
+  code varchar [not null, note: '折扣券代碼']
+  name varchar [not null, note: '折扣券名稱']
+  type coupon_type [not null]
+  value decimal(10,2) [not null, note: '折扣值，DISCOUNT 為折扣比例(0-1)，VOUCHER 為抵用金額']
+  order_id integer [ref: > orders.id, note: '使用在哪個訂單，null 表示未使用']
+  expired_at timestamp [note: '過期時間']
+
+  indexes {
+    user_id
+    code
+    order_id
+  }
+
+  Note: '''
+  折扣券實體
+
+  約束（規格層）：
+  - type 為 DISCOUNT 時，value 範圍 0-1
+  - type 為 VOUCHER 時，value > 0
+  - 一個折扣券只能使用一次
+  '''
+}
+
+Table payment_requests {
+  id integer [primary key, increment]
+  order_id integer [ref: > orders.id, not null]
+  payment_method payment_method [not null]
+  payment_provider payment_provider
+  amount decimal(10,0) [not null, note: '付款金額']
+  request_time timestamp [default: `now()`, note: '請求時間']
+
+  indexes {
+    order_id
+    payment_method
+  }
+
+  Note: '''
+  付款請求實體，記錄訂單的付款請求
+
+  約束（規格層）：
+  - amount > 0
+  - amount = 對應 order 的 total_price
+  '''
+}

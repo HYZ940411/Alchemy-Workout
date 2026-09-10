@@ -1,0 +1,304 @@
+openapi: 3.0.0
+info:
+  title: WSA Course Platform - Lesson Progress API
+  description: 水球軟體學院課程平台 - 課程進度管理 API
+  version: 1.0.0
+
+servers:
+  - url: https://api.wsa.tw/v1
+    description: Production server
+
+paths:
+  /lesson-progress/update-video-progress:
+    post:
+      summary: 更新課程影片進度
+      description: 更新學生的影片觀看進度（單調遞增，範圍 0-100%）
+      operationId: updateVideoProgress
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - lessonId
+                - progress
+              properties:
+                lessonId:
+                  type: integer
+                  description: 課程 ID
+                  example: 1
+                progress:
+                  type: integer
+                  description: 影片進度（0-100）
+                  minimum: 0
+                  maximum: 100
+                  example: 80
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lessonId:
+                    type: integer
+                    description: 課程 ID
+                  progress:
+                    type: integer
+                    description: 當前進度
+                  status:
+                    type: string
+                    enum: [IN_PROGRESS, COMPLETED]
+                    description: 課程狀態
+                example:
+                  lessonId: 1
+                  progress: 80
+                  status: "IN_PROGRESS"
+        '400':
+          description: 更新失敗（進度倒退或超出範圍）
+
+  /lesson-progress/submit-challenge:
+    post:
+      summary: 提交挑戰題作業
+      description: 提交挑戰題作業檔案。普通挑戰題直接完成，Boss 挑戰題進入等待批改狀態
+      operationId: submitChallenge
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - lessonId
+                - files
+              properties:
+                lessonId:
+                  type: integer
+                  description: 挑戰題課程 ID
+                  example: 3
+                files:
+                  type: string
+                  description: 上傳的檔案名稱
+                  example: "solution.java"
+      responses:
+        '200':
+          description: 提交成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lessonId:
+                    type: integer
+                    description: 課程 ID
+                  status:
+                    type: string
+                    enum: [COMPLETED, WAITING_FOR_REVIEW]
+                    description: 課程狀態（普通挑戰題=COMPLETED，Boss挑戰題=WAITING_FOR_REVIEW）
+                  files:
+                    type: string
+                    description: 提交的檔案
+                example:
+                  lessonId: 3
+                  status: "COMPLETED"
+                  files: "solution.java"
+        '400':
+          description: 提交失敗（非挑戰題課程或已提交）
+
+  /lesson-progress/submit-review-result:
+    post:
+      summary: 提交批改結果
+      description: 教師提交 Boss 挑戰題的批改結果
+      operationId: submitReviewResult
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - lessonId
+                - verdict
+              properties:
+                lessonId:
+                  type: integer
+                  description: Boss 課程 ID
+                  example: 4
+                verdict:
+                  type: string
+                  enum: [PASS, FAIL]
+                  description: 批改結果
+                  example: "PASS"
+      responses:
+        '200':
+          description: 批改成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lessonId:
+                    type: integer
+                    description: 課程 ID
+                  status:
+                    type: string
+                    enum: [BOSS_SUCCESS, WAITING_FOR_REVIEW]
+                    description: 課程狀態（通過=BOSS_SUCCESS，失敗=維持WAITING_FOR_REVIEW）
+                  verdict:
+                    type: string
+                    enum: [PASS, FAIL]
+                    description: 批改結果
+                example:
+                  lessonId: 4
+                  status: "BOSS_SUCCESS"
+                  verdict: "PASS"
+        '400':
+          description: 批改失敗
+
+  /lesson-progress/deliver-lesson:
+    post:
+      summary: 交付課程
+      description: 交付已完成的課程，領取經驗值獎勵並可能觸發升級
+      operationId: deliverLesson
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - lessonId
+              properties:
+                lessonId:
+                  type: integer
+                  description: 課程 ID
+                  example: 1
+      responses:
+        '200':
+          description: 交付成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lessonId:
+                    type: integer
+                    description: 課程 ID
+                  status:
+                    type: string
+                    enum: [DELIVERED]
+                    description: 課程狀態
+                  reward:
+                    type: object
+                    properties:
+                      exp:
+                        type: integer
+                        description: 獲得的經驗值
+                      oldLevel:
+                        type: integer
+                        description: 交付前等級
+                      newLevel:
+                        type: integer
+                        description: 交付後等級
+                      levelUp:
+                        type: boolean
+                        description: 是否升級
+                      levelUpMessage:
+                        type: string
+                        description: 升級訊息（如有）
+                example:
+                  lessonId: 1
+                  status: "DELIVERED"
+                  reward:
+                    exp: 300
+                    oldLevel: 1
+                    newLevel: 3
+                    levelUp: true
+                    levelUpMessage: "恭喜 Alice 升級到 Lv. 3"
+        '400':
+          description: 交付失敗（課程未完成或已交付）
+
+  /auth/login:
+    post:
+      summary: 用戶登入系統
+      description: 用戶登入並獲取 JWT Token
+      operationId: userLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: integer
+                  description: 用戶 ID
+      responses:
+        '200':
+          description: 登入成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT Token
+                example:
+                  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+  /journey/subscribe:
+    post:
+      summary: 用戶訂閱旅程
+      description: 學生訂閱指定旅程
+      operationId: subscribeJourney
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - journeyId
+              properties:
+                journeyId:
+                  type: integer
+                  description: 旅程 ID
+                  example: 1
+      responses:
+        '200':
+          description: 訂閱成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  journeyId:
+                    type: integer
+                    description: 旅程 ID
+                  subscribed:
+                    type: boolean
+                    description: 訂閱狀態
+                example:
+                  journeyId: 1
+                  subscribed: true
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+

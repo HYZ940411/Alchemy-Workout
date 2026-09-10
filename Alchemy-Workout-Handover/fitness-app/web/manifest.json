@@ -1,0 +1,36 @@
+{
+    "name": "健金術 Alchemy Workout",
+    "short_name": "健金術",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#F9F9F9",
+    "theme_color": "#F5A623",
+    "description": "把訓練變成看得見的六維能力值 —— 健身記錄、遊戲化階級與師徒社群。",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "lang": "zh-Hant-TW"
+}

@@ -1,0 +1,21 @@
+-r requirements.txt
+
+# 測試框架
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+pytest-xdist==3.5.0
+pytest-timeout==2.4.0  # 防止測試卡死
+
+# HTTP 測試
+requests==2.31.0
+
+# Testcontainers
+testcontainers==3.7.1
+psycopg2-binary==2.9.11  # testcontainers 需要 psycopg2（不是 psycopg3）
+
+# 開發工具
+black==24.1.1
+flake8==7.0.0
+mypy==1.8.0
+ipython==8.20.0
