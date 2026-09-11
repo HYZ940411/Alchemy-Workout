@@ -1,14 +1,19 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'data/auth.dart';
 import 'data/store.dart';
+import 'data/store_firestore.dart';
+import 'firebase_options.dart';
+import 'screens/auth_gate.dart';
 import 'screens/boot_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/signup/signup_screen.dart';
 import 'state/app_state.dart';
 import 'theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -17,8 +22,12 @@ void main() {
     systemNavigationBarColor: AppColors.surface,
     systemNavigationBarIconBrightness: Brightness.dark,
   ));
-  // 由平台決定：手機／桌面存檔案，瀏覽器存 localStorage。
-  runApp(FitnessApp(store: defaultStore()));
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  // 正式環境走帳號 ＋ Firestore，不再用本機存檔 ——
+  // 換裝置、清瀏覽器資料都不會再從頭開始。
+  runApp(FitnessApp(auth: AuthService()));
 }
 
 class FitnessApp extends StatefulWidget {
@@ -26,7 +35,15 @@ class FitnessApp extends StatefulWidget {
   /// 傳 null 表示完全不持久化 —— 既有的 widget 測試走這條，
   /// 免得每跑一次測試就往磁碟寫一份狀態。
   final Store? store;
-  const FitnessApp({super.key, this.store});
+
+  /// 帳號。空值代表這次不接後端 —— **既有的 widget 測試全部走這條**，
+  /// 行為與加後端之前完全一樣，不必為了 BE-04 去碰那 1,212 個測試。
+  final AuthService? auth;
+
+  /// 依 uid 建立儲存後端。測試改傳一個假的就不必連真的 Firestore。
+  final Store Function(String uid)? storeFor;
+
+  const FitnessApp({super.key, this.store, this.auth, this.storeFor});
   @override
   State<FitnessApp> createState() => _FitnessAppState();
 }
@@ -39,8 +56,11 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     // 讀回上次的狀態。讀不到就沿用假資料 —— App 照常開得起來。
+    //
+    // 接了帳號就不在這裡讀：要先知道是誰，才知道該讀誰的。
+    // 那件事由 [AuthGate] 在收到登入事件時做。
     final store = widget.store;
-    if (store != null) state.hydrate(store);
+    if (store != null && widget.auth == null) state.hydrate(store);
   }
 
   @override
@@ -61,16 +81,27 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
   }
 
   @override
-  Widget build(BuildContext context) => AppScope(
-        state: state,
-        child: MaterialApp(
-          title: '健金術 Alchemy Workout',
-          debugShowCheckedModeBanner: false,
-          theme: buildTheme(),
-          // 讀完存檔才進主畫面。載入中與讀取失敗各有自己的畫面。
-          home: const BootGate(child: FirstRunGate()),
-        ),
-      );
+  Widget build(BuildContext context) {
+    final auth = widget.auth;
+    return AppScope(
+      state: state,
+      child: MaterialApp(
+        title: '健金術 Alchemy Workout',
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(),
+        home: auth == null
+            // 沒接帳號：讀完存檔才進主畫面。載入中與讀取失敗各有自己的畫面。
+            ? const BootGate(child: FirstRunGate())
+            // 接了帳號：先確定是誰，再讀他的資料。
+            : AuthGate(
+                auth: auth,
+                state: state,
+                storeFor: widget.storeFor ??
+                    (uid) => FirestoreStore(uid: uid),
+              ),
+      ),
+    );
+  }
 }
 
 /// 這台裝置上還沒有帳號時，先走註冊流程。

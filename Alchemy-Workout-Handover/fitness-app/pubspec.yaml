@@ -38,6 +38,16 @@ dependencies:
   # 瀏覽器 API（localStorage）。dart:html 已淘汰，且不支援 Wasm 編譯。
   web: ^1.1.1
 
+  # --- 後端（BE-04）---
+  # 版本號是照 pub.dev 當時的最新穩定版填的，**尚未經過 pub get 解析驗證**
+  # （寫這段的機器跑不動 Flutter，見 PROGRESS.md）。第一次在能跑的環境
+  # 開工時，若解析不過就用 `flutter pub add` 讓它自己挑相容版本。
+  firebase_core: ^4.14.0
+  firebase_auth: ^6.6.1
+  cloud_firestore: ^6.9.0
+  # 刻意**不**加 google_sign_in：改用 firebase_auth 內建的 OAuth 流程。
+  # 理由見 lib/data/auth.dart 的類別註解（Web 按鈕外觀、Android SHA-1）。
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

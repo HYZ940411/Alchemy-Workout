@@ -1,5 +1,7 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../data/auth.dart';
 import '../../mock/mock_equipment.dart';
 import '../../state/app_state.dart';
 import '../train/preferred_times_screen.dart';
@@ -13,6 +15,27 @@ class SettingsScreen extends StatelessWidget {
 
   /// 值域為〈器材設定 Aggregate〉的 8 個品項，與動作的「所需器材明細」同一組。
   static const _equipment = kEquipmentItems;
+
+  /// 登出。
+  ///
+  /// **先補一次存檔再登出**：自動存檔有 300ms 防抖，登出當下若剛好還在
+  /// 那個窗口裡，最後一筆變動會跟著登入狀態一起消失。
+  ///
+  /// 登出之後不必自己換畫面 —— [AuthGate] 監看登入狀態，會把整棵子樹
+  /// 換成註冊流程，記憶體裡上一個帳號的數字沒有機會被畫出來。
+  static Future<void> _logOut(BuildContext context) async {
+    final confirm = await showAppDialog(
+      context,
+      title: '要登出嗎？',
+      message: '你的進度存在雲端，下次用同一個帳號登入就會回來。',
+      confirmLabel: '登出',
+      cancelLabel: '取消',
+    );
+    if (confirm != true || !context.mounted) return;
+
+    await AppScope.of(context).saveNow();
+    await AuthService().signOut();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -250,6 +273,28 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const SectionLabel('帳號'),
+          // 沒有初始化 Firebase 就不顯示登出 —— 既有的 widget 測試
+          // （畫面爬蟲會走過每一頁）沒有 Firebase，碰 FirebaseAuth.instance
+          // 會當場丟例外。用 Firebase.apps 判斷是安全的：它是純查詢，不會拋。
+          if (Firebase.apps.isNotEmpty) ...[
+            Panel(
+              child: InkWell(
+                onTap: () => _logOut(context),
+                child: const Row(
+                  children: [
+                    Icon(Icons.logout, size: 18, color: AppColors.textFaint),
+                    SizedBox(width: 11),
+                    Expanded(
+                      child: Text('登出', style: TextStyle(fontSize: 13.5)),
+                    ),
+                    Icon(Icons.chevron_right,
+                        size: 18, color: AppColors.textFaint),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           Panel(
             child: InkWell(
               onTap: () => Navigator.of(context).push(

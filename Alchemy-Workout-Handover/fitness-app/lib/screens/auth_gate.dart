@@ -1,0 +1,133 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
+import '../data/auth.dart';
+import '../data/store.dart';
+import '../state/app_state.dart';
+import 'boot_screen.dart';
+import 'home_shell.dart';
+import 'signup/signup_screen.dart';
+
+/// 依登入狀態決定要顯示登入流程還是這個帳號的內容。
+///
+/// **這是唯一宣布「誰登入了」的地方。** 登入按鈕本身不推進畫面 ——
+/// 它只負責發起授權，結果由 [AuthService.authStateChanges] 這條 stream
+/// 宣布。兩邊都能推進畫面的話，哪個先到沒有保證，就是一個會偶發的競態。
+///
+/// 沒有登入的人看到的是註冊流程，**而且進不到 [BootGate] 底下** ——
+/// 所以上一個帳號留在記憶體裡的數字不會有機會被畫出來。
+class AuthGate extends StatefulWidget {
+  final AuthService auth;
+  final AppState state;
+
+  /// 建立這個帳號的儲存後端。測試改傳一個假的，就不必連真的 Firestore。
+  final Store Function(String uid) storeFor;
+
+  const AuthGate({
+    super.key,
+    required this.auth,
+    required this.state,
+    required this.storeFor,
+  });
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  StreamSubscription<User?>? _sub;
+
+  /// 還沒收到第一個事件。
+  ///
+  /// 與「收到了，而且是未登入」是兩回事：Firebase 要先讀完本機的憑證快取
+  /// 才知道上次是誰登入的。這段期間若直接當成未登入，每次冷啟動都會
+  /// 閃一下登入頁，然後才跳回主畫面。
+  bool _waiting = true;
+
+  User? _user;
+
+  /// 已經為哪一個 uid 讀過存檔。
+  ///
+  /// `authStateChanges` 會在權杖換新時重發同一位使用者 ——
+  /// 不擋的話每次換新都重讀一次存檔，把使用者當下未存檔的操作蓋掉。
+  String? _hydratedFor;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = widget.auth.authStateChanges().listen(_onAuthChanged);
+  }
+
+  void _onAuthChanged(User? user) {
+    if (user != null && _hydratedFor != user.uid) {
+      _hydratedFor = user.uid;
+      // 先呼叫再 setState：hydrate 是同步把狀態設成 loading 的，
+      // 所以這之後的第一次 build 就會畫載入中，不會閃到上一個帳號的數字。
+      widget.state.hydrate(widget.storeFor(user.uid));
+    }
+    if (user == null) _hydratedFor = null;
+    if (mounted) setState(() {
+      _waiting = false;
+      _user = user;
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_waiting) return const BootLoading();
+
+    if (_user == null) {
+      return SignUpScreen(
+        firstRun: true,
+        auth: widget.auth,
+        // 註冊流程走完不必做什麼 —— 畫面要不要換由這個 Gate 決定，
+        // 它看的是登入狀態，不是註冊流程的完成回呼。
+        onFinish: () {},
+      );
+    }
+
+    return BootGate(child: _SignedInHome(email: _user?.email));
+  }
+}
+
+/// 登入之後：帳號資料還沒填完就先走註冊問卷，填完了就進主畫面。
+///
+/// 與 [FirstRunGate] 的差別在於「這台裝置上有沒有帳號」已經由 [AuthGate]
+/// 回答掉了，這裡回答的是「這個帳號的問卷填完了沒」。
+class _SignedInHome extends StatefulWidget {
+  final String? email;
+  const _SignedInHome({this.email});
+
+  @override
+  State<_SignedInHome> createState() => _SignedInHomeState();
+}
+
+class _SignedInHomeState extends State<_SignedInHome> {
+  bool? _needsSignUp;
+
+  @override
+  Widget build(BuildContext context) {
+    // 只在第一次 build 時決定，之後不再跟著旗標變動改 ——
+    // 理由與 [FirstRunGate] 相同：completeSignUp() 在流程的倒數第二步
+    // 就把旗標設成 true 了，跟著它走會把最後一頁（訓練計畫推薦）吃掉。
+    _needsSignUp ??= !AppScope.of(context).signUpCompleted;
+
+    if (_needsSignUp == true) {
+      return SignUpScreen(
+        firstRun: true,
+        // 已經用 Google 授權過了，別再要求他選一次登入方式。
+        authorizedEmail: widget.email,
+        onFinish: () => setState(() => _needsSignUp = false),
+      );
+    }
+    return const HomeShell();
+  }
+}

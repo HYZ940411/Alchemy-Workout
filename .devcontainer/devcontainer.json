@@ -1,0 +1,36 @@
+{
+  "name": "健金術 Alchemy Workout（Flutter 3.44.1）",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  "features": {
+    // Claude Code 要用，順便也是 firebase-tools 的執行環境。
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    }
+  },
+
+  // 專案路徑不可含非 ASCII 字元：Flutter 的分析伺服器處理含中文的路徑
+  // 會崩潰（FormatException: Unterminated string），flutter analyze 直接
+  // 跑不起來。見 PROGRESS.md 第 2 節。/workspaces/... 是純 ASCII，沒問題。
+  "workspaceFolder": "/workspaces/Alchemy-Workout",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.dart-code",
+        "Dart-Code.flutter"
+      ],
+      "settings": {
+        "dart.flutterSdkPath": "/opt/flutter"
+      }
+    }
+  },
+
+  // 建好容器後裝 Claude Code 與 firebase-tools，並先把套件抓下來。
+  // pub get 放這裡跑，開完 Codespace 就能直接 analyze／test。
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  "remoteUser": "vscode"
+}

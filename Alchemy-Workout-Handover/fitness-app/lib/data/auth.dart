@@ -1,0 +1,74 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+/// 帳號的邊界。
+///
+/// App 其餘部分只認這個類別，不直接碰 `FirebaseAuth` ——
+/// 理由與 [Store] 相同：日後要換供應商（加上 Apple 登入、接回手機簡訊
+/// 驗證）時，改這一個檔案就好。
+///
+/// ## 為什麼不用 `google_sign_in` 套件
+///
+/// 用 `firebase_auth` 內建的 OAuth 流程，而不是 `google_sign_in`：
+///
+/// 1. **Web 版的按鈕外觀是我們自己的。** `google_sign_in` 在 Web 上規定
+///    必須用它自己渲染的按鈕元件（`renderButton()`），套不上 `AppButton`
+///    的樣式 —— 那等於為了接後端而偏離 UI 規格書。
+/// 2. **Android 不必先註冊 SHA-1 憑證指紋。** 原生流程沒有指紋就直接
+///    回 `DEVELOPER_ERROR`，而指紋只能人工貼到 Console。
+/// 3. 少一個依賴，也少一套 v6→v7 破壞性改版的相容問題。
+///
+/// 代價是登入走系統瀏覽器而不是原生的帳號選擇器，體驗略遜一階。
+/// 要換回原生流程的話，只需要改這個檔案，呼叫端不受影響。
+class AuthService {
+  AuthService({FirebaseAuth? auth}) : _auth = auth ?? FirebaseAuth.instance;
+
+  final FirebaseAuth _auth;
+
+  /// 登入狀態的變化。`null` 表示未登入。
+  ///
+  /// [AuthGate] 監看這個 stream 決定要顯示登入流程還是主畫面 ——
+  /// **登入的結果只由這裡宣布**，不由按鈕的 callback 宣布。
+  /// 按鈕自己推進畫面的話，會跟這個 stream 形成兩個來源，
+  /// 兩邊誰先到沒有保證，就是一個會偶發的競態。
+  Stream<User?> authStateChanges() => _auth.authStateChanges();
+
+  User? get currentUser => _auth.currentUser;
+
+  /// 用 Google 帳號登入。
+  ///
+  /// 使用者中途取消時回傳 `false`，不算錯誤 —— 呼叫端不必顯示任何訊息，
+  /// 停在原本的登入頁即可。真正的失敗（沒網路、供應商沒啟用）往上拋
+  /// [FirebaseAuthException]，由呼叫端顯示文字。
+  Future<bool> signInWithGoogle() async {
+    final provider = GoogleAuthProvider()
+      // 每次都跳出帳號選擇，不要默默沿用上次那個 ——
+      // 換帳號登入是這個 App 少數會用到的除錯手段（只有一位使用者的
+      // 那些流程要靠第二個帳號才測得到）。
+      ..setCustomParameters({'prompt': 'select_account'});
+
+    try {
+      if (kIsWeb) {
+        await _auth.signInWithPopup(provider);
+      } else {
+        await _auth.signInWithProvider(provider);
+      }
+      return true;
+    } on FirebaseAuthException catch (e) {
+      if (_userCancelled(e.code)) return false;
+      rethrow;
+    }
+  }
+
+  /// 使用者自己關掉授權視窗／按了取消。
+  ///
+  /// 各平台回的代碼不同，全部視為同一件事：他改變主意了，沒有出錯。
+  bool _userCancelled(String code) => const {
+        'popup-closed-by-user',
+        'cancelled-popup-request',
+        'user-cancelled',
+        'web-context-canceled',
+      }.contains(code);
+
+  Future<void> signOut() => _auth.signOut();
+}

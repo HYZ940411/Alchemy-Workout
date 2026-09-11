@@ -15,10 +15,18 @@ class LoginPane extends StatefulWidget {
   /// 第三方路徑：授權完成即帶回電子郵件。
   final void Function(String email) onThirdParty;
 
+  /// Google 授權。空值代表這次沒有接後端（既有測試與流程示範走這條），
+  /// 按鈕退回 [onThirdParty] 的假路徑。
+  ///
+  /// **授權成功後不由這裡推進畫面** —— 回傳只用來關掉載入中。
+  /// 換頁是 [AuthGate] 收到登入事件之後的事，兩邊都推進會變成競態。
+  final Future<bool> Function()? onGoogle;
+
   const LoginPane({
     super.key,
     required this.onPhone,
     required this.onThirdParty,
+    this.onGoogle,
   });
 
   @override
@@ -28,6 +36,10 @@ class LoginPane extends StatefulWidget {
 class _LoginPaneState extends State<LoginPane> {
   final phone = TextEditingController();
   String? error;
+
+  /// 授權視窗開著的期間。按鈕要禁用 —— 不擋的話連按兩下會開兩個視窗，
+  /// 而第二個的結果會覆蓋第一個。
+  bool _authorizing = false;
 
   @override
   void initState() {
@@ -48,6 +60,30 @@ class _LoginPaneState extends State<LoginPane> {
     }
     setState(() => error = null);
     widget.onPhone(phone.text.replaceAll(RegExp(r'[\s-]'), ''));
+  }
+
+  Future<void> _google() async {
+    final go = widget.onGoogle;
+    // 沒接後端：沿用原本的假路徑（流程示範與既有測試走這條）。
+    if (go == null) {
+      widget.onThirdParty('you@gmail.com');
+      return;
+    }
+
+    setState(() {
+      _authorizing = true;
+      error = null;
+    });
+    try {
+      await go();
+      // 成功的話 [AuthGate] 已經在換畫面了，這裡不必做任何事；
+      // 使用者中途取消也一樣 —— 停在原地，不顯示錯誤。
+    } catch (e) {
+      // 【必須】錯誤必須有文字，不可只靠紅色或靜靜地沒反應。
+      if (mounted) setState(() => error = '登入沒有成功，請再試一次。（$e）');
+    } finally {
+      if (mounted) setState(() => _authorizing = false);
+    }
   }
 
   @override
@@ -117,14 +153,17 @@ class _LoginPaneState extends State<LoginPane> {
             kind: BtnKind.secondary,
             icon: Icons.apple,
             // Apple 登入取得的可能為私密轉發信箱。
-            onPressed: () => widget.onThirdParty('a1b2c3@privaterelay.appleid.com'),
+            // 尚未接上真的授權 —— 需要 Apple 開發者帳號（見 PROGRESS.md DEP-03）。
+            onPressed: _authorizing
+                ? null
+                : () => widget.onThirdParty('a1b2c3@privaterelay.appleid.com'),
           ),
           const SizedBox(height: S.md),
           AppButton(
-            label: '使用 Google 帳號繼續',
+            label: _authorizing ? '授權中…' : '使用 Google 帳號繼續',
             kind: BtnKind.secondary,
             icon: Icons.g_mobiledata_rounded,
-            onPressed: () => widget.onThirdParty('you@gmail.com'),
+            onPressed: _authorizing ? null : _google,
           ),
 
           const SizedBox(height: S.xl),

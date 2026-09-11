@@ -133,8 +133,11 @@ flutter build macos --release
 - [x] 【CC】`[BE-03]` Firestore 資料模型設計 —— **先進 Plan 模式給人審再動手**。
       這是唯一「做錯要整個重來」的項目：Firestore 是 NoSQL，schema 錯了等於資料遷移 ✅2026-09-10
       → 方案見 `Firestore-Schema設計.md`
-- [ ] 【CC】`[BE-04]` Auth ＋ Firestore 實作。換掉 `Store` 介面的實作即可，
+- [~] 【CC】`[BE-04]` Auth ＋ Firestore 實作。換掉 `Store` 介面的實作即可，
       `AppState` 應該一行都不用改 —— `lib/data/store.dart` 的條件匯入就是為這件事存在
+      —— 程式碼已寫在分支 `wip/be-04-auth-firestore`，**但一行都還沒驗證過**
+      （原開發機跑不動 Flutter，見第 9 節 2026-09-11）。接手第一件事是
+      `flutterfire configure`，否則 `main.dart` 的 `firebase_options.dart` 匯入編不過
 - [ ] 【CC】`[BE-05]` 盤點加後端後會失效的測試，決定 mock 邊界
       （目前 1,212 個測試全部跑在無網路的假資料上）
 - [ ] 【CC】`[BE-06]` FCM 推播。規則（同日總量上限、優先序由低至高捨棄、四個等級）
@@ -341,3 +344,5 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-10 | 產出交接包；實測發現專案路徑含中文會使 `flutter analyze` 崩潰，記於第 2 節 |
 | 2026-09-10 | `BE-01` 完成（`firebase-tools` 安裝＋登入）；`BE-02` 建立 Firebase 專案（Project ID: `alchemy-workout`），預算警示延後，新增 `BE-10` |
 | 2026-09-10 | `BE-03` 完成：Firestore schema 設計方案（經 Plan 模式審核通過），交付於 `Firestore-Schema設計.md`。過程中核對規格發現「連續簽到 Aggregate」現有程式碼與規格不符（規格為 4 欄位皆儲存，程式碼只存 2 欄位），已記錄待 `BE-04` 一併同步調整 |
+| 2026-09-11 | **發現原開發機無法執行本專案**：Flutter 3.44.1（Dart 3.12.1）的 VM 要求 macOS 14.0 以上，而該機為 2017 年 MacBook Pro（MacBookPro14,1）、macOS 13.7.8，Apple 已不支援升級到 macOS 14。降版亦無解 —— `pubspec.yaml` 要求 `sdk: ^3.12.1`，能滿足的最低版本正是要求 macOS 14 的那一版。裁示改用 GitHub Codespaces，新增 `.devcontainer/`（釘死 Flutter 3.44.1） |
+| 2026-09-11 | `BE-04` 程式碼寫完但**完全未驗證**，置於分支 `wip/be-04-auth-firestore`：`lib/data/auth.dart`（Google 登入）、`lib/data/store_firestore.dart`（Firestore 版 Store）、`lib/screens/auth_gate.dart`、最小 `firestore.rules`，並改動 `main.dart`／`signup_screen.dart`／`login_screen.dart`／`settings_screen.dart`（登出）。決定改用 `firebase_auth` 內建 OAuth 而非 `google_sign_in` 套件，理由見 `auth.dart` 類別註解 |

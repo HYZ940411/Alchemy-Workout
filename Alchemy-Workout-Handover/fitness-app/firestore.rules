@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// 健金術 Alchemy Workout —— Firestore 安全規則
+//
+// **這是 [BE-04] 的最小可用版本，不是完整版。**
+// 目前只涵蓋「使用者私有資料限本人讀寫」這一條。
+// `Firestore-Schema設計.md` 第 7 節規劃的完整規則（經濟/信任類子路徑
+// 收斂成僅 Cloud Functions 可寫、跨使用者關聯資料的可見性判斷、
+// 管理員 custom claim）尚未實作，等 [BE-07] 把評分邏輯搬上 Cloud Functions
+// 之後才有意義 —— 在那之前把欄位鎖成「客戶端不可寫」，App 自己就動不了。
+//
+// 換句話說：**現階段客戶端仍可竄改自己的金幣與能力值。**
+// 這與現況（資料存在本機、改記憶體就能上排行榜）相比沒有變得更差，
+// 但也還沒變好，見 PROGRESS.md 第 5 節第 1 點。
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- 使用者私有資料 ---
+    //
+    // 整棵 users/{uid} 子樹只有本人能讀寫。這條規則同時涵蓋根文件與
+    // 其下所有子集合（ability/state、streaks/*、wallet/*、history/* 等），
+    // 靠的是最後那個 {document=**} 遞迴萬用字元。
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // --- 其餘一律拒絕 ---
+    //
+    // 平台公用資料（動作庫、課表、平台設定）目前仍在 App 內建的
+    // .g.dart 生成檔裡，還沒搬進 Firestore，所以這裡不需要開放讀取。
+    // 等真的要搬的時候再加對應的 match 區塊，而不是先開一個大洞等著填。
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

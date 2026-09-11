@@ -1,6 +1,7 @@
 import '../../domain/clock.dart';
 import 'package:flutter/material.dart';
 
+import '../../data/auth.dart';
 import '../../design/tokens.dart';
 import '../../domain/registration.dart';
 import '../../state/app_state.dart';
@@ -30,7 +31,23 @@ class SignUpScreen extends StatefulWidget {
   /// 第一次註冊時沒有東西可覆蓋，問了只會讓人以為自己要弄壞什麼。
   final bool firstRun;
 
-  const SignUpScreen({super.key, this.onFinish, this.firstRun = false});
+  /// 已經在 App 外面授權過的電子郵件（目前只有 Google 登入會給）。
+  ///
+  /// 有值代表「入口這一關已經過了」——[AuthGate] 已經收到登入事件，
+  /// 才會把這個畫面畫出來。不帶著它走的話，使用者剛授權完成，
+  /// 畫面卻還停在要他選登入方式的那一頁。
+  final String? authorizedEmail;
+
+  /// 帳號。空值代表這次沒接後端，第三方登入按鈕走假路徑。
+  final AuthService? auth;
+
+  const SignUpScreen({
+    super.key,
+    this.onFinish,
+    this.firstRun = false,
+    this.authorizedEmail,
+    this.auth,
+  });
   @override
   State<SignUpScreen> createState() => _SignUpScreenState();
 }
@@ -49,6 +66,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
     if (_init) return;
     _init = true;
     d = AppScope.of(context).signUpDraft;
+
+    // 外部已授權：入口這一關由 Firebase 過了，草稿要跟上。
+    // 放在續填判斷之前，這樣 `entryDone` 才會是真，接著就從條款頁開始。
+    final authorized = widget.authorizedEmail;
+    if (authorized != null && !d.entryDone) {
+      d.entry = SignUpEntry.thirdParty;
+      d.email = authorized;
+      step = -1; // 條款頁
+    }
+
     // 續填：自未完成的欄位開始，已填資料不清空。
     // 已走過入口與條款者不必再看啟動頁與登入頁。
     if (d.entryDone && d.termsAgreed) {
@@ -168,6 +195,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
             d.email = email;
             step = -1;
           }),
+          // 接了帳號才有真的 Google 授權；沒接就讓按鈕退回上面那條假路徑，
+          // 流程示範與既有測試的行為完全不變。
+          //
+          // 授權成功後**不在這裡換頁**：[AuthGate] 收到登入事件會重建整個
+          // 子樹，並把 email 當作 authorizedEmail 傳回來，畫面自然會落在條款頁。
+          onGoogle: widget.auth?.signInWithGoogle,
         );
       case -2:
         return PhoneVerifyPane(
