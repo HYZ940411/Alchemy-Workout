@@ -21,8 +21,10 @@ class SettingsScreen extends StatelessWidget {
   /// **先補一次存檔再登出**：自動存檔有 300ms 防抖，登出當下若剛好還在
   /// 那個窗口裡，最後一筆變動會跟著登入狀態一起消失。
   ///
-  /// 登出之後不必自己換畫面 —— [AuthGate] 監看登入狀態，會把整棵子樹
-  /// 換成註冊流程，記憶體裡上一個帳號的數字沒有機會被畫出來。
+  /// **登出之後一定要把疊上去的畫面收掉。** [AuthGate] 換掉的是
+  /// `MaterialApp.home`，也就是**最底層**那一頁；而設定頁是
+  /// `Navigator.push` 疊在它上面的。只換底層的話，登入頁是畫出來了，
+  /// 卻整個被設定頁蓋住 —— 使用者看到的是「按了登出完全沒反應」。
   static Future<void> _logOut(BuildContext context) async {
     final confirm = await showAppDialog(
       context,
@@ -33,8 +35,13 @@ class SettingsScreen extends StatelessWidget {
     );
     if (confirm != true || !context.mounted) return;
 
-    await AppScope.of(context).saveNow();
+    // 先取出來，之後的 await 會讓這個 context 不再保證可用。
+    final navigator = Navigator.of(context);
+    final state = AppScope.of(context);
+
+    await state.saveNow();
     await AuthService().signOut();
+    navigator.popUntil((route) => route.isFirst);
   }
 
   @override
