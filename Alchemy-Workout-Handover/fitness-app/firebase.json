@@ -2,5 +2,25 @@
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "alchemy-workout",
+          "appId": "1:327690545558:android:77a087d406752ca524d5b7",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "alchemy-workout",
+          "configurations": {
+            "android": "1:327690545558:android:77a087d406752ca524d5b7",
+            "web": "1:327690545558:web:ad0e91ceb69fe52924d5b7"
+          }
+        }
+      }
+    }
   }
 }
