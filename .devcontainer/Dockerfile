@@ -16,6 +16,10 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get install -y --no-install-recommends \
         curl git unzip xz-utils zip libglu1-mesa \
         chromium-browser \
+        # tools/build_web.sh 會建一個 venv 裝 fonttools 做字型子集化。
+        # Ubuntu 的 python3 不含 ensurepip，少了這個套件 venv 建不起來，
+        # 而那支腳本是專案規定唯一可用的 Web 建置方式（CLAUDE.md 硬性規則 2）。
+        python3-venv \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # --- Flutter 3.44.1 stable（釘死版本，不用 git clone 追分支）---
