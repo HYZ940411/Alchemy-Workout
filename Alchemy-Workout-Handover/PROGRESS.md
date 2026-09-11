@@ -126,11 +126,13 @@ flutter build macos --release
 > 使用者選定的第一優先。估 2–3 個月全職。
 > 這一項做完會一起解掉：沒有帳號、只有一個使用者、分數在客戶端算、AI 不是真的 AI。
 
-- [ ] 【人】`[BE-01]` 裝 Node.js 與 `firebase-tools`，執行 `firebase login`
-- [ ] 【人】`[BE-02]` 建立 Firebase 專案，**並在 GCP Console 設預算警示**
+- [x] 【人】`[BE-01]` 裝 Node.js 與 `firebase-tools`，執行 `firebase login` ✅2026-09-10
+- [~] 【人】`[BE-02]` 建立 Firebase 專案，**並在 GCP Console 設預算警示**
       （查詢寫法錯會在一天內燒光免費額度，而且不會壞、只會開始收費）
-- [ ] 【CC】`[BE-03]` Firestore 資料模型設計 —— **先進 Plan 模式給人審再動手**。
-      這是唯一「做錯要整個重來」的項目：Firestore 是 NoSQL，schema 錯了等於資料遷移
+      —— 專案已建立（Project ID: `alchemy-workout`），預算警示延後到 `BE-10`
+- [x] 【CC】`[BE-03]` Firestore 資料模型設計 —— **先進 Plan 模式給人審再動手**。
+      這是唯一「做錯要整個重來」的項目：Firestore 是 NoSQL，schema 錯了等於資料遷移 ✅2026-09-10
+      → 方案見 `Firestore-Schema設計.md`
 - [ ] 【CC】`[BE-04]` Auth ＋ Firestore 實作。換掉 `Store` 介面的實作即可，
       `AppState` 應該一行都不用改 —— `lib/data/store.dart` 的條件匯入就是為這件事存在
 - [ ] 【CC】`[BE-05]` 盤點加後端後會失效的測試，決定 mock 邊界
@@ -143,6 +145,9 @@ flutter build macos --release
       對話介面、扣點、失敗退點、重試都已做好，換掉後端即可
 - [ ] 【人→CC】`[BE-09]` App Check ＋ Secret Manager。
       **若先做手機簡訊驗證，這項要提前** —— 簡訊被刷是真的會付錢
+- [ ] 【人】`[BE-10]` 升級 Blaze 方案並在 GCP Console 設定預算警示。
+      **`BE-07`（Cloud Functions）開工前必須做完**——`BE-03`／`BE-04` 用免費方案（Spark）
+      即可，暫不需要 Blaze，故意延後以避免提前綁信用卡曝險
 
 ### B. 部署
 
@@ -264,6 +269,7 @@ flutter build macos --release
 | `系統架構` | 系統架構章節（**寫的是目標，不是現況**） |
 | `UI設計規格書_基礎規範.md` | UI 規格，1,592 行 |
 | `Figma/` | 設計原稿（參考用） |
+| `Firestore-Schema設計.md` | `[BE-03]` 交付文件，Firestore collection/document 設計方案，`BE-04` 依據 |
 | `tools/import_exercises.py` | 動作資料庫匯入器 |
 | `健身動作資料庫-*.csv`、`健身計劃*.csv` | 資料來源 |
 
@@ -318,6 +324,10 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-09 | **首次啟動走註冊流程** | 原本 `signUpCompleted` 預設 true（示範身分的一部分），於是全新瀏覽器打開看到的是別人的暱稱與階級。改成沒存檔就走完整註冊，並**當場歸零**，讓那份假資料根本不存在 |
 | 2026-09-10 | `CLAUDE.md` 整份重寫 | 原內容是課程 repo 的自動產生檔（TypeScript／FastAPI），還留著未替換的佔位字串。Claude Code 每次啟動都會讀它 |
 | 2026-09-10 | 殘留檔案**只標註不刪除** | 使用者裁示 |
+| 2026-09-10 | Blaze 升級與 GCP 預算警示延後到 `BE-07` 前才做（新增 `BE-10`） | `BE-03`／`BE-04` 用 Firestore 免費方案（Spark）就夠，不需要提前綁信用卡曝險 |
+| 2026-09-10 | 「本次訓練課表」與「訓練紀錄」在 Firestore 拆成兩個 collection（`session_plans`／`workout_sessions`），1:1 關聯 | 規格明訂兩者為獨立 Aggregate（選課表時建立 vs 開始訓練時建立），設計初稿曾誤合併為一，已對照 `02_Aggregate定義.md` 原文修正 |
+| 2026-09-10 | 會員權益 Firestore 文件不儲存 `none` 狀態，文件不存在＝從未訂閱過 | 規格明訂「生效狀態為三值，無『未生效』」；現有 Dart `MembershipState.none` 是客戶端對「文件不存在」的本地詮釋，非要儲存的狀態值 |
+| 2026-09-10 | `platform_config` 群組由 11 組擴充為至少 15 組（新增通知/審核時限/內容過濾/防作弊設定） | 已核對規格，確認這四項皆明文「平台級可調參數，由管理員於後台維護」，性質與既有 11 組相同 |
 
 ---
 
@@ -329,3 +339,5 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 |---|---|
 | 2026-09-10 | 建立本文件、重寫 `CLAUDE.md`、`git init` 並首次提交 |
 | 2026-09-10 | 產出交接包；實測發現專案路徑含中文會使 `flutter analyze` 崩潰，記於第 2 節 |
+| 2026-09-10 | `BE-01` 完成（`firebase-tools` 安裝＋登入）；`BE-02` 建立 Firebase 專案（Project ID: `alchemy-workout`），預算警示延後，新增 `BE-10` |
+| 2026-09-10 | `BE-03` 完成：Firestore schema 設計方案（經 Plan 模式審核通過），交付於 `Firestore-Schema設計.md`。過程中核對規格發現「連續簽到 Aggregate」現有程式碼與規格不符（規格為 4 欄位皆儲存，程式碼只存 2 欄位），已記錄待 `BE-04` 一併同步調整 |
