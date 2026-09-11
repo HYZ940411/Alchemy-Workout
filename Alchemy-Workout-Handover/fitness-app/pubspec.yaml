@@ -65,6 +65,11 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # 記憶體版的 Firestore。用它而不是 Firebase 的 emulator，是為了
+  # 跟既有 1,212 個測試同一套哲學：**測試不碰網路、不需要外部行程**。
+  # 代價是驗不到安全規則與網路故障，那兩者靠人工測試與 Rules Playground。
+  fake_cloud_firestore: ^4.2.0
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
