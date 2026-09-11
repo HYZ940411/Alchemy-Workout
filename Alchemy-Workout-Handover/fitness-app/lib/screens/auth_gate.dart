@@ -68,10 +68,12 @@ class _AuthGateState extends State<AuthGate> {
       widget.state.hydrate(widget.storeFor(user.uid));
     }
     if (user == null) _hydratedFor = null;
-    if (mounted) setState(() {
-      _waiting = false;
-      _user = user;
-    });
+    if (mounted) {
+      setState(() {
+        _waiting = false;
+        _user = user;
+      });
+    }
   }
 
   @override
