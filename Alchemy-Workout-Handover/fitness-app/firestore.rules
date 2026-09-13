@@ -2,7 +2,7 @@ rules_version = '2';
 
 // 健金術 Alchemy Workout —— Firestore 安全規則
 //
-// **這是 [BE-04]＋[BE-12]＋[BE-11 批次 1–5] 的版本，仍不是完整版。**
+// **這是 [BE-04]＋[BE-12]＋[BE-11 批次 1–6] 的版本，仍不是完整版。**
 // 目前涵蓋「使用者私有資料限本人讀寫」與「平台公用資料使用者唯讀、
 // 管理端（custom claim）寫入」兩條。
 // `Firestore-Schema設計.md` 第 7 節規劃的完整規則（經濟/信任類子路徑
@@ -46,6 +46,54 @@ service cloud.firestore {
     match /public_profiles/{uid} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // --- 師徒（[BE-11] 批次 6）---
+    //
+    // 只有當事的兩人讀得到。師徒之間的問答與任務是私密的指導內容，
+    // 與私訊同等級 —— 不是登入就能看的公開資料。
+    function inBond(bondId) {
+      return request.auth != null
+             && (get(/databases/$(database)/documents/mentor_bonds/$(bondId))
+                   .data.mentorUid == request.auth.uid
+                 || get(/databases/$(database)/documents/mentor_bonds/$(bondId))
+                      .data.apprenticeUid == request.auth.uid);
+    }
+
+    match /mentor_bonds/{bondId} {
+      allow read: if request.auth != null
+                  && (resource.data.mentorUid == request.auth.uid
+                      || resource.data.apprenticeUid == request.auth.uid);
+      allow create: if request.auth != null
+                    && (request.resource.data.mentorUid == request.auth.uid
+                        || request.resource.data.apprenticeUid == request.auth.uid);
+      // 解除與恢復都是狀態轉換，雙方皆可（規格：兩方都能提出解除）。
+      allow update: if request.auth != null
+                    && (resource.data.mentorUid == request.auth.uid
+                        || resource.data.apprenticeUid == request.auth.uid);
+      // **關係不硬刪** —— 已解除是狀態，不是消失；三天內還能恢復。
+      allow delete: if false;
+
+      match /tasks/{taskId} {
+        allow read, write: if inBond(bondId);
+      }
+      match /questions/{questionId} {
+        allow read, write: if inBond(bondId);
+      }
+    }
+
+    // 師徒申請。收件者與寄件者都看得到自己那一份。
+    match /mentor_requests/{requestId} {
+      allow read: if request.auth != null
+                  && (resource.data.toUid == request.auth.uid
+                      || resource.data.fromUid == request.auth.uid);
+      allow create: if request.auth != null
+                    && request.resource.data.fromUid == request.auth.uid;
+      // 收件者拒絕、寄件者收回，兩者都是刪掉這一筆。
+      allow delete: if request.auth != null
+                    && (resource.data.toUid == request.auth.uid
+                        || resource.data.fromUid == request.auth.uid);
+      allow update: if false;
     }
 
     // --- 私訊（[BE-11] 批次 5）---
@@ -230,7 +278,7 @@ service cloud.firestore {
 
     // --- 其餘一律拒絕 ---
     //
-    // 尚未上雲的跨使用者關聯資料（師徒/檢舉…見 [BE-11] 批次 6）與其他集合
+    // 尚未上雲的跨使用者關聯資料（檢舉／申訴…見 [BE-13]）與其他集合
     // 落在這裡。要開放時再加對應 match 區塊，不先開一個大洞等著填。
     match /{document=**} {
       allow read, write: if false;
