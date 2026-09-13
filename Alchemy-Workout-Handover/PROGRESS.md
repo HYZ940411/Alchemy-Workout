@@ -133,13 +133,17 @@ flutter build macos --release
 - [x] 【CC】`[BE-03]` Firestore 資料模型設計 —— **先進 Plan 模式給人審再動手**。
       這是唯一「做錯要整個重來」的項目：Firestore 是 NoSQL，schema 錯了等於資料遷移 ✅2026-09-10
       → 方案見 `Firestore-Schema設計.md`
-- [~] 【CC】`[BE-04]` Auth ＋ Firestore 實作。換掉 `Store` 介面的實作即可，
-      `AppState` 應該一行都不用改 —— `lib/data/store.dart` 的條件匯入就是為這件事存在
-      —— 程式碼已寫在分支 `wip/be-04-auth-firestore`，**但一行都還沒驗證過**
-      （原開發機跑不動 Flutter，見第 9 節 2026-09-11）。接手第一件事是
-      `flutterfire configure`，否則 `main.dart` 的 `firebase_options.dart` 匯入編不過
-- [ ] 【CC】`[BE-05]` 盤點加後端後會失效的測試，決定 mock 邊界
-      （目前 1,212 個測試全部跑在無網路的假資料上）
+- [x] 【CC】`[BE-04]` Auth ＋ Firestore 實作。換掉 `Store` 介面的實作即可，
+      `AppState` 應該一行都不用改 —— `lib/data/store.dart` 的條件匯入就是為這件事存在 ✅2026-09-11
+      → 分支 `wip/be-04-auth-firestore`。Google 登入、資料落地 Firestore、
+      登出／重新登入資料完整，皆已端到端驗證；`AppState` 確實一行未改。
+      **僅涵蓋使用者私有資料**，跨使用者與平台公用資料見 `[BE-11]`／`[BE-12]`
+- [x] 【CC】`[BE-05]` 盤點加後端後會失效的測試，決定 mock 邊界
+      （目前 1,212 個測試全部跑在無網路的假資料上） ✅2026-09-11
+      → 結論：**一個都沒失效**。`FitnessApp` 新增的 `auth` 參數預設為空值，
+      既有測試不傳它就完全走原路徑。mock 邊界定為 `fake_cloud_firestore`
+      （記憶體版，不起 emulator），與既有「測試不碰網路」的哲學一致。
+      現為 1,232 passed
 - [ ] 【CC】`[BE-06]` FCM 推播。規則（同日總量上限、優先序由低至高捨棄、四個等級）
       **都已實作並測過**，只差真的送出去 —— 投資報酬最高的一項
 - [ ] 【CC】`[BE-07]` 評分邏輯搬上 Cloud Functions。
@@ -151,6 +155,13 @@ flutter build macos --release
 - [ ] 【人】`[BE-10]` 升級 Blaze 方案並在 GCP Console 設定預算警示。
       **`BE-07`（Cloud Functions）開工前必須做完**——`BE-03`／`BE-04` 用免費方案（Spark）
       即可，暫不需要 Blaze，故意延後以避免提前綁信用卡曝險
+- [ ] 【CC】`[BE-11]` 跨使用者資料上雲：貼文／留言／按讚、關注、團隊、師徒、
+      私訊、檢舉申訴。collection 結構 `Firestore-Schema設計.md` 第 1 節已設計好。
+      **這項不做，事件風暴裡約一半的流程永遠只有一個人、跑不起來**
+      （目前靠「我的 → 流程示範 → 模擬對方」控制台代打）
+- [ ] 【CC】`[BE-12]` 平台公用資料上雲：動作庫、訓練計畫、平台設定、商品、
+      成就與獎勵定義。`tools/import_exercises.py` 要改成寫進 Firestore
+      而不是產生 `.g.dart`。不做的話管理員後台改了東西不會生效
 
 ### B. 部署
 
@@ -349,3 +360,5 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-11 | Codespaces 環境建立完成並**首次驗證 `BE-04` 程式碼**：`flutter pub get` 解析成功（Firebase 套件版本未經驗證卻猜中）、`flutter analyze` 只回報 1 項 lint（已修）、`flutter test --timeout 90s` **1,212 passed**，既有測試一個都沒被牽動。Firestore 資料庫建於 `asia-east1`，`firebase_options.dart` 已產生（web／android 兩個平台） |
 | 2026-09-11 | **`BE-04` 端到端驗證通過**：Google 登入 → 註冊問卷 → 資料落地 Firestore → 登出 → 重新登入，金幣／經驗值／連續簽到天數三項完全一致。證明快照拆成多份文件再組回來的轉換是正確的。過程中修掉兩個真 bug：登出後未 `popUntil`（`AuthGate` 換掉的是 `MaterialApp.home`，而設定頁疊在其上，看起來像「按了沒反應」）、devcontainer 缺 `python3-venv`（`build_web.sh` 第一步就失敗） |
 | 2026-09-11 | **Codespaces 上不可用 `flutter run -d web-server`**：debug 模式靠 WebSocket（`$dwdsSseHandler`）傳程式碼模組，被連接埠轉發擋掉，症狀是整頁空白、主控台報 `Library not defined: web_entrypoint.dart`，且 App 當場死掉導致存檔靜默中斷。**改用 `./tools/build_web.sh` 建置後以 `python3 -m http.server` 靜態供應**，代價是沒有 hot reload |
+| 2026-09-11 | **`BE-04` 與 `BE-05` 完成。** 補上 `test/store_firestore_test.dart`（20 條，涵蓋 `v` 版本號原樣進出、分組欄位回得到原位、組成績巢狀陣列轉換、membership「從未訂閱＝文件不存在」、連續簽到逐日推算），現為 **1,232 passed**。已知缺口：「讀取失敗要丟 `StoreLoadException`」無自動測試，`fake_cloud_firestore` 無法注入失敗，理由與補法寫在該測試檔尾 |
+| 2026-09-11 | 新增 `[BE-11]`（跨使用者資料上雲）與 `[BE-12]`（平台公用資料上雲）。`BE-04` 只搬了使用者私有資料，社群／團隊／師徒／商城／動作庫仍是本機假資料，所以「只有一位使用者」這個問題**沒有隨 `BE-04` 解掉** |
