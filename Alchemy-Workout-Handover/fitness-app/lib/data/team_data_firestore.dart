@@ -138,7 +138,11 @@ class FirestoreTeams implements TeamSource {
       final peak = data['peakSize'] is num ? (data['peakSize'] as num).round() : 0;
 
       tx.update(ref, {
-        'members': members,
+        // **點記法指名單一成員**，不是把整個 members 覆寫回去。
+        // 覆寫整份 Map 在真的 Firestore 上是取代、在部分測試替身上卻是
+        // 深層合併 —— 兩邊行為不同的寫法本身就是個坑。指名一個鍵則
+        // 兩邊一致，寫入量也小得多。
+        'members.$memberUid': _memberJson(m),
         'memberUids': members.keys.toList(),
         // 本週期曾達到過的最高人數，單調遞增 —— 排行榜分組依它判定。
         'peakSize': members.length > peak ? members.length : peak,
@@ -159,7 +163,9 @@ class FirestoreTeams implements TeamSource {
       if (members.remove(memberUid) == null) return;
 
       tx.update(ref, {
-        'members': members,
+        // 同上：**點記法指名刪除這一個鍵**。把移除後的整份 Map 寫回去的話，
+        // 在會做深層合併的實作上那個鍵會被舊資料補回來 —— 人退了隊卻還在名單上。
+        'members.$memberUid': FieldValue.delete(),
         'memberUids': members.keys.toList(),
         // peakSize **不減** —— 它是「曾經達到過」，不是「現在有幾人」。
       });
