@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../data/auth.dart';
 import '../data/platform_data.dart';
 import '../data/public_profile.dart';
+import '../data/follow_data.dart';
 import '../data/store.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
@@ -34,6 +35,9 @@ class AuthGate extends StatefulWidget {
   /// 也要讀別人的，所以需要知道「我是誰」。空值代表不同步。
   final PublicProfileSource Function(String uid)? profileFor;
 
+  /// 關注關係的來源（[BE-11] 批次 2）。空值代表不同步。
+  final FollowSource Function(String uid)? followsFor;
+
   const AuthGate({
     super.key,
     required this.auth,
@@ -41,6 +45,7 @@ class AuthGate extends StatefulWidget {
     required this.storeFor,
     this.platformData,
     this.profileFor,
+    this.followsFor,
   });
 
   @override
@@ -134,6 +139,17 @@ class _AuthGateState extends State<AuthGate> {
       // 順序顛倒的話新使用者第一次登入不會出現在任何人的清單上。
       await src.publish(widget.state.myPublicProfile(uid));
       widget.state.applyPublicProfiles(await src.others(limit: 50));
+
+      // **一定要在 applyPublicProfiles 之後**：applyFollows 靠 nameByUid
+      // 把 uid 翻回暱稱，而那張表是上一行填的。順序顛倒的話一個都翻不出來。
+      final follows = widget.followsFor?.call(uid);
+      if (follows != null) {
+        widget.state.followSource = follows;
+        widget.state.applyFollows(
+          await follows.following(),
+          await follows.followers(),
+        );
+      }
     } catch (_) {
       // 允許下次登入事件重試。
       _profileSyncedFor = null;

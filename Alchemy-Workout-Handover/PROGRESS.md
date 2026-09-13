@@ -160,7 +160,9 @@ flutter build macos --release
       **這項不做，事件風暴裡約一半的流程永遠只有一個人、跑不起來**
       （目前靠「我的 → 流程示範 → 模擬對方」控制台代打）
       → **分四批執行**。批次 1（公開檔案 `public_profiles`，身分層）程式碼完成、**未驗證**；
-      批次 2（關注＋貼文／留言／按讚）、3（團隊）、4（師徒＋私訊＋檢舉）未開始。
+      批次 2（關注）程式碼完成、**未驗證**；批次 3（貼文／留言／按讚）、
+      4（團隊）、5（師徒＋私訊＋檢舉）未開始。**批次由四改五** ——
+      關注與貼文拆開，一次驗一塊比較抓得到問題。
       **先做身分層的理由**：現有社群層以暱稱字串為識別碼
       （`_mine(author) => author == displayName`、`following` 存的是暱稱），
       而雲端跨使用者資料必須以 uid 為鍵 —— 暱稱不唯一且可改。
@@ -377,6 +379,9 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-11 | 新增 `[BE-11]`（跨使用者資料上雲）與 `[BE-12]`（平台公用資料上雲）。`BE-04` 只搬了使用者私有資料，社群／團隊／師徒／商城／動作庫仍是本機假資料，所以「只有一位使用者」這個問題**沒有隨 `BE-04` 解掉** |
 | 2026-09-13 | `[BE-12]` 程式碼寫完，置於分支 `wip/be-12-platform-data`，**本機無法驗證**（開發機 macOS 13，Flutter 3.44.1 的 VM 要 macOS 14，`flutter`／`dart` 連 VM 都起不來，與 2026-09-11 記錄一致），待 Codespaces 跑 `analyze`／`test`。新增 `PlatformDataSource` 抽象層（`lib/data/platform_data.dart`＝後備＋序列化、`platform_data_firestore.dart`＝Firestore 實作），比照 `BE-04` 的注入模式：`FitnessApp`／`AuthGate` 新增選用 `platformData`，登入後即發即忘地載入並 `AppState.applyPlatformData()` 填進既有可變容器（`platformExercises`／`platformPlans`／`planSpecById`／`achievements`／`taskPool`／`platformConfig`）。**不注入就走本地後備 → 既有 1,232 測試零改動**（mock 邊界同 `BE-05`）。新增 `test/platform_data_test.dart`。`firestore.rules` 加平台五集合「使用者唯讀、custom claim 管理端寫」 |
 | 2026-09-13 | **`[BE-11]` 改為分四批，批次 1（公開檔案）程式碼完成、未驗證。** 新增 `lib/data/public_profile.dart`（`PublicProfile` ＋ `PublicProfileSource` 邊界）、`public_profile_firestore.dart`（`public_profiles/{uid}`）、`test/public_profile_test.dart`（16 條）。`FitnessApp`／`AuthGate` 新增選用 `profileFor`，登入後即發即忘地先發布自己再讀別人；不注入就完全不同步 → 既有測試零改動。`firestore.rules` 新增「登入者皆可讀、僅本人可寫」—— **這是模型裡第一個「別人讀得到我的資料」的集合** |
+| 2026-09-13 | **`[BE-11]` 批次 2（關注關係）程式碼完成、未驗證。** 新增 `lib/data/follow_data.dart`＋`follow_data_firestore.dart`（`follows/{followerUid}_{followeeUid}`）、`test/follow_data_test.dart`（12 條）。`AppState.toggleFollow` 的同步簽章不變，改為**樂觀更新＋即發即忘**：記憶體先改、畫面先動，雲端寫入在背景進行且吞掉錯誤 —— 下次登入由 `applyFollows` 以雲端為準重新對齊。`firestore.rules` 新增「只有關注者本人能建立／移除自己發出的關注」 |
+| 2026-09-13 | 關注關係的文件 ID 用 **{follower}_{followee} 合成**，不用自動 ID | 「同一組關係只能有一筆」直接由 Firestore 主鍵保證，重複關注在這個結構下**寫不出來**，不必靠程式碼記得先查一次。兩個方向都是單欄位查詢，不需要複合索引 |
+| 2026-09-13 | `AuthGate` 中 `applyFollows` **必須排在 `applyPublicProfiles` 之後** | 前者靠後者填好的 `nameByUid` 把 uid 翻回暱稱；順序顛倒的話一個都翻不出來，而且不會報錯，只會靜靜地少掉所有關注關係 |
 | 2026-09-13 | 公開檔案**另立文件，不開放讀 `users/{uid}`** | 安全規則的粒度是**文件、不是欄位**。`users/{uid}` 裡有身高體重、生日、Email、處罰狀態、累計違規次數，「只公開其中幾個欄位」唯一可靠的做法就是拆成另一份文件。見 `Firestore-Schema設計.md` 第 7 節「建議另拆一份精簡 `public_profile`」 |
 | 2026-09-13 | 關閉可見度時**不寫該鍵**（而非寫 null）；發布用 `set` 整份覆寫（**不用 merge**） | 寫 null 等於把「他有幾點但不給你看」也放上雲端，而規則擋不住已在文件裡的欄位；用 merge 則會讓關閉可見度之前的舊值留在雲端 —— 使用者以為關了、別人其實還讀得到。兩條各有測試釘住 |
 | 2026-09-13 | `applyPublicProfiles` 對 `socialUsers` 是**併入而非取代** | 動態牆的貼文、對話、教官清單目前仍指向示範用的那幾位；直接換掉會讓那些畫面指到不存在的人。等批次 2–4 把貼文與師徒也搬上雲，示範資料才有辦法整批退場 |

@@ -26,6 +26,7 @@ import '../domain/platform_plan.dart';
 import '../data/store.dart';
 import '../data/platform_data.dart';
 import '../data/public_profile.dart';
+import '../data/follow_data.dart';
 import '../mock/mock_data.dart';
 import '../mock/mock_equipment.dart';
 
@@ -1970,6 +1971,53 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 暱稱 → uid。[nameByUid] 的反查 —— 畫面上拿得到的是暱稱，
+  /// 而雲端要的是 uid。
+  String? uidOf(String name) {
+    for (final e in nameByUid.entries) {
+      if (e.value == name) return e.key;
+    }
+    return null;
+  }
+
+  // --- 關注關係上雲（[BE-11] 批次 2）---
+
+  /// 雲端的關注關係。**空值代表不同步** —— 既有測試走這條，行為與上雲前一樣。
+  FollowSource? followSource;
+
+  /// 把 [toggleFollow] 的結果送上雲。
+  ///
+  /// **即發即忘，而且吞掉錯誤**：關注是樂觀更新，記憶體與畫面已經改了。
+  /// 這裡失敗就讓它失敗 —— 下次登入 [applyFollows] 會以雲端為準重新對齊。
+  /// 為了一次網路失敗把畫面倒回去，比晚一點才一致更難解釋。
+  void _pushFollow(String name, {required bool nowFollowing}) {
+    final src = followSource;
+    if (src == null) return;
+    final target = uidOf(name);
+    // 對方不在公開檔案裡（示範用的假使用者就是這種）—— 只在本地生效。
+    if (target == null) return;
+    (nowFollowing ? src.follow(target) : src.unfollow(target))
+        .catchError((_) {});
+  }
+
+  /// 以雲端的關注關係為準重新對齊（[BE-11] 批次 2）。
+  ///
+  /// **只處理認得出暱稱的 uid**：對方若還沒發布公開檔案，
+  /// 這裡沒有暱稱可以填進 [following]，略過即可 —— 下次它發布了自然會出現。
+  void applyFollows(Set<String> followingUids, Set<String> followerUids) {
+    for (final uid in followingUids) {
+      final name = nameByUid[uid];
+      if (name != null) following.add(name);
+    }
+    for (final uid in followerUids) {
+      final name = nameByUid[uid];
+      if (name != null && !followers.contains(name)) followers.insert(0, name);
+    }
+    // 粉絲數的不變條件：等於關注關係中被關注者為本人的筆數。
+    peakFollowerCount = math.max(peakFollowerCount, followers.length);
+    notifyListeners();
+  }
+
   // --- 封鎖（獨立 Aggregate，不附屬於對話）---
 
   late List<BlockedUser> blockedUsers = buildBlockedUsers();
@@ -2318,11 +2366,13 @@ class AppState extends ChangeNotifier {
     if (communityBlocked) return;
     if (following.contains(name)) {
       _unfollow(name);
+      _pushFollow(name, nowFollowing: false);
     } else {
       following.add(name);
       otherFollowerCounts[name] = (otherFollowerCounts[name] ?? 0) + 1;
       // 歷史行為計數，取消關注不扣回去。
       followTotal += 1;
+      _pushFollow(name, nowFollowing: true);
     }
     notifyListeners();
   }

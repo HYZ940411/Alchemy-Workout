@@ -2,7 +2,7 @@ rules_version = '2';
 
 // 健金術 Alchemy Workout —— Firestore 安全規則
 //
-// **這是 [BE-04]＋[BE-12]＋[BE-11 批次 1] 的版本，仍不是完整版。**
+// **這是 [BE-04]＋[BE-12]＋[BE-11 批次 1–2] 的版本，仍不是完整版。**
 // 目前涵蓋「使用者私有資料限本人讀寫」與「平台公用資料使用者唯讀、
 // 管理端（custom claim）寫入」兩條。
 // `Firestore-Schema設計.md` 第 7 節規劃的完整規則（經濟/信任類子路徑
@@ -48,6 +48,24 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // --- 關注關係（[BE-11] 批次 2）---
+    //
+    // 文件 ID 是 {followerUid}_{followeeUid}，所以「同一組關係只有一筆」
+    // 由主鍵保證。規則要管的是**只有關注者本人能建立或移除自己發出的關注**
+    // —— 不擋的話任何人都能替別人按關注，粉絲數就成了誰都能改的數字。
+    //
+    // 建立時看 request.resource（即將寫入的內容），
+    // 刪除時看 resource（already 存在的那份）—— 兩者不可混用。
+    match /follows/{edge} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.followerId == request.auth.uid;
+      allow delete: if request.auth != null
+                    && resource.data.followerId == request.auth.uid;
+      // 關注沒有「修改」這回事：要嘛存在、要嘛不存在。
+      allow update: if false;
+    }
+
     // --- 平台公用唯讀資料（[BE-12]）---
     //
     // 動作庫、訓練計畫、平台設定、成就定義、每日任務池（獎勵定義併入
@@ -79,7 +97,7 @@ service cloud.firestore {
 
     // --- 其餘一律拒絕 ---
     //
-    // 尚未上雲的跨使用者關聯資料（關注/貼文/團隊/師徒…見 [BE-11] 批次 2–4）與其他集合
+    // 尚未上雲的跨使用者關聯資料（貼文/團隊/師徒…見 [BE-11] 批次 3–5）與其他集合
     // 落在這裡。要開放時再加對應 match 區塊，不先開一個大洞等著填。
     match /{document=**} {
       allow read, write: if false;
