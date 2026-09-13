@@ -2,7 +2,7 @@ rules_version = '2';
 
 // 健金術 Alchemy Workout —— Firestore 安全規則
 //
-// **這是 [BE-04]＋[BE-12]＋[BE-11 批次 1–2] 的版本，仍不是完整版。**
+// **這是 [BE-04]＋[BE-12]＋[BE-11 批次 1–3] 的版本，仍不是完整版。**
 // 目前涵蓋「使用者私有資料限本人讀寫」與「平台公用資料使用者唯讀、
 // 管理端（custom claim）寫入」兩條。
 // `Firestore-Schema設計.md` 第 7 節規劃的完整規則（經濟/信任類子路徑
@@ -46,6 +46,50 @@ service cloud.firestore {
     match /public_profiles/{uid} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // --- 貼文、留言、按讚（[BE-11] 批次 3）---
+    //
+    // 這裡有一個規則設計上的難處：**按讚的人不是作者，卻必須能改貼文**
+    // —— 因為 likeCount 存在貼文文件上。若只允許作者寫，按讚就寫不進去；
+    // 若允許任何人寫，別人就能改你的貼文內容。
+    //
+    // 解法是用 diff().affectedKeys()：其他人可以更新這份文件，
+    // **但這次更新只准動到 likeCount 這一個欄位**。
+    //
+    // 計數本身仍可被竄改（有心人可以不按讚而直接加十次），
+    // 與金幣、能力值一樣要等 [BE-07] 搬上 Cloud Functions 才擋得住。
+    // 現階段它至少不能改別人的文字。
+    match /posts/{postId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.authorUid == request.auth.uid;
+      allow update: if request.auth != null && (
+                      resource.data.authorUid == request.auth.uid
+                      || request.resource.data.diff(resource.data)
+                           .affectedKeys().hasOnly(['likeCount'])
+                    );
+      // **貼文一律軟刪除**（deleted 欄位），不給硬刪 ——
+      // 貼文可被檢舉，硬刪會讓案件失去證據。
+      allow delete: if false;
+
+      match /comments/{commentId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+                      && request.resource.data.authorUid == request.auth.uid;
+        allow update: if request.auth != null
+                      && resource.data.authorUid == request.auth.uid;
+        allow delete: if false; // 同樣軟刪除
+      }
+
+      // 文件 ID 就是按讚者的 uid —— 一人一次由主鍵保證，
+      // 而「只能替自己按」由這條規則保證。
+      match /likes/{likerUid} {
+        allow read: if request.auth != null;
+        allow create, delete: if request.auth != null
+                              && likerUid == request.auth.uid;
+        allow update: if false; // 按讚沒有「修改」這回事
+      }
     }
 
     // --- 關注關係（[BE-11] 批次 2）---
@@ -97,7 +141,7 @@ service cloud.firestore {
 
     // --- 其餘一律拒絕 ---
     //
-    // 尚未上雲的跨使用者關聯資料（貼文/團隊/師徒…見 [BE-11] 批次 3–5）與其他集合
+    // 尚未上雲的跨使用者關聯資料（團隊/師徒/私訊/檢舉…見 [BE-11] 批次 4–5）與其他集合
     // 落在這裡。要開放時再加對應 match 區塊，不先開一個大洞等著填。
     match /{document=**} {
       allow read, write: if false;

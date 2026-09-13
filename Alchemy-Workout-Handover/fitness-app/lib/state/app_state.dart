@@ -27,6 +27,7 @@ import '../data/store.dart';
 import '../data/platform_data.dart';
 import '../data/public_profile.dart';
 import '../data/follow_data.dart';
+import '../data/post_data.dart';
 import '../mock/mock_data.dart';
 import '../mock/mock_equipment.dart';
 
@@ -2018,6 +2019,44 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- 貼文上雲（[BE-11] 批次 3）---
+
+  /// 雲端的貼文。**空值代表不同步** —— 既有測試走這條。
+  PostSource? postSource;
+
+  /// 我自己的 uid。雲端寫入要帶作者身分；空值代表沒登入或不同步。
+  String? myUid;
+
+  /// 即發即忘地把一次社群寫入送上雲。
+  ///
+  /// 與關注同一套理由：畫面已經改了，這裡失敗就讓它失敗 ——
+  /// 下次載入會以雲端為準。社群互動不是金流。
+  void _pushSocial(Future<void> Function(PostSource src, String uid) job) {
+    final src = postSource;
+    final uid = myUid;
+    if (src == null || uid == null) return;
+    job(src, uid).catchError((_) {});
+  }
+
+  /// 把雲端的貼文併進動態牆（[BE-11] 批次 3）。
+  ///
+  /// **併入而非取代**：示範用的貼文還撐著「動態牆長什麼樣」這件事，
+  /// 全新的平台上一篇真的貼文都沒有。同一個 ID 以雲端那份為準 ——
+  /// 它帶著別人的按讚與留言，本地那份沒有。
+  void applyCloudPosts(List<Post> cloud) {
+    for (final p in cloud) {
+      final i = posts.indexWhere((x) => x.id == p.id);
+      if (i >= 0) {
+        posts[i] = p;
+      } else {
+        posts.add(p);
+      }
+    }
+    // 動態牆依時間由新到舊。
+    posts.sort((a, b) => b.at.compareTo(a.at));
+    notifyListeners();
+  }
+
   // --- 封鎖（獨立 Aggregate，不附屬於對話）---
 
   late List<BlockedUser> blockedUsers = buildBlockedUsers();
@@ -2160,19 +2199,18 @@ class AppState extends ChangeNotifier {
     if (communityBlocked) return FilterVerdict.blocked;
     final v = screenContent(text);
     if (v == FilterVerdict.blocked) return v;
-    posts.insert(
-      0,
-      Post(
-        id: newId('p'),
-        author: displayName,
-        authorRank: rank,
-        text: text,
-        images: images,
-        at: now,
-        visibility: visibility,
-        pendingReview: v == FilterVerdict.flagged,
-      ),
+    final post = Post(
+      id: newId('p'),
+      author: displayName,
+      authorRank: rank,
+      text: text,
+      images: images,
+      at: now,
+      visibility: visibility,
+      pendingReview: v == FilterVerdict.flagged,
     );
+    posts.insert(0, post);
+    _pushSocial((src, uid) => src.publish(post, authorUid: uid));
     if (v == FilterVerdict.flagged) {
       // 疑似違規者照常送出，並**自動開立檢舉案件** ——
       // 只標記不開案的話，那則內容永遠不會有人看。
@@ -2274,6 +2312,8 @@ class AppState extends ChangeNotifier {
       // **自己的貼文不計**：對自身貼文的按讚與留言不發放任何獎勵。
       if (!_mine(p.author)) _grantInteraction('Like', requestId: p.id);
     }
+    final liked = p.likedByMe;
+    _pushSocial((src, _) => src.setLike(p.id, liked: liked));
     _syncAchievements();
     notifyListeners();
   }
@@ -2282,7 +2322,9 @@ class AppState extends ChangeNotifier {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return 0;
     if (text.trim().isEmpty) return 0;
-    p.comments.add(Comment(displayName, text.trim(), now));
+    final c = Comment(displayName, text.trim(), now);
+    p.comments.add(c);
+    _pushSocial((src, uid) => src.addComment(p.id, c, authorUid: uid));
     final exp = _mine(p.author) ? 0 : _grantInteraction('Comment');
     _syncAchievements();
     notifyListeners();
@@ -2308,6 +2350,7 @@ class AppState extends ChangeNotifier {
       pendingReview: screenContent(text) == FilterVerdict.flagged,
     );
     posts.insert(0, post);
+    _pushSocial((src, uid) => src.publish(post, authorUid: uid));
     _bumpTasks('使用者已發布貼文', 1);
     final exp = _grantInteraction('Share');
     _syncAchievements();

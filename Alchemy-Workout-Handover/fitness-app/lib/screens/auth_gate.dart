@@ -7,6 +7,7 @@ import '../data/auth.dart';
 import '../data/platform_data.dart';
 import '../data/public_profile.dart';
 import '../data/follow_data.dart';
+import '../data/post_data.dart';
 import '../data/store.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
@@ -38,6 +39,9 @@ class AuthGate extends StatefulWidget {
   /// 關注關係的來源（[BE-11] 批次 2）。空值代表不同步。
   final FollowSource Function(String uid)? followsFor;
 
+  /// 貼文的來源（[BE-11] 批次 3）。空值代表不同步。
+  final PostSource Function(String uid)? postsFor;
+
   const AuthGate({
     super.key,
     required this.auth,
@@ -46,6 +50,7 @@ class AuthGate extends StatefulWidget {
     this.platformData,
     this.profileFor,
     this.followsFor,
+    this.postsFor,
   });
 
   @override
@@ -142,6 +147,15 @@ class _AuthGateState extends State<AuthGate> {
 
       // **一定要在 applyPublicProfiles 之後**：applyFollows 靠 nameByUid
       // 把 uid 翻回暱稱，而那張表是上一行填的。順序顛倒的話一個都翻不出來。
+      // 貼文：先把來源與身分交給 AppState（之後的按讚／留言才寫得上去），
+      // 再把既有的貼文讀回來。
+      final postsSrc = widget.postsFor?.call(uid);
+      if (postsSrc != null) {
+        widget.state.myUid = uid;
+        widget.state.postSource = postsSrc;
+        widget.state.applyCloudPosts(await postsSrc.recent(limit: 30));
+      }
+
       final follows = widget.followsFor?.call(uid);
       if (follows != null) {
         widget.state.followSource = follows;
