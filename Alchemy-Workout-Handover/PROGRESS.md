@@ -155,10 +155,16 @@ flutter build macos --release
 - [ ] 【人】`[BE-10]` 升級 Blaze 方案並在 GCP Console 設定預算警示。
       **`BE-07`（Cloud Functions）開工前必須做完**——`BE-03`／`BE-04` 用免費方案（Spark）
       即可，暫不需要 Blaze，故意延後以避免提前綁信用卡曝險
-- [ ] 【CC】`[BE-11]` 跨使用者資料上雲：貼文／留言／按讚、關注、團隊、師徒、
+- [~] 【CC】`[BE-11]` 跨使用者資料上雲：貼文／留言／按讚、關注、團隊、師徒、
       私訊、檢舉申訴。collection 結構 `Firestore-Schema設計.md` 第 1 節已設計好。
       **這項不做，事件風暴裡約一半的流程永遠只有一個人、跑不起來**
       （目前靠「我的 → 流程示範 → 模擬對方」控制台代打）
+      → **分四批執行**。批次 1（公開檔案 `public_profiles`，身分層）程式碼完成、**未驗證**；
+      批次 2（關注＋貼文／留言／按讚）、3（團隊）、4（師徒＋私訊＋檢舉）未開始。
+      **先做身分層的理由**：現有社群層以暱稱字串為識別碼
+      （`_mine(author) => author == displayName`、`following` 存的是暱稱），
+      而雲端跨使用者資料必須以 uid 為鍵 —— 暱稱不唯一且可改。
+      批次 2–4 全部依賴批次 1 建立的 uid ↔ 暱稱對應（`AppState.nameByUid`）
 - [~] 【CC】`[BE-12]` 平台公用資料上雲：動作庫、訓練計畫、平台設定、商品、
       成就與獎勵定義。`tools/import_exercises.py` 要改成寫進 Firestore
       而不是產生 `.g.dart`。不做的話管理員後台改了東西不會生效
@@ -370,4 +376,8 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-11 | **`BE-04` 與 `BE-05` 完成。** 補上 `test/store_firestore_test.dart`（20 條，涵蓋 `v` 版本號原樣進出、分組欄位回得到原位、組成績巢狀陣列轉換、membership「從未訂閱＝文件不存在」、連續簽到逐日推算），現為 **1,232 passed**。已知缺口：「讀取失敗要丟 `StoreLoadException`」無自動測試，`fake_cloud_firestore` 無法注入失敗，理由與補法寫在該測試檔尾 |
 | 2026-09-11 | 新增 `[BE-11]`（跨使用者資料上雲）與 `[BE-12]`（平台公用資料上雲）。`BE-04` 只搬了使用者私有資料，社群／團隊／師徒／商城／動作庫仍是本機假資料，所以「只有一位使用者」這個問題**沒有隨 `BE-04` 解掉** |
 | 2026-09-13 | `[BE-12]` 程式碼寫完，置於分支 `wip/be-12-platform-data`，**本機無法驗證**（開發機 macOS 13，Flutter 3.44.1 的 VM 要 macOS 14，`flutter`／`dart` 連 VM 都起不來，與 2026-09-11 記錄一致），待 Codespaces 跑 `analyze`／`test`。新增 `PlatformDataSource` 抽象層（`lib/data/platform_data.dart`＝後備＋序列化、`platform_data_firestore.dart`＝Firestore 實作），比照 `BE-04` 的注入模式：`FitnessApp`／`AuthGate` 新增選用 `platformData`，登入後即發即忘地載入並 `AppState.applyPlatformData()` 填進既有可變容器（`platformExercises`／`platformPlans`／`planSpecById`／`achievements`／`taskPool`／`platformConfig`）。**不注入就走本地後備 → 既有 1,232 測試零改動**（mock 邊界同 `BE-05`）。新增 `test/platform_data_test.dart`。`firestore.rules` 加平台五集合「使用者唯讀、custom claim 管理端寫」 |
+| 2026-09-13 | **`[BE-11]` 改為分四批，批次 1（公開檔案）程式碼完成、未驗證。** 新增 `lib/data/public_profile.dart`（`PublicProfile` ＋ `PublicProfileSource` 邊界）、`public_profile_firestore.dart`（`public_profiles/{uid}`）、`test/public_profile_test.dart`（16 條）。`FitnessApp`／`AuthGate` 新增選用 `profileFor`，登入後即發即忘地先發布自己再讀別人；不注入就完全不同步 → 既有測試零改動。`firestore.rules` 新增「登入者皆可讀、僅本人可寫」—— **這是模型裡第一個「別人讀得到我的資料」的集合** |
+| 2026-09-13 | 公開檔案**另立文件，不開放讀 `users/{uid}`** | 安全規則的粒度是**文件、不是欄位**。`users/{uid}` 裡有身高體重、生日、Email、處罰狀態、累計違規次數，「只公開其中幾個欄位」唯一可靠的做法就是拆成另一份文件。見 `Firestore-Schema設計.md` 第 7 節「建議另拆一份精簡 `public_profile`」 |
+| 2026-09-13 | 關閉可見度時**不寫該鍵**（而非寫 null）；發布用 `set` 整份覆寫（**不用 merge**） | 寫 null 等於把「他有幾點但不給你看」也放上雲端，而規則擋不住已在文件裡的欄位；用 merge 則會讓關閉可見度之前的舊值留在雲端 —— 使用者以為關了、別人其實還讀得到。兩條各有測試釘住 |
+| 2026-09-13 | `applyPublicProfiles` 對 `socialUsers` 是**併入而非取代** | 動態牆的貼文、對話、教官清單目前仍指向示範用的那幾位；直接換掉會讓那些畫面指到不存在的人。等批次 2–4 把貼文與師徒也搬上雲，示範資料才有辦法整批退場 |
 | 2026-09-13 | **發現 `.g.dart` 既有漂移**：對 `tools/import_exercises.py`／`gen_platform_plans.py` 重跑（我的改動為輸出中性，已與原腳本逐位元比對證實），產出與 committed `.g.dart` 不同 —— `OVERRIDES` 的鍵已對不上 CSV 現況，`deadlift`／`squat` 等 15 個被 `ex('...')` 硬引用的友善動作 ID 被換成 `pNNN`，且校準過的相對強度／休息秒數遺失（正是 CLAUDE.md 硬性規則 1 警告的情形）。故 **committed `.g.dart` 才是正典**，已還原重跑產出、不提交。因此 `BE-12` 的上雲**種子取自 bundle**（新增 `fitness-app/tools/export_platform_defs.dart` 由 `BundledPlatformData` 匯出五集合 JSON → `tools/upload_platform_data.py` 上傳），保證雲端＝打包內容＝測試夾具。`import_exercises.py --upload`／`gen_platform_plans.py --upload` 仍保留「tools 寫進 Firestore」能力（使用者指示），供日後 CSV／OVERRIDES 校準後以 CSV 為真相來源時使用。**CSV／OVERRIDES 的漂移本身是既有問題、未修，留待獨立處理** |
