@@ -5,7 +5,6 @@ import '../../domain/models.dart';
 import '../../domain/commerce.dart';
 import '../../domain/community.dart';
 import '../../domain/rewards.dart';
-import '../../mock/mock_data.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -144,7 +143,7 @@ class PlanDetailScreen extends StatelessWidget {
           // 課表的說明性內容。**只有《健身計劃.csv》那 27 份有** ——
           // 七份示範用假課表沒有這些欄位，所以整段是條件呈現，
           // 不是每份課表都硬擠出一塊空白。
-          if (kPlanSpecById[plan.id] case final spec?) ...[
+          if (s.planSpecById[plan.id] case final spec?) ...[
             const SizedBox(height: S.lg),
             const SectionTitle('這份課表在做什麼'),
             AppCard(child: Text(spec.intro, style: T.body())),

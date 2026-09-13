@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data/auth.dart';
+import 'data/platform_data.dart';
+import 'data/platform_data_firestore.dart';
 import 'data/store.dart';
 import 'data/store_firestore.dart';
 import 'firebase_options.dart';
@@ -27,7 +29,12 @@ Future<void> main() async {
   );
   // 正式環境走帳號 ＋ Firestore，不再用本機存檔 ——
   // 換裝置、清瀏覽器資料都不會再從頭開始。
-  runApp(FitnessApp(auth: AuthService()));
+  // 平台公用資料（動作庫、課表、設定…）登入後自 Firestore 載入，
+  // 讀不到退回打包在本地的後備（[BE-12]）。
+  runApp(FitnessApp(
+    auth: AuthService(),
+    platformData: FirestorePlatformData(),
+  ));
 }
 
 class FitnessApp extends StatefulWidget {
@@ -43,7 +50,12 @@ class FitnessApp extends StatefulWidget {
   /// 依 uid 建立儲存後端。測試改傳一個假的就不必連真的 Firestore。
   final Store Function(String uid)? storeFor;
 
-  const FitnessApp({super.key, this.store, this.auth, this.storeFor});
+  /// 平台公用唯讀資料的來源。空值代表不載入（維持打包在本地的後備）——
+  /// **既有測試全部走這條**，動作庫/課表/成就等與上雲前完全一樣。
+  final PlatformDataSource? platformData;
+
+  const FitnessApp(
+      {super.key, this.store, this.auth, this.storeFor, this.platformData});
   @override
   State<FitnessApp> createState() => _FitnessAppState();
 }
@@ -98,6 +110,7 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                 state: state,
                 storeFor: widget.storeFor ??
                     (uid) => FirestoreStore(uid: uid),
+                platformData: widget.platformData,
               ),
       ),
     );

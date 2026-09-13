@@ -1,6 +1,7 @@
 import '../domain/ability.dart';
 import 'platform_plans.g.dart';
 import '../domain/models.dart';
+import '../domain/platform_plan.dart';
 import 'platform_exercises.g.dart';
 import '../domain/commerce.dart';
 import '../domain/rewards.dart';
@@ -276,8 +277,17 @@ const kOpponentNames = [
 ///
 /// 時間型動作把秒數放在 `targetReps`，沿用 App 加入有氧動作時的既有慣例
 /// （`PlannedSet(0, _seconds)`）。判讀依據是動作本身的 [ExerciseType]。
-List<WorkoutPlan> buildCsvPlans() => [
-      for (final s in kPlatformPlans)
+List<WorkoutPlan> buildCsvPlans() =>
+    buildCsvPlansFrom(kPlatformPlans, kPlatformExercises);
+
+/// 同 [buildCsvPlans]，但課表規格與動作庫由呼叫端提供 ——
+/// 平台資料上雲（[BE-12]）後，這兩份來源可能是 Firestore 的即時內容
+/// 而非打包在本地的常數。動作查不到時退回本地動作庫，確保雲端缺一筆
+/// 不會讓整份課表炸掉（離線後備哲學）。
+List<WorkoutPlan> buildCsvPlansFrom(
+        List<PlatformPlanSpec> specs, List<Exercise> exercises) =>
+    [
+      for (final s in specs)
         WorkoutPlan(
           id: s.id,
           name: s.name,
@@ -287,8 +297,11 @@ List<WorkoutPlan> buildCsvPlans() => [
           exercises: [
             for (final it in s.items)
               PlanExercise(
-                exercise: kPlatformExercises
-                    .firstWhere((e) => e.id == it.exerciseId),
+                exercise: exercises.firstWhere(
+                  (e) => e.id == it.exerciseId,
+                  orElse: () => kPlatformExercises
+                      .firstWhere((e) => e.id == it.exerciseId),
+                ),
                 planned: List.generate(
                     it.sets, (_) => PlannedSet(0, it.amount)),
                 restSeconds: it.restSeconds,

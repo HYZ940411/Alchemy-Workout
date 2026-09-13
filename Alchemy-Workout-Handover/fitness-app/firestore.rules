@@ -2,8 +2,9 @@ rules_version = '2';
 
 // 健金術 Alchemy Workout —— Firestore 安全規則
 //
-// **這是 [BE-04] 的最小可用版本，不是完整版。**
-// 目前只涵蓋「使用者私有資料限本人讀寫」這一條。
+// **這是 [BE-04]＋[BE-12] 的版本，仍不是完整版。**
+// 目前涵蓋「使用者私有資料限本人讀寫」與「平台公用資料使用者唯讀、
+// 管理端（custom claim）寫入」兩條。
 // `Firestore-Schema設計.md` 第 7 節規劃的完整規則（經濟/信任類子路徑
 // 收斂成僅 Cloud Functions 可寫、跨使用者關聯資料的可見性判斷、
 // 管理員 custom claim）尚未實作，等 [BE-07] 把評分邏輯搬上 Cloud Functions
@@ -16,6 +17,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // 管理員 —— 靠 custom claim，不靠某個 collection 的內容。
+    // import 工具以 service account（Admin SDK）寫入種子，完全繞過本規則，
+    // 不受此判斷影響。
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
     // --- 使用者私有資料 ---
     //
     // 整棵 users/{uid} 子樹只有本人能讀寫。這條規則同時涵蓋根文件與
@@ -25,11 +33,39 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // --- 平台公用唯讀資料（[BE-12]）---
+    //
+    // 動作庫、訓練計畫、平台設定、成就定義、每日任務池（獎勵定義併入
+    // platform_config 的 reward 群組，不另立集合）。
+    // **一般使用者唯讀、管理端寫入** —— 見 Firestore-Schema設計.md §7。
+    // 寫入收斂到 custom claim 管理員；這類設定沒有跨文件金流不變條件，
+    // 直接用規則放行即可，不需 Cloud Functions，故 [BE-12] 續留免費方案。
+    // change_log 子集合（稽核）靠 {document=**} 一併涵蓋。
+    match /exercises/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /plans/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /platform_config/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /achievement_defs/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /daily_task_pool/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
     // --- 其餘一律拒絕 ---
     //
-    // 平台公用資料（動作庫、課表、平台設定）目前仍在 App 內建的
-    // .g.dart 生成檔裡，還沒搬進 Firestore，所以這裡不需要開放讀取。
-    // 等真的要搬的時候再加對應的 match 區塊，而不是先開一個大洞等著填。
+    // 尚未上雲的跨使用者關聯資料（貼文/團隊/師徒…見 [BE-11]）與其他集合
+    // 落在這裡。要開放時再加對應 match 區塊，不先開一個大洞等著填。
     match /{document=**} {
       allow read, write: if false;
     }

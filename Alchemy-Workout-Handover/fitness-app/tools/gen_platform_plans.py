@@ -48,9 +48,15 @@ def norm(n: str) -> str:
     return re.sub(r'\s+', ' ', SEP.sub(' · ', n)).strip()
 
 
+def collapse(s: str) -> str:
+    """換行壓成空白 —— 這些欄位是說明文字，不是排版。
+    .g.dart 與 Firestore 兩個出口共用，確保雲端與後備的文字完全一致。"""
+    return re.sub(r'\s+', ' ', (s or '')).strip()
+
+
 def dq(s: str) -> str:
-    """Dart 單引號字串。換行壓成空白 —— 這些欄位是說明文字，不是排版。"""
-    s = re.sub(r'\s+', ' ', (s or '')).strip()
+    """Dart 單引號字串。"""
+    s = collapse(s)
     return "'" + s.replace('\\', r'\\').replace("'", r"\'").replace('$', r'\$') + "'"
 
 
@@ -85,9 +91,11 @@ def main() -> int:
     ]
 
     skipped = []
+    plans_struct = []  # [BE-12] 同一批資料的結構化形式，供上傳 Firestore
     for i, p in enumerate(plans):
         rows = by_plan.get(i, [])
         items = []
+        items_struct = []
         for r in rows:
             name = norm(r['動作名稱'])
             eid = by_name.get(name)
@@ -102,11 +110,30 @@ def main() -> int:
             items.append(
                 f"      PlanItemSpec('{eid}', {sets}, {reps}, "
                 f"PlanUnit.{unit}, {r['組間休息秒']}),")
+            items_struct.append({
+                'exerciseId': eid, 'sets': sets, 'amount': reps,
+                'unit': unit, 'restSeconds': int(r['組間休息秒']),
+            })
 
         if not items:
             continue
         lvl = p['選取']
         rank = RANK.get(lvl)
+        plans_struct.append({
+            'id': f'csv{i:02d}',
+            'name': collapse(p['計劃名稱']),
+            'level': collapse(lvl),
+            'requiredRank': rank,  # None 或 int
+            'equipmentTier': tier(p['計劃名稱']),
+            'duration': collapse(p['預估運動時長']),
+            'intro': collapse(p['課表介紹']),
+            'howTo': collapse(p['使用說明']),
+            'load': collapse(p['負荷大小']),
+            'effect': collapse(p['訓練效果(重點)']),
+            'technique': collapse(p['技術特點']),
+            'reference': collapse(p['來源/根據']),
+            'items': items_struct,
+        })
         out += [
             '  PlatformPlanSpec(',
             f"    id: 'csv{i:02d}',",
@@ -131,6 +158,16 @@ def main() -> int:
     DST.write_text('\n'.join(out).replace(']\n;', '];'), encoding='utf-8')
     n = sum(1 for line in out if line.startswith('  PlatformPlanSpec('))
     print(f'產生 {n} 份課表 → {DST.relative_to(ROOT)}')
+
+    # [BE-12] 第二個出口：上傳 Firestore 的 plans 集合。
+    # 預設只產生 .g.dart；帶 --upload 才寫雲端。
+    if '--upload' in sys.argv:
+        sys.path.insert(0, str(REPO / 'tools'))
+        from firestore_upload import get_db, upsert
+        docs = {p['id']: {k: v for k, v in p.items() if k != 'id'}
+                for p in plans_struct}
+        upsert(get_db(), 'plans', docs)
+
     if skipped:
         print(f'對不到動作 {len(skipped)} 個：')
         for s in skipped[:10]:

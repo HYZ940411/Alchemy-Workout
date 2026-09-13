@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../domain/ability.dart';
 import '../../domain/models.dart';
-import '../../mock/mock_data.dart';
 import '../../mock/mock_equipment.dart';
 import '../../mock/mock_exercise_stats.dart';
 import '../../state/app_state.dart';
@@ -143,7 +142,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                     _ExerciseList(
                         items:
                             pick(s.platformExercises.where((e) => e.tabs.contains(d)).toList())),
-                  _ExerciseList(items: pick(kCardioExercises)),
+                  _ExerciseList(items: pick(s.cardioExercises)),
                   _ExerciseList(items: pick(s.myExercises)),
                 ],
               ),

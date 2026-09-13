@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../domain/ability.dart';
 import '../../domain/models.dart';
-import '../../mock/mock_data.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -39,7 +38,7 @@ class _ExercisePicker extends StatelessWidget {
     final groups = <String, List<Exercise>>{
       for (final d in Dim.values)
         dimNames[d]!: s.platformExercises.where((e) => e.dim == d).toList(),
-      '有氧': kCardioExercises,
+      '有氧': s.cardioExercises,
       '我的動作': myExercises,
     };
 

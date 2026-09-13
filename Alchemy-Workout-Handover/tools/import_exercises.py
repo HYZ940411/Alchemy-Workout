@@ -333,6 +333,13 @@ def main():
     write_report(out, report)
     print(f'轉出 {len(out)} 個動作')
 
+    # [BE-12] 同一批資料的第二個出口：上傳 Firestore 的 exercises 集合。
+    # 預設只產生 .g.dart（離線後備／測試夾具）；帶 --upload 才寫雲端。
+    if '--upload' in sys.argv:
+        from firestore_upload import get_db, upsert
+        docs = {e['id']: exercise_doc(e) for e in out}
+        upsert(get_db(), 'exercises', docs)
+
 
 def dart_str(s):
     return "'" + s.replace('\\', r'\\').replace("'", r"\'").replace('$', r'\$') + "'"
@@ -361,6 +368,36 @@ _SEP_RE = re.compile(
     r'\s*[-。]\s*(?=(?:' + '|'.join(EQUIPMENT_SUFFIX) + r'))')
 
 
+def equipment_display(e):
+    """器材顯示字串：配件用「＋」接在器材品項後面，與品項本身分開 ——
+    「繩索（滑輪）」本身就帶括號，用括號標配件會分不出來。"""
+    eq = ' · '.join(e['equipment'])
+    if e['accessories']:
+        eq += ' ＋ ' + '、'.join(e['accessories'])
+    return eq
+
+
+def exercise_doc(e):
+    """Firestore exercises/{id} 的文件形狀（[BE-12]）。
+
+    **必須與 fitness-app/lib/data/platform_data.dart 的 exerciseFromDoc 相符。**
+    parts 只在複選時存（單一部位者由 Dart 的 tabs getter 退回 dim），與下面
+    write_dart 的產生邏輯一致 —— 確保雲端內容與打包在本地的後備完全對齊。
+    """
+    doc = {
+        'name': e['name'],
+        'dim': e['dim'],  # cardio 為 None，其餘為 'chest' 等字串
+        'parts': e['parts'] if len(e['parts']) > 1 else [],
+        'relativeIntensity': float(e['intensity']),
+        'isBodyweight': bool(e['bodyweight']),
+        'type': 'cardio' if e.get('cardio') else 'strength',
+        'equipment': equipment_display(e),
+    }
+    if e['rest'] is not None:
+        doc['defaultRestSeconds'] = e['rest']
+    return doc
+
+
 def write_dart(items):
     p = ROOT / 'fitness-app/lib/mock/platform_exercises.g.dart'
     lines = [
@@ -375,11 +412,7 @@ def write_dart(items):
         'const kPlatformExercises = <Exercise>[',
     ]
     for e in items:
-        # 配件用「＋」接在後面，與器材品項本身分開 ——
-        # 「繩索（滑輪）」本身就帶括號，用括號標配件會分不出來。
-        eq = ' · '.join(e['equipment'])
-        if e['accessories']:
-            eq += ' ＋ ' + '、'.join(e['accessories'])
+        eq = equipment_display(e)
         lines.append('  Exercise(')
         lines.append(f"    id: {dart_str(e['id'])},")
         lines.append(f"    name: {dart_str(e['name'])},")

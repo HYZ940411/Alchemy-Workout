@@ -22,7 +22,9 @@ import '../domain/custom_plan.dart';
 import '../domain/carry_forward.dart';
 import '../domain/community.dart';
 import '../domain/inbound.dart';
+import '../domain/platform_plan.dart';
 import '../data/store.dart';
+import '../data/platform_data.dart';
 import '../mock/mock_data.dart';
 import '../mock/mock_equipment.dart';
 
@@ -5944,6 +5946,42 @@ class AppState extends ChangeNotifier {
   /// 假課表撐著 AI 優化、會員鎖定、自訂課表那幾條流程的示範，
   /// 真課表是使用者真的會照著練的內容。
   late List<WorkoutPlan> platformPlans = [...kPlans, ...buildCsvPlans()];
+
+  /// 課表 ID → 詳情頁的說明性內容。由平台資料維護，故為狀態而非常數。
+  late Map<String, PlatformPlanSpec> planSpecById = kPlanSpecById;
+
+  /// 有氧分頁的動作 —— 器材類有氧（本地固定）加上動作庫裡判定為有氧者。
+  /// 與 `mock_data.dart` 的 `kCardioExercises` 同義，但改讀 [platformExercises]，
+  /// 讓平台資料上雲後有氧分頁也反映雲端內容（[BE-12]）。
+  List<Exercise> get cardioExercises => [
+        ...kCardioMachines,
+        ...platformExercises.where((e) => e.type == ExerciseType.cardio),
+      ];
+
+  /// 套用一份平台資料快照（[BE-12]）。
+  ///
+  /// 把六類平台資料填進既有的可變容器：動作庫、課表（含詳情）、成就、任務池、
+  /// 平台設定。來源可能是打包在本地的後備，也可能是 Firestore 上管理員維護的
+  /// 即時內容 —— [AppState] 不需要知道是哪個。平台設定沿用管理員編輯路徑
+  /// （[applySettings]）的 `isInt` 取整慣例。
+  void applyPlatformData(PlatformData d) {
+    platformExercises = List.of(d.exercises);
+    planSpecById = {for (final s in d.planSpecs) s.id: s};
+    platformPlans = [...kPlans, ...buildCsvPlansFrom(d.planSpecs, d.exercises)];
+    // 這兩份之後會被改（成就解鎖、管理員增刪任務），必須是可變 list。
+    achievements = List.of(d.achievements);
+    taskPool = List.of(d.taskPool);
+    for (final g in platformConfig.groups) {
+      final vals = d.config[g.id];
+      if (vals == null) continue;
+      for (final p in g.params) {
+        final v = vals[p.key];
+        if (v == null) continue;
+        p.value = p.isInt ? v.round() : v;
+      }
+    }
+    notifyListeners();
+  }
 
   // ===========================================================================
   // 每日任務池（同時承載限時任務）

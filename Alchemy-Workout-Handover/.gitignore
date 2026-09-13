@@ -10,6 +10,14 @@ fitness-app/.dart_tool/
 
 # 工具的虛擬環境（tools/build_web.sh 會自己重建）
 fitness-app/tools/.venv/
+__pycache__/
+
+# Firebase / GCP service account 金鑰 —— 絕不進版控（[BE-12] 上傳工具用）。
+# 路徑由環境變數 GOOGLE_APPLICATION_CREDENTIALS 指定。
+*serviceaccount*.json
+*service-account*.json
+**/serviceAccountKey*.json
+*-firebase-adminsdk-*.json
 
 # 測試覆蓋率報告
 fitness-app/coverage/

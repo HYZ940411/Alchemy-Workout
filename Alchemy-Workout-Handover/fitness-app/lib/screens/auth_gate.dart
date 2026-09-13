@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../data/auth.dart';
+import '../data/platform_data.dart';
 import '../data/store.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
@@ -25,11 +26,15 @@ class AuthGate extends StatefulWidget {
   /// 建立這個帳號的儲存後端。測試改傳一個假的，就不必連真的 Firestore。
   final Store Function(String uid) storeFor;
 
+  /// 平台公用唯讀資料的來源（[BE-12]）。空值代表不載入，維持本地後備。
+  final PlatformDataSource? platformData;
+
   const AuthGate({
     super.key,
     required this.auth,
     required this.state,
     required this.storeFor,
+    this.platformData,
   });
 
   @override
@@ -54,6 +59,10 @@ class _AuthGateState extends State<AuthGate> {
   /// 不擋的話每次換新都重讀一次存檔，把使用者當下未存檔的操作蓋掉。
   String? _hydratedFor;
 
+  /// 平台資料是否已載入過 —— 與 [_hydratedFor] 同理，擋 `authStateChanges`
+  /// 在權杖換新時重發使用者而重複載入。平台資料不分帳號，只需載一次。
+  bool _platformLoaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -67,12 +76,32 @@ class _AuthGateState extends State<AuthGate> {
       // 所以這之後的第一次 build 就會畫載入中，不會閃到上一個帳號的數字。
       widget.state.hydrate(widget.storeFor(user.uid));
     }
-    if (user == null) _hydratedFor = null;
+    // 平台資料的讀取需要已登入（安全規則要求 auth != null）。
+    // **不 await**：載入是即發即忘的，完成時 applyPlatformData 會 notifyListeners
+    // 觸發重繪，不擋載入畫面等網路（動作庫等離線後備本就已在記憶體裡）。
+    if (user != null) _loadPlatformData();
+    if (user == null) {
+      _hydratedFor = null;
+      _platformLoaded = false;
+    }
     if (mounted) {
       setState(() {
         _waiting = false;
         _user = user;
       });
+    }
+  }
+
+  Future<void> _loadPlatformData() async {
+    if (_platformLoaded) return;
+    final src = widget.platformData;
+    if (src == null) return;
+    _platformLoaded = true;
+    try {
+      widget.state.applyPlatformData(await src.load());
+    } catch (_) {
+      // 載入失敗維持本地後備，不擋使用者進場；允許下次登入事件重試。
+      _platformLoaded = false;
     }
   }
 

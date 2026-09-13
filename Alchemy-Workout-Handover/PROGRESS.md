@@ -159,9 +159,13 @@ flutter build macos --release
       私訊、檢舉申訴。collection 結構 `Firestore-Schema設計.md` 第 1 節已設計好。
       **這項不做，事件風暴裡約一半的流程永遠只有一個人、跑不起來**
       （目前靠「我的 → 流程示範 → 模擬對方」控制台代打）
-- [ ] 【CC】`[BE-12]` 平台公用資料上雲：動作庫、訓練計畫、平台設定、商品、
+- [~] 【CC】`[BE-12]` 平台公用資料上雲：動作庫、訓練計畫、平台設定、商品、
       成就與獎勵定義。`tools/import_exercises.py` 要改成寫進 Firestore
       而不是產生 `.g.dart`。不做的話管理員後台改了東西不會生效
+      → 程式碼寫完、置於分支 `wip/be-12-platform-data`，**本機無法驗證**
+      （開發機 macOS 13，跑不動 Flutter 3.44.1），待 Codespaces 驗 `analyze`／`test`。
+      範圍依使用者 2026-09-13 裁示調整：做「每日任務池」、**商品延後**，
+      獎勵定義併入 `platform_config` 的 reward 群組。詳見第 9 節與決策紀錄。
 
 ### B. 部署
 
@@ -342,6 +346,9 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-10 | 「本次訓練課表」與「訓練紀錄」在 Firestore 拆成兩個 collection（`session_plans`／`workout_sessions`），1:1 關聯 | 規格明訂兩者為獨立 Aggregate（選課表時建立 vs 開始訓練時建立），設計初稿曾誤合併為一，已對照 `02_Aggregate定義.md` 原文修正 |
 | 2026-09-10 | 會員權益 Firestore 文件不儲存 `none` 狀態，文件不存在＝從未訂閱過 | 規格明訂「生效狀態為三值，無『未生效』」；現有 Dart `MembershipState.none` 是客戶端對「文件不存在」的本地詮釋，非要儲存的狀態值 |
 | 2026-09-10 | `platform_config` 群組由 11 組擴充為至少 15 組（新增通知/審核時限/內容過濾/防作弊設定） | 已核對規格，確認這四項皆明文「平台級可調參數，由管理員於後台維護」，性質與既有 11 組相同 |
+| 2026-09-13 | `BE-12` 範圍：做動作庫/訓練計畫/平台設定/成就定義/獎勵定義/每日任務池 6 項；**商品延後**；獎勵定義併入 `platform_config` 的 `reward` 群組，不另立集合 | 使用者裁示。獎勵定義在現有程式碼裡大多已是 `reward` 群組的 `SettingParam`（`trainCoin`/`rank*` 等），另立集合等於製造第二份真相 |
+| 2026-09-13 | `BE-12` 上雲種子**取自打包在本地的 bundle，而非重跑 CSV** | 重跑 `import_exercises.py` 會因 `OVERRIDES` 鍵失配，把 15 個被 `ex('...')` 硬引用的友善動作 ID 換成 `pNNN` 並遺失校準值；committed `.g.dart` 才是正典，也正是 App 離線後備與測試夾具所用。由 `BundledPlatformData` 匯出保證三者一致 |
+| 2026-09-13 | `BE-12` 管理端寫入用 `firestore.rules` 的 custom claim 直接放行，不走 Cloud Functions | 平台設定類沒有跨文件金流不變條件，規則放行即足；續留 Spark 免費方案，與 `BE-10`（Blaze 延後）一致。符合 `Firestore-Schema設計.md` §7 |
 
 ---
 
@@ -362,3 +369,5 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-11 | **Codespaces 上不可用 `flutter run -d web-server`**：debug 模式靠 WebSocket（`$dwdsSseHandler`）傳程式碼模組，被連接埠轉發擋掉，症狀是整頁空白、主控台報 `Library not defined: web_entrypoint.dart`，且 App 當場死掉導致存檔靜默中斷。**改用 `./tools/build_web.sh` 建置後以 `python3 -m http.server` 靜態供應**，代價是沒有 hot reload |
 | 2026-09-11 | **`BE-04` 與 `BE-05` 完成。** 補上 `test/store_firestore_test.dart`（20 條，涵蓋 `v` 版本號原樣進出、分組欄位回得到原位、組成績巢狀陣列轉換、membership「從未訂閱＝文件不存在」、連續簽到逐日推算），現為 **1,232 passed**。已知缺口：「讀取失敗要丟 `StoreLoadException`」無自動測試，`fake_cloud_firestore` 無法注入失敗，理由與補法寫在該測試檔尾 |
 | 2026-09-11 | 新增 `[BE-11]`（跨使用者資料上雲）與 `[BE-12]`（平台公用資料上雲）。`BE-04` 只搬了使用者私有資料，社群／團隊／師徒／商城／動作庫仍是本機假資料，所以「只有一位使用者」這個問題**沒有隨 `BE-04` 解掉** |
+| 2026-09-13 | `[BE-12]` 程式碼寫完，置於分支 `wip/be-12-platform-data`，**本機無法驗證**（開發機 macOS 13，Flutter 3.44.1 的 VM 要 macOS 14，`flutter`／`dart` 連 VM 都起不來，與 2026-09-11 記錄一致），待 Codespaces 跑 `analyze`／`test`。新增 `PlatformDataSource` 抽象層（`lib/data/platform_data.dart`＝後備＋序列化、`platform_data_firestore.dart`＝Firestore 實作），比照 `BE-04` 的注入模式：`FitnessApp`／`AuthGate` 新增選用 `platformData`，登入後即發即忘地載入並 `AppState.applyPlatformData()` 填進既有可變容器（`platformExercises`／`platformPlans`／`planSpecById`／`achievements`／`taskPool`／`platformConfig`）。**不注入就走本地後備 → 既有 1,232 測試零改動**（mock 邊界同 `BE-05`）。新增 `test/platform_data_test.dart`。`firestore.rules` 加平台五集合「使用者唯讀、custom claim 管理端寫」 |
+| 2026-09-13 | **發現 `.g.dart` 既有漂移**：對 `tools/import_exercises.py`／`gen_platform_plans.py` 重跑（我的改動為輸出中性，已與原腳本逐位元比對證實），產出與 committed `.g.dart` 不同 —— `OVERRIDES` 的鍵已對不上 CSV 現況，`deadlift`／`squat` 等 15 個被 `ex('...')` 硬引用的友善動作 ID 被換成 `pNNN`，且校準過的相對強度／休息秒數遺失（正是 CLAUDE.md 硬性規則 1 警告的情形）。故 **committed `.g.dart` 才是正典**，已還原重跑產出、不提交。因此 `BE-12` 的上雲**種子取自 bundle**（新增 `fitness-app/tools/export_platform_defs.dart` 由 `BundledPlatformData` 匯出五集合 JSON → `tools/upload_platform_data.py` 上傳），保證雲端＝打包內容＝測試夾具。`import_exercises.py --upload`／`gen_platform_plans.py --upload` 仍保留「tools 寫進 Firestore」能力（使用者指示），供日後 CSV／OVERRIDES 校準後以 CSV 為真相來源時使用。**CSV／OVERRIDES 的漂移本身是既有問題、未修，留待獨立處理** |
