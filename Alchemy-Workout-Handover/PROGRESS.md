@@ -162,7 +162,10 @@ flutter build macos --release
       → **分四批執行**。批次 1（公開檔案 `public_profiles`，身分層）程式碼完成、**未驗證**；
       批次 2（關注）✅2026-09-13 驗證通過（1,271 passed）；
       批次 3（貼文／留言／按讚）✅2026-09-13 驗證通過（1,287 passed）；
-      批次 4（團隊）程式碼完成、**未驗證**；批次 5（師徒＋私訊＋檢舉）未開始。**批次由四改五** ——
+      批次 4（團隊）✅2026-09-13 驗證通過（1,306 passed）；
+      批次 5（私訊）程式碼完成、**未驗證**；批次 6（師徒）未開始。
+      **檢舉／申訴移出 `BE-11`** —— 那是管理端功能，而目前沒有任何帳號
+      帶得到 admin custom claim，搬上雲也沒有人能處理案件。另立 `[BE-13]`。**批次由四改五** ——
       關注與貼文拆開，一次驗一塊比較抓得到問題。
       **先做身分層的理由**：現有社群層以暱稱字串為識別碼
       （`_mine(author) => author == displayName`、`following` 存的是暱稱），
@@ -385,6 +388,10 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-13 | **`[BE-11]` 批次 3（貼文／留言／按讚）程式碼完成、未驗證。** 新增 `lib/data/post_data.dart`＋`post_data_firestore.dart`（`posts/{id}`＋`comments`／`likes` 子集合）、`test/post_data_test.dart`（17 條）。`toggleLike`／`addComment`／`publishPost`／`shareWorkout` 四處寫入皆為樂觀更新＋即發即忘 |
 | 2026-09-13 | `[BE-11]` 批次 3 **驗證通過**：1,287 passed |
 | 2026-09-13 | **`[BE-11]` 批次 4（團隊）程式碼完成、未驗證。** 新增 `lib/data/team_data.dart`＋`team_data_firestore.dart`（`teams/{id}`＋`requests` 子集合）、`test/team_data_test.dart`（20 條）|
+| 2026-09-13 | `[BE-11]` 批次 4 **驗證通過**：1,306 passed。過程中測試抓到一個真 bug —— `removeMember` 把整份 members Map 寫回去，而 `update` 的 Map 值在真 Firestore 是**取代**、在 `fake_cloud_firestore` 是**深層合併**，被移除的鍵又被補回來。改用點記法 `'members.$uid': FieldValue.delete()`，兩邊行為一致 |
+| 2026-09-13 | **`[BE-11]` 批次 5（私訊）程式碼完成、未驗證。** 新增 `lib/data/chat_data.dart`＋`chat_data_firestore.dart`、`test/chat_data_test.dart`（16 條）。對話 ID 由兩個 uid **排序後合成** —— 同一對人永遠只有一段對話，由主鍵保證；沒有這層的話兩人同時開啟對話會產生兩段、各自看到一半訊息 |
+| 2026-09-13 | `fromMe`／`deletedByMe`／`peer` 一律**不存成欄位**，由讀取端依 uid 計算 | 三者都是「每位讀者各自不同」的狀態。存成欄位的話兩人共用同一份 —— 對話框會整段左右顛倒，或我刪掉對話連對方那一側也消失。與貼文的 `likedByMe` 是同一個陷阱，測試逐條釘住 |
+| 2026-09-13 | **檢舉／申訴移出 `[BE-11]`，另立 `[BE-13]`** | 那是管理端功能，而目前沒有任何帳號帶得到 admin custom claim —— 案件搬上雲也沒有人處理得了。要先由人決定誰是管理員並設好 claim |
 | 2026-09-13 | 團隊成員**內嵌在隊伍文件**，不另開 `members` 子集合 | `Firestore-Schema設計.md` §2.10 原本畫子集合，但同文件第 0 節原則 3 是「小且有界的集合用內嵌陣列」——**團隊上限 5 人**正是該原則的標準案例。內嵌之後「人數上限檢查」與「把人加進去」落在同一份文件，用 transaction 就保證得了不會擠進第六人；分開做的話兩人同時被核准即破功。另存 `memberUids` 陣列供「我在哪一隊」查詢（Firestore 無法對 Map 的鍵做查詢）|
 | 2026-09-13 | `peakSize`（本週期最高人數）**只增不減** | 它是「曾經達到過」而非「現在有幾人」，排行榜分組依它判定。有人退出就跟著降的話，分組會在週期中途改變 |
 | 2026-09-13 | 貼文的 Firestore 文件 ID **沿用本地產生的貼文 ID**，不用自動 ID | 否則每次發文都要處理「暫時 ID 換成正式 ID」，而畫面、留言、檢舉案件都各自握著舊的那一個。直接避開這類換算 |

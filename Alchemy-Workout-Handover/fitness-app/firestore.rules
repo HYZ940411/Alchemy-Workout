@@ -2,7 +2,7 @@ rules_version = '2';
 
 // 健金術 Alchemy Workout —— Firestore 安全規則
 //
-// **這是 [BE-04]＋[BE-12]＋[BE-11 批次 1–4] 的版本，仍不是完整版。**
+// **這是 [BE-04]＋[BE-12]＋[BE-11 批次 1–5] 的版本，仍不是完整版。**
 // 目前涵蓋「使用者私有資料限本人讀寫」與「平台公用資料使用者唯讀、
 // 管理端（custom claim）寫入」兩條。
 // `Firestore-Schema設計.md` 第 7 節規劃的完整規則（經濟/信任類子路徑
@@ -46,6 +46,44 @@ service cloud.firestore {
     match /public_profiles/{uid} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // --- 私訊（[BE-11] 批次 5）---
+    //
+    // 只有對話的兩位參與者讀得到。這是整份規則裡**唯一完全私密**的
+    // 跨使用者資料 —— 貼文、團隊、公開檔案都是登入即可讀。
+    //
+    // **訊息一經發送不可刪除、不可編輯**（規格明訂）。所以 messages
+    // 只允許 create，唯一的例外是已讀狀態：任一參與者都要能標記自己讀過，
+    // 那必須改到對方送的那則訊息上。用 affectedKeys 限制成只能動 readBy。
+    function inConversation(convId) {
+      return request.auth != null
+             && request.auth.uid in
+                get(/databases/$(database)/documents/conversations/$(convId))
+                  .data.participants;
+    }
+
+    match /conversations/{convId} {
+      allow read: if request.auth != null
+                  && request.auth.uid in resource.data.participants;
+      allow create: if request.auth != null
+                    && request.auth.uid in request.resource.data.participants;
+      // 參與者可更新（lastAt、單方刪除的 deletedBy）。
+      allow update: if request.auth != null
+                    && request.auth.uid in resource.data.participants;
+      // **對話不硬刪** —— 刪除是單方的，只改自己那一側的 deletedBy。
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if inConversation(convId);
+        allow create: if inConversation(convId)
+                      && request.resource.data.senderUid == request.auth.uid;
+        // 唯一允許的更新：標記自己已讀。內容、發送者、時間都動不了。
+        allow update: if inConversation(convId)
+                      && request.resource.data.diff(resource.data)
+                           .affectedKeys().hasOnly(['readBy']);
+        allow delete: if false;
+      }
     }
 
     // --- 團隊（[BE-11] 批次 4）---
@@ -192,7 +230,7 @@ service cloud.firestore {
 
     // --- 其餘一律拒絕 ---
     //
-    // 尚未上雲的跨使用者關聯資料（師徒/私訊/檢舉…見 [BE-11] 批次 5）與其他集合
+    // 尚未上雲的跨使用者關聯資料（師徒/檢舉…見 [BE-11] 批次 6）與其他集合
     // 落在這裡。要開放時再加對應 match 區塊，不先開一個大洞等著填。
     match /{document=**} {
       allow read, write: if false;
