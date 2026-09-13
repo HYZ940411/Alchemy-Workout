@@ -161,8 +161,8 @@ flutter build macos --release
       （目前靠「我的 → 流程示範 → 模擬對方」控制台代打）
       → **分四批執行**。批次 1（公開檔案 `public_profiles`，身分層）程式碼完成、**未驗證**；
       批次 2（關注）✅2026-09-13 驗證通過（1,271 passed）；
-      批次 3（貼文／留言／按讚）程式碼完成、**未驗證**；
-      批次 4（團隊）、5（師徒＋私訊＋檢舉）未開始。**批次由四改五** ——
+      批次 3（貼文／留言／按讚）✅2026-09-13 驗證通過（1,287 passed）；
+      批次 4（團隊）程式碼完成、**未驗證**；批次 5（師徒＋私訊＋檢舉）未開始。**批次由四改五** ——
       關注與貼文拆開，一次驗一塊比較抓得到問題。
       **先做身分層的理由**：現有社群層以暱稱字串為識別碼
       （`_mine(author) => author == displayName`、`following` 存的是暱稱），
@@ -383,6 +383,10 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-13 | **`[BE-11]` 批次 2（關注關係）程式碼完成、未驗證。** 新增 `lib/data/follow_data.dart`＋`follow_data_firestore.dart`（`follows/{followerUid}_{followeeUid}`）、`test/follow_data_test.dart`（12 條）。`AppState.toggleFollow` 的同步簽章不變，改為**樂觀更新＋即發即忘**：記憶體先改、畫面先動，雲端寫入在背景進行且吞掉錯誤 —— 下次登入由 `applyFollows` 以雲端為準重新對齊。`firestore.rules` 新增「只有關注者本人能建立／移除自己發出的關注」 |
 | 2026-09-13 | `[BE-11]` 批次 1–2 **驗證通過**：`flutter analyze` 乾淨、`flutter test --timeout 90s` **1,271 passed** |
 | 2026-09-13 | **`[BE-11]` 批次 3（貼文／留言／按讚）程式碼完成、未驗證。** 新增 `lib/data/post_data.dart`＋`post_data_firestore.dart`（`posts/{id}`＋`comments`／`likes` 子集合）、`test/post_data_test.dart`（17 條）。`toggleLike`／`addComment`／`publishPost`／`shareWorkout` 四處寫入皆為樂觀更新＋即發即忘 |
+| 2026-09-13 | `[BE-11]` 批次 3 **驗證通過**：1,287 passed |
+| 2026-09-13 | **`[BE-11]` 批次 4（團隊）程式碼完成、未驗證。** 新增 `lib/data/team_data.dart`＋`team_data_firestore.dart`（`teams/{id}`＋`requests` 子集合）、`test/team_data_test.dart`（20 條）|
+| 2026-09-13 | 團隊成員**內嵌在隊伍文件**，不另開 `members` 子集合 | `Firestore-Schema設計.md` §2.10 原本畫子集合，但同文件第 0 節原則 3 是「小且有界的集合用內嵌陣列」——**團隊上限 5 人**正是該原則的標準案例。內嵌之後「人數上限檢查」與「把人加進去」落在同一份文件，用 transaction 就保證得了不會擠進第六人；分開做的話兩人同時被核准即破功。另存 `memberUids` 陣列供「我在哪一隊」查詢（Firestore 無法對 Map 的鍵做查詢）|
+| 2026-09-13 | `peakSize`（本週期最高人數）**只增不減** | 它是「曾經達到過」而非「現在有幾人」，排行榜分組依它判定。有人退出就跟著降的話，分組會在週期中途改變 |
 | 2026-09-13 | 貼文的 Firestore 文件 ID **沿用本地產生的貼文 ID**，不用自動 ID | 否則每次發文都要處理「暫時 ID 換成正式 ID」，而畫面、留言、檢舉案件都各自握著舊的那一個。直接避開這類換算 |
 | 2026-09-13 | 按讚存**兩份**：`likes/{uid}` 子集合（真相來源、一人一次由主鍵保證）＋貼文上的 `likeCount`（顯示用計數） | 動態牆每篇都去數一遍子集合的話，一頁 20 篇就是 20 次額外查詢。`likedByMe` 則**必須**放子集合 —— 那是每位讀者各自不同的狀態，放貼文欄位會變成所有人共用同一個「我按過了」 |
 | 2026-09-13 | 安全規則用 `diff().affectedKeys().hasOnly(['likeCount'])` 讓非作者能改貼文 | 按讚的人不是作者，卻必須更新貼文上的計數。只允許作者寫則按讚寫不進去；允許任何人寫則別人能改你的文字。**計數本身仍可竄改，等 `[BE-07]`** |
