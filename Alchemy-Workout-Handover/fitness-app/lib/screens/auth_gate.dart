@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../data/auth.dart';
 import '../data/platform_data.dart';
+import '../data/public_profile.dart';
 import '../data/store.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
@@ -29,12 +30,17 @@ class AuthGate extends StatefulWidget {
   /// 平台公用唯讀資料的來源（[BE-12]）。空值代表不載入，維持本地後備。
   final PlatformDataSource? platformData;
 
+  /// 公開檔案的來源（[BE-11] 批次 1）。依 uid 建立 —— 它既要寫我自己的，
+  /// 也要讀別人的，所以需要知道「我是誰」。空值代表不同步。
+  final PublicProfileSource Function(String uid)? profileFor;
+
   const AuthGate({
     super.key,
     required this.auth,
     required this.state,
     required this.storeFor,
     this.platformData,
+    this.profileFor,
   });
 
   @override
@@ -63,6 +69,10 @@ class _AuthGateState extends State<AuthGate> {
   /// 在權杖換新時重發使用者而重複載入。平台資料不分帳號，只需載一次。
   bool _platformLoaded = false;
 
+  /// 已為哪一個 uid 同步過公開檔案。與 [_hydratedFor] 同理，
+  /// 擋 `authStateChanges` 在權杖換新時重發使用者而重複同步。
+  String? _profileSyncedFor;
+
   @override
   void initState() {
     super.initState();
@@ -79,10 +89,14 @@ class _AuthGateState extends State<AuthGate> {
     // 平台資料的讀取需要已登入（安全規則要求 auth != null）。
     // **不 await**：載入是即發即忘的，完成時 applyPlatformData 會 notifyListeners
     // 觸發重繪，不擋載入畫面等網路（動作庫等離線後備本就已在記憶體裡）。
-    if (user != null) _loadPlatformData();
+    if (user != null) {
+      _loadPlatformData();
+      _syncProfile(user.uid);
+    }
     if (user == null) {
       _hydratedFor = null;
       _platformLoaded = false;
+      _profileSyncedFor = null;
     }
     if (mounted) {
       setState(() {
@@ -102,6 +116,27 @@ class _AuthGateState extends State<AuthGate> {
     } catch (_) {
       // 載入失敗維持本地後備，不擋使用者進場；允許下次登入事件重試。
       _platformLoaded = false;
+    }
+  }
+
+  /// 把我自己的公開檔案寫上去，並讀回平台上的其他人（[BE-11] 批次 1）。
+  ///
+  /// **不 await**：即發即忘。這件事失敗不該擋住使用者進場 ——
+  /// 社群功能拿不到別人的資料只是少了內容，訓練與簽到照樣能用。
+  Future<void> _syncProfile(String uid) async {
+    if (_profileSyncedFor == uid) return;
+    final make = widget.profileFor;
+    if (make == null) return;
+    _profileSyncedFor = uid;
+    final src = make(uid);
+    try {
+      // 先寫再讀：讓自己在別人的清單裡也看得到，
+      // 順序顛倒的話新使用者第一次登入不會出現在任何人的清單上。
+      await src.publish(widget.state.myPublicProfile(uid));
+      widget.state.applyPublicProfiles(await src.others(limit: 50));
+    } catch (_) {
+      // 允許下次登入事件重試。
+      _profileSyncedFor = null;
     }
   }
 

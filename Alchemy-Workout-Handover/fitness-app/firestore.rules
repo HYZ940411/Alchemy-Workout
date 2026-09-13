@@ -2,7 +2,7 @@ rules_version = '2';
 
 // 健金術 Alchemy Workout —— Firestore 安全規則
 //
-// **這是 [BE-04]＋[BE-12] 的版本，仍不是完整版。**
+// **這是 [BE-04]＋[BE-12]＋[BE-11 批次 1] 的版本，仍不是完整版。**
 // 目前涵蓋「使用者私有資料限本人讀寫」與「平台公用資料使用者唯讀、
 // 管理端（custom claim）寫入」兩條。
 // `Firestore-Schema設計.md` 第 7 節規劃的完整規則（經濟/信任類子路徑
@@ -31,6 +31,21 @@ service cloud.firestore {
     // 靠的是最後那個 {document=**} 遞迴萬用字元。
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // --- 公開檔案（[BE-11] 批次 1）---
+    //
+    // 整個模型裡第一個「別人讀得到我的資料」的集合。
+    // 登入者皆可讀（要看得到平台上還有誰），**只有本人可寫**。
+    //
+    // 內容是刻意挑過的：暱稱、階級、（依可見度開關的）能力值、粉絲數、
+    // 教官身分與聲望。身高體重、生日、電子郵件、處罰狀態、違規次數
+    // 全部留在 users/{uid} 那棵只有本人可讀的樹裡 ——
+    // **安全規則的粒度是文件，不是欄位**，所以「有些欄位公開」
+    // 唯一可靠的做法就是把它們拆成另一份文件。
+    match /public_profiles/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
     }
 
     // --- 平台公用唯讀資料（[BE-12]）---
@@ -64,7 +79,7 @@ service cloud.firestore {
 
     // --- 其餘一律拒絕 ---
     //
-    // 尚未上雲的跨使用者關聯資料（貼文/團隊/師徒…見 [BE-11]）與其他集合
+    // 尚未上雲的跨使用者關聯資料（關注/貼文/團隊/師徒…見 [BE-11] 批次 2–4）與其他集合
     // 落在這裡。要開放時再加對應 match 區塊，不先開一個大洞等著填。
     match /{document=**} {
       allow read, write: if false;

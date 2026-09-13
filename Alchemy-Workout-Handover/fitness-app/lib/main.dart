@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'data/auth.dart';
 import 'data/platform_data.dart';
 import 'data/platform_data_firestore.dart';
+import 'data/public_profile.dart';
+import 'data/public_profile_firestore.dart';
 import 'data/store.dart';
 import 'data/store_firestore.dart';
 import 'firebase_options.dart';
@@ -34,6 +36,7 @@ Future<void> main() async {
   runApp(FitnessApp(
     auth: AuthService(),
     platformData: FirestorePlatformData(),
+    profileFor: (uid) => FirestorePublicProfile(uid: uid),
   ));
 }
 
@@ -54,8 +57,18 @@ class FitnessApp extends StatefulWidget {
   /// **既有測試全部走這條**，動作庫/課表/成就等與上雲前完全一樣。
   final PlatformDataSource? platformData;
 
-  const FitnessApp(
-      {super.key, this.store, this.auth, this.storeFor, this.platformData});
+  /// 公開檔案的來源（[BE-11] 批次 1）。空值代表不同步 ——
+  /// **既有測試全部走這條**，社群清單與上雲前完全一樣。
+  final PublicProfileSource Function(String uid)? profileFor;
+
+  const FitnessApp({
+    super.key,
+    this.store,
+    this.auth,
+    this.storeFor,
+    this.platformData,
+    this.profileFor,
+  });
   @override
   State<FitnessApp> createState() => _FitnessAppState();
 }
@@ -111,6 +124,7 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                 storeFor: widget.storeFor ??
                     (uid) => FirestoreStore(uid: uid),
                 platformData: widget.platformData,
+                profileFor: widget.profileFor,
               ),
       ),
     );

@@ -25,6 +25,7 @@ import '../domain/inbound.dart';
 import '../domain/platform_plan.dart';
 import '../data/store.dart';
 import '../data/platform_data.dart';
+import '../data/public_profile.dart';
 import '../mock/mock_data.dart';
 import '../mock/mock_equipment.dart';
 
@@ -1923,6 +1924,51 @@ class AppState extends ChangeNotifier {
   late Map<String, int> otherFollowerCounts = {
     for (final u in socialUsers) u.name: 40 + u.rank * 3,
   };
+
+  // --- 公開檔案（[BE-11] 批次 1）---
+
+  /// uid → 暱稱。跨使用者資料在雲端以 uid 為鍵，畫面上要顯示的是暱稱，
+  /// 這張表就是兩者之間的翻譯。批次 2 起的關注／貼文都靠它把
+  /// 雲端的 uid 還原成畫面認得的暱稱。
+  final Map<String, String> nameByUid = {};
+
+  /// 我自己要公開出去的那一份。
+  ///
+  /// 可見度由 [PublicProfile.of] 依兩個開關決定，**教官身分會讓兩者失效**
+  /// —— 那是規格的規定，不是這裡的判斷。
+  PublicProfile myPublicProfile(String uid) => PublicProfile.of(
+        uid: uid,
+        displayName: displayName,
+        rank: rank,
+        points: points,
+        abilityPublic: abilityPublic,
+        overallGradePublic: overallGradePublic,
+        isInstructor: isInstructor,
+        followers: followerCount,
+        reputation: instructorReputation,
+        specialties: instructorSpecialties.toList(),
+      );
+
+  /// 把雲端讀到的其他使用者併進來（[BE-11] 批次 1）。
+  ///
+  /// **是併入而不是取代。** 現階段動態牆上的貼文、對話、教官清單仍指向
+  /// 示範用的那幾位；直接換掉會讓那些畫面指到不存在的人。
+  /// 等批次 2–4 把貼文與師徒也搬上雲，示範資料才有辦法整批退場。
+  void applyPublicProfiles(List<PublicProfile> others) {
+    for (final p in others) {
+      nameByUid[p.uid] = p.displayName;
+      if (socialUsers.any((u) => u.name == p.displayName)) continue;
+      socialUsers.add(SocialUser(
+        name: p.displayName,
+        rank: p.rank,
+        // 對方關閉了綜合等級的對外可見時，畫面顯示最低階 ——
+        // 不猜、也不留空白造成版面破洞。
+        grade: p.grade ?? 'E',
+      ));
+      otherFollowerCounts.putIfAbsent(p.displayName, () => p.followers);
+    }
+    notifyListeners();
+  }
 
   // --- 封鎖（獨立 Aggregate，不附屬於對話）---
 
