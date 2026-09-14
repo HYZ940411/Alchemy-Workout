@@ -15,6 +15,15 @@ class LoginPane extends StatefulWidget {
   /// 第三方路徑：授權完成即帶回電子郵件。
   final void Function(String email) onThirdParty;
 
+  /// 有沒有接上真的帳號系統。
+  ///
+  /// 接上之後，**只有 Google 這條路走得通** —— 手機驗證與 Apple 登入
+  /// 都還沒接真的授權（見 PROGRESS.md）。而 [AuthGate] 是看 Firebase
+  /// 的登入狀態決定畫面的，所以走假路徑的人會填完整份問卷、
+  /// 卻永遠進不了 App，重新整理後連填的資料都沒了。
+  /// 與其讓人走進死路，不如當場說清楚。
+  bool get _backendLive => onGoogle != null;
+
   /// Google 授權。空值代表這次沒有接後端（既有測試與流程示範走這條），
   /// 按鈕退回 [onThirdParty] 的假路徑。
   ///
@@ -136,8 +145,15 @@ class _LoginPaneState extends State<LoginPane> {
           const SizedBox(height: S.base),
           AppButton(
             label: '發送驗證碼',
-            onPressed: phone.text.trim().isEmpty ? null : _send,
+            onPressed: (widget._backendLive || phone.text.trim().isEmpty)
+                ? null
+                : _send,
           ),
+          if (widget._backendLive) ...[
+            const SizedBox(height: S.xs),
+            Text('手機驗證即將推出，目前請用下方的 Google 帳號',
+                style: T.caption(color: C.textSecondary)),
+          ],
 
           const SizedBox(height: S.lg),
           Row(
@@ -158,10 +174,16 @@ class _LoginPaneState extends State<LoginPane> {
             icon: Icons.apple,
             // Apple 登入取得的可能為私密轉發信箱。
             // 尚未接上真的授權 —— 需要 Apple 開發者帳號（見 PROGRESS.md DEP-03）。
-            onPressed: _authorizing
+            onPressed: (_authorizing || widget._backendLive)
                 ? null
                 : () => widget.onThirdParty('a1b2c3@privaterelay.appleid.com'),
           ),
+          if (widget._backendLive) ...[
+            const SizedBox(height: S.xs),
+            Text('Apple 登入即將推出',
+                textAlign: TextAlign.center,
+                style: T.caption(color: C.textSecondary)),
+          ],
           const SizedBox(height: S.md),
           AppButton(
             label: _authorizing ? '授權中…' : '使用 Google 帳號繼續',
