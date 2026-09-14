@@ -232,7 +232,9 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
 
-    return BootGate(child: _SignedInHome(email: _user?.email));
+    return BootGate(
+      child: _SignedInHome(email: _user?.email, auth: widget.auth),
+    );
   }
 }
 
@@ -242,7 +244,14 @@ class _AuthGateState extends State<AuthGate> {
 /// 回答掉了，這裡回答的是「這個帳號的問卷填完了沒」。
 class _SignedInHome extends StatefulWidget {
   final String? email;
-  const _SignedInHome({this.email});
+
+  /// 一路帶下去，讓註冊流程知道後端是活的。
+  /// 這條路徑理論上看不到登入頁（已登入者會直接跳過入口），
+  /// 但不傳的話那一頁會以為沒接後端，把已經失效的手機／Apple
+  /// 按鈕重新開放 —— 那是一條沒有人走、卻通往死路的岔路。
+  final AuthService? auth;
+
+  const _SignedInHome({this.email, this.auth});
 
   @override
   State<_SignedInHome> createState() => _SignedInHomeState();
@@ -261,6 +270,7 @@ class _SignedInHomeState extends State<_SignedInHome> {
     if (_needsSignUp == true) {
       return SignUpScreen(
         firstRun: true,
+        auth: widget.auth,
         // 已經用 Google 授權過了，別再要求他選一次登入方式。
         authorizedEmail: widget.email,
         onFinish: () => setState(() => _needsSignUp = false),
