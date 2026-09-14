@@ -7,7 +7,6 @@ import '../domain/novice_wrapup.dart';
 import '../domain/platform_config.dart';
 import '../state/app_state.dart';
 import 'train/rate_experience_screen.dart';
-import '../design/tokens.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 
@@ -109,8 +108,7 @@ class SettlementScreen extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Text('階級 ',
-                        style: T.caption()),
+                    Text('階級 ', style: T.caption()),
                     Text('${rp.rank}',
                         // 階級是數值 —— 用數值樣式才有等寬對齊。
                         style: T.numberS()),

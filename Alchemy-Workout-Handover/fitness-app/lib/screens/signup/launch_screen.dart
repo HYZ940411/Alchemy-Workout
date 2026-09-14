@@ -61,7 +61,7 @@ class _LaunchScreenState extends State<LaunchScreen> {
                 width: 96,
                 height: 96,
                 // 載不到就退回原本的佔位圖示，不要讓啟動頁破一個洞。
-                errorBuilder: (_, __, ___) => const Icon(
+                errorBuilder: (_, _, _) => const Icon(
                   Icons.fitness_center,
                   size: 40,
                   color: C.textPrimary,
