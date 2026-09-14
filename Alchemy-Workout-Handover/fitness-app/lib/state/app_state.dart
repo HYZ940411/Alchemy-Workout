@@ -32,6 +32,7 @@ import '../data/public_profile.dart';
 import '../data/follow_data.dart';
 import '../data/post_data.dart';
 import '../data/chat_data.dart';
+import '../data/team_data.dart';
 import '../mock/mock_data.dart';
 import '../mock/mock_equipment.dart';
 
@@ -2436,6 +2437,52 @@ class AppState extends ChangeNotifier {
 
   Team? myTeam = buildMyTeam();
 
+  // --- 團隊上雲（[BE-14]）---
+
+  /// 雲端的團隊。**空值代表不同步** —— 既有測試走這條。
+  TeamSource? teamSource;
+
+  /// 即發即忘地把一次團隊異動送上雲。與其他社群寫入同一套。
+  void _pushTeam(Future<void> Function(TeamSource src, String uid) job) {
+    final src = teamSource;
+    final uid = myUid;
+    if (src == null || uid == null) return;
+    job(src, uid).catchError((_) {});
+  }
+
+  /// 這位成員的 uid。示範用的假隊友不在公開檔案裡，回傳空值。
+  String? _memberUid(String name) =>
+      name == displayName ? myUid : uidOf(name);
+
+  CloudMember _asCloudMember(TeamMember m) => CloudMember(
+        name: m.name,
+        rank: m.rank,
+        role: m.role,
+        joinedAt: now,
+      );
+
+  /// 以雲端的隊伍為準（[BE-14]）。
+  ///
+  /// **雲端有隊就以它為準、沒有就不動本機**：登入時雲端那份才是真的，
+  /// 但「查不到」可能只是還沒建過隊，不該把示範用的隊伍清掉 ——
+  /// 那會讓沒接後端的流程示範整個消失。
+  void applyCloudTeam(CloudTeam? t) {
+    if (t == null || t.disbanded) return;
+
+    myTeam = Team(
+      id: t.id,
+      name: t.name,
+      isPublic: t.isPublic,
+      capacity: t.capacity,
+      members: [
+        for (final e in t.members.entries)
+          TeamMember(e.value.name, e.value.rank, e.value.role),
+      ],
+      lockedGroupSize: t.peakSize,
+    );
+    notifyListeners();
+  }
+
   bool get iAmLeader =>
       myTeam?.members.any((m) => m.name == displayName &&
           m.role == TeamRole.leader) ??
@@ -2449,6 +2496,8 @@ class AppState extends ChangeNotifier {
     if (m.role == TeamRole.leader) return;
     if (!t.members.contains(m)) return;
     t.members.remove(m);
+    final who = _memberUid(m.name);
+    if (who != null) _pushTeam((src, _) => src.removeMember(t.id, who));
     notifyListeners();
   }
 
@@ -2460,7 +2509,16 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t == null || !iAmLeader || t.isFull) return false;
     if (!t.applications.remove(r)) return false;
-    t.members.add(TeamMember(r.name, r.rank, TeamRole.member));
+    final m = TeamMember(r.name, r.rank, TeamRole.member);
+    t.members.add(m);
+    // 加入成員與清掉那筆申請是同一件事的兩半。
+    final who = _memberUid(r.name);
+    if (who != null) {
+      _pushTeam((src, _) async {
+        await src.putMember(t.id, who, _asCloudMember(m));
+        await src.dropRequest(t.id, who);
+      });
+    }
     notifyListeners();
     return true;
   }
@@ -2470,6 +2528,8 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t == null || !iAmLeader) return;
     t.applications.remove(r);
+    final who = _memberUid(r.name);
+    if (who != null) _pushTeam((src, _) => src.dropRequest(t.id, who));
     notifyListeners();
   }
 
@@ -2478,6 +2538,8 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t == null || !iAmLeader) return;
     t.invites.remove(r);
+    final who = _memberUid(r.name);
+    if (who != null) _pushTeam((src, _) => src.dropRequest(t.id, who));
     notifyListeners();
   }
 
@@ -2494,6 +2556,15 @@ class AppState extends ChangeNotifier {
     t.members[i] = TeamMember(old.name, old.rank, TeamRole.member);
     final j = t.members.indexOf(to);
     t.members[j] = TeamMember(to.name, to.rank, TeamRole.leader);
+    // 兩個人的角色一起換。只寫一邊的話雲端會同時有兩位隊長、或一位都沒有。
+    final oldUid = _memberUid(old.name);
+    final newUid = _memberUid(to.name);
+    if (oldUid != null && newUid != null) {
+      _pushTeam((src, _) async {
+        await src.putMember(t.id, oldUid, _asCloudMember(t.members[i]));
+        await src.putMember(t.id, newUid, _asCloudMember(t.members[j]));
+      });
+    }
     notifyListeners();
     return true;
   }
@@ -2541,11 +2612,20 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t == null || !iAmLeader || t.isFull) return false;
     if (t.invites.any((i) => i.name == name)) return false;
-    t.invites.add(PendingRequest(
-      name,
-      rank,
-      now.add(const Duration(hours: 168)),
-    ));
+    final expiresAt = now.add(const Duration(hours: 168));
+    t.invites.add(PendingRequest(name, rank, expiresAt));
+    final who = _memberUid(name);
+    if (who != null) {
+      _pushTeam((src, _) => src.sendRequest(TeamRequest(
+            teamId: t.id,
+            teamName: t.name,
+            uid: who,
+            name: name,
+            rank: rank,
+            isInvite: true,
+            expiresAt: expiresAt,
+          )));
+    }
     _pushPending('隊長已邀請成員', '已邀請 $name',
         '對方有 7 天可以回應，逾期未回應即失效。');
     notifyListeners();
@@ -2651,11 +2731,18 @@ class AppState extends ChangeNotifier {
   /// 待回應的申請**不佔用 5 人名額**。
   bool applyToTeam(PublicTeam t) {
     if (joinBlockedReason(t) != null) return false;
-    sentApplications.add(PendingRequest(
-      t.name,
-      rank,
-      now.add(const Duration(hours: 168)),
-    ));
+    final expiresAt = now.add(const Duration(hours: 168));
+    sentApplications.add(PendingRequest(t.name, rank, expiresAt));
+    // 申請是我自己送出的，所以帶的是我的 uid（雲端規則也只允許這樣）。
+    _pushTeam((src, uid) => src.sendRequest(TeamRequest(
+          teamId: t.id,
+          teamName: t.name,
+          uid: uid,
+          name: displayName,
+          rank: rank,
+          isInvite: false,
+          expiresAt: expiresAt,
+        )));
     _pushPending('使用者已申請加入團隊', '加入申請已送出',
         '「${t.name}」的隊長有 7 天可以回應，逾期未回應即失效。');
     notifyListeners();
@@ -2665,6 +2752,13 @@ class AppState extends ChangeNotifier {
   /// 撤回申請 —— 申請逾期或被拒後皆可再次申請。
   void withdrawApplication(String teamName) {
     sentApplications.removeWhere((a) => a.name == teamName);
+    // 本機的申請只記隊名，雲端要的是隊伍 ID —— 從公開隊伍清單反查。
+    // 查不到就只在本機撤回（那筆雲端申請會自行逾期，168 小時後失效）。
+    final id = publicTeams
+        .where((t) => t.name == teamName && t.id.isNotEmpty)
+        .map((t) => t.id)
+        .firstOrNull;
+    if (id != null) _pushTeam((src, uid) => src.dropRequest(id, uid));
     notifyListeners();
   }
 
@@ -3086,6 +3180,14 @@ class AppState extends ChangeNotifier {
     );
     // 建立者沒有 teamJoinedAt —— 無懲罰退出窗口是給誤入團隊的人。
     teamJoinedAt = null;
+    final created = myTeam!;
+    _pushTeam((src, uid) => src.create(CloudTeam(
+          id: created.id,
+          name: created.name,
+          isPublic: created.isPublic,
+          capacity: created.capacity,
+          members: {uid: _asCloudMember(created.members.first)},
+        )));
     notifyListeners();
     return true;
   }
@@ -3097,6 +3199,7 @@ class AppState extends ChangeNotifier {
   void setTeamVisibility(bool isPublic) {
     final t = myTeam;
     if (t == null || !iAmLeader || t.isPublic == isPublic) return;
+    _pushTeam((src, _) => src.setVisibility(t.id, isPublic));
     myTeam = Team(
       id: t.id,
       name: t.name,
@@ -3140,6 +3243,15 @@ class AppState extends ChangeNotifier {
     // 隊長轉讓後退出同樣適用，不因其為隊長而豁免。
     final grace =
         teamJoinedAt != null && now.difference(teamJoinedAt!) < kTeamLeaveGrace;
+    if (t != null) {
+      // 最後一人離開＝解散（軟刪除）；否則只是把自己移出成員。
+      final id = t.id;
+      if (outcome.disbanded) {
+        _pushTeam((src, _) => src.disband(id));
+      } else {
+        _pushTeam((src, uid) => src.removeMember(id, uid));
+      }
+    }
     myTeam = null;
     teamJoinedAt = null;
     teamLeftAt = grace ? null : now;

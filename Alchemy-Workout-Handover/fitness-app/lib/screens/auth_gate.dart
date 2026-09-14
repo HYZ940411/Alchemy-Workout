@@ -9,6 +9,7 @@ import '../data/public_profile.dart';
 import '../data/follow_data.dart';
 import '../data/post_data.dart';
 import '../data/chat_data.dart';
+import '../data/team_data.dart';
 import '../data/store.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
@@ -46,6 +47,9 @@ class AuthGate extends StatefulWidget {
   /// 私訊的來源（[BE-14]）。空值代表不同步。
   final ChatSource Function(String uid)? chatsFor;
 
+  /// 團隊的來源（[BE-14]）。空值代表不同步。
+  final TeamSource Function(String uid)? teamsFor;
+
   const AuthGate({
     super.key,
     required this.auth,
@@ -56,6 +60,7 @@ class AuthGate extends StatefulWidget {
     this.followsFor,
     this.postsFor,
     this.chatsFor,
+    this.teamsFor,
   });
 
   @override
@@ -168,6 +173,15 @@ class _AuthGateState extends State<AuthGate> {
         widget.state.myUid = uid;
         widget.state.chatSource = chats;
         widget.state.applyCloudConversations(await chats.conversations(limit: 50));
+      }
+
+      // 團隊。同樣排在 applyPublicProfiles 之後 —— 隊員的暱稱要從
+      // 雲端的 uid 翻回來才畫得出名字。
+      final teams = widget.teamsFor?.call(uid);
+      if (teams != null) {
+        widget.state.myUid = uid;
+        widget.state.teamSource = teams;
+        widget.state.applyCloudTeam(await teams.myTeam());
       }
 
       final follows = widget.followsFor?.call(uid);

@@ -8,6 +8,8 @@ import 'data/platform_data_firestore.dart';
 import 'data/follow_data.dart';
 import 'data/follow_data_firestore.dart';
 import 'data/chat_data.dart';
+import 'data/team_data.dart';
+import 'data/team_data_firestore.dart';
 import 'data/chat_data_firestore.dart';
 import 'data/post_data.dart';
 import 'data/post_data_firestore.dart';
@@ -46,6 +48,7 @@ Future<void> main() async {
     followsFor: (uid) => FirestoreFollows(uid: uid),
     postsFor: (uid) => FirestorePosts(uid: uid),
     chatsFor: (uid) => FirestoreChats(uid: uid),
+    teamsFor: (uid) => FirestoreTeams(uid: uid),
   ));
 }
 
@@ -81,6 +84,9 @@ class FitnessApp extends StatefulWidget {
   /// 私訊的來源（[BE-14]）。空值代表不同步 —— **既有測試全部走這條**。
   final ChatSource Function(String uid)? chatsFor;
 
+  /// 團隊的來源（[BE-14]）。空值代表不同步 —— **既有測試全部走這條**。
+  final TeamSource Function(String uid)? teamsFor;
+
   const FitnessApp({
     super.key,
     this.store,
@@ -91,6 +97,7 @@ class FitnessApp extends StatefulWidget {
     this.followsFor,
     this.postsFor,
     this.chatsFor,
+    this.teamsFor,
   });
   @override
   State<FitnessApp> createState() => _FitnessAppState();
@@ -151,6 +158,7 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                 followsFor: widget.followsFor,
                 postsFor: widget.postsFor,
                 chatsFor: widget.chatsFor,
+                teamsFor: widget.teamsFor,
               ),
       ),
     );
