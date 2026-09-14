@@ -29,3 +29,7 @@ void resetAppClock() => _offset = Duration.zero;
 /// **住在這裡而不是 `AppState`**：假資料產生器與純函式也要用同一套換日規則，
 /// 而它們構不到 `AppState`。放在那裡的後果是它們改用原始日曆日 ——
 /// 兩套「今天」在當地 00:00–03:59 會差一天，而那段時間以外完全看不出來。
+DateTime businessDate(DateTime now) {
+  final s = now.subtract(const Duration(hours: 4));
+  return DateTime(s.year, s.month, s.day);
+}
