@@ -59,12 +59,17 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.dark,
   ));
   await Firebase.initializeApp(options: _firebaseOptions());
+  // 轉址登入回來時，先把結果收掉再開 App —— 否則 AuthGate 會先看到
+  // 「未登入」而畫出登入頁，使用者剛授權完卻又被要求登入一次。
+  final auth = AuthService();
+  await auth.completePendingSignIn();
+
   // 正式環境走帳號 ＋ Firestore，不再用本機存檔 ——
   // 換裝置、清瀏覽器資料都不會再從頭開始。
   // 平台公用資料（動作庫、課表、設定…）登入後自 Firestore 載入，
   // 讀不到退回打包在本地的後備（[BE-12]）。
   runApp(FitnessApp(
-    auth: AuthService(),
+    auth: auth,
     platformData: FirestorePlatformData(),
     profileFor: (uid) => FirestorePublicProfile(uid: uid),
     followsFor: (uid) => FirestoreFollows(uid: uid),

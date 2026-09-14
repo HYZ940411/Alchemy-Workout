@@ -49,7 +49,18 @@ class AuthService {
 
     try {
       if (kIsWeb) {
-        await _auth.signInWithPopup(provider);
+        // **轉址而不是彈出視窗。**
+        //
+        // 手機瀏覽器多半會擋掉彈出視窗（或改開新分頁，結果一樣不通），
+        // 所以 signInWithPopup 那條路在手機上本來就不可靠。
+        // 轉址是整頁跳走再跳回來，兩種裝置走同一條路。
+        //
+        // 前提是 authDomain 與 App 同源（見 main.dart 的 _firebaseOptions）——
+        // 不同源的話轉回來會讀不到登入前寫下的狀態，報 missing initial state。
+        //
+        // 這個呼叫之後頁面就會跳走，下面的 return 不會執行到；
+        // 回來時由 [completePendingSignIn] 收尾。
+        await _auth.signInWithRedirect(provider);
       } else {
         await _auth.signInWithProvider(provider);
       }
@@ -57,6 +68,25 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       if (_userCancelled(e.code)) return false;
       rethrow;
+    }
+  }
+
+  /// 收掉一次轉址登入的結果。
+  ///
+  /// 轉址流程會讓整個 App 重新載入，所以「登入成功」這件事不是由
+  /// [signInWithGoogle] 回報的 —— 它在轉址當下就結束了。
+  /// 回來之後必須呼叫這個，Firebase 才會把授權碼換成登入狀態並發出
+  /// [authStateChanges] 事件。
+  ///
+  /// **啟動時一定要呼叫**，而且失敗不可以擋住 App 開啟 ——
+  /// 沒有待處理的轉址時它也會正常回傳，那是最常見的情況（一般啟動）。
+  Future<void> completePendingSignIn() async {
+    if (!kIsWeb) return;
+    try {
+      await _auth.getRedirectResult();
+    } catch (_) {
+      // 轉址失敗（使用者中途取消、逾時）只代表這次沒登入成功，
+      // 不該讓 App 開不起來 —— 使用者會回到登入頁，再按一次即可。
     }
   }
 
