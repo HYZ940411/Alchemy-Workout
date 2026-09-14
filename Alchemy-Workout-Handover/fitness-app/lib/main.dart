@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -27,6 +28,27 @@ import 'screens/signup/signup_screen.dart';
 import 'state/app_state.dart';
 import 'theme.dart';
 
+/// 正式環境對外的網域。Firebase Hosting 給每個專案兩個網址
+/// （`.web.app` 與 `.firebaseapp.com`），這裡選定前者為正式對外的那一個。
+const _kWebHost = 'alchemy-workout.web.app';
+
+/// Firebase 設定。
+///
+/// **Web 版要把 `authDomain` 改成 App 自己的網域。**
+///
+/// `flutterfire configure` 產生的預設值是 `<專案>.firebaseapp.com`，
+/// 而 App 開在 `<專案>.web.app` —— 兩個不同的來源。
+/// Google 登入會轉址到驗證頁再轉回來，而瀏覽器（Chrome 與 Safari 都在收緊）
+/// 會把不同來源的 sessionStorage 隔開，於是轉回來時讀不到登入前寫下的狀態，
+/// 報 `missing initial state`，登入永遠走不完。
+///
+/// Firebase Hosting 在**每一個**網域上都提供 `/__/auth/handler`，
+/// 所以把 authDomain 指到同一個網域即可全程同源。
+/// 這是設定問題，不動任何畫面或流程。
+FirebaseOptions _firebaseOptions() => kIsWeb
+    ? DefaultFirebaseOptions.web.copyWith(authDomain: _kWebHost)
+    : DefaultFirebaseOptions.currentPlatform;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -36,9 +58,7 @@ Future<void> main() async {
     systemNavigationBarColor: AppColors.surface,
     systemNavigationBarIconBrightness: Brightness.dark,
   ));
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: _firebaseOptions());
   // 正式環境走帳號 ＋ Firestore，不再用本機存檔 ——
   // 換裝置、清瀏覽器資料都不會再從頭開始。
   // 平台公用資料（動作庫、課表、設定…）登入後自 Firestore 載入，
