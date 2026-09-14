@@ -28,6 +28,7 @@ import '../data/platform_data.dart';
 import '../data/public_profile.dart';
 import '../data/follow_data.dart';
 import '../data/post_data.dart';
+import '../data/chat_data.dart';
 import '../mock/mock_data.dart';
 import '../mock/mock_equipment.dart';
 
@@ -3756,10 +3757,73 @@ class AppState extends ChangeNotifier {
   List<Conversation> get visibleConversations =>
       conversations.where((c) => !c.deletedByMe).toList();
 
+  // --- 私訊上雲（[BE-14]）---
+
+  /// 雲端的私訊。**空值代表不同步** —— 既有測試走這條。
+  ChatSource? chatSource;
+
+  /// 這段對話在雲端的 ID。對方不在公開檔案裡（示範用的假使用者就是這種）
+  /// 時回傳空值 —— 那段對話只存在本機。
+  String? _cloudConvId(String peerName) {
+    final src = chatSource;
+    final me = myUid;
+    final peer = uidOf(peerName);
+    if (src == null || me == null || peer == null) return null;
+    return src.conversationIdOf(me, peer);
+  }
+
+  /// 把雲端的對話併進清單（[BE-14]）。
+  ///
+  /// **依對方的暱稱合併**：本機那份可能是示範資料，雲端那份帶著真的訊息。
+  /// 同一個人只該有一段對話 —— 雲端那份優先。
+  void applyCloudConversations(List<CloudConversation> cloud) {
+    final me = myUid;
+    if (me == null) return;
+
+    for (final c in cloud) {
+      final peerUid = c.peerOf(me);
+      if (peerUid == null) continue;
+      final peerName = c.names[peerUid];
+      // 認不出對方是誰的對話畫不出來，略過。
+      if (peerName == null) continue;
+
+      final conv = Conversation(
+        id: c.id,
+        peer: peerName,
+        peerRank: c.ranks[peerUid] ?? 1,
+        peerIsInstructor: c.instructors[peerUid] ?? false,
+        deletedByMe: c.deletedBy.contains(me),
+        messages: [
+          for (final m in c.messages)
+            ChatMessage(
+              // **fromMe 在這裡才算得出來** —— 它是每位讀者各自的狀態，
+              // 雲端存的是 senderUid。
+              m.fromMeFor(me),
+              m.text,
+              m.at,
+              read: m.readBy.containsKey(me),
+              category: m.category,
+              pendingReview: m.pendingReview,
+            ),
+        ],
+      );
+
+      final i = conversations.indexWhere((x) => x.peer == peerName);
+      if (i >= 0) {
+        conversations[i] = conv;
+      } else {
+        conversations.add(conv);
+      }
+    }
+    notifyListeners();
+  }
+
   /// 使用者已刪除對話。單方刪除，對方仍可見；訊息本身不可刪除。
   void deleteConversation(Conversation c) {
     if (c.deletedByMe) return;
     c.deletedByMe = true;
+    final id = _cloudConvId(c.peer);
+    if (id != null) chatSource?.deleteForMe(id).catchError((_) {});
     notifyListeners();
   }
 
@@ -3798,6 +3862,29 @@ class AppState extends ChangeNotifier {
       category: category,
       pendingReview: v == FilterVerdict.flagged,
     ));
+
+    // 送上雲。與其他社群寫入同一套：樂觀更新、即發即忘、吞掉錯誤。
+    // **訊息的 ID 在這裡才產生** —— ChatMessage 本身沒有 ID 欄位
+    // （本機以位置辨識就夠），但雲端的每則訊息需要一個文件 ID。
+    final peerUid = uidOf(c.peer);
+    final src = chatSource;
+    if (peerUid != null && src != null) {
+      src
+          .send(
+            peerUid,
+            CloudMessage(
+              id: newId('msg'),
+              senderUid: myUid ?? '',
+              text: body,
+              at: now,
+              category: category,
+              pendingReview: v == FilterVerdict.flagged,
+            ),
+            myName: displayName,
+            peerName: c.peer,
+          )
+          .catchError((_) {});
+    }
 
     if (v == FilterVerdict.flagged) {
       _openAutoFlagCase(
@@ -3844,6 +3931,8 @@ class AppState extends ChangeNotifier {
   }
 
   void markRead(Conversation c) {
+    final id = _cloudConvId(c.peer);
+    if (id != null) chatSource?.markRead(id).catchError((_) {});
     final updated = c.messages
         .map((m) => m.fromMe ? m : ChatMessage(m.fromMe, m.text, m.at, read: true))
         .toList();

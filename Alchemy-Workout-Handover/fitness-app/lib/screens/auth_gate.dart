@@ -8,6 +8,7 @@ import '../data/platform_data.dart';
 import '../data/public_profile.dart';
 import '../data/follow_data.dart';
 import '../data/post_data.dart';
+import '../data/chat_data.dart';
 import '../data/store.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
@@ -42,6 +43,9 @@ class AuthGate extends StatefulWidget {
   /// 貼文的來源（[BE-11] 批次 3）。空值代表不同步。
   final PostSource Function(String uid)? postsFor;
 
+  /// 私訊的來源（[BE-14]）。空值代表不同步。
+  final ChatSource Function(String uid)? chatsFor;
+
   const AuthGate({
     super.key,
     required this.auth,
@@ -51,6 +55,7 @@ class AuthGate extends StatefulWidget {
     this.profileFor,
     this.followsFor,
     this.postsFor,
+    this.chatsFor,
   });
 
   @override
@@ -154,6 +159,15 @@ class _AuthGateState extends State<AuthGate> {
         widget.state.myUid = uid;
         widget.state.postSource = postsSrc;
         widget.state.applyCloudPosts(await postsSrc.recent(limit: 30));
+      }
+
+      // 私訊。要排在 applyPublicProfiles 之後 —— 對話裡的 uid 要靠
+      // nameByUid 翻成暱稱才畫得出來。
+      final chats = widget.chatsFor?.call(uid);
+      if (chats != null) {
+        widget.state.myUid = uid;
+        widget.state.chatSource = chats;
+        widget.state.applyCloudConversations(await chats.conversations(limit: 50));
       }
 
       final follows = widget.followsFor?.call(uid);

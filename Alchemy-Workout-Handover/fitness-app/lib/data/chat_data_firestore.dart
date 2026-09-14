@@ -26,6 +26,7 @@ class FirestoreChats implements ChatSource {
       _db.collection('conversations');
 
   /// 排序後合成 —— 誰先開始對話不影響 ID。
+  @override
   String conversationIdOf(String a, String b) {
     final pair = [a, b]..sort();
     return pair.join('_');

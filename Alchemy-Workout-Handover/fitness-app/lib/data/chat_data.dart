@@ -81,6 +81,12 @@ class CloudMessage {
 
 /// 私訊的存讀邊界（[BE-11] 批次 5）。
 abstract class ChatSource {
+  /// 這兩人的對話 ID。
+  ///
+  /// 放進介面而不是留在實作裡，是因為 `AppState` 要靠它把畫面上的
+  /// 那段對話對應到雲端的哪一份 —— 而它不該知道 ID 是怎麼算出來的。
+  String conversationIdOf(String a, String b);
+
   /// 我的對話。已在我這一側刪除者不列出。
   Future<List<CloudConversation>> conversations({int limit});
 
