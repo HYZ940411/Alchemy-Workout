@@ -1,4 +1,5 @@
 import '../domain/ability.dart';
+import '../domain/clock.dart';
 import '../domain/commerce.dart';
 import '../domain/community.dart';
 import '../domain/task_pool.dart';
@@ -493,8 +494,12 @@ Punishment? buildPunishment() => null; // 一般狀態為無處罰
 /// 「查無此筆」即代表該日未簽到。這正是補簽 Precondition
 /// 「該日確實未簽到」的驗證來源。
 Map<DateTime, CheckInMethod> buildCheckInRecords() {
-  final today = DateTime.now();
-  final base = DateTime(today.year, today.month, today.day);
+  // **用展示時鐘與換日規則，不用原始日曆日。**
+  // clock.dart 開宗明義：判定或寫入狀態的地方一律走 appNow()。
+  // 而「今天」必須與 checkIn() 寫入時用的 businessDate 是同一天 ——
+  // 不一致的話，當地 00:00–03:59 這四個小時內，假資料的「今天」
+  // 會比 App 認定的「今天」晚一天，簽到相關的測試整批紅。
+  final base = businessDate(appNow());
   // 距今 1–14 天的簽到史，不含今日。true 為當日有簽到。
   const signed = [
     true, true, false, true, false, true, true,

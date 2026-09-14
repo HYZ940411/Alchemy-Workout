@@ -4,6 +4,9 @@ import 'package:flutter/widgets.dart';
 
 import '../domain/ability.dart';
 import '../domain/clock.dart';
+// 換日規則已移入 clock.dart（假資料產生器也要用同一套）。
+// 轉出以維持既有呼叫端不變 —— 19 處在本檔、5 個測試檔。
+export '../domain/clock.dart' show businessDate;
 import '../domain/ai_adjust.dart';
 import '../domain/decay.dart';
 import '../domain/novice.dart';
@@ -39,13 +42,6 @@ part 'app_state_snapshot.dart';
 
 /// 讀取存檔的三個階段。載入中不畫主畫面，失敗不靜靜改用假資料。
 enum HydrationPhase { loading, ready, failed }
-
-/// 統一換日時點：使用者當地時區的 04:00。
-/// 當地 00:00–03:59 的行為一律計入前一個自然日。
-DateTime businessDate(DateTime now) {
-  final s = now.subtract(const Duration(hours: 4));
-  return DateTime(s.year, s.month, s.day);
-}
 
 /// 全站預設組間休息秒數。
 const int kDefaultRestSeconds = 90;

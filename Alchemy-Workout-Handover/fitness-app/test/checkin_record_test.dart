@@ -3,10 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/state/app_state.dart';
 
-DateTime dayOf(AppState s, int daysAgo) {
-  final t = s.now;
-  return DateTime(t.year, t.month, t.day).subtract(Duration(days: daysAgo));
-}
+/// 距今 [daysAgo] 天的**營業日**。
+///
+/// **必須走 businessDate，不能自己截日曆日。** 換日時點是當地 04:00，
+/// 而 checkIn() 寫入時用的就是 businessDate —— 兩邊不一致的話，
+/// 當地 00:00–03:59 這四個小時內測試會整批紅，其餘時間完全正常。
+/// 那不是「偶爾不穩」，是這支測試只在一天的某些時段才驗得到東西。
+DateTime dayOf(AppState s, int daysAgo) =>
+    businessDate(s.now).subtract(Duration(days: daysAgo));
 
 void main() {
   group('每日簽到紀錄：只存已簽到的日子', () {
