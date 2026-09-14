@@ -285,7 +285,7 @@ void main() {
     await t.pumpAndSettle();
 
     // 登入頁：入口二選一，手機路徑要先填號碼
-    expect(find.text('歡迎回來'), findsOneWidget);
+    expect(find.text('開始吧'), findsOneWidget);
     await t.enterText(find.byType(TextField).first, '0912345678');
     await t.pumpAndSettle();
     await t.tap(find.widgetWithText(AppButton, '發送驗證碼'));

@@ -186,7 +186,7 @@ void main() {
       await t.pump(const Duration(milliseconds: 1500));
       await t.pumpAndSettle();
       expect(find.byType(LaunchScreen), findsNothing);
-      expect(find.text('歡迎回來'), findsOneWidget);
+      expect(find.text('開始吧'), findsOneWidget);
 
       // 號碼沒填完，發送鈕不可按
       expect(

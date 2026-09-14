@@ -91,9 +91,13 @@ class _LoginPaneState extends State<LoginPane> {
         padding:
             const EdgeInsets.fromLTRB(S.base, S.xl, S.base, S.scrollBottom),
         children: [
-          Text('歡迎回來', style: T.h1()),
+          // **不可以寫「歡迎回來」** —— 這一頁只有第一次來的人看得到
+          //（AppBar 標題就是「建立帳號」）。對素未謀面的人說「回來」，
+          // 第一個感覺是「我是不是以前註冊過卻忘了」。
+          // 等真的有「既有帳號登入」那條路徑時，再依情境分兩種文案。
+          Text('開始吧', style: T.h1()),
           const SizedBox(height: S.sm),
-          Text('輸入手機號碼，我們會傳一組驗證碼給你',
+          Text('選一種方式建立帳號，只要一分鐘',
               style: T.body(color: C.textSecondary)),
           const SizedBox(height: S.xl),
 
