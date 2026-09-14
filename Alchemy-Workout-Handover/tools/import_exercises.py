@@ -326,8 +326,18 @@ def main():
     for k, v in unmapped_part.items():
         report['部位映射不到'].append(f'{k}（{v} 筆）')
 
-    for left in OVERRIDES:
-        report['示範動作對不到 CSV 的動作'].append(left)
+    # **對不到就停下來，不要默默產出。**
+    # 校準值查不到時，動作會退回流水號 ID 並遺失休息秒數 ——
+    # 產出看起來正常、測試也不會紅，但 App 裡 ex('squat') 那類
+    # 硬引用會全部指向不存在的動作。留白會被看見，錯的不會。
+    if OVERRIDES:
+        for left in OVERRIDES:
+            report['示範動作對不到 CSV 的動作'].append(left)
+        print('錯誤：以下校準值對不到 CSV 的動作名稱，產出已中止：')
+        for left in OVERRIDES:
+            print(f'  · {left}')
+        print('請確認 OVERRIDES 的鍵與 normalise_name 正規化後的名稱一致。')
+        return 1
     write_dart(out)
     write_guides(out)
     write_report(out, report)
@@ -466,6 +476,29 @@ def write_report(items, report):
             L.append(f'- …另有 {len(v) - 60} 筆')
         L.append('')
     p.write_text('\n'.join(L))
+
+
+# ---------------------------------------------------------------------------
+# OVERRIDES 的鍵要跟著 normalise_name 走
+# ---------------------------------------------------------------------------
+#
+# OVERRIDES 是手寫的，鍵沿用 CSV 的原始寫法（'深蹲 -槓鈴'）；
+# 而迴圈裡的 name 已經過 normalise_name 正規化（'深蹲 · 槓鈴'）。
+# 兩邊格式不同，16 筆校準值就會全部查不到 —— 而且**不會報錯**，
+# 只是靜靜退回流水號 pNNN，連帶遺失休息秒數與相對強度。
+#
+# 這正是實際發生過的事：normalise_name 是後來才加的，加的時候
+# 沒有一併改這些鍵，於是重跑腳本產出的 .g.dart 與版控裡那份對不上，
+# 而 15 個被程式碼以 ex('squat') 硬引用的友善 ID 全部消失。
+#
+# 在這裡統一轉一次，日後再改分隔符也不會再踩到。
+OVERRIDES = {normalise_name(k): v for k, v in OVERRIDES.items()}
+
+# 同一個道理，這兩份名單也是手寫的、也用原始寫法。
+# 只有帶器材後綴的條目會受影響（徒手動作沒有分隔符，正規化前後一樣），
+# 所以漏掉時只會錯個一兩筆 —— 更難發現，不是更無害。
+MOBILITY = {normalise_name(k) for k in MOBILITY}
+CONDITIONING = {normalise_name(k) for k in CONDITIONING}
 
 
 if __name__ == '__main__':
