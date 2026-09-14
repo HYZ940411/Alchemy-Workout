@@ -54,17 +54,18 @@ class _LaunchScreenState extends State<LaunchScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
+              // 原本是佔位用的方框＋通用啞鈴圖示。Logo 本身已經是一個
+              // 完整的徽章造型，再框一層方框反而打架，所以直接呈現。
+              Image.asset(
+                'assets/images/logo.png',
                 width: 96,
                 height: 96,
-                decoration: BoxDecoration(
-                  color: C.bgSurface,
-                  borderRadius: BorderRadius.circular(R.card),
-                  border: Border.all(color: C.textPrimary, width: 1.5),
+                // 載不到就退回原本的佔位圖示，不要讓啟動頁破一個洞。
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.fitness_center,
+                  size: 40,
+                  color: C.textPrimary,
                 ),
-                alignment: Alignment.center,
-                child: const Icon(Icons.fitness_center,
-                    size: 40, color: C.textPrimary),
               ),
               const SizedBox(height: S.lg),
               Text('健金術', style: T.h1()),

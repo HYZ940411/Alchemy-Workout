@@ -92,6 +92,9 @@ flutter:
     # 只打包中譯版。英文原檔 exercise_guides.json 留在 repo 供 tools/guides_zh.py
     # 比對用，不進 App —— 527 筆已全數中譯，帶著它等於多背 271KB。
     - assets/data/exercise_guides.zh.json
+    # 品牌 Logo。原始檔 1080×1080／1.1 MB，這裡放 288×288（啟動頁顯示
+    # 96 邏輯像素，3 倍密度用得到）—— Web 版每個位元組都是訪客要等的。
+    - assets/images/logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
