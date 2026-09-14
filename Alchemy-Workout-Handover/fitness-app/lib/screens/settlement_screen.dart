@@ -7,6 +7,7 @@ import '../domain/novice_wrapup.dart';
 import '../domain/platform_config.dart';
 import '../state/app_state.dart';
 import 'train/rate_experience_screen.dart';
+import '../design/tokens.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 
@@ -109,10 +110,10 @@ class SettlementScreen extends StatelessWidget {
                 Row(
                   children: [
                     const Text('階級 ',
-                        style: TextStyle(color: AppColors.textDim, fontSize: 12)),
+                        style: T.caption()),
                     Text('${rp.rank}',
-                        style: const TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.w800)),
+                        // 階級是數值 —— 用數值樣式才有等寬對齊。
+                        style: T.numberS()),
                     const Spacer(),
                     if (r.rewards.exp > 0)
                       Text('經驗值 +${r.rewards.exp}',
@@ -120,9 +121,7 @@ class SettlementScreen extends StatelessWidget {
                               color: AppColors.accent,
                               fontWeight: FontWeight.w800))
                     else
-                      const Text('經驗值當日已發放',
-                          style: TextStyle(
-                              color: AppColors.textFaint, fontSize: 12)),
+                      Text('經驗值當日已發放', style: T.caption()),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -130,7 +129,7 @@ class SettlementScreen extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   rp.isMax ? '已滿等' : '距 ${rp.rank + 1} 階還差 ${rp.toNext} 經驗值',
-                  style: const TextStyle(color: AppColors.textFaint, fontSize: 11),
+                  style: T.caption(),
                 ),
                 const Divider(height: 28, color: AppColors.line),
                 _RewardRow(
@@ -206,12 +205,11 @@ class SettlementScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('「${r.plan.name}」做起來如何？',
-                      style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w700)),
+                      style: T.body(weight: FontWeight.w700)),
                   const SizedBox(height: 6),
-                  const Text('這份評分是給平台改課表用的，不連動任何人的聲望或獎勵。可以跳過。',
-                      style: TextStyle(
-                          color: AppColors.textDim, fontSize: 11.5, height: 1.5)),
+                  // 多行段落用 Body —— 規格 §2.2 明訂 Caption 僅供單行。
+                  Text('這份評分是給平台改課表用的，不連動任何人的聲望或獎勵。可以跳過。',
+                      style: T.body(color: C.textSecondary)),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
@@ -317,10 +315,9 @@ class _AbilityGains extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (gained.isEmpty) ...[
-            const Text(
+            Text(
               '本次訓練未推進任何維度 —— 點數只在超越自身紀錄時上升。',
-              style:
-                  TextStyle(color: AppColors.textDim, fontSize: 13, height: 1.5),
+              style: T.body(color: C.textSecondary),
             ),
             // **講出差多少**。只說「未推進」，畫面看起來就是沒反應，
             // 使用者無從判斷自己是差一點還是差很遠。
@@ -330,15 +327,12 @@ class _AbilityGains extends StatelessWidget {
                 Row(
                   children: [
                     Text(dimNames[d]!,
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600)),
+                        style: T.body(weight: FontWeight.w600)),
                     const SizedBox(width: 10),
                     Text(
                       '本次實測 ${result.measured[d]}　·　目前 ${result.pointsAfter[d]} 點',
-                      style: const TextStyle(
-                          color: AppColors.textDim,
-                          fontSize: 12,
-                          fontFeatures: [FontFeature.tabularFigures()]),
+                      // 等寬數字由 T 統一提供，不必每處自己指定。
+                      style: T.caption(),
                     ),
                   ],
                 ),
@@ -402,27 +396,19 @@ class _GainRow extends StatelessWidget {
               const SizedBox(width: 10),
               Text(
                 dimNames[dim]!,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                style: T.body(weight: FontWeight.w700),
               ),
               const SizedBox(width: 10),
               Text(
                 '+$delta',
-                style: TextStyle(
-                  color: color,
-                  fontSize: big ? 30 : 20,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+                // 增益點數是這一列的主角 —— 用數值樣式，大小依是否為
+                // 本次最大增益切換。等寬與行高由 T 統一。
+                style: big ? T.numberL(color: color) : T.numberM(color: color),
               ),
               const Spacer(),
               Text(
                 '$after 點',
-                style: const TextStyle(
-                  color: AppColors.textDim,
-                  fontSize: 12,
-                  fontFeatures: [FontFeature.tabularFigures()],
-                ),
+                style: T.caption(),
               ),
             ],
           ),
@@ -432,11 +418,7 @@ class _GainRow extends StatelessWidget {
           // 呈現格式：主階 ＋ 本節點累積 ＋ 距下一節點
           Text(
             np.display,
-            style: const TextStyle(
-              color: AppColors.textDim,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+            style: T.caption(),
           ),
         ],
       ),
@@ -469,19 +451,16 @@ class _RewardRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style: const TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    style: T.body(weight: FontWeight.w600)),
                 const SizedBox(height: 2),
-                Text(detail,
-                    style: const TextStyle(
-                        color: AppColors.textFaint, fontSize: 11, height: 1.4)),
+                Text(detail, style: T.caption()),
               ],
             ),
           ),
           Text(
             value,
-            style: TextStyle(
-                color: color, fontSize: 17, fontWeight: FontWeight.w800),
+            // 獎勵數額 —— 數值樣式。
+            style: T.numberS(color: color),
           ),
         ],
       );
@@ -514,14 +493,9 @@ class _Highlight extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title,
-                        style: TextStyle(
-                            color: color,
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800)),
+                        style: T.body(color: color, weight: FontWeight.w700)),
                     const SizedBox(height: 2),
-                    Text(sub,
-                        style: const TextStyle(
-                            color: AppColors.textDim, fontSize: 11.5)),
+                    Text(sub, style: T.caption()),
                   ],
                 ),
               ),
