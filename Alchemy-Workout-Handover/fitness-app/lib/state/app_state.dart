@@ -33,6 +33,7 @@ import '../data/follow_data.dart';
 import '../data/post_data.dart';
 import '../data/chat_data.dart';
 import '../data/team_data.dart';
+import '../data/mentor_data.dart';
 import '../mock/mock_data.dart';
 import '../mock/mock_equipment.dart';
 
@@ -3265,6 +3266,85 @@ class AppState extends ChangeNotifier {
 
   late List<Instructor> instructors = buildInstructors();
   Instructor? myInstructor;
+
+  // --- 師徒上雲（[BE-14]）---
+
+  /// 雲端的師徒關係。**空值代表不同步** —— 既有測試走這條。
+  MentorSource? mentorSource;
+
+  /// 我作為**學徒**的那一段關係在雲端的 ID。
+  ///
+  /// 只涵蓋學徒側。教官側（我帶的每位學徒各一段關係）目前接不上 ——
+  /// 本機的 `mentorTasks`／`questions` 是**一份共用清單**，
+  /// 沒有記錄「這則是哪位學徒的」，而雲端的任務與問答掛在特定關係下。
+  /// 補這一段要先讓本機模型帶上學徒身分，見 PROGRESS.md 的 `[BE-15]`。
+  String? get _apprenticeBondId {
+    final me = myUid;
+    final mentor = myInstructor?.name;
+    if (me == null || mentor == null) return null;
+    final mentorUid = uidOf(mentor);
+    if (mentorUid == null) return null;
+    return '${mentorUid}_$me';
+  }
+
+  /// 師徒任務在雲端的識別碼。
+  ///
+  /// 本機的 [MentorTask] **沒有 ID 欄位** —— 它以標題辨識（同一位教官
+  /// 不會指派兩個同名任務）。這裡沿用同一套，才不會在本機與雲端
+  /// 長出兩套識別方式。標題若真的重複，兩者會落在同一份文件上，
+  /// 這是已知的取捨，補法是讓 MentorTask 帶上 ID（見 `[BE-15]`）。
+  String _taskId(MentorTask t) => t.title;
+
+  void _pushTask(MentorTask t) => _pushMentor((src, bond) => src.putTask(
+        bond,
+        CloudMentorTask(
+          id: _taskId(t),
+          title: t.title,
+          detail: t.detail,
+          state: t.state,
+          rewardCoins: t.rewardCoins,
+          rating: t.rating,
+        ),
+      ));
+
+  void _pushMentor(Future<void> Function(MentorSource src, String bondId) job) {
+    final src = mentorSource;
+    final bond = _apprenticeBondId;
+    if (src == null || bond == null) return;
+    job(src, bond).catchError((_) {});
+  }
+
+  /// 以雲端的師徒關係為準（[BE-14]）。
+  ///
+  /// 目前只還原**關係本身的狀態**（生效中／已解除與解除時點）——
+  /// 任務與問答要等本機模型帶上學徒身分之後才對應得起來。
+  void applyCloudBonds(List<CloudBond> bonds) {
+    final me = myUid;
+    if (me == null) return;
+
+    for (final b in bonds) {
+      if (b.apprenticeUid != me) continue; // 只處理我當學徒的那一段
+      final name = nameByUid[b.mentorUid];
+      if (name == null) continue;
+
+      myInstructor = instructors.where((i) => i.name == name).firstOrNull ??
+          Instructor(
+            name: name,
+            rank: 1,
+            reputation: kInstructorInitialReputation,
+            apprentices: 0,
+            apprenticeCap: kApprenticeCapInitial,
+            ability: const {},
+            specialties: const [],
+            avgRating: 0,
+            ratingCount: 0,
+          );
+      mentorReleasedAt = b.releasedAt;
+      mentorReleaseReason = b.releasedReason;
+      break;
+    }
+    notifyListeners();
+  }
   late List<MentorTask> mentorTasks = buildMentorTasks();
 
   /// 教官已指派師徒任務。
@@ -3387,11 +3467,26 @@ class AppState extends ChangeNotifier {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return false;
     if (mentorApplyBlockedReason(i) != null) return false;
-    mentorApplications.add(PendingRequest(
-      i.name,
-      i.rank,
-      now.add(const Duration(hours: 168)),
-    ));
+    final expiresAt = now.add(const Duration(hours: 168));
+    mentorApplications.add(PendingRequest(i.name, i.rank, expiresAt));
+    final target = uidOf(i.name);
+    final me = myUid;
+    final src = mentorSource;
+    if (target != null && me != null && src != null) {
+      src
+          .sendRequest(MentorRequest(
+            id: newId('mr'),
+            fromUid: me,
+            toUid: target,
+            fromName: displayName,
+            fromRank: rank,
+            // 我是學徒方 —— 這是拜師申請，不是教官的邀請。
+            fromMentor: false,
+            at: now,
+            expiresAt: expiresAt,
+          ))
+          .catchError((_) {});
+    }
     _pushPending('使用者已申請師徒關係', '拜師申請已送出',
         '${i.name} 有 7 天可以回應，逾期未回應即失效。');
     notifyListeners();
@@ -3450,6 +3545,7 @@ class AppState extends ChangeNotifier {
   ({int exp, int coins})? claimMentorTask(MentorTask t) {
     if (t.state != MentorTaskState.done) return null;
     t.state = MentorTaskState.claimed;
+    _pushTask(t);
     if (mentorRewardCapReached) {
       notifyListeners();
       return (exp: 0, coins: 0);
@@ -3468,6 +3564,7 @@ class AppState extends ChangeNotifier {
     if (mentorDisclaimerNeeded) return;
     t.state = MentorTaskState.done;
     weeklyCompleted += 1;
+    _pushTask(t);
     notifyListeners();
   }
 
@@ -3582,6 +3679,7 @@ class AppState extends ChangeNotifier {
     if (t.state == MentorTaskState.assigned) return false;
     final first = t.rating == null;
     t.rating = stars;
+    _pushTask(t);
     if (first && taskRatingsThisWeek < kMentorTaskRatingWeeklyCap) {
       taskRatingsThisWeek += 1;
       _bumpInstructorReputation(kMentorTaskReputationDelta[stars - 1]);
@@ -3643,6 +3741,10 @@ class AppState extends ChangeNotifier {
         t.state = MentorTaskState.voided;
       }
     }
+    // 雲端那邊 release() 會把「解除」與「未完成任務作廢」包在同一批寫入，
+    // 與這裡的兩步對應。
+    final at = now;
+    _pushMentor((src, bond) => src.release(bond, reason, at));
     notifyListeners();
   }
 

@@ -10,6 +10,7 @@ import '../data/follow_data.dart';
 import '../data/post_data.dart';
 import '../data/chat_data.dart';
 import '../data/team_data.dart';
+import '../data/mentor_data.dart';
 import '../data/store.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
@@ -50,6 +51,9 @@ class AuthGate extends StatefulWidget {
   /// 團隊的來源（[BE-14]）。空值代表不同步。
   final TeamSource Function(String uid)? teamsFor;
 
+  /// 師徒的來源（[BE-14]）。空值代表不同步。
+  final MentorSource Function(String uid)? mentorFor;
+
   const AuthGate({
     super.key,
     required this.auth,
@@ -61,6 +65,7 @@ class AuthGate extends StatefulWidget {
     this.postsFor,
     this.chatsFor,
     this.teamsFor,
+    this.mentorFor,
   });
 
   @override
@@ -182,6 +187,15 @@ class _AuthGateState extends State<AuthGate> {
         widget.state.myUid = uid;
         widget.state.teamSource = teams;
         widget.state.applyCloudTeam(await teams.myTeam());
+      }
+
+      // 師徒。同樣要排在 applyPublicProfiles 之後 —— 教官的暱稱
+      // 要從 uid 翻回來。
+      final mentor = widget.mentorFor?.call(uid);
+      if (mentor != null) {
+        widget.state.myUid = uid;
+        widget.state.mentorSource = mentor;
+        widget.state.applyCloudBonds(await mentor.bonds());
       }
 
       final follows = widget.followsFor?.call(uid);
