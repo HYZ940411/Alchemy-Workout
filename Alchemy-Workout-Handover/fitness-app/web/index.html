@@ -19,11 +19,33 @@
   <meta name="theme-color" content="#F5A623">
   <!-- iOS 主畫面圖示。**不可以用有透明背景的那張** —— iOS 不支援透明，
        會把透明處畫成黑色。這張是專門合成的不透明版。 -->
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=2">
 
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/png" href="favicon.png?v=2"/>
   <title>健金術 Alchemy Workout</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- 分享預覽（Open Graph ／ Twitter Card）
+       把連結貼到 LINE、Messenger、Slack 這類地方時，對方看到的卡片
+       由這幾行決定。**沒有 og:image 的話各平台會自己猜** —— 通常抓到
+       舊的快取或隨便一張圖，於是「我自己開是對的，傳給別人就變樣」。
+       圖片網址**必須是絕對路徑**：抓取的是對方平台的伺服器，
+       相對路徑它解不出來。 -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="健金術 Alchemy Workout">
+  <meta property="og:locale" content="zh_TW">
+  <meta property="og:url" content="https://alchemy-workout.web.app/">
+  <meta property="og:title" content="健金術 Alchemy Workout">
+  <meta property="og:description" content="把訓練轉成看得見的六維能力值 —— 健身記錄、遊戲化階級與師徒社群。">
+  <meta property="og:image" content="https://alchemy-workout.web.app/icons/share-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="健金術 Alchemy Workout">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="健金術 Alchemy Workout">
+  <meta name="twitter:description" content="把訓練轉成看得見的六維能力值 —— 健身記錄、遊戲化階級與師徒社群。">
+  <meta name="twitter:image" content="https://alchemy-workout.web.app/icons/share-card.png">
 
   <style>
     /* 載入畫面。
