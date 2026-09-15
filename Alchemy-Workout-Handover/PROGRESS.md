@@ -199,9 +199,13 @@ flutter build macos --release
 
 ### B. 部署
 
-- [ ] 【人】`[DEP-01]` 選 GitHub Pages 或 Firebase Hosting
+- [~] 【人】`[DEP-01]` 選 GitHub Pages 或 Firebase Hosting
       （若已做 A，選 Firebase Hosting，跟後端同一個專案）
-- [ ] 【CC】`[DEP-02]` 部署與線上驗證
+      —— **實務上已選定 Firebase Hosting 並上線**，待使用者正式確認後勾選
+- [x] 【CC】`[DEP-02]` 部署與線上驗證 ✅2026-09-15
+      → 正式網址 **https://alchemy-workout.web.app**。
+      已用**兩個真實帳號**完成端到端驗證：登入、發文、按讚、關注、
+      私訊、團隊邀請皆通。`firebase.json` 含 Hosting 設定與快取標頭
 - [ ] 【人】`[DEP-03]`（選）Apple Developer US$99／年 → TestFlight
 
 ### C. 檢查與修 bug
@@ -433,4 +437,10 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-13 | 公開檔案**另立文件，不開放讀 `users/{uid}`** | 安全規則的粒度是**文件、不是欄位**。`users/{uid}` 裡有身高體重、生日、Email、處罰狀態、累計違規次數，「只公開其中幾個欄位」唯一可靠的做法就是拆成另一份文件。見 `Firestore-Schema設計.md` 第 7 節「建議另拆一份精簡 `public_profile`」 |
 | 2026-09-13 | 關閉可見度時**不寫該鍵**（而非寫 null）；發布用 `set` 整份覆寫（**不用 merge**） | 寫 null 等於把「他有幾點但不給你看」也放上雲端，而規則擋不住已在文件裡的欄位；用 merge 則會讓關閉可見度之前的舊值留在雲端 —— 使用者以為關了、別人其實還讀得到。兩條各有測試釘住 |
 | 2026-09-13 | `applyPublicProfiles` 對 `socialUsers` 是**併入而非取代** | 動態牆的貼文、對話、教官清單目前仍指向示範用的那幾位；直接換掉會讓那些畫面指到不存在的人。等批次 2–4 把貼文與師徒也搬上雲，示範資料才有辦法整批退場 |
+| 2026-09-15 | **`[DEP-02]` 完成：正式上線 https://alchemy-workout.web.app**，並以兩個真實帳號完成跨使用者功能的端到端驗證（發文、按讚、關注、私訊、團隊邀請）|
+| 2026-09-14 | Google 登入在 Web 上一路卡關，修了三層：①`authDomain` 指向 App 自己的網域（`flutterfire` 預設的 `firebaseapp.com` 與 App 所在的 `web.app` 不同源，轉址回來讀不到 `sessionStorage`，報 `missing initial state`）；②改用 `signInWithRedirect`（手機瀏覽器會擋彈出視窗）並在啟動時 `getRedirectResult` 收尾；③到 Google Cloud Console 把新的 redirect URI 加進 OAuth 白名單（Firebase 只自動註冊 `firebaseapp.com` 那一個，換網域後 Google 回 `redirect_uri_mismatch`）|
+| 2026-09-14 | **修掉一條會讓人填完整份問卷卻進不了 App 的死路**：手機與 Apple 登入尚未接上真實授權，但按下去仍會推進本機流程 —— 而 `AuthGate` 看的是 Firebase 登入狀態，使用者填完 9 題後卡在最後一頁，重新整理連資料都沒了。接上帳號系統時改為停用並標示「即將推出」|
+| 2026-09-15 | **加上 Hosting 快取標頭。** 入口檔（`index.html`／`flutter_bootstrap.js`／`main.dart.js` 等）改為不快取，字型與圖片改為長期快取。在此之前每次部署都要跟瀏覽器快取與 Flutter 的 Service Worker 纏鬥 —— 實測線上檔案確認新版早已部署，使用者看到的一直是舊版 |
+| 2026-09-14 | 網頁與 App 圖示改用專案 Logo（原為 Flutter 樣板預設）；啟動頁的佔位啞鈴圖示換成 Logo。另補 `apple-touch-icon`（不透明）—— iOS 主畫面圖示不支援透明，會把透明處畫成黑色 |
+| 2026-09-15 | **字級稽核**：規格 §2.2 定 10 種字級，畫面卻寫死 242 處、其中 175 處（72%）不在表上，另冒出 17 種字級。顏色則 22 個色票完全相符。先以訓練結算頁為樣本收斂 17 處，待確認視覺效果後再決定是否推廣至其餘 27 個畫面 |
 | 2026-09-13 | **發現 `.g.dart` 既有漂移**：對 `tools/import_exercises.py`／`gen_platform_plans.py` 重跑（我的改動為輸出中性，已與原腳本逐位元比對證實），產出與 committed `.g.dart` 不同 —— `OVERRIDES` 的鍵已對不上 CSV 現況，`deadlift`／`squat` 等 15 個被 `ex('...')` 硬引用的友善動作 ID 被換成 `pNNN`，且校準過的相對強度／休息秒數遺失（正是 CLAUDE.md 硬性規則 1 警告的情形）。故 **committed `.g.dart` 才是正典**，已還原重跑產出、不提交。因此 `BE-12` 的上雲**種子取自 bundle**（新增 `fitness-app/tools/export_platform_defs.dart` 由 `BundledPlatformData` 匯出五集合 JSON → `tools/upload_platform_data.py` 上傳），保證雲端＝打包內容＝測試夾具。`import_exercises.py --upload`／`gen_platform_plans.py --upload` 仍保留「tools 寫進 Firestore」能力（使用者指示），供日後 CSV／OVERRIDES 校準後以 CSV 為真相來源時使用。**CSV／OVERRIDES 的漂移本身是既有問題、未修，留待獨立處理** |
