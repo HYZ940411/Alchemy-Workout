@@ -91,7 +91,11 @@ class _DecayScreenState extends State<DecayScreen> {
             ),
           ],
 
-          const SectionTitle('模擬時鐘', trailing: '示範用'),
+          // 模擬時鐘只在開發者模式顯示。機制保留（它是 clock.dart 明文
+          // 記載的展示設計，用來當場演出退步、到期、結算），
+          // 但一般使用者看到「＋10 天」只會困惑 —— 那不是他能操作的東西。
+          if (s.developerMode) ...[
+          const SectionTitle('模擬時鐘', trailing: '開發者模式'),
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,6 +122,7 @@ class _DecayScreenState extends State<DecayScreen> {
               ],
             ),
           ),
+          ],
         ],
       ),
     );

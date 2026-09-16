@@ -47,7 +47,19 @@ class MoreScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 50),
       children: [
-        _Header(state: s),
+        // 開發者模式的隱藏入口 —— **長按頁首**。
+        // 藏起來而不是做成設定開關：那些示範頁不是功能，
+        // 放在設定裡等於承認它是使用者該調的東西。
+        GestureDetector(
+          onLongPress: () {
+            s.toggleDeveloperMode();
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(s.developerMode ? '開發者模式：開' : '開發者模式：關'),
+              duration: const Duration(seconds: 2),
+            ));
+          },
+          child: _Header(state: s),
+        ),
         const SectionLabel('能力值'),
         _Group(items: [
           _Item(Icons.radar_outlined, '六維能力值', '雷達圖、時間維度、耐力值',
@@ -127,8 +139,12 @@ class MoreScreen extends StatelessWidget {
           _Item(Icons.settings_outlined, '設定', '器材、隱私、帳號',
               () => const SettingsScreen()),
         ]),
-        const SectionLabel('流程示範'),
-        _Group(items: [
+        // **這一整區只在開發者模式顯示。**
+        // 裡面全是示範與除錯用的畫面 —— 註冊流程重跑、模擬對方、
+        // 骨架屏樣式集、管理員後台。一般使用者看到只會問「這是什麼」。
+        if (s.developerMode) ...[
+          const SectionLabel('流程示範', trailing: '開發者模式'),
+          _Group(items: [
           _Item(Icons.app_registration, '註冊流程',
               '啟動、登入、手機驗證、條款、9 欄問卷、計畫推薦',
               () => const SignUpScreen()),
@@ -138,10 +154,11 @@ class MoreScreen extends StatelessWidget {
               '待審、訂單、商品、評分', () => const AdminHomeScreen()),
           _Item(Icons.grid_view_rounded, '骨架屏與錯誤頁', '六種骨架、四種空狀態、兩種錯誤頁',
               () => const StateGalleryScreen()),
-          _Item(Icons.swap_horiz_rounded, '模擬對方',
-              '需要第二個人的流程，在這裡把另一半走完',
-              () => const CounterpartScreen()),
-        ]),
+            _Item(Icons.swap_horiz_rounded, '模擬對方',
+                '需要第二個人的流程，在這裡把另一半走完',
+                () => const CounterpartScreen()),
+          ]),
+        ],
       ],
     );
   }

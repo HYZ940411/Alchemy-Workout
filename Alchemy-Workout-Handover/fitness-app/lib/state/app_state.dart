@@ -7158,6 +7158,22 @@ class AppState extends ChangeNotifier {
   bool aiAutoOptimize = true;
   bool abilityPublic = true;
   bool overallGradePublic = true;
+
+  /// 開發者模式。**預設關閉，而且不進存檔。**
+  ///
+  /// 示範用的東西（流程示範、模擬對方、骨架屏樣式集、退步的模擬時鐘）
+  /// 對開發與展示很有用，但一般使用者看到只會困惑 —— 那些不是功能。
+  ///
+  /// 不寫進存檔是刻意的：它是「這一次打開 App 想看示範」的狀態，
+  /// 不是使用者的偏好設定。關掉 App 就回到乾淨的樣子，
+  /// 也就不會有人不小心開著它交出去。
+  /// 開啟方式見「我的」頁首（長按）。
+  bool developerMode = false;
+
+  void toggleDeveloperMode() {
+    developerMode = !developerMode;
+    notifyListeners();
+  }
   /// 電子郵件。**選填** —— 第三方登入者於授權時帶入，手機註冊者可自願填寫。
   ///
   /// 僅供三類通知使用：出貨、處罰與申訴結果、帳號刪除排程。
