@@ -11,7 +11,6 @@
 // 判準沿用專案裡既有的那一個：`FitnessApp.auth == null` ＝ 沒接後端。
 // 所以 [AppState.demo] 預設 true，既有的一千多個測試一行都不必改。
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/domain/exercise_stats.dart';

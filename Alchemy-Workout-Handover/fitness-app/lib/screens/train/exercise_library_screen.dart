@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../domain/ability.dart';
 import '../../domain/models.dart';
 import '../../mock/mock_equipment.dart';
-import '../../domain/exercise_stats.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
