@@ -34,6 +34,22 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     final rows = s.leaderboardWindow(weekly: weekly);
     final ago = s.now.difference(s.leaderboardUpdatedAt).inMinutes;
 
+    // 名次視窗是空的 ＝ 這個榜還沒有資料（見 AppState.leaderboardWindow）。
+    // 下面整頁都建立在「我在第幾名」上 —— 沒有名次就沒有東西好畫，
+    // 而編一個出來正是 `[QA-02e]` 要移除的事。
+    if (rows.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(S.base),
+        child: EmptyState(
+          icon: Icons.leaderboard_outlined,
+          title: '排行榜尚未開放',
+          message: '排名要跟平台上的其他人比，'
+              '那份資料還在後端施工中。你的週／月累計分數照常在累積，'
+              '開放後直接接得上。',
+        ),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 50),
       children: [
@@ -116,12 +132,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             children: [
               Text(
                 () {
-                  final p = prizeFor(s.myPlace(weekly: weekly));
+                  // 走到這裡表示名次視窗不是空的，所以一定找得到自己。
+                  final place = s.myPlace(weekly: weekly)!;
+                  final p = prizeFor(place);
                   return p.isEmpty
-                      ? '目前第 ${s.myPlace(weekly: weekly)} 名，'
+                      ? '目前第 $place 名，'
                           '未達獎勵名次（組內前 $kRankPrizeCut 名）。'
-                      : '目前第 ${s.myPlace(weekly: weekly)} 名，'
-                          '結算可得 ${p.display}。';
+                      : '目前第 $place 名，結算可得 ${p.display}。';
                 }(),
                 style: const TextStyle(fontSize: 12.5, height: 1.5),
               ),

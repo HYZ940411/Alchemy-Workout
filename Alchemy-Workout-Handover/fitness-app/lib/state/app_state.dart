@@ -1651,10 +1651,21 @@ class AppState extends ChangeNotifier {
   }
 
   // -------------------------------------------------------------------------
-  // 排行榜（假資料，名次視窗為自己上下各 10 名）
+  // 排行榜（名次視窗為自己上下各 10 名）
   // -------------------------------------------------------------------------
 
+  /// 名次視窗。**接了後端就是空的** —— 真正的排行榜要等 `[BE-07]`。
+  ///
+  /// 這底下整段是捏造的：對手名字從一份固定名單挑、分數由我的分數加減
+  /// 一個隨機差值、連我自己的名次都是 `11 + 隨機`。示範時那是對的
+  /// （沒有別人，就演不出「名次視窗」這個概念）；接了後端就不是了 ——
+  /// 使用者會照著一個不存在的名次判斷自己離獎勵有多遠，
+  /// 而 [settleBoard] 還會照那個名次真的發金幣出去。
+  ///
+  /// 空清單的意思是「這個榜還沒有資料」，畫面據此顯示尚未開放，
+  /// 而 [myPlace] 回傳空值讓結算整個跳過。
   List<LeaderboardEntry> leaderboardWindow({required bool weekly}) {
+    if (!demo) return const [];
     final myScore = weekly ? weeklyScore : monthlyScore;
     final rnd = math.Random(weekly ? 7 : 30);
     final myPos = 11 + rnd.nextInt(40);
@@ -1682,8 +1693,16 @@ class AppState extends ChangeNotifier {
   final List<LeaderboardHistory> leaderboardHistory = [];
 
   /// 我在個人榜上的名次。沿用畫面那份名次視窗，兩者不會對不起來。
-  int myPlace({required bool weekly}) =>
-      leaderboardWindow(weekly: weekly).firstWhere((e) => e.isSelf).position;
+  ///
+  /// **空值代表這個榜還沒有資料**（見 [leaderboardWindow]）。
+  /// 回傳 0 或 1 都是在宣稱一個名次，而那正是要避免的事。
+  int? myPlace({required bool weekly}) {
+    final rows = leaderboardWindow(weekly: weekly);
+    for (final e in rows) {
+      if (e.isSelf) return e.position;
+    }
+    return null;
+  }
 
   /// 結算一個榜別：寫歷史 → 達獎勵名次者補發至信箱 → 歸零該榜的計數器。
   ///
@@ -1700,9 +1719,13 @@ class AppState extends ChangeNotifier {
       case Board.personalWeekly:
       case Board.personalMonthly:
         final weekly = isWeekly(board);
+        final mine = myPlace(weekly: weekly);
+        // 沒有名次就沒有結算 —— 沒有排行榜資料的時候硬給一個名次，
+        // 等於照著捏造的排名把獎勵金幣發出去。
+        if (mine == null) return null;
         group = rankGroupLabel(rankGroupNow(weekly: weekly));
         subject = displayName;
-        place = myPlace(weekly: weekly);
+        place = mine;
         score = weekly ? weeklyScore : monthlyScore;
       case Board.teamDaily:
       case Board.teamTimed:

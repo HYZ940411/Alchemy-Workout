@@ -15,6 +15,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/domain/exercise_stats.dart';
+import 'package:fitness_app/domain/leaderboard.dart';
+import 'package:fitness_app/screens/leaderboard_screen.dart';
 import 'package:fitness_app/mock/mock_extra.dart';
 import 'package:fitness_app/screens/me/settings_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
@@ -262,6 +264,61 @@ void main() {
         const Offset(0, -300),
       );
       expect(find.text('模擬首次載入'), findsOneWidget);
+    });
+  });
+
+  group('排行榜不再捏造名次（[QA-02e]）', () {
+    test('示範模式照樣有名次視窗 —— 沒有別人就演不出這個概念', () {
+      final rows = AppState().leaderboardWindow(weekly: true);
+      expect(rows, hasLength(21), reason: '自己上下各 10 名');
+      expect(rows.where((e) => e.isSelf), hasLength(1));
+    });
+
+    test('接了後端就是空的', () {
+      final s = AppState(demo: false);
+      expect(s.leaderboardWindow(weekly: true), isEmpty);
+      expect(s.leaderboardWindow(weekly: false), isEmpty);
+    });
+
+    test('沒有資料時名次是空值，不是 0 也不是 1', () {
+      // 回傳 0 或 1 都是在宣稱一個名次 —— 那正是要避免的事。
+      final s = AppState(demo: false);
+      expect(s.myPlace(weekly: true), isNull);
+      expect(s.myPlace(weekly: false), isNull);
+    });
+
+    test('沒有名次就不結算 —— 否則照捏造的排名發金幣', () {
+      // 這條是這一組裡唯一真的會少掉東西的：結算會發獎勵金幣到信箱。
+      final s = AppState(demo: false);
+      expect(s.settleBoard(Board.personalWeekly), isNull);
+      expect(s.settleBoard(Board.personalMonthly), isNull);
+      expect(s.mailbox, isEmpty);
+      expect(s.leaderboardHistory, isEmpty);
+    });
+
+    test('示範模式照樣結算得出來', () {
+      final s = AppState();
+      expect(s.settleBoard(Board.personalWeekly), isNotNull);
+    });
+
+    testWidgets('接了後端時整頁換成「尚未開放」，不畫假名次', (t) async {
+      t.view.physicalSize = const Size(393 * 3, 852 * 3);
+      t.view.devicePixelRatio = 3.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      await t.pumpWidget(AppScope(
+        state: AppState(demo: false),
+        // 這一頁平常掛在 Scaffold 底下（更多頁的 _Wrap），照著掛。
+        child: const MaterialApp(
+          home: Scaffold(body: LeaderboardScreen()),
+        ),
+      ));
+      await t.pumpAndSettle();
+
+      expect(find.text('排行榜尚未開放'), findsOneWidget);
+      expect(find.text('名次視窗'), findsNothing);
+      expect(find.text('本期獎勵'), findsNothing);
+      expect(t.takeException(), isNull);
     });
   });
 }
