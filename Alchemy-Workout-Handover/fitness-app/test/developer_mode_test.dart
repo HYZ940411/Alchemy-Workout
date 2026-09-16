@@ -53,6 +53,9 @@ void main() {
 
     testWidgets('長按頁首才展開', (t) async {
       await _openMore(t);
+      // longPress 壓的是頁首的**正中心**，那裡是兩張統計卡之間的空隙。
+      // 這正是要釘住的事：GestureDetector 若用預設的 deferToChild，
+      // 空隙上的長按會穿過去給底下的清單，使用者壓了沒反應。
       await t.longPress(find.byKey(moreHeaderKey));
       await t.pumpAndSettle();
 

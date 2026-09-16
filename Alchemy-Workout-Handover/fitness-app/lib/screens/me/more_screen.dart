@@ -55,6 +55,10 @@ class MoreScreen extends StatelessWidget {
         // 放在設定裡等於承認它是使用者該調的東西。
         GestureDetector(
           key: moreHeaderKey,
+          // **opaque 不能省。** 預設的 deferToChild 只在「子元件被命中」時
+          // 才收得到手勢，而頁首是一個 Column —— 壓在卡片之間的空隙上，
+          // 事件會直接穿過去給底下的清單，長按沒反應。
+          behavior: HitTestBehavior.opaque,
           onLongPress: () {
             s.toggleDeveloperMode();
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
