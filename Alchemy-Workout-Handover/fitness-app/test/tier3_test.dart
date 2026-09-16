@@ -24,6 +24,7 @@ void main() {
     test('剛註冊者尚未鎖定組別', () {
       final s = AppState();
       s.signUpDraft
+        ..nickname = '阿昶'
         ..heightCm = 170
         ..weightKg = 65
         ..gender = '男'

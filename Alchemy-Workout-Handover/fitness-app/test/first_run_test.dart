@@ -137,6 +137,7 @@ void main() {
     final d = s.signUpDraft
       ..entry = SignUpEntry.thirdParty
       ..termsAgreed = true
+      ..nickname = '阿昶'
       ..heightCm = 175
       ..weightKg = 70
       ..gender = '男'
@@ -145,8 +146,8 @@ void main() {
       ..experience = kExperience.first
       ..daysPerWeek = 3
       ..duration = kDurations.first;
-    // 器材那一欄故意不填 —— 八項齊全、差一項。
-    expect(d.filledCount, 8);
+    // 器材那一欄故意不填 —— 九項齊全、差一項。
+    expect(d.filledCount, 9);
     expect(d.complete, isFalse);
 
     await t.pumpWidget(
@@ -158,7 +159,8 @@ void main() {
     await t.pumpAndSettle();
 
     // 差一項時會被送回那一題，不會停在完成頁。
-    expect(find.text('看推薦的訓練計畫'), findsNothing, reason: '八項齊全還不夠，不該讓人看到完成頁');
+    expect(find.text('看推薦的訓練計畫'), findsNothing,
+        reason: '九項齊全還不夠，不該讓人看到完成頁');
 
     // 就算硬把它推到完成頁，按鈕也要是停用的。
     d.equipment.add(kEquipmentTiers.first);

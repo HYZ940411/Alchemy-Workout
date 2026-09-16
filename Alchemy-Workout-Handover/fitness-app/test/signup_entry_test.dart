@@ -372,11 +372,13 @@ void main() {
         await t.pumpAndSettle();
       }
 
-      await next(); // 1 身高 → 2 體重
-      await next(); // 2 體重 → 3 性別
+      await fillNickname(t);
+      await next(); // 1 暱稱 → 2 身高
+      await next(); // 2 身高 → 3 體重
+      await next(); // 3 體重 → 4 性別
       await t.tap(find.text('男'));
       await t.pumpAndSettle();
-      await next(); // 3 性別 → 4 生日
+      await next(); // 4 性別 → 5 生日
       // 生日用抽屜選年份，挑一個滿 13 歲的。
       // 年欄預設顯示 25 年前，點它開抽屜。
       await t.tap(find.text('${DateTime.now().year - 25}'));
@@ -390,10 +392,10 @@ void main() {
       await t.pumpAndSettle();
       await t.tap(year2000);
       await t.pumpAndSettle();
-      await next(); // 4 生日 → 5 健身目標
+      await next(); // 5 生日 → 6 健身目標
       await t.tap(find.text('增肌'));
       await t.pumpAndSettle();
-      await next(); // 5 健身目標 → 6 健身經驗
+      await next(); // 6 健身目標 → 7 健身經驗
 
       expect(find.text('你的健身經驗？'), findsOneWidget);
 
@@ -461,10 +463,13 @@ void main() {
       await t.pumpAndSettle();
       await t.tap(find.widgetWithText(AppButton, '同意並建立帳號'));
       await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(AppButton, '下一步'));
+      // 第一題是暱稱，填了才走得下去。
+      await t.enterText(find.byType(TextField), '阿昶');
       await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(AppButton, '下一步'));
-      await t.pumpAndSettle();
+      for (var i = 0; i < 3; i++) {
+        await t.tap(find.widgetWithText(AppButton, '下一步'));
+        await t.pumpAndSettle();
+      }
 
       // 溢位時 Flutter 會丟例外，測試框架直接判定失敗 ——
       // 不需要（也不該）再寫一個永遠回傳 false 的假斷言。
