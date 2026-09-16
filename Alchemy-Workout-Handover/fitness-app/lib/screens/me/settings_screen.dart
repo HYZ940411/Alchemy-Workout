@@ -106,70 +106,80 @@ class SettingsScreen extends StatelessWidget {
               onChanged: (v) => s.setFlag(metric: v),
             ),
           ),
-          const SectionLabel('儲存', trailing: '存在這台裝置上'),
+          // 這一段講的是「你的進度存在哪裡」。接了帳號之後答案變了 ——
+          // 還寫「存在這台裝置上」的話，使用者換裝置前會先把進度抄下來。
+          SectionLabel('儲存', trailing: s.demo ? '存在這台裝置上' : '存在你的帳號'),
           Panel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '進度會自動存到本機，關掉重開仍在。'
-                  '已存 ${s.saveCount} 次。',
+                  s.demo
+                      ? '進度會自動存到本機，關掉重開仍在。已存 ${s.saveCount} 次。'
+                      : '進度會自動存到你的帳號。換裝置、清瀏覽器資料都不會不見。'
+                          '已存 ${s.saveCount} 次。',
                   style: T.body(),
                 ),
-                const SizedBox(height: 6),
                 // 說清楚哪些東西沒存 —— 使用者發現團隊變回去時，
                 // 要能在這裡找到答案，而不是以為壞掉了。
-                Text(
-                  '不含平台目錄與社群假資料（動作庫、貼文、訂單、團隊、後台佇列）——'
-                  '那些在真實系統裡來自伺服器，不是這台裝置上的東西。',
-                  style: T.caption(),
-                ),
-                const SizedBox(height: 14),
-                AppButton(
-                  label: '重設示範資料',
-                  kind: BtnKind.secondary,
-                  onPressed: () async {
-                    final ok = await showAppDialog(
-                      context,
-                      title: '清除存檔？',
-                      message: '這台裝置上的進度會全部刪除，'
-                          '下次開啟回到最初的假資料。這個動作無法復原。',
-                      confirmLabel: '清除',
-                      destructive: true,
-                    );
-                    if (ok != true || !context.mounted) return;
-                    await s.clearSaved();
-                    if (!context.mounted) return;
-                    showToast(context, '已清除，重開 App 即回到初始狀態');
-                  },
-                ),
+                // 接了帳號就沒有這回事，那句話也就不必說。
+                if (s.demo) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '不含平台目錄與社群假資料（動作庫、貼文、訂單、團隊、後台佇列）'
+                    '—— 那些在真實系統裡來自伺服器，不是這台裝置上的東西。',
+                    style: T.caption(),
+                  ),
+                  const SizedBox(height: 14),
+                  AppButton(
+                    label: '重設示範資料',
+                    kind: BtnKind.secondary,
+                    onPressed: () async {
+                      final ok = await showAppDialog(
+                        context,
+                        title: '清除存檔？',
+                        message: '這台裝置上的進度會全部刪除，'
+                            '下次開啟回到最初的假資料。這個動作無法復原。',
+                        confirmLabel: '清除',
+                        destructive: true,
+                      );
+                      if (ok != true || !context.mounted) return;
+                      await s.clearSaved();
+                      if (!context.mounted) return;
+                      showToast(context, '已清除，重開 App 即回到初始狀態');
+                    },
+                  ),
+                ],
               ],
             ),
           ),
-          const SectionLabel('示範', trailing: '本 App 沒有後端'),
-          Panel(
-            child: Column(
-              children: [
-                _Toggle(
-                  label: '模擬首次載入',
-                  sub: s.demoLoadMs > 0
-                      ? '每頁首次進入先顯示 ${s.demoLoadMs} 毫秒骨架屏'
-                      : '關閉。假資料就在記憶體裡，平白讓每頁慢一秒只是折磨人',
-                  value: s.demoLoadMs > 0,
-                  onChanged: (v) => s.setDemoLoadMs(v ? 900 : 0),
-                ),
-                const SizedBox(height: 14),
-                _Toggle(
-                  label: '模擬離線',
-                  sub:
-                      '載入結束時改走錯誤頁，可按重新載入重試'
-                      '${s.demoLoadMs > 0 ? '' : '（需先開啟模擬首次載入）'}',
-                  value: s.demoOffline,
-                  onChanged: (v) => s.setDemoOffline(v),
-                ),
-              ],
+          // 模擬載入與模擬離線是除錯用的控制項，跟 `[QA-02n]`／`[QA-02o]`
+          // 那一批同一個道理 —— 一般使用者看到只會問「這是什麼」。
+          if (s.developerMode) ...[
+            const SectionLabel('示範', trailing: '開發者模式'),
+            Panel(
+              child: Column(
+                children: [
+                  _Toggle(
+                    label: '模擬首次載入',
+                    sub: s.demoLoadMs > 0
+                        ? '每頁首次進入先顯示 ${s.demoLoadMs} 毫秒骨架屏'
+                        : '關閉。資料就在記憶體裡，平白讓每頁慢一秒只是折磨人',
+                    value: s.demoLoadMs > 0,
+                    onChanged: (v) => s.setDemoLoadMs(v ? 900 : 0),
+                  ),
+                  const SizedBox(height: 14),
+                  _Toggle(
+                    label: '模擬離線',
+                    sub: '載入結束時改走錯誤頁，可按重新載入重試'
+                        '${s.demoLoadMs > 0 ? '' : '（需先開啟模擬首次載入）'}',
+                    value: s.demoOffline,
+                    onChanged: (v) => s.setDemoOffline(v),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
           const SectionLabel('訓練設定'),
           Panel(
             child: Column(

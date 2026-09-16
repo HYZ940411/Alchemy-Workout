@@ -11,10 +11,12 @@
 // 判準沿用專案裡既有的那一個：`FitnessApp.auth == null` ＝ 沒接後端。
 // 所以 [AppState.demo] 預設 true，既有的一千多個測試一行都不必改。
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/domain/exercise_stats.dart';
 import 'package:fitness_app/mock/mock_extra.dart';
+import 'package:fitness_app/screens/me/settings_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 void main() {
@@ -195,6 +197,71 @@ void main() {
         statsFrom([(date: DateTime(2026, 9, 1), id: 'bench', sets: [])]),
         isEmpty,
       );
+    });
+  });
+
+  group('設定頁講的是實話（[QA-02e]／[QA-02m]）', () {
+    Future<void> open(WidgetTester t, AppState s) async {
+      t.view.physicalSize = const Size(393 * 3, 852 * 3);
+      t.view.devicePixelRatio = 3.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      await t.pumpWidget(AppScope(
+        state: s,
+        child: const MaterialApp(home: SettingsScreen()),
+      ));
+      await t.pumpAndSettle();
+      // **一定要先捲到「儲存」那一區。** 設定頁是 ListView，沒捲到的區塊
+      // 根本不會被建出來 —— 直接斷言 findsNothing 是假的綠燈，
+      // 藏沒藏都會過。捲到之後，該在的與不該在的都在同一個畫面上。
+      await t.dragUntilVisible(
+        find.text('儲存'),
+        find.byType(Scrollable).first,
+        const Offset(0, -200),
+      );
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('接了後端就不能再說「存在這台裝置上」', (t) async {
+      // 這句話會讓使用者在換裝置前先把進度抄下來 —— 而那是白做工。
+      await open(t, AppState(demo: false));
+      expect(find.text('存在這台裝置上'), findsNothing);
+      expect(find.text('存在你的帳號'), findsOneWidget);
+      expect(find.textContaining('換裝置'), findsOneWidget);
+    });
+
+    testWidgets('接了後端就沒有「重設示範資料」這回事', (t) async {
+      await open(t, AppState(demo: false));
+      expect(find.text('重設示範資料'), findsNothing);
+      expect(find.textContaining('社群假資料'), findsNothing);
+    });
+
+    testWidgets('沒接後端時那些照樣在 —— 示範用得到', (t) async {
+      await open(t, AppState());
+      expect(find.text('存在這台裝置上'), findsOneWidget);
+      expect(find.text('重設示範資料'), findsOneWidget);
+    });
+
+    testWidgets('模擬載入／離線收進開發者模式', (t) async {
+      final s = AppState();
+      await open(t, s);
+      // 開發者模式關著的時候，那一區連建都不會被建出來，
+      // 所以「捲得到才算數」在這裡反過來用：捲到底都找不到。
+      for (var i = 0; i < 12; i++) {
+        await t.drag(find.byType(Scrollable).first, const Offset(0, -400));
+        await t.pump();
+      }
+      await t.pumpAndSettle();
+      expect(find.text('模擬首次載入'), findsNothing);
+
+      s.toggleDeveloperMode();
+      await t.pumpAndSettle();
+      await t.dragUntilVisible(
+        find.text('模擬首次載入'),
+        find.byType(Scrollable).first,
+        const Offset(0, -300),
+      );
+      expect(find.text('模擬首次載入'), findsOneWidget);
     });
   });
 }
