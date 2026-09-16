@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/main.dart';
 import 'package:fitness_app/screens/me/more_screen.dart';
+import 'package:fitness_app/screens/train/decay_screen.dart';
 
 import 'developer_mode.dart';
 
@@ -27,15 +28,21 @@ Future<void> _openMore(WidgetTester t) async {
   await t.pumpAndSettle();
 }
 
+Finder _moreList() => find
+    .descendant(of: find.byType(MoreScreen), matching: find.byType(Scrollable))
+    .first;
+
 /// 「流程示範」在整頁最下面，要捲到底才看得到有沒有。
 Future<void> _scrollToBottom(WidgetTester t) async {
-  final list = find
-      .descendant(of: find.byType(MoreScreen), matching: find.byType(Scrollable))
-      .first;
-  for (var i = 0; i < 20; i++) {
-    await t.drag(list, const Offset(0, -400));
-    await t.pump();
-  }
+  await t.drag(_moreList(), const Offset(0, -4000));
+  await t.pumpAndSettle();
+  await t.drag(_moreList(), const Offset(0, -4000));
+  await t.pumpAndSettle();
+}
+
+/// 頁首在最上面，捲下去之後就長按不到了。
+Future<void> _scrollToTop(WidgetTester t) async {
+  await t.drag(_moreList(), const Offset(0, 8000));
   await t.pumpAndSettle();
 }
 
@@ -68,19 +75,20 @@ void main() {
     });
 
     testWidgets('再長按一次就收回去', (t) async {
+      // 斷言看的是「那一區在不在」，不是 SnackBar 寫什麼 ——
+      // 兩則 SnackBar 會排隊，用文字判斷等於在測 ScaffoldMessenger 的時序。
+      // 提示文字由上一條測試釘住就夠了。
       await _openMore(t);
       await t.longPress(find.byKey(moreHeaderKey));
-      // 等第一則 SnackBar 過期再長按第二次 —— 不等的話第二則會排隊，
-      // 畫面上顯示的還是「開」，測試會誤判成開關沒反應。
-      await t.pump(const Duration(seconds: 3));
       await t.pumpAndSettle();
+      await _scrollToBottom(t);
+      expect(find.text('流程示範'), findsOneWidget, reason: '第一次長按要打開');
 
+      await _scrollToTop(t);
       await t.longPress(find.byKey(moreHeaderKey));
       await t.pumpAndSettle();
-      expect(find.text('開發者模式：關'), findsOneWidget);
-
       await _scrollToBottom(t);
-      expect(find.text('流程示範'), findsNothing);
+      expect(find.text('流程示範'), findsNothing, reason: '第二次長按要收回去');
     });
   });
 
@@ -98,17 +106,34 @@ void main() {
       await t.pumpAndSettle();
     }
 
+    // 模擬時鐘在退步頁的最下面。ListView 是延遲建構的，不捲到底
+    // 那一段根本不會被建出來 —— 直接斷言 findsNothing 會是假的綠燈。
+    Future<void> scrollDecayToBottom(WidgetTester t) async {
+      final page = find
+          .descendant(
+              of: find.byType(DecayScreen), matching: find.byType(Scrollable))
+          .first;
+      await t.drag(page, const Offset(0, -4000));
+      await t.pumpAndSettle();
+      await t.drag(page, const Offset(0, -4000));
+      await t.pumpAndSettle();
+    }
+
     testWidgets('前台看不到 —— 快轉時間不是使用者該有的能力', (t) async {
       await _openMore(t);
       await openDecay(t);
+      await scrollDecayToBottom(t);
       expect(find.text('模擬時鐘'), findsNothing);
+      expect(find.text('＋10 天'), findsNothing);
     });
 
     testWidgets('開發者模式打開後才看得到', (t) async {
       await _openMore(t);
       await enableDeveloperMode(t);
       await openDecay(t);
+      await scrollDecayToBottom(t);
       expect(find.text('模擬時鐘'), findsOneWidget);
+      expect(find.text('＋10 天'), findsOneWidget);
     });
   });
 }

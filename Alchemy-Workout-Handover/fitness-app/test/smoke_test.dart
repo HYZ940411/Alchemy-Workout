@@ -72,6 +72,8 @@ void main() {
     await _boot(t);
     await t.tap(find.text('我的').last);
     await t.pumpAndSettle();
+    // 清單最後一項「AI 自動優化」在開發者模式那一區裡。
+    await enableDeveloperMode(t);
 
     // 依「我的」頁面上的實際排列順序
     const entries = [
@@ -272,6 +274,8 @@ void main() {
     await _boot(t);
     await t.tap(find.text('我的').last);
     await t.pumpAndSettle();
+    // 「註冊流程」收進了開發者模式，一般使用者看不到。
+    await enableDeveloperMode(t);
     final list = find
         .descendant(of: find.byType(MoreScreen), matching: find.byType(Scrollable))
         .first;

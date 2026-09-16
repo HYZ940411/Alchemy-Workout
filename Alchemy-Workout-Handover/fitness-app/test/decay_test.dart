@@ -12,6 +12,8 @@ import 'package:fitness_app/screens/me/more_screen.dart';
 import 'package:fitness_app/screens/train/decay_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
 
+import 'developer_mode.dart';
+
 WorkoutPlan get blankPlan =>
     kPlans.firstWhere((p) => p.source == PlanSource.blank);
 
@@ -278,6 +280,8 @@ void main() {
 
       await t.tap(find.text('我的').last);
       await t.pumpAndSettle();
+      // 「＋10 天」屬於模擬時鐘，那一段收進了開發者模式。
+      await enableDeveloperMode(t);
       final list = find
           .descendant(
               of: find.byType(MoreScreen), matching: find.byType(Scrollable))
