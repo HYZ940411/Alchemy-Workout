@@ -136,7 +136,12 @@ class FitnessApp extends StatefulWidget {
 }
 
 class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
-  final state = AppState();
+  /// **接了帳號就不載入示範資料**（[AppState.demo]）。
+  ///
+  /// 判準沿用這個檔案裡到處都是的那一個：`auth == null` ＝ 沒接後端。
+  /// 假貼文、假隊伍、假通知混進真資料裡，使用者分不出哪一則是真的；
+  /// 而且那些「別人」在雲端根本不存在，點進去是死路。
+  late final state = AppState(demo: widget.auth == null);
 
   @override
   void initState() {

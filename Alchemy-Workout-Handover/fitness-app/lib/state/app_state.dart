@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 
 import '../domain/ability.dart';
+import '../domain/exercise_stats.dart';
 import '../domain/clock.dart';
 // 換日規則已移入 clock.dart（假資料產生器也要用同一套）。
 // 轉出以維持既有呼叫端不變 —— 19 處在本檔、5 個測試檔。
@@ -697,7 +698,23 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 
-  AppState() {
+  /// 是否載入示範資料。
+  ///
+  /// **判準與 `FitnessApp.auth` 是同一個**：沒接帳號＝沒有後端＝
+  /// 這是示範或測試，打開就該看得到內容；接了後端就關掉 ——
+  /// 假貼文、假隊伍、假通知混進真資料裡，使用者分不出哪一則是真的，
+  /// 而且「別人」根本不存在，點進去是死路。
+  ///
+  /// 預設 true，所以既有的 1,345 個測試一行都不必改。
+  ///
+  /// **只管集合，不管純量。** 階級 45、經驗 1700、連續訓練 12 天這些
+  /// 寫死的數字由 [resetToNewAccount] 歸零 —— 真使用者走的是
+  /// `hydrate()` → 讀不到存檔 → `resetToNewAccount()`，那條路已經處理過了。
+  /// 這個開關補的是它**刻意不清**的那一半：「這個世界」（別人的貼文、
+  /// 公開隊伍、教官名單）。沒有後端的時候那些該留著，有後端就不該。
+  final bool demo;
+
+  AppState({this.demo = true}) {
     _syncAchievements();
     runDecayCheck();
     runStreakCheck();
@@ -1896,14 +1913,14 @@ class AppState extends ChangeNotifier {
   // 社群
   // ===========================================================================
 
-  late List<Post> posts = buildPosts();
+  late List<Post> posts = demo ? buildPosts() : [];
 
   /// 關注關係。單向，唯一鍵為 關注者 ID ＋ 被關注者 ID ——
   /// 用集合表達，重複關注不會產生第二筆。
   final Set<String> following = {'深蹲王', 'CoreMax', '早鳥訓練'};
 
   /// 社群裡的人。關注／粉絲清單要呈現階級與綜合能力等級。
-  late List<SocialUser> socialUsers = buildSocialUsers();
+  late List<SocialUser> socialUsers = demo ? buildSocialUsers() : [];
 
   SocialUser userOf(String name) => socialUsers.firstWhere(
         (u) => u.name == name,
@@ -1912,7 +1929,7 @@ class AppState extends ChangeNotifier {
 
   /// 我的粉絲。粉絲數為使用者 Aggregate 的**儲存欄位**，非即時彙總 ——
   /// 不變條件：粉絲數 ＝ 關注關係中被關注者為本人的筆數。
-  late List<String> followers = buildFollowers();
+  late List<String> followers = demo ? buildFollowers() : [];
   int get followerCount => followers.length;
 
   /// 歷史最高粉絲數。粉絲成就依它判定 ——
@@ -2058,7 +2075,7 @@ class AppState extends ChangeNotifier {
 
   // --- 封鎖（獨立 Aggregate，不附屬於對話）---
 
-  late List<BlockedUser> blockedUsers = buildBlockedUsers();
+  late List<BlockedUser> blockedUsers = demo ? buildBlockedUsers() : [];
 
   bool isBlocked(String name) => blockedUsers.any((b) => b.name == name);
 
@@ -2118,7 +2135,7 @@ class AppState extends ChangeNotifier {
 
   // --- 通知 ---
 
-  late List<AppNotification> notifications = buildNotifications();
+  late List<AppNotification> notifications = demo ? buildNotifications() : [];
 
   /// 待回應類的推播。**寫為既有 Event 的 Postcondition，不另立通知 Event** ——
   /// 這三者有明確的觸發事實（有人送出了申請），再造一個 Event 只是把同一件事記兩次。
@@ -2664,7 +2681,7 @@ class AppState extends ChangeNotifier {
     myTeam?.timedCredited.add(displayName);
     notifyListeners();
   }
-  late List<PublicTeam> publicTeams = buildPublicTeams();
+  late List<PublicTeam> publicTeams = demo ? buildPublicTeams() : [];
 
   /// 上次退出團隊的時戳。冷卻期由它推導，**不存一個固定的 Duration** ——
   /// 存 Duration 不會自己倒數，那不是冷卻期，是到重開 App 為止的封鎖。
@@ -3264,7 +3281,7 @@ class AppState extends ChangeNotifier {
   // 師徒 / 教官
   // ===========================================================================
 
-  late List<Instructor> instructors = buildInstructors();
+  late List<Instructor> instructors = demo ? buildInstructors() : [];
   Instructor? myInstructor;
 
   // --- 師徒上雲（[BE-14]）---
@@ -3345,7 +3362,7 @@ class AppState extends ChangeNotifier {
     }
     notifyListeners();
   }
-  late List<MentorTask> mentorTasks = buildMentorTasks();
+  late List<MentorTask> mentorTasks = demo ? buildMentorTasks() : [];
 
   /// 教官已指派師徒任務。
   /// Precondition：該教官的「已確認指導責任聲明版本」為現行版本。
@@ -3359,8 +3376,8 @@ class AppState extends ChangeNotifier {
     );
     notifyListeners();
   }
-  late List<MentorQuestion> questions = buildQuestions();
-  late List<Apprentice> apprentices = buildApprentices();
+  late List<MentorQuestion> questions = demo ? buildQuestions() : [];
+  late List<Apprentice> apprentices = demo ? buildApprentices() : [];
 
   /// 師徒功能的解鎖條件：**集滿五個社群行為各一次**
   /// —— 使用者已關注帳號、發文者已發布貼文、互動者已按讚貼文、
@@ -3961,7 +3978,7 @@ class AppState extends ChangeNotifier {
   // 私訊
   // ===========================================================================
 
-  late List<Conversation> conversations = buildConversations();
+  late List<Conversation> conversations = demo ? buildConversations() : [];
 
   /// 我這一側看得到的對話。
   List<Conversation> get visibleConversations =>
@@ -4157,7 +4174,7 @@ class AppState extends ChangeNotifier {
   // ===========================================================================
 
   late List<Product> products = buildProducts();
-  late List<Order> orders = buildOrders();
+  late List<Order> orders = demo ? buildOrders() : [];
 
   /// 上次填寫的收貨資訊。購買時預帶 ——
   /// 實體訂單有 5 個必填欄位，每次重填為純粹的摩擦。
@@ -4458,7 +4475,7 @@ class AppState extends ChangeNotifier {
 
   int aiMonthly = 14; // 月度額度，會員每月 20 點
   int aiPermanent = 6; // 永久點數，不重置不過期
-  late List<CreditEntry> creditHistory = buildCreditHistory();
+  late List<CreditEntry> creditHistory = demo ? buildCreditHistory() : [];
 
   // --- 金幣儲值（App Store 應用內購買，本系統被動接收通知）---
   /// 回傳 false 表示儲值失敗，金幣餘額不變。
@@ -5024,7 +5041,7 @@ class AppState extends ChangeNotifier {
   // 獎勵信箱
   // ===========================================================================
 
-  late List<MailReward> mailbox = buildMailbox();
+  late List<MailReward> mailbox = demo ? buildMailbox() : [];
   int get unclaimedMail => mailbox.where((m) => !m.claimed).length;
 
   /// 使用者已領取信箱獎勵 → 該來源的「⋯獎勵已發放」。
@@ -5103,7 +5120,8 @@ class AppState extends ChangeNotifier {
   /// 未簽到之日不存在對應紀錄，「查無此筆」即代表該日未簽到。
   /// 存成一份固定的日曆清單的話，簽到不會進去、日子也不會長出來：
   /// 時鐘往前推幾天，中間那幾天既不顯示未簽到、也補不了 —— 它們根本不存在。
-  late Map<DateTime, CheckInMethod> checkInRecords = buildCheckInRecords();
+  late Map<DateTime, CheckInMethod> checkInRecords =
+      demo ? buildCheckInRecords() : {};
 
   /// 寫入一筆每日簽到紀錄。同一使用者同一日期至多一筆。
   void _recordCheckIn(DateTime date, CheckInMethod method) {
@@ -5560,7 +5578,22 @@ class AppState extends ChangeNotifier {
   // 訓練歷史
   // ===========================================================================
 
-  late List<HistoryEntry> history = buildHistory();
+  late List<HistoryEntry> history = demo ? buildHistory() : [];
+
+  /// 每個動作的累積次數與趨勢 —— **由 [history] 即時推導**。
+  ///
+  /// 原本是 `mock/mock_exercise_stats.dart` 裡寫死的一張表：不管使用者
+  /// 練了什麼，臥推永遠顯示「累積 41 次」、折線圖永遠從 7/12 的 50kg 開始。
+  /// 那是 `[QA-02c]`。
+  ///
+  /// 每次呼叫重算一遍，不快取：訓練紀錄不長（一場約 6 個動作），
+  /// 而快取要跟著補登、刪除、雲端回填一起失效 —— 那三條路都漏接過。
+  /// **呼叫端請在 build 裡取一次就好**，不要每一列各取一次。
+  Map<String, ExerciseStat> get exerciseStats => statsFrom([
+        for (final h in history)
+          for (final e in h.exercises)
+            if (e.id != null) (date: h.date, id: e.id!, sets: e.sets),
+      ]);
 
   // ===========================================================================
   // 新手任務 / 回歸任務

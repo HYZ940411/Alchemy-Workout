@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/models.dart';
-import '../../mock/mock_exercise_stats.dart';
+import '../../domain/exercise_stats.dart';
+import '../../mock/mock_data.dart';
 import '../../mock/mock_extra.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
@@ -137,8 +138,14 @@ class _ExerciseTrendState extends State<_ExerciseTrend> {
 
   @override
   Widget build(BuildContext context) {
-    // 預設排序為累積練習次數由多到少。
-    final all = exercisesByFrequency();
+    // 統計由訓練紀錄即時推導，這裡取一次就好 ——
+    // 每一列各取一次等於把整份訓練紀錄掃 527 遍。
+    final stats = AppScope.of(context).exerciseStats;
+    int countOf(String id) => stats[id]?.count ?? 0;
+    // 預設排序為累積練習次數由多到少。沒練過的動作照樣列出
+    // （搜尋涵蓋整個動作庫），只是累積 0 次、沒有走勢。
+    final all = [...kAllExercises]
+      ..sort((a, b) => countOf(b.id).compareTo(countOf(a.id)));
     final q = _search.text.trim();
     // 名稱搜尋涵蓋平台動作庫與自建動作。
     final items = q.isEmpty
@@ -167,7 +174,11 @@ class _ExerciseTrendState extends State<_ExerciseTrend> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 50),
                   children: [
-                    for (final e in items) _TrendRow(exercise: e),
+                    for (final e in items)
+                      _TrendRow(
+                        exercise: e,
+                        stat: stats[e.id] ?? const ExerciseStat(count: 0),
+                      ),
                   ],
                 ),
         ),
@@ -178,11 +189,11 @@ class _ExerciseTrendState extends State<_ExerciseTrend> {
 
 class _TrendRow extends StatelessWidget {
   final Exercise exercise;
-  const _TrendRow({required this.exercise});
+  final ExerciseStat stat;
+  const _TrendRow({required this.exercise, required this.stat});
 
   @override
   Widget build(BuildContext context) {
-    final stat = statOf(exercise.id);
     final last = stat.trend.isEmpty ? null : stat.trend.last;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

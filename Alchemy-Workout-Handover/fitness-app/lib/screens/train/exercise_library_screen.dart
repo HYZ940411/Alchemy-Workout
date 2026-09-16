@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../domain/ability.dart';
 import '../../domain/models.dart';
 import '../../mock/mock_equipment.dart';
-import '../../mock/mock_exercise_stats.dart';
+import '../../domain/exercise_stats.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -242,19 +242,26 @@ class _ExerciseList extends StatelessWidget {
     }
     // 預設排序為累積練習次數由多到少 —— 主力動作長期固定，
     // 順序不隨每日訓練變動，使用者記得住位置。
+    //
+    // 統計在這裡取一次就好：它是由訓練紀錄即時推導的，
+    // 每一列各取一次等於把整份訓練紀錄掃 527 遍。
+    final stats = AppScope.of(context).exerciseStats;
+    int countOf(String id) => stats[id]?.count ?? 0;
     final sorted = [...items]
-      ..sort((a, b) => statOf(b.id).count.compareTo(statOf(a.id).count));
+      ..sort((a, b) => countOf(b.id).compareTo(countOf(a.id)));
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 50),
       itemCount: sorted.length,
-      itemBuilder: (_, i) => _Row(exercise: sorted[i]),
+      itemBuilder: (_, i) =>
+          _Row(exercise: sorted[i], count: countOf(sorted[i].id)),
     );
   }
 }
 
 class _Row extends StatelessWidget {
   final Exercise exercise;
-  const _Row({required this.exercise});
+  final int count;
+  const _Row({required this.exercise, required this.count});
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -294,7 +301,7 @@ class _Row extends StatelessWidget {
                           const SizedBox(height: 3),
                           Text(
                             '${exercise.equipment}　·　'
-                            '累積 ${statOf(exercise.id).count} 次',
+                            '累積 $count 次',
                             style: const TextStyle(
                                 color: AppColors.textFaint, fontSize: 11),
                           ),

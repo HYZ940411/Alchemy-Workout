@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../domain/ability.dart';
 import '../../domain/models.dart';
 import '../../mock/exercise_guides.dart';
-import '../../mock/mock_exercise_stats.dart';
+import '../../domain/exercise_stats.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -23,7 +23,8 @@ class ExerciseDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    final stat = statOf(exercise.id);
+    final stat =
+        s.exerciseStats[exercise.id] ?? const ExerciseStat(count: 0);
     final rest = s.restSecondsFor(
       PlanExercise(exercise: exercise, planned: const []),
     );
