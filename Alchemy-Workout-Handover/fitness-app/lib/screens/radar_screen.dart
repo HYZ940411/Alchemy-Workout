@@ -16,6 +16,8 @@ class RadarScreen extends StatelessWidget {
     final s = AppScope.of(context);
     final pts = s.displayedPoints;
     final overall = overallPoints(pts);
+    // 耐力值由訓練紀錄即時推導，這裡取一次 —— 它要掃過整份訓練紀錄兩遍。
+    final endurance = s.enduranceByDim;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 50),
@@ -69,34 +71,38 @@ class RadarScreen extends StatelessWidget {
             ],
           ),
         ),
-        const SectionLabel('耐力值'),
-        Panel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  for (var i = 0; i < Dim.values.length; i++)
-                    _EnduranceChip(
-                      name: dimNames[Dim.values[i]]!,
-                      value: _endurance(pts[Dim.values[i]]!, i),
-                    ),
-                ],
-              ),
-            ],
+        // 六維皆為空值時不呈現本區塊（模型明訂）——
+        // 新使用者還沒做過大重量訓練，六個「—」什麼也沒說。
+        if (endurance.isNotEmpty) ...[
+          const SectionLabel('耐力值', trailing: '1.0 為該強度的標準次數'),
+          Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final d in Dim.values)
+                      _EnduranceChip(
+                        name: dimNames[d]!,
+                        value: endurance[d],
+                      ),
+                  ],
+                ),
+                const SizedBox(height: S.sm),
+                Text(
+                  '以該動作的歷史最佳估算 1RM 為基準，'
+                  '看你在同樣的相對強度下做得比標準多還是少。'
+                  '用很輕的重量做很多下，這個數字反而會低。',
+                  style: T.caption(),
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ],
     );
-  }
-
-  /// 耐力值為衍生值，由組紀錄與該動作的歷史最佳估算 1RM 即時計算。
-  /// 此處為假資料；換算為與能力值同一尺度（0–999），故可套用同一組六階門檻。
-  static int? _endurance(int pts, int i) {
-    if (pts <= kInitialPoints + 5) return null; // 無可靠最佳 1RM 者不推測
-    return (pts * (0.72 + (i % 3) * 0.11)).round().clamp(0, kMaxPoints);
   }
 }
 
@@ -221,15 +227,20 @@ class _DimRow extends StatelessWidget {
   }
 }
 
+/// 一維的耐力值。
+///
+/// **不套六階門檻、不畫等級徽章。** 那是上一版把耐力值硬換算成
+/// 0–999 尺度留下的東西 —— 規格說耐力值是個比值（float），
+/// 而且明訂它「不作為主要呈現項目」，給它一枚跟力量一樣的徽章
+/// 正是那條規則要避免的事。
 class _EnduranceChip extends StatelessWidget {
   final String name;
-  final int? value;
+  final double? value;
   const _EnduranceChip({required this.name, this.value});
 
   @override
   Widget build(BuildContext context) {
     final v = value;
-    final grade = v == null ? null : majorGradeOf(v);
     return Container(
       width: (MediaQuery.of(context).size.width - 32 - 32 - 20) / 3,
       padding: const EdgeInsets.symmetric(vertical: S.md),
@@ -241,13 +252,12 @@ class _EnduranceChip extends StatelessWidget {
         children: [
           Text(name, style: T.caption()),
           const SizedBox(height: S.xs),
-          if (grade == null)
-            // 無可靠最佳 1RM 者呈現為「—」，不以 0 表示（模型明訂）
-            Text('—', style: T.numberS(color: C.textSecondary))
-          else
-            GradeBadge(grade),
-          const SizedBox(height: S.xs),
-          Text(v == null ? '' : '$v', style: T.caption()),
+          // 無可靠最佳 1RM 者呈現為「—」，不以 0 表示（模型明訂）。
+          Text(
+            v == null ? '—' : v.toStringAsFixed(2),
+            style: T.numberS(
+                color: v == null ? C.textSecondary : C.textPrimary),
+          ),
         ],
       ),
     );

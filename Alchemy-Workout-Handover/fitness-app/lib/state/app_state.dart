@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 
 import '../domain/ability.dart';
+import '../domain/endurance.dart';
 import '../domain/exercise_stats.dart';
 import '../domain/clock.dart';
 // 換日規則已移入 clock.dart（假資料產生器也要用同一套）。
@@ -5602,6 +5603,31 @@ class AppState extends ChangeNotifier {
   // ===========================================================================
 
   late List<HistoryEntry> history = demo ? buildHistory() : [];
+
+  /// 六維耐力值 —— **由 [history] 即時推導**（規格明訂衍生、不儲存）。
+  ///
+  /// 原本 `radar_screen` 自己編一個出來：六維點數乘上 0.72～0.94 的抖動
+  /// 係數。那不只是假資料，它連語意都相反 —— 耐力值高的人是「相對重的
+  /// 重量做很多下」，跟點數高低沒有那種比例關係。那是 `[QA-02c]` 的鄰居。
+  ///
+  /// 排除三種組：有氧（算不出 %1RM）、計時動作（無重量與次數）、
+  /// 自建動作（不計入能力值，耐力值同理）。
+  Map<Dim, double> get enduranceByDim {
+    final rows = <EnduranceRow>[];
+    for (final h in history) {
+      for (final e in h.exercises) {
+        final id = e.id;
+        if (id == null || e.isTimed) continue;
+        final x = exerciseById(id);
+        final d = x.dim;
+        if (d == null || x.isCustom || x.type == ExerciseType.cardio) continue;
+        for (final s in e.sets) {
+          rows.add((dim: d, exerciseId: id, weightKg: s.$1, reps: s.$2));
+        }
+      }
+    }
+    return enduranceOfRows(rows);
+  }
 
   /// 每個動作的累積次數與趨勢 —— **由 [history] 即時推導**。
   ///
