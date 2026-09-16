@@ -5,6 +5,8 @@ import 'package:fitness_app/domain/admin.dart';
 import 'package:fitness_app/main.dart';
 import 'package:fitness_app/screens/me/more_screen.dart';
 
+import 'developer_mode.dart';
+
 Future<void> _boot(WidgetTester t) async {
   t.view.physicalSize = const Size(393 * 3, 852 * 3);
   t.view.devicePixelRatio = 3.0;
@@ -17,6 +19,8 @@ Future<void> _boot(WidgetTester t) async {
 Future<void> _openAdmin(WidgetTester t) async {
   await t.tap(find.text('我的').last);
   await t.pumpAndSettle();
+  // 「流程示範」那一區收進了開發者模式，一般使用者看不到。
+  await enableDeveloperMode(t);
   final list = find
       .descendant(of: find.byType(MoreScreen), matching: find.byType(Scrollable))
       .first;

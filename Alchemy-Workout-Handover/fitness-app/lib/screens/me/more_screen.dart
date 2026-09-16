@@ -37,6 +37,9 @@ import 'profile_screen.dart';
 import 'punishment_screen.dart';
 import 'settings_screen.dart';
 
+/// 開發者模式的隱藏入口 —— 長按這個頁首。
+const Key moreHeaderKey = Key('more-header');
+
 /// 其餘功能的入口彙整。
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -51,6 +54,7 @@ class MoreScreen extends StatelessWidget {
         // 藏起來而不是做成設定開關：那些示範頁不是功能，
         // 放在設定裡等於承認它是使用者該調的東西。
         GestureDetector(
+          key: moreHeaderKey,
           onLongPress: () {
             s.toggleDeveloperMode();
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(

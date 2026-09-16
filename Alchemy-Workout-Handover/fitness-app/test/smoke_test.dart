@@ -13,6 +13,8 @@ import 'package:fitness_app/screens/train/history_detail_screen.dart';
 import 'package:fitness_app/screens/train/plan_detail_screen.dart';
 import 'package:fitness_app/screens/train/rest_countdown.dart';
 
+import 'developer_mode.dart';
+
 /// 設計基準機型 iPhone 15／16（393 × 852）
 const kBase = Size(393 * 3, 852 * 3);
 
@@ -1048,6 +1050,8 @@ Future<void> openPublicPlanQueue(WidgetTester t,
     await t.tap(find.text('我的').last);
     await t.pumpAndSettle();
   }
+  // 「流程示範」那一區收進了開發者模式，一般使用者看不到。
+  await enableDeveloperMode(t);
   await t.scrollUntilVisible(find.text('管理員後台'), 300,
       scrollable: find.descendant(
         of: find.byType(MoreScreen),

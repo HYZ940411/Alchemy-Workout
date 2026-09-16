@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_app/main.dart';
 import 'package:fitness_app/state/app_state.dart';
 
+import 'developer_mode.dart';
+
 Future<AppState> openAdminOrders(WidgetTester t) async {
   t.view.physicalSize = const Size(393 * 3, 852 * 3);
   t.view.devicePixelRatio = 3.0;
@@ -20,6 +22,9 @@ Future<AppState> openAdminOrders(WidgetTester t) async {
 
   await t.tap(find.text('我的').last);
   await t.pumpAndSettle();
+  // 「流程示範」那一區收進了開發者模式，一般使用者看不到。
+  await enableDeveloperMode(t);
+
   // 「我的」是一長頁，入口在很下面。用 dragUntilVisible 而不是固定捲幾次 ——
   // 固定次數會在頁面多一列時無聲地捲不到底，測試變成「找不到就爆」。
   await t.dragUntilVisible(

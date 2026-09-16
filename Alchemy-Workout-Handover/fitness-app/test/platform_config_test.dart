@@ -12,6 +12,8 @@ import 'package:fitness_app/domain/rank.dart';
 import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/state/app_state.dart';
 
+import 'developer_mode.dart';
+
 /// 全域設定會在測試間互相污染，故每個測試結束就復原。
 /// 還原至出廠預設 —— 平台設定為全域可變狀態，測試間必須隔離。
 void _reset() => platformConfig.reset();
@@ -323,6 +325,8 @@ void main() {
 
       await t.tap(find.text('我的').last);
       await t.pumpAndSettle();
+      // 「流程示範」那一區收進了開發者模式，一般使用者看不到。
+      await enableDeveloperMode(t);
       final more = find
           .descendant(
               of: find.byType(MoreScreen), matching: find.byType(Scrollable))

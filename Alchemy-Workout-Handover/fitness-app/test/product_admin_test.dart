@@ -10,6 +10,8 @@ import 'package:fitness_app/screens/admin/product_edit_screen.dart';
 import 'package:fitness_app/screens/me/more_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
 
+import 'developer_mode.dart';
+
 /// 〈管理員商品上架流程〉：新增商品、設定商品資訊、上架、下架
 void main() {
   group('新增商品', () {
@@ -256,6 +258,8 @@ void main() {
 
       await t.tap(find.text('我的').last);
       await t.pumpAndSettle();
+      // 「流程示範」那一區收進了開發者模式，一般使用者看不到。
+      await enableDeveloperMode(t);
       final more = find
           .descendant(
               of: find.byType(MoreScreen), matching: find.byType(Scrollable))
