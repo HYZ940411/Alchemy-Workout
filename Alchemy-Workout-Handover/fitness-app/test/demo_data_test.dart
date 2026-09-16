@@ -26,10 +26,11 @@ void main() {
       expect(s.history, isNotEmpty);
     });
 
-    test('關掉之後，「別人」與「我的過去」全都不存在', () {
+    // 三段分開寫，不合併成一條。`expect` 一失敗就丟，
+    // 擠在同一條裡的話後面十幾個集合根本沒被驗到 ——
+    // 第一次跑就是這樣漏掉的。
+    test('關掉之後，「別人」不存在', () {
       final s = AppState(demo: false);
-
-      // 甲、別人的東西
       expect(s.posts, isEmpty, reason: '[QA-02a] 假貼文');
       expect(s.publicTeams, isEmpty, reason: '[QA-02b] 假隊伍');
       expect(s.socialUsers, isEmpty);
@@ -40,14 +41,35 @@ void main() {
       expect(s.apprentices, isEmpty);
       expect(s.mentorTasks, isEmpty);
       expect(s.questions, isEmpty);
+    });
 
-      // 乙、我的過去
-      expect(s.notifications, isEmpty, reason: '[QA-02d] 假通知');
+    test('關掉之後，「我的過去」不存在', () {
+      final s = AppState(demo: false);
       expect(s.history, isEmpty);
       expect(s.checkInRecords, isEmpty);
       expect(s.orders, isEmpty);
       expect(s.creditHistory, isEmpty);
       expect(s.mailbox, isEmpty);
+    });
+
+    test('假通知不在了 —— 但系統當場發的預告還在（[QA-02d]）', () {
+      // **不能斷言通知清單是空的。** 建構子會跑 runStreakCheck()，
+      // 而 demo:false 的註冊日仍是示範用的舊日期、訓練歷史又是空的，
+      // 於是它當場補發「中斷預告」「退步預告」—— 那些是真的、算出來的，
+      // 不是假資料。真使用者走 resetToNewAccount()，註冊日歸為今天，
+      // 那些預告根本不會觸發。
+      //
+      // 所以這裡驗的是**假的那幾則不在了**，用它們獨有的痕跡認人。
+      final s = AppState(demo: false);
+      final bodies = [for (final n in s.notifications) n.body];
+      final titles = [for (final n in s.notifications) n.title];
+
+      expect(bodies.any((b) => b.contains('TW882410037')), isFalse,
+          reason: '假的出貨通知（寫死的物流單號）');
+      expect(titles, isNot(contains('你的訂單已出貨')));
+      expect(titles, isNot(contains('成就已解鎖')));
+      expect([for (final n in s.notifications) n.id], isNot(contains('n1')),
+          reason: 'buildNotifications() 的 id 是 n1…n7');
     });
 
     test('關掉示範資料不會把 App 弄壞 —— 建構子的排程照樣跑得完', () {
@@ -61,13 +83,17 @@ void main() {
       // 開關的管轄範圍。真使用者走的是 hydrate() → 讀不到存檔 →
       // resetToNewAccount()，那條路已經把它們一次歸位。
       // 這裡把分工釘下來，免得日後有人以為 demo:false 就等於新帳號。
+      // 用暱稱當證據，不用連續訓練天數 —— 後者會被建構子的
+      // runStreakCheck() 歸零（訓練歷史空了，連續當然就斷了），
+      // 那樣就證明不了「純量沒被這個開關碰過」。
       final s = AppState(demo: false);
-      expect(s.trainingStreakDays, 12, reason: '純量不歸這個開關管');
+      expect(s.displayName, '你', reason: '純量不歸這個開關管');
+      expect(s.totalExp, greaterThan(0));
 
       s.resetToNewAccount();
-      expect(s.trainingStreakDays, 0);
       expect(s.totalExp, 0);
       expect(s.coins, 0);
+      expect(s.trainingStreakDays, 0);
     });
   });
 
