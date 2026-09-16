@@ -7018,7 +7018,7 @@ class AppState extends ChangeNotifier {
   /// 讀不到存檔就把它設為 false，走完整的註冊流程。
   bool signUpCompleted = true;
 
-  /// 9 項全數填畢方可完成註冊；獎勵為金幣 100 ＋ 補簽券 ×1，無經驗值。
+  /// 10 項全數填畢方可完成註冊；獎勵為金幣 100 ＋ 補簽券 ×1，無經驗值。
   /// 使用者帳號已建立的 Postcondition —— 把帳號層級的計數器一次歸位。
   ///
   /// 模型明訂帳號建立時**一併產生**連續訓練 Aggregate（上次訓練日期＝註冊日）
@@ -7210,6 +7210,11 @@ class AppState extends ChangeNotifier {
     resetToNewAccount();
     coins += kSignUpCoins;
     grantMakeupTickets(kSignUpMakeupTickets);
+    // 暱稱。**要排在 resetToNewAccount() 之後** —— 那一步不碰 displayName
+    // （它歸零的是進度，不是身分），但順序顛倒的話日後有人往那裡加一行
+    // 「暱稱歸位」，新註冊的人就會又變回「你」，而且沒有任何錯誤訊息。
+    final nick = signUpDraft.nickname?.trim();
+    if (nick != null && nick.isNotEmpty) displayName = nick;
     if (signUpDraft.weightKg != null) bodyweightKg = signUpDraft.weightKg!;
     if (signUpDraft.heightCm != null) heightCm = signUpDraft.heightCm!;
     if (signUpDraft.gender != null) isMale = signUpDraft.gender == '男';

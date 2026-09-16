@@ -270,7 +270,7 @@ void main() {
     expect(find.byType(TextField), findsNothing);
   });
 
-  testWidgets('註冊流程：9 欄問卷與中斷續填', (t) async {
+  testWidgets('註冊流程：10 欄問卷與中斷續填', (t) async {
     await _boot(t);
     await t.tap(find.text('我的').last);
     await t.pumpAndSettle();
@@ -312,12 +312,19 @@ void main() {
     await t.tap(find.widgetWithText(AppButton, '同意並建立帳號'));
     await t.pumpAndSettle();
 
-    // 進入 9 欄問卷
-    expect(find.text('第 1／9'), findsOneWidget);
+    // 進入 10 欄問卷。第一題是暱稱（`[QA-02h]`）。
+    expect(find.text('第 1／10'), findsOneWidget);
+    expect(find.text('要怎麼稱呼你？'), findsOneWidget);
+    await t.enterText(find.byType(TextField), '阿昶');
+    await t.pumpAndSettle();
+    await t.tap(find.widgetWithText(AppButton, '下一步'));
+    await t.pumpAndSettle();
+
+    expect(find.text('第 2／10'), findsOneWidget);
     expect(find.text('你的身高？'), findsOneWidget);
     await t.tap(find.widgetWithText(AppButton, '下一步'));
     await t.pumpAndSettle();
-    expect(find.text('第 2／9'), findsOneWidget);
+    expect(find.text('第 3／10'), findsOneWidget);
 
     // 未填完離開 → 跳確認，資料保留
     await t.tap(find.byIcon(Icons.close));
@@ -330,7 +337,8 @@ void main() {
     await t.tap(entry);
     await t.pumpAndSettle();
     expect(find.byType(LaunchScreen), findsNothing);
-    expect(find.text('第 3／9'), findsOneWidget);
+    expect(find.text('第 4／10'), findsOneWidget,
+        reason: '續填自未完成的欄位開始 —— 暱稱、身高、體重都填過了');
   });
 
   testWidgets('首頁簽到後狀態改變', (t) async {

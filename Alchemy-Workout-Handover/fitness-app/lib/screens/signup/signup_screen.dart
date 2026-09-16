@@ -15,7 +15,7 @@ import 'plan_recommend_screen.dart';
 /// 註冊流程
 ///
 /// 啟動頁 → 入口二選一（手機簡訊驗證 / 第三方登入授權）→ 同意服務條款
-/// → 建立帳號 → 9 項個人資料逐欄填寫 → 完成註冊 → 發放註冊獎勵
+/// → 建立帳號 → 10 項個人資料逐欄填寫 → 完成註冊 → 發放註冊獎勵
 /// → 訓練計畫已推薦。
 /// 任務型頁面：底部導覽列隱藏（§8.4）。
 class SignUpScreen extends StatefulWidget {
@@ -38,6 +38,12 @@ class SignUpScreen extends StatefulWidget {
   /// 畫面卻還停在要他選登入方式的那一頁。
   final String? authorizedEmail;
 
+  /// 第三方登入帶回來的名字，**預帶於暱稱欄、可改**。
+  ///
+  /// 不直接拿來當顯示名稱：Google 帳號的姓名多為實名，直接用等於替使用者
+  /// 做了一次不可逆的公開（見〈註冊流程〉2026-09-16 的裁決）。
+  final String? suggestedName;
+
   /// 帳號。空值代表這次沒接後端，第三方登入按鈕走假路徑。
   final AuthService? auth;
 
@@ -46,6 +52,7 @@ class SignUpScreen extends StatefulWidget {
     this.onFinish,
     this.firstRun = false,
     this.authorizedEmail,
+    this.suggestedName,
     this.auth,
   });
   @override
@@ -55,8 +62,9 @@ class SignUpScreen extends StatefulWidget {
 class _SignUpScreenState extends State<SignUpScreen> {
   late SignUpDraft d;
 
-  /// -4 啟動頁、-3 登入頁、-2 手機驗證、-1 條款、0..8 九個欄位、
-  /// 9 完成註冊、10 訓練計畫推薦。
+  /// -4 啟動頁、-3 登入頁、-2 手機驗證、-1 條款、
+  /// 0..[SignUpDraft.total]-1 十個欄位、
+  /// [SignUpDraft.total] 完成註冊、其後一步為訓練計畫推薦。
   int step = -4;
   bool _init = false;
 
@@ -79,13 +87,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
     // 續填：自未完成的欄位開始，已填資料不清空。
     // 已走過入口與條款者不必再看啟動頁與登入頁。
     if (d.entryDone && d.termsAgreed) {
-      step = d.complete ? 9 : d.resumeIndex;
+      step = d.complete ? SignUpDraft.total : d.resumeIndex;
     }
   }
 
   Future<void> _confirmLeave() async {
-    // 9 項未填完即離開 → 註冊資料填寫已中斷
-    if (step >= 0 && step < 9 && !d.complete) {
+    // 10 項未填完即離開 → 註冊資料填寫已中斷
+    if (step >= 0 && step < SignUpDraft.total && !d.complete) {
       final leave = await showAppDialog(
         context,
         title: '要先離開嗎？',
@@ -117,8 +125,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
             -3 => '建立帳號',
             -2 => '驗證手機號碼',
             -1 => '服務條款',
-            9 => '完成註冊',
-            10 => '訓練計畫推薦',
+            SignUpDraft.total => '完成註冊',
+            const (SignUpDraft.total + 1) => '訓練計畫推薦',
             _ => '個人資料',
           }),
           leading: switch (step) {
@@ -137,7 +145,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         body: Column(
           children: [
             // 註冊問卷的進度條變體（§8.7）
-            if (step >= 0 && step < 9)
+            if (step >= 0 && step < SignUpDraft.total)
               Container(
                 color: C.bgSurface,
                 padding: const EdgeInsets.fromLTRB(
@@ -148,13 +156,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
                 child: Row(
                   children: [
-                    Expanded(child: BareProgress(value: (step + 1) / 9)),
+                    Expanded(
+                        child: BareProgress(
+                            value: (step + 1) / SignUpDraft.total)),
                     const SizedBox(width: S.md),
                     // 文字寬度固定，避免數字變動時進度條長度跳動
                     SizedBox(
                       width: 56,
                       child: Text(
-                        '第 ${step + 1}／9',
+                        '第 ${step + 1}／${SignUpDraft.total}',
                         style: T.caption(),
                         textAlign: TextAlign.end,
                       ),
@@ -218,14 +228,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
             step = 0;
           }),
         );
-      case 9:
+      case SignUpDraft.total:
         return _Done(
           draft: d,
           state: s,
           firstRun: widget.firstRun,
-          onNext: () => setState(() => step = 10),
+          onNext: () => setState(() => step = SignUpDraft.total + 1),
         );
-      case 10:
+      case const (SignUpDraft.total + 1):
         return PlanRecommendPane(
           draft: d,
           onStart: () {
@@ -244,6 +254,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           key: ValueKey(step),
           draft: d,
           index: step,
+          suggestedName: widget.suggestedName,
           onNext: () => setState(() => step++),
           onBack: step == 0 ? null : () => setState(() => step--),
         );
@@ -335,6 +346,7 @@ class _Footer extends StatelessWidget {
 class _Question extends StatefulWidget {
   final SignUpDraft draft;
   final int index;
+  final String? suggestedName;
   final VoidCallback onNext;
 
   /// 回上一題。第一題沒有上一題，故為空值。
@@ -344,6 +356,7 @@ class _Question extends StatefulWidget {
     required this.draft,
     required this.index,
     required this.onNext,
+    this.suggestedName,
     this.onBack,
   });
   @override
@@ -353,6 +366,10 @@ class _Question extends StatefulWidget {
 class _QuestionState extends State<_Question> {
   SignUpDraft get d => widget.draft;
 
+  /// 暱稱輸入框。只有第 0 題用得到，但 State 是一題一個（見 ValueKey），
+  /// 所以不必為它另開一個 widget。
+  final _nick = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -360,15 +377,31 @@ class _QuestionState extends State<_Question> {
     // 否則畫面上看得到數字，「下一步」卻是停用的。
     switch (widget.index) {
       case 0:
-        d.heightCm ??= 170;
+        // 暱稱不給預設值：預設值會被整批接受，於是又回到「全部叫你」。
+        // 但第三方登入帶回來的名字**預帶於輸入框**，可改 ——
+        // 直接拿來當顯示名稱等於替使用者做了一次不可逆的公開。
+        _nick.text = d.nickname ?? widget.suggestedName ?? '';
       case 1:
+        d.heightCm ??= 170;
+      case 2:
         d.weightKg ??= 65;
-      case 6:
+      case 7:
         d.daysPerWeek ??= 3;
     }
   }
 
+  @override
+  void dispose() {
+    // 離開這一題時一律寫回草稿，包含**從頂部的關閉鍵中途離開** ——
+    // 規則是「已填資料不清空」，只在「下一步」寫的話，
+    // 打完名字就按離開的人回來會發現白打了。
+    _commit();
+    _nick.dispose();
+    super.dispose();
+  }
+
   static const _titles = [
+    '要怎麼稱呼你？',
     '你的身高？',
     '你的體重？',
     '你的性別？',
@@ -381,16 +414,22 @@ class _QuestionState extends State<_Question> {
   ];
 
   bool get _canNext => switch (widget.index) {
-    0 => d.heightCm != null,
-    1 => d.weightKg != null,
-    2 => d.gender != null,
-    3 => d.birthday != null && d.ageValid,
-    4 => d.commonGoal != null,
-    5 => d.experience != null,
-    6 => d.daysPerWeek != null,
-    7 => d.duration != null,
+    0 => isValidNickname(_nick.text),
+    1 => d.heightCm != null,
+    2 => d.weightKg != null,
+    3 => d.gender != null,
+    4 => d.birthday != null && d.ageValid,
+    5 => d.commonGoal != null,
+    6 => d.experience != null,
+    7 => d.daysPerWeek != null,
+    8 => d.duration != null,
     _ => d.equipment.isNotEmpty,
   };
+
+  /// 離開這一題時才寫進草稿 —— 逐字寫的話，中途清空會把已填的抹掉。
+  void _commit() {
+    if (widget.index == 0) d.nickname = _nick.text.trim();
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -409,23 +448,33 @@ class _QuestionState extends State<_Question> {
         // 第一題沒有上一題 —— 那時的「返回」是離開註冊，由頂部的關閉鍵承擔。
         child: widget.onBack == null
             ? AppButton(
-                label: widget.index == 8 ? '完成' : '下一步',
-                onPressed: _canNext ? widget.onNext : null,
+                label: _isLast ? '完成' : '下一步',
+                onPressed: _canNext ? _next : null,
               )
             : ButtonRow(
                 left: AppButton(
                   label: '上一步',
                   kind: BtnKind.secondary,
-                  onPressed: widget.onBack,
+                  onPressed: () {
+                    _commit();
+                    widget.onBack!();
+                  },
                 ),
                 right: AppButton(
-                  label: widget.index == 8 ? '完成' : '下一步',
-                  onPressed: _canNext ? widget.onNext : null,
+                  label: _isLast ? '完成' : '下一步',
+                  onPressed: _canNext ? _next : null,
                 ),
               ),
       ),
     ],
   );
+
+  bool get _isLast => widget.index == SignUpDraft.total - 1;
+
+  void _next() {
+    _commit();
+    widget.onNext();
+  }
 
   /// 各值域的示意圖示。鍵為值域字串本身 ——
   /// 值域由後台維護，查不到時退回中性圖示，不讓畫面開天窗。
@@ -480,6 +529,47 @@ class _QuestionState extends State<_Question> {
     switch (widget.index) {
       case 0:
         return [
+          // 樣式沿用登入頁的手機號碼欄，那是這個流程裡唯一的另一個輸入框。
+          TextField(
+            controller: _nick,
+            autofocus: true,
+            maxLength: kNicknameMaxLength,
+            textInputAction: TextInputAction.done,
+            style: T.body(),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) {
+              if (_canNext) _next();
+            },
+            decoration: InputDecoration(
+              hintText: '例如：阿昶',
+              hintStyle: T.body(color: C.textDisabled),
+              counterText: '',
+              filled: true,
+              fillColor: C.bgSurface,
+              contentPadding: const EdgeInsets.all(S.base),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(R.control),
+                borderSide: const BorderSide(color: C.lineDivider),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(R.control),
+                borderSide: const BorderSide(color: C.lineDivider),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(R.control),
+                borderSide: const BorderSide(color: C.actionOutline, width: 2),
+              ),
+            ),
+          ),
+          const SizedBox(height: S.sm),
+          Text(
+            '社群動態、隊伍成員、私訊、排行榜看到的都是這個名字。'
+            '最多 $kNicknameMaxLength 個字，之後可以在設定裡改。',
+            style: T.caption(),
+          ),
+        ];
+      case 1:
+        return [
           _NumberStepper(
             value: d.heightCm ?? 170,
             unit: 'cm',
@@ -488,7 +578,7 @@ class _QuestionState extends State<_Question> {
             onChanged: (v) => setState(() => d.heightCm = v),
           ),
         ];
-      case 1:
+      case 2:
         return [
           _NumberStepper(
             value: d.weightKg ?? 65,
@@ -498,7 +588,7 @@ class _QuestionState extends State<_Question> {
             onChanged: (v) => setState(() => d.weightKg = v),
           ),
         ];
-      case 2:
+      case 3:
         // 只有兩個選項，格子放大一點才不會顯得空。
         return [
           _grid(
@@ -508,7 +598,7 @@ class _QuestionState extends State<_Question> {
             tileHeight: 140,
           ),
         ];
-      case 3:
+      case 4:
         return [
           _BirthdayPicker(
             value: d.birthday,
@@ -519,7 +609,7 @@ class _QuestionState extends State<_Question> {
             Text('須滿 $kMinAge 歲才能註冊。', style: T.caption(color: C.statusError)),
           ],
         ];
-      case 4:
+      case 5:
         return [
           Text('常見目標（必填，1 項）', style: T.caption()),
           const SizedBox(height: S.sm),
@@ -538,7 +628,7 @@ class _QuestionState extends State<_Question> {
             (v) => setState(() => d.motiveGoal = d.motiveGoal == v ? null : v),
           ),
         ];
-      case 5:
+      case 6:
         return [
           _grid(
             kExperience,
@@ -546,7 +636,7 @@ class _QuestionState extends State<_Question> {
             (v) => setState(() => d.experience = v),
           ),
         ];
-      case 6:
+      case 7:
         return [
           Text('每週想練幾天', style: T.caption()),
           const SizedBox(height: S.sm),
@@ -557,7 +647,7 @@ class _QuestionState extends State<_Question> {
             onTap: (i) => setState(() => d.daysPerWeek = i + 1),
           ),
         ];
-      case 7:
+      case 8:
         return [
           _grid(
             kDurations,
@@ -796,7 +886,8 @@ class _Done extends StatelessWidget {
             Center(child: Text('註冊完成', style: T.h1())),
             const SizedBox(height: S.sm),
             Center(
-              child: Text('9 項個人資料已填畢', style: T.body(color: C.textSecondary)),
+              child: Text('${SignUpDraft.total} 項個人資料已填畢',
+                  style: T.body(color: C.textSecondary)),
             ),
             const SizedBox(height: S.lg),
             AppCard(

@@ -38,7 +38,7 @@ const allowed = <String, String>{
   'v': '存檔格式版本',
   'savedAt': '存檔時戳',
 
-  // 註冊問卷填的 9 欄 ＋ 身分。歸零的是「使用紀錄」，不是「你是誰」。
+  // 註冊問卷填的 10 欄 ＋ 身分。歸零的是「使用紀錄」，不是「你是誰」。
   'displayName': '暱稱',
   'bodyweightKg': '體重',
   'heightCm': '身高',

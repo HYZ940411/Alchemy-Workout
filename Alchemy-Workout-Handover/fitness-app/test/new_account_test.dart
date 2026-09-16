@@ -8,6 +8,7 @@ import 'package:fitness_app/state/app_state.dart';
 AppState signedUp() {
   final s = AppState();
   final d = s.signUpDraft
+    ..nickname = '阿昶'
     ..gender = '男'
     ..birthday = DateTime(1995, 5, 5)
     ..heightCm = 175
@@ -19,7 +20,7 @@ AppState signedUp() {
   d.equipment
     ..clear()
     ..add('健身房');
-  expect(d.complete, isTrue, reason: '9 項全填畢方可完成註冊');
+  expect(d.complete, isTrue, reason: '10 項全填畢方可完成註冊');
   s.completeSignUp();
   return s;
 }

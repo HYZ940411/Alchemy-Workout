@@ -301,21 +301,47 @@ void main() {
       await t.pumpAndSettle();
     }
 
+    /// 第一題是暱稱，填好才走得下去（`[QA-02h]`）。
+    Future<void> fillNickname(WidgetTester t, [String name = '阿昶']) async {
+      await t.enterText(find.byType(TextField), name);
+      await t.pumpAndSettle();
+    }
+
     testWidgets('第一題沒有上一步；之後每一題都有', (t) async {
       await toQuestions(t);
-      expect(find.text('第 1／9'), findsOneWidget);
+      expect(find.text('第 1／10'), findsOneWidget);
+      expect(find.text('要怎麼稱呼你？'), findsOneWidget);
       expect(find.widgetWithText(AppButton, '上一步'), findsNothing,
           reason: '帳號已建立，第一題回不去');
 
+      await fillNickname(t);
       await t.tap(find.widgetWithText(AppButton, '下一步'));
       await t.pumpAndSettle();
-      expect(find.text('第 2／9'), findsOneWidget);
+      expect(find.text('第 2／10'), findsOneWidget);
       expect(find.widgetWithText(AppButton, '上一步'), findsOneWidget);
+    });
+
+    testWidgets('暱稱沒填就走不下去', (t) async {
+      // 空白也不算 —— 不然全平台又會出現一批叫「　」的人。
+      await toQuestions(t);
+      expect(
+        t.widget<AppButton>(find.widgetWithText(AppButton, '下一步')).onPressed,
+        isNull,
+      );
+      await fillNickname(t, '   ');
+      expect(
+        t.widget<AppButton>(find.widgetWithText(AppButton, '下一步')).onPressed,
+        isNull,
+        reason: '只有空白字元不算填了',
+      );
     });
 
     testWidgets('上一步會回到前一題，且已填的值還在', (t) async {
       await toQuestions(t);
-      // 1 身高 → 2 體重 → 3 性別
+      // 1 暱稱 → 2 身高 → 3 體重 → 4 性別
+      await fillNickname(t);
+      await t.tap(find.widgetWithText(AppButton, '下一步'));
+      await t.pumpAndSettle();
       await t.tap(find.widgetWithText(AppButton, '下一步'));
       await t.pumpAndSettle();
       await t.tap(find.widgetWithText(AppButton, '下一步'));

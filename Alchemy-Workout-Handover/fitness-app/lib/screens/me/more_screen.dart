@@ -154,7 +154,7 @@ class MoreScreen extends StatelessWidget {
           const SectionLabel('流程示範', trailing: '開發者模式'),
           _Group(items: [
           _Item(Icons.app_registration, '註冊流程',
-              '啟動、登入、手機驗證、條款、9 欄問卷、計畫推薦',
+              '啟動、登入、手機驗證、條款、10 欄問卷、計畫推薦',
               () => const SignUpScreen()),
           _Item(Icons.auto_awesome_outlined, 'AI 自動優化', '會員權益，不扣點',
               () => const AiAdjustScreen(source: AiSource.autoOptimize)),

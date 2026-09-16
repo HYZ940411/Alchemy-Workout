@@ -1,6 +1,6 @@
 // 註冊流程的資料（〈註冊流程〉）
 //
-// 9 項個人資料全數填畢，方可發生「使用者已完成註冊」。
+// 10 項個人資料全數填畢，方可發生「使用者已完成註冊」。
 // 未填完即離開 → 註冊資料填寫已中斷；下次登入自未完成的欄位續填，已填資料不清空。
 
 import 'clock.dart';
@@ -22,6 +22,20 @@ const kDurations = ['30 分鐘以下', '30–60 分鐘', '60–90 分鐘', '90 �
 const kEquipmentTiers = ['健身房（全器材）', '居家器材（彈力繩、小啞鈴等）', '徒手'];
 
 const int kMinAge = 13;
+
+/// 暱稱長度上限。社群列表、隊伍成員列、排行榜名次列共用同一欄寬。
+const int kNicknameMaxLength = 12;
+
+/// 暱稱是否合格：去除前後空白後不得為空，且不超過上限。
+///
+/// **不檢查全平台唯一。** 暱稱是顯示名稱，不是識別碼 —— 系統內一律以 uid
+/// 識別（見 `AppState.nameByUid`），唯一性檢查只會在註冊漏斗上多一道
+/// 會失敗的關卡。
+bool isValidNickname(String v) {
+  final t = v.trim();
+  // 用 runes 而不是 length：length 數的是 UTF-16 碼元，表情符號會算成兩個字。
+  return t.isNotEmpty && t.runes.length <= kNicknameMaxLength;
+}
 
 /// 簡訊驗證碼位數與重新發送的冷卻秒數。
 const int kSmsCodeLength = 6;
@@ -56,7 +70,10 @@ class SignUpDraft {
       entry == SignUpEntry.thirdParty ||
       (entry == SignUpEntry.phone && phoneVerified);
 
-  // 9 項必填
+  // 10 項必填
+  /// 暱稱。社群、隊伍、私訊、排行榜看到的都是它。
+  String? nickname;
+
   double? heightCm; // 50–250
   double? weightKg; // 20–300
   String? gender; // 男 / 女
@@ -70,6 +87,7 @@ class SignUpDraft {
 
   /// 逐欄位建模，供註冊漏斗流失率分析。
   List<bool> get filled => [
+        nickname != null,
         heightCm != null,
         weightKg != null,
         gender != null,
@@ -82,7 +100,7 @@ class SignUpDraft {
       ];
 
   int get filledCount => filled.where((f) => f).length;
-  static const int total = 9;
+  static const int total = 10;
   bool get complete => filledCount == total;
 
   /// 續填的起點：第一個未填的欄位。
