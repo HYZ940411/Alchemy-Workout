@@ -234,8 +234,11 @@ class _TaskCard extends StatelessWidget {
                 height: 6,
               ),
               const SizedBox(height: 8),
+              // 原本寫「判定來源：」＋ task.sourceEvent —— 那是模型裡的
+              // Event 名稱（例如「訓練已完成」），對使用者不是資訊。
+              // 他要知道的是做完有什麼（`[QA-02m]`）。
               Text(
-                '判定來源：${task.sourceEvent}　·　進度 $kDailyTaskScorePerItem 分',
+                '完成可得 $kDailyTaskScorePerItem 分排行榜分數',
                 style: const TextStyle(color: AppColors.textFaint, fontSize: 11),
               ),
             ],

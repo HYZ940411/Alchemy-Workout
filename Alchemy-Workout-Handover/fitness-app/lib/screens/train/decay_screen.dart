@@ -101,7 +101,8 @@ class _DecayScreenState extends State<DecayScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '本 App 沒有後端，時間不快轉就看不到第 10 天會發生什麼。'
+                  // 原本寫「本 App 沒有後端」—— 那已經不是事實了（`[QA-02m]`）。
+                  '時間不快轉就看不到第 10 天會發生什麼。'
                   '已位移 ${s.demoClockOffset.inDays} 天。',
                   style: T.caption(),
                 ),

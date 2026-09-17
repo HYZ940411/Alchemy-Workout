@@ -177,10 +177,12 @@ class InstructorApplyScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10),
+                  // 原本這段在解釋「值域為什麼這樣設計」（刻意不含、等同平台
+                  // 替你背書…）—— 那是給讀規格的人看的。使用者要知道的只有
+                  // 「為什麼我想選的不在清單上」（`[QA-02m]`）。
                   const Text(
-                    '值域刻意不含六大肌群 —— 六維能力值在教官清單本來就強制呈現，'
-                    '那是實績；也不含飲食營養、傷後復健等需要執照的項目，'
-                    '把它們做成標籤等同平台替你背書，而教官資格沒有驗證任何執照。',
+                    '專長不含六大肌群 —— 你的六維能力值在教官清單上本來就會顯示。'
+                    '也不含飲食營養、傷後復健等需要執照的項目。',
                     style: TextStyle(
                         color: AppColors.textFaint, fontSize: 11, height: 1.5),
                   ),

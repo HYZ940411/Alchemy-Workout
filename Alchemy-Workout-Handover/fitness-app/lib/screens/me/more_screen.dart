@@ -79,7 +79,7 @@ class MoreScreen extends StatelessWidget {
         _Group(items: [
           _Item(Icons.history_rounded, '訓練歷史', '訓練清單與動作趨勢',
               () => const TrainingHistoryScreen()),
-          _Item(Icons.tune_rounded, '自訂訓練', '名額、狀態機、審核進度',
+          _Item(Icons.tune_rounded, '自訂訓練', '自己的課表與公開申請進度',
               () => const CustomPlansScreen()),
           _Item(Icons.menu_book_rounded, '動作庫', '六肌群 ＋ 有氧 ＋ 我的動作',
               () => const ExerciseLibraryScreen()),
@@ -90,7 +90,7 @@ class MoreScreen extends StatelessWidget {
         ]),
         const SectionLabel('每日'),
         _Group(items: [
-          _Item(Icons.today_outlined, '每日簽到 / 每日任務', '兩份 Read Model',
+          _Item(Icons.today_outlined, '每日簽到 / 每日任務', '簽到、今日任務與獎勵',
               () => const _Wrap(title: '每日', child: DailyScreen())),
           _Item(Icons.restore_rounded, '補簽', '補簽券 ${s.makeupTickets} 張',
               () => const MakeupScreen()),
