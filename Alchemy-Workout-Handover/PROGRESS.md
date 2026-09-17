@@ -203,7 +203,7 @@ flutter build macos --release
       （若已做 A，選 Firebase Hosting，跟後端同一個專案）
       —— **實務上已選定 Firebase Hosting 並上線**，待使用者正式確認後勾選
 - [x] 【CC】`[DEP-02]` 部署與線上驗證 ✅2026-09-15
-      → 2026-09-18 重新部署，線上為含 `[QA-02a]`–`[QA-02k]` 的版本
+      → 2026-09-18 重新部署兩次，線上為含 `[QA-02]` 全十五項的版本
       → 正式網址 **https://alchemy-workout.web.app**。
       已用**兩個真實帳號**完成端到端驗證：登入、發文、按讚、關注、
       私訊、團隊邀請皆通。`firebase.json` 含 Hosting 設定與快取標頭
