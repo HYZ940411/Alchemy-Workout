@@ -1,9 +1,3 @@
-import 'package:flutter/material.dart';
-
-import '../../design/overlays.dart';
-import '../../state/app_state.dart';
-import '../train/tasks_screen.dart';
-
 /// 社群互動功能的解鎖閘門（〈新手任務流程〉）。
 ///
 /// 規格明訂解鎖範圍為**發文、按讚、留言、分享、關注**五項，
@@ -17,6 +11,12 @@ import '../train/tasks_screen.dart';
 /// （`communityBlockedReason`），規格明文「不得以撤銷解鎖旗標實作」。
 /// 兩道閘門各自獨立，呼叫端兩個都要過。
 library;
+
+import 'package:flutter/material.dart';
+
+import '../../design/overlays.dart';
+import '../../state/app_state.dart';
+import '../train/tasks_screen.dart';
 
 /// 這次動作有沒有被解鎖閘門擋下來。
 ///
