@@ -25,6 +25,7 @@ import 'screens/auth_gate.dart';
 import 'screens/boot_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/signup/signup_screen.dart';
+import 'screens/train/tasks_screen.dart';
 import 'state/app_state.dart';
 import 'theme.dart';
 
@@ -227,7 +228,10 @@ class _FirstRunGateState extends State<FirstRunGate> {
     if (_needsSignUp == true) {
       return SignUpScreen(
         firstRun: true,
-        onFinish: () => setState(() => _needsSignUp = false),
+        onFinish: () {
+          setState(() => _needsSignUp = false);
+          openNoviceTaskAfterSignUp(context);
+        },
       );
     }
     return const HomeShell();

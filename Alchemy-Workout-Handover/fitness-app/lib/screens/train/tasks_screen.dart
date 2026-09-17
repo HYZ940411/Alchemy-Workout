@@ -14,6 +14,26 @@ import 'rate_experience_screen.dart';
 
 /// 新手任務清單與回歸任務卡 —— 兩份 Read Model 不合併：
 /// 更新觸發源與生命週期完全不同。
+/// 註冊走完就把使用者帶到新手任務那一頁（`[QA-02g]`）。
+///
+/// 〈註冊流程〉的最後兩步是「訓練計畫已推薦 → 新手任務已指派」，
+/// 兩者為嚴格順序。**指派是系統做的**，所以走完註冊就該看到它 ——
+/// 原本是把人丟在首頁，而新手任務的入口在「我的」頁往下捲很久的地方，
+/// 等於指派了卻沒告訴他。
+///
+/// **只帶到、不自動開始。** 規格明訂「Actor：使用者 — 主動點擊開始，
+/// 非系統自動觸發」，所以這裡只負責把那一頁推上來。
+///
+/// 排在下一個影格，讓主畫面先建好 —— 使用者按返回時底下要有東西。
+void openNoviceTaskAfterSignUp(BuildContext context) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!context.mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const TasksScreen()),
+    );
+  });
+}
+
 class TasksScreen extends StatelessWidget {
   const TasksScreen({super.key});
 

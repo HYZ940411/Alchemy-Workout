@@ -16,6 +16,7 @@ import '../state/app_state.dart';
 import 'boot_screen.dart';
 import 'home_shell.dart';
 import 'signup/signup_screen.dart';
+import 'train/tasks_screen.dart';
 
 /// 依登入狀態決定要顯示登入流程還是這個帳號的內容。
 ///
@@ -281,7 +282,10 @@ class _SignedInHomeState extends State<_SignedInHome> {
         // 已經用 Google 授權過了，別再要求他選一次登入方式。
         authorizedEmail: widget.email,
         suggestedName: widget.name,
-        onFinish: () => setState(() => _needsSignUp = false),
+        onFinish: () {
+          setState(() => _needsSignUp = false);
+          openNoviceTaskAfterSignUp(context);
+        },
       );
     }
     return const HomeShell();
