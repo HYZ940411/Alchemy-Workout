@@ -34,6 +34,65 @@ SEP = re.compile(r'\s*[-。·]\s*(?=(?:%s))' % '|'.join(EQUIP))
 # 原本的設計是戰士級 20（沿用教官初審門檻）、精銳級 45（自訂訓練名額里程碑）。
 RANK = {'學員級': None, '功能重啟級': None, '戰士級': None, '精銳級': None}
 
+# 級別 → 適用經驗（註冊問卷的三級值域）。
+#
+# 功能重啟級對三級都適用（2026-09-18 使用者裁決）：功能性課表是活動度與
+# 復健性質，跟訓練年資無關 —— 練了五年的人肩頸痛一樣該做。只標「新手」
+# 的話，中階／進階使用者在退步或受傷後推薦不到它。
+EXPERIENCE = {
+    '學員級': ['新手（未滿 6 個月）'],
+    '戰士級': ['中階（6 個月–2 年）'],
+    '精銳級': ['進階（2 年以上）'],
+    '功能重啟級': ['新手（未滿 6 個月）', '中階（6 個月–2 年）', '進階（2 年以上）'],
+}
+
+# 課表 → 適用目標（註冊問卷的常見目標四值）。
+#
+# **這一份是判斷，不是資料。** 《健身計劃.csv》沒有目標欄，所以每一列的
+# 依據都取自該課表自己寫的「訓練效果(重點)」欄 —— 不是照名字猜的。
+# 草案於 2026-09-18 由使用者逐列審核通過。
+#
+# 鍵為課表編號（＝ CSV 的列序，也就是 id 的 csvNN）。用編號而非名稱：
+# 「無器材－核心」有三份（學員／戰士／精銳），名稱撞號。
+#
+# 空清單代表「不特別針對任何目標」，而 recommendPlan 會視為全部符合 ——
+# 目前 27 份都有值，沒有留空的。
+G_MUSCLE, G_LOSE = '增肌', '減重'
+G_HABIT, G_FITNESS = '培養運動習慣', '提升體能'
+GOALS = {
+    0:  [G_MUSCLE, G_HABIT],            # 無器材-胸部：「胸肌肌肥大與發力感」
+    1:  [G_HABIT, G_FITNESS],           # 無器材-肩膀：暖身與活動度、輕度肌耐力
+    2:  [G_HABIT, G_FITNESS],           # 無器材-背部：腰背伸展力量與耐力、改善駝背
+    3:  [G_LOSE, G_FITNESS, G_HABIT],   # 無器材-腿部：「快速提升心率…有氧負荷」
+    4:  [G_LOSE, G_FITNESS, G_HABIT],   # 無器材-全身：同上
+    5:  [G_LOSE, G_FITNESS],            # 代謝優化：「促進減脂與代謝效率」
+    6:  [G_MUSCLE],                     # 肌力強化：「提升肌肉量與肌力」
+    7:  [G_FITNESS],                    # 體能續航：「提升肌耐力…日常生活體能」
+    8:  [G_MUSCLE],                     # 上半身-胸肩背：推力強化
+    9:  [G_MUSCLE, G_FITNESS],          # 下半身-核心臀腿：強化肌群＋耐力
+    10: [G_HABIT],                      # 功能性-肩頸
+    11: [G_HABIT],                      # 功能性-腰背
+    12: [G_HABIT, G_FITNESS],           # 功能性-足踝：「行走跑跳更穩」
+    13: [G_HABIT],                      # 核心（學員）：基礎神經連結、預防腰痛
+    14: [G_MUSCLE],                     # 核心（戰士）：大重量訓練的穩定性
+    15: [G_MUSCLE, G_FITNESS],          # 核心（精銳）：全鏈剛性與爆發力傳導
+    16: [G_FITNESS, G_HABIT],           # 橫向基礎與抗擾穩定：核心抗側屈、本體感覺
+    17: [G_FITNESS],                    # 多維變向：動力鏈傳導效率、肌力平衡
+    18: [G_FITNESS],                    # 動力鏈極限：輸出功率、高心率下的精準度
+    19: [G_MUSCLE],                     # 槓鈴-胸部
+    20: [G_MUSCLE, G_HABIT],            # 槓鈴-肩部：垂直剛性＋改善體態
+    21: [G_MUSCLE],                     # 槓鈴-背部
+    22: [G_LOSE, G_HABIT],              # 上肢動力鏈：「高效代謝…提升基礎代謝率」
+    23: [G_LOSE, G_HABIT],              # 下肢動力鏈：「增加下肢代謝率」
+    24: [G_MUSCLE, G_LOSE],             # 啞鈴-全身：基礎力量＋熱量消耗
+    25: [G_FITNESS, G_MUSCLE],          # 壺鈴＆滑輪機：後側鏈、多平面移動
+    26: [G_MUSCLE],                     # 固定式機械：「肌肥大效果」
+}
+
+
+def dart_list(xs) -> str:
+    return '[' + ', '.join(dq(x) for x in xs) + ']'
+
 # 名稱裡有器材字樣就是健身房課表，否則徒手。
 def tier(name: str) -> str:
     if '無器材' in name:
@@ -125,6 +184,8 @@ def main() -> int:
             'level': collapse(lvl),
             'requiredRank': rank,  # None 或 int
             'equipmentTier': tier(p['計劃名稱']),
+            'suitableExperience': EXPERIENCE.get(lvl, []),
+            'suitableGoals': GOALS.get(i, []),
             'duration': collapse(p['預估運動時長']),
             'intro': collapse(p['課表介紹']),
             'howTo': collapse(p['使用說明']),
@@ -141,6 +202,8 @@ def main() -> int:
             f'    level: {dq(lvl)},',
             f'    requiredRank: {rank if rank else "null"},',
             f'    equipmentTier: {dq(tier(p["計劃名稱"]))},',
+            f'    suitableExperience: {dart_list(EXPERIENCE.get(lvl, []))},',
+            f'    suitableGoals: {dart_list(GOALS.get(i, []))},',
             f'    duration: {dq(p["預估運動時長"])},',
             f'    intro: {dq(p["課表介紹"])},',
             f'    howTo: {dq(p["使用說明"])},',

@@ -180,6 +180,13 @@ class _PlanCard extends StatelessWidget {
                           '器材：${plan.equipmentTier}',
                           color: AppColors.textDim,
                         ),
+                        // 適用經驗與適用目標（`[QA-02l]`）。這兩欄原本是空集合，
+                        // 而 recommendPlan 把空集合視為「全部符合」——
+                        // 於是每一份課表都宣稱適合所有人，卡片上也無從標示。
+                        for (final e in plan.suitableExperience)
+                          Pill(e, color: AppColors.textDim),
+                        for (final g in plan.suitableGoals)
+                          Pill(g, color: AppColors.accentSoft),
                         if (plan.disclaimer != null)
                           const Pill('使用者提供', color: AppColors.textDim),
                         if (srcFactor != null)

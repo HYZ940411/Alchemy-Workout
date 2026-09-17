@@ -294,6 +294,8 @@ List<WorkoutPlan> buildCsvPlansFrom(
           source: PlanSource.official,
           requiredRank: s.requiredRank,
           equipmentTier: s.equipmentTier,
+          suitableExperience: s.suitableExperience.toSet(),
+          suitableGoals: s.suitableGoals.toSet(),
           exercises: [
             for (final it in s.items)
               PlanExercise(

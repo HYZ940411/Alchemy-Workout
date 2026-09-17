@@ -50,6 +50,18 @@ class PlatformPlanSpec {
   final int? requiredRank;
   final String equipmentTier;
 
+  /// 適用經驗與適用目標 —— 訓練計畫推薦的兩個比對維度（`[QA-02l]`）。
+  ///
+  /// **空集合的意思是「不篩選」，不是「不適用」**：`recommendPlan` 把空集合
+  /// 視為全部符合。27 份課表原本兩欄皆空，於是每一份都宣稱適合所有人，
+  /// 推薦實際上只靠器材在篩。
+  ///
+  /// 兩欄的來源不同，見 `tools/gen_platform_plans.py`：
+  /// 經驗由級別機械對應；目標依各課表自己寫的「訓練效果」欄判定
+  /// （2026-09-18 使用者逐列審核通過）。
+  final List<String> suitableExperience;
+  final List<String> suitableGoals;
+
   /// 以下六段為課表詳情頁的內容，原樣取自資料來源。
   final String duration;
   final String intro;
@@ -70,6 +82,8 @@ class PlatformPlanSpec {
     required this.level,
     required this.requiredRank,
     required this.equipmentTier,
+    this.suitableExperience = const [],
+    this.suitableGoals = const [],
     required this.duration,
     required this.intro,
     required this.howTo,

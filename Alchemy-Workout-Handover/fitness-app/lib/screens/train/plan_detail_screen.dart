@@ -53,6 +53,10 @@ class PlanDetailScreen extends StatelessWidget {
                 color: AppColors.textDim,
               ),
               Pill('器材：${plan.equipmentTier}', color: AppColors.textDim),
+              for (final e in plan.suitableExperience)
+                Pill(e, color: AppColors.textDim),
+              for (final g in plan.suitableGoals)
+                Pill(g, color: AppColors.accentSoft),
               if (srcFactor != null)
                 Pill(
                   '排行係數 ${(srcFactor * 100).round()}%',
