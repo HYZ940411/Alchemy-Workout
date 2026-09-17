@@ -86,7 +86,10 @@ void main() {
     await signUpAll(t);
     expect(find.byType(TasksScreen), findsOneWidget,
         reason: '「新手任務已指派」發生了，就要讓他看得到');
-    expect(find.byType(HomeShell), findsOneWidget,
+    // **skipOffstage: false 不能省。** 上層路由完全蓋住下層時，
+    // Flutter 會把下層標成 offstage，而 find.byType 預設跳過 offstage ——
+    // 主畫面明明在堆疊裡，卻找不到。
+    expect(find.byType(HomeShell, skipOffstage: false), findsOneWidget,
         reason: '任務頁疊在主畫面上 —— 按返回要有東西接住');
   });
 
