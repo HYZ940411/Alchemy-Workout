@@ -5663,7 +5663,15 @@ class AppState extends ChangeNotifier {
 
   /// 社群互動功能（發文、按讚、留言、分享、關注）的解鎖。
   /// 單調遞增，一經解鎖永久不可撤銷 —— 管理員處罰不改變本狀態。
-  bool socialUnlocked = false;
+  ///
+  /// **預設 true 是示範用身分的一部分**，與 `signUpCompleted` 同一個道理：
+  /// 直接 `AppState()` 建出來的是那位階級 45、練過 63 場、關注著三個人的
+  /// 假使用者，他當然早就做完新手任務了。原本預設 false，與那些數字
+  /// 自相矛盾 —— 只是在 `[QA-02f]` 之前沒有任何畫面讀這個旗標，所以沒人發現。
+  ///
+  /// 真正的新帳號由 [resetToNewAccount] 設回 false，那是唯一會走到
+  /// 「尚未解鎖」的路徑（`hydrate()` 讀不到存檔就會呼叫它）。
+  bool socialUnlocked = true;
 
   NoviceTaskItem? get noviceSelectedItem => noviceSelected == null
       ? null

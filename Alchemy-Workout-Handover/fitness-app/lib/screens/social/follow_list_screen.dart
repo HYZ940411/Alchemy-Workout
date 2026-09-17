@@ -4,6 +4,7 @@ import '../../design/tokens.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import '../me/profile_screen.dart';
+import 'social_lock.dart';
 
 /// 關注／粉絲清單（〈關注流程〉）
 ///
@@ -123,6 +124,7 @@ class _List extends StatelessWidget {
           label: followed ? '追蹤中' : '關注',
           kind: BtnKind.secondary,
           onPressed: () {
+            if (socialLocked(context, '關注')) return;
             s.toggleFollow(name);
             onChanged();
           },

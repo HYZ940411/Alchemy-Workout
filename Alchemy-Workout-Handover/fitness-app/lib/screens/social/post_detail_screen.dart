@@ -9,6 +9,7 @@ import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import 'report_sheet.dart';
 import '../me/profile_screen.dart';
+import 'social_lock.dart';
 
 /// 貼文詳情頁（〈發文與互動流程〉）
 ///
@@ -163,6 +164,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 showToast(context, blocked);
                                 return;
                               }
+                              if (socialLocked(context, '按讚')) return;
                               setState(() => s.toggleLike(p));
                             },
                           ),
@@ -272,6 +274,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       showToast(context, '留言含明顯違規內容，已攔截');
                       return;
                     }
+                    if (socialLocked(context, '留言')) return;
                     s.addComment(p, ctrl.text);
                     ctrl.clear();
                     setState(() {});

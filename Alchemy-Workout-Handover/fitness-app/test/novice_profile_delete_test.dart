@@ -89,7 +89,9 @@ void main() {
     });
 
     test('完成即解鎖社群互動功能，且單調遞增', () {
-      final s = AppState();
+      // 從**真的新帳號**起算。直接 `AppState()` 是那位階級 45 的示範
+      // 使用者，他早就解鎖過了 —— 那個起點測不出「完成即解鎖」。
+      final s = AppState()..resetToNewAccount();
       expect(s.socialUnlocked, isFalse);
       s
         ..startNovice()

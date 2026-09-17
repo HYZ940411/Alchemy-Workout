@@ -9,6 +9,7 @@ import '../state/app_state.dart';
 import 'train/rate_experience_screen.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'social/social_lock.dart';
 
 /// Read Model：訓練結算頁
 /// 版面分為固定核心與條件式亮點兩層。
@@ -252,6 +253,8 @@ class SettlementScreen extends StatelessWidget {
 /// 不是一個 toast。分享獎勵每日上限 3 次，超過仍可分享，只是不再發經驗值。
 Future<void> _share(
     BuildContext context, AppState s, SettlementResult r) async {
+  // 分享是規格列的五項社群互動之一，未解鎖前擋下（`[QA-02f]`）。
+  if (socialLocked(context, '分享訓練成果')) return;
   final ctrl = TextEditingController();
   final ok = await showAppDialog(
     context,

@@ -11,6 +11,7 @@ import '../../widgets/common.dart';
 import '../me/profile_screen.dart';
 import 'compose_post_screen.dart';
 import 'post_detail_screen.dart';
+import 'social_lock.dart';
 
 /// Read Model：社群動態牆 —— 分頁為「關注」與「探索」。
 class FeedScreen extends StatelessWidget {
@@ -57,10 +58,13 @@ class FeedScreen extends StatelessWidget {
                     label: '發文',
                     kind: BtnKind.secondary,
                     icon: Icons.edit_outlined,
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const ComposePostScreen()),
-                    ),
+                    onPressed: () {
+                      if (socialLocked(context, '發文')) return;
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const ComposePostScreen()),
+                      );
+                    },
                   ),
           ),
           Expanded(
@@ -284,6 +288,7 @@ class _PostCard extends StatelessWidget {
                         showToast(context, blocked);
                         return;
                       }
+                      if (socialLocked(context, '按讚')) return;
                       s.toggleLike(post);
                     },
                     child: Row(
@@ -422,6 +427,7 @@ class _CommentBoxState extends State<_CommentBox> {
               showToast(context, blocked);
               return;
             }
+            if (socialLocked(context, '留言')) return;
             s.addComment(widget.post, ctrl.text);
             ctrl.clear();
           },

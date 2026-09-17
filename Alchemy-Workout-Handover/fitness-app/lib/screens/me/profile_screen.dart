@@ -9,6 +9,7 @@ import '../social/follow_list_screen.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/radar_chart.dart';
+import '../social/social_lock.dart';
 
 /// Read Model：使用者個人檔案頁
 /// 服務的 Actor 為「檢視他人檔案者」，故受對方的可見性設定約束。
@@ -132,7 +133,10 @@ class ProfileScreen extends StatelessWidget {
                 Expanded(
                   child: AppButton(
                     label: s.following.contains(name) ? '已關注' : '關注',
-                    onPressed: () => s.toggleFollow(name),
+                    onPressed: () {
+                      if (socialLocked(context, '關注')) return;
+                      s.toggleFollow(name);
+                    },
                     // 已關注＝取消關注，屬破壞性動作，用次要樣式（§4.5）
                     kind: s.following.contains(name)
                         ? BtnKind.secondary
