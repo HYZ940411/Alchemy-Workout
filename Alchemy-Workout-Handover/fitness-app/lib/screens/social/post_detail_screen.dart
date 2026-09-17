@@ -8,6 +8,7 @@ import '../../domain/community.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import 'report_sheet.dart';
+import '../me/profile_screen.dart';
 
 /// 貼文詳情頁（〈發文與互動流程〉）
 ///
@@ -72,7 +73,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      // 整條點進作者的公開檔案（`[QA-02i]`）。
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => openProfile(context, p.author),
+                        child: Row(
                         children: [
                           CircleAvatar(
                             radius: 18,
@@ -98,6 +103,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             ),
                           ),
                         ],
+                      ),
                       ),
                       const SizedBox(height: S.base),
                       Text(p.text, style: T.body()),

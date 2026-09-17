@@ -12,6 +12,20 @@ import '../../widgets/radar_chart.dart';
 
 /// Read Model：使用者個人檔案頁
 /// 服務的 Actor 為「檢視他人檔案者」，故受對方的可見性設定約束。
+/// 開啟某個人的公開檔案。
+///
+/// **這是「看別人」的唯一入口。** 在此之前 [ProfileScreen.viewing] 沒有
+/// 任何呼叫端 —— 畫面做好了、關注按鈕也在，但沒有一條路通到它，
+/// 於是社群裡看到的人點不進去，也就關注不了（`[QA-02i]`）。
+///
+/// 點到自己就開自己的那一頁（沒有「關注自己」這種東西）。
+void openProfile(BuildContext context, String name) {
+  final self = AppScope.of(context).displayName;
+  Navigator.of(context).push(MaterialPageRoute(
+    builder: (_) => ProfileScreen(viewing: name == self ? null : name),
+  ));
+}
+
 class ProfileScreen extends StatelessWidget {
   final String? viewing; // null 表示看自己
   const ProfileScreen({super.key, this.viewing});

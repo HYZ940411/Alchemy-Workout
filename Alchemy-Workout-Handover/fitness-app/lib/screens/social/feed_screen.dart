@@ -8,6 +8,7 @@ import '../../state/app_state.dart';
 import 'report_sheet.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
+import '../me/profile_screen.dart';
 import 'compose_post_screen.dart';
 import 'post_detail_screen.dart';
 
@@ -142,56 +143,70 @@ class _PostCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 17,
-                    backgroundColor: AppColors.surfaceAlt,
-                    child: Text(
-                      post.author.characters.first,
-                      style: const TextStyle(
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
+                  // 頭像與名字點進作者的公開檔案（`[QA-02i]`）——
+                  // 卡片本身點進貼文詳情，兩個觸控區分開；
+                  // 右邊的檢舉鍵留在這個 GestureDetector 之外。
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              post.author,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => openProfile(context, post.author),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 17,
+                            backgroundColor: AppColors.surfaceAlt,
+                            child: Text(
+                              post.author.characters.first,
                               style: const TextStyle(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w800,
                                 fontSize: 14,
-                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            if (post.authorReputation != null) ...[
-                              const SizedBox(width: 6),
-                              Pill('教官 ${post.authorReputation}'),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                '${post.authorRank} 階　·　${_ago(post.at)}'
-                                '　·　${postVisibilityNames[post.visibility]}',
-                                style: T.caption(),
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      post.author,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    if (post.authorReputation != null) ...[
+                                      const SizedBox(width: 6),
+                                      Pill('教官 ${post.authorReputation}'),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        '${post.authorRank} 階　·　'
+                                        '${_ago(post.at)}　·　'
+                                        '${postVisibilityNames[post.visibility]}',
+                                        style: T.caption(),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (post.pendingReview) ...[
+                                      const SizedBox(width: S.sm),
+                                      const TagBadge('審核中'),
+                                    ],
+                                  ],
+                                ),
+                              ],
                             ),
-                            if (post.pendingReview) ...[
-                              const SizedBox(width: S.sm),
-                              const TagBadge('審核中'),
-                            ],
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   IconButton(

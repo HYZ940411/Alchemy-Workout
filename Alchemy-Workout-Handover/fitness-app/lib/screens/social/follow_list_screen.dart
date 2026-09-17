@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
+import '../me/profile_screen.dart';
 
 /// 關注／粉絲清單（〈關注流程〉）
 ///
@@ -89,7 +90,7 @@ class _List extends StatelessWidget {
       children: [
         ListGroup(rows: [
           for (var i = 0; i < names.length; i++)
-            _row(s, names[i], i != names.length - 1),
+            _row(context, s, names[i], i != names.length - 1),
         ]),
         if (footer != null) ...[
           const SizedBox(height: S.base),
@@ -99,7 +100,8 @@ class _List extends StatelessWidget {
     );
   }
 
-  ListRow _row(AppState s, String name, bool divider) {
+  ListRow _row(
+      BuildContext context, AppState s, String name, bool divider) {
     final u = s.userOf(name);
     final followed = s.following.contains(name);
     return ListRow(
@@ -111,6 +113,8 @@ class _List extends StatelessWidget {
       ),
       title: name,
       subtitle: '階級 ${u.rank}　·　綜合 ${u.grade}',
+      // 點整列進他的公開檔案（`[QA-02i]`）。關注鍵在右邊，各自的觸控區。
+      onTap: () => openProfile(context, name),
       // 取消關注屬破壞性動作，用次要樣式（§4.5 R-23）；
       // 兩種狀態共用同一顆按鈕，寬度固定才不會左右跳動。
       trailing: SizedBox(
