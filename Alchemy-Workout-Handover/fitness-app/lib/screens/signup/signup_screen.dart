@@ -280,21 +280,26 @@ class _TermsState extends State<_Terms> {
         child: ListView(
           padding: const EdgeInsets.all(S.base),
           children: [
-            Text('服務條款　${widget.draft.termsVersion}', style: T.h3()),
+            Text('服務條款與隱私權政策　${widget.draft.termsVersion}',
+                style: T.h3()),
             const SizedBox(height: S.md),
-            AppCard(
-              child: Text(
-                '本平台對訓練指導的免責聲明涵蓋五條路徑：\n\n'
-                '一、教官的回答\n'
-                '二、師徒任務的內容\n'
-                '三、其他使用者公開的課表\n'
-                '四、AI 訓練建議（微調 / 調整 / 自動優化 / 替換動作，含快照的預帶重量）\n'
-                '五、平台動作示範內容\n\n'
-                '上述內容僅供參考，不構成醫療或專業訓練建議。'
-                '請依自身狀況調整強度，必要時諮詢專業人員。',
-                style: T.body(),
+            // 逐節一張卡，而不是一整塊文字牆 —— 這一頁有五節近兩千字，
+            // 擠成一段沒有人會讀，而「已閱讀並同意」那個勾選就成了純粹的形式。
+            for (final (heading, body) in kTermsSections) ...[
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (heading.isNotEmpty) ...[
+                      Text(heading, style: T.body(weight: FontWeight.w700)),
+                      const SizedBox(height: S.sm),
+                    ],
+                    Text(body, style: T.body()),
+                  ],
+                ),
               ),
-            ),
+              const SizedBox(height: S.md),
+            ],
           ],
         ),
       ),
