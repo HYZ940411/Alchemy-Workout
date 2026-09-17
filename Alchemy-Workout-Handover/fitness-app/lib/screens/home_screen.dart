@@ -9,6 +9,7 @@ import '../widgets/common.dart';
 import '../widgets/radar_chart.dart';
 import 'daily/mailbox_screen.dart';
 import 'daily/makeup_screen.dart';
+import 'leaderboard_screen.dart';
 import 'radar_screen.dart';
 import 'train/tasks_screen.dart';
 
@@ -197,6 +198,50 @@ class HomeScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const TasksScreen())),
           ),
         ]),
+
+        // --- 排行榜 ---
+        //
+        // `[QA-02j]`：原本只掛在「我的」選單的第 11 項，等於沒有入口。
+        //
+        // 卡片上的**分數是真的**（本機就算得出來），需要後端的只有「名次」。
+        // 所以即使排行榜本身還等著 `[BE-07]`，這張卡仍然說得出真話 ——
+        // 點進去才會看到「尚未開放」，而那也是實話。
+        const SectionTitle('排行榜', trailing: '組別依階級，每 10 階一組'),
+        AppCard(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => Scaffold(
+              backgroundColor: C.bgPage,
+              appBar: AppBar(title: Text('個人排行榜', style: T.h3())),
+              body: const LeaderboardScreen(),
+            ),
+          )),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: StatField(
+                        label: '本週分數', value: '${s.weeklyScore}'),
+                  ),
+                  Expanded(
+                    child: StatField(
+                        label: '本月分數', value: '${s.monthlyScore}'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: S.sm),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('查看名次與本期獎勵', style: T.caption()),
+                  const SizedBox(width: S.xs),
+                  const Icon(Icons.chevron_right,
+                      size: 14, color: C.textSecondary),
+                ],
+              ),
+            ],
+          ),
+        ),
 
         // --- 能力值摘要 ---
         const SectionTitle('六維能力值'),
