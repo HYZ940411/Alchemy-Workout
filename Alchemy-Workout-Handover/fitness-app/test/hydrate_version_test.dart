@@ -19,7 +19,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/data/store.dart';
 import 'package:fitness_app/state/app_state.dart';
-import 'package:fitness_app/state/app_state_snapshot.dart';
 
 Future<MemoryStore> _storeWith(Map<String, dynamic> snapshot) async {
   final store = MemoryStore();
@@ -36,7 +35,7 @@ void main() {
 
       expect(s.hydration, HydrationPhase.failed);
       expect(s.hydrationError, isNotNull);
-      expect(s.hydrationError!.message, contains('版本'));
+      expect(s.hydrationError!.reason, contains('版本'));
     });
 
     test('**原始存檔一個位元都沒被動到** —— 這是最要緊的一條', () async {

@@ -5209,12 +5209,20 @@ class AppState extends ChangeNotifier {
   int get makeupRangeDays => platformConfig.i('makeup', 'days');
 
   /// 距今天數 ＝ 今日當地日期 − 補簽日期（date 相減，不涉時戳）。
-  int daysAgo(DateTime d) {
-    final now = this.now;
-    return DateTime(now.year, now.month, now.day)
-        .difference(DateTime(d.year, d.month, d.day))
-        .inDays;
-  }
+  /// 某一天距今幾天。
+  ///
+  /// **基準是營業日，不是日曆日。** 原本這裡用
+  /// `DateTime(now.year, now.month, now.day)` —— 而 [makeupDaysInRange]
+  /// 是從 `businessDate(now)` 往回數的。當地 00:00–03:59 那四個小時裡，
+  /// 那兩個是不同的一天，於是整份補簽日曆的「距今天數」全部偏移一天：
+  /// 使用者凌晨一點打開補簽頁，看到的日期與能補的日期對不起來。
+  ///
+  /// `clock.dart` 對 [businessDate] 的註解早就寫著這個後果
+  /// （「那段時間以外完全看不出來」）—— 這是那一類漏洞的最後一處，
+  /// 2026-09-19 由 02:13 的一次測試執行照出來。
+  int daysAgo(DateTime d) => businessDate(now)
+      .difference(DateTime(d.year, d.month, d.day))
+      .inDays;
 
   /// 補簽頁的日曆 —— 距今 1 至 N 天，不含今日。**由紀錄推導**，
   /// 逐日走過整個範圍，查得到紀錄的是已簽／已補，查無此筆的就是未簽。
