@@ -585,7 +585,28 @@ class AppState extends ChangeNotifier {
     try {
       final data = await store.load();
       if (data != null) {
-        applySnapshot(data);
+        // **一定要檢查回傳值。**
+        //
+        // applySnapshot 對不上存檔格式版本時「整份忽略並回傳 false」。
+        // 不檢查的後果不是「少讀到一點東西」，而是這一串：
+        //   ① 使用者拿到一個全新的 AppState；
+        //   ② `signUpCompleted` 是欄位預設的 **true**，所以他**看不到註冊流程**；
+        //   ③ 所有集合都是空的（接了後端時 `demo` 為 false），
+        //      所以他的訓練紀錄、簽到、貼文全部「歸零」；
+        //   ④ 300 毫秒後自動存檔把這份空白寫回雲端 —— **真的清掉了**。
+        //
+        // 那四步沒有任何一步會報錯。使用者只會看到「我的進度不見了，
+        // 而且它沒有問我要不要重新註冊」。2026-09-19 由使用者回報。
+        //
+        // 丟 StoreLoadException 走既有的失敗路徑：停在錯誤畫面、
+        // **不呼叫 _finishHydration()**，所以 `_hydrated` 維持 false，
+        // saveNow() 會提早返回 —— 雲端那份原始資料一個位元都不會被動到。
+        if (!applySnapshot(data)) {
+          throw StoreLoadException(
+            '存檔格式版本對不上（存檔 v=${data['v']}，本版 v=$kSnapshotVersion）。'
+            '這份存檔沒有被套用，也沒有被覆寫。',
+          );
+        }
       } else {
         // **沒存過 ＝ 這台裝置上還沒有帳號。**
         //
