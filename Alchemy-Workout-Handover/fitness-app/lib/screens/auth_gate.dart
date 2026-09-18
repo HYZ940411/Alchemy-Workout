@@ -169,7 +169,8 @@ class _AuthGateState extends State<AuthGate> {
       if (postsSrc != null) {
         widget.state.myUid = uid;
         widget.state.postSource = postsSrc;
-        widget.state.applyCloudPosts(await postsSrc.recent(limit: 30));
+        widget.state.applyCloudPosts(
+            await postsSrc.recent(limit: AppState.kPostFeedLimit));
       }
 
       // 私訊。要排在 applyPublicProfiles 之後 —— 對話裡的 uid 要靠

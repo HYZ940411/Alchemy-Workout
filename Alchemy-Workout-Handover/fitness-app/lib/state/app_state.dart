@@ -2064,6 +2064,10 @@ class AppState extends ChangeNotifier {
   /// 雲端的貼文。**空值代表不同步** —— 既有測試走這條。
   PostSource? postSource;
 
+  /// 動態牆一次讀幾篇。登入時的首次載入與下拉重新整理共用同一個值 ——
+  /// 兩邊不一致的話，下拉之後看到的篇數會跟剛登入時不一樣。
+  static const kPostFeedLimit = 30;
+
   /// 我自己的 uid。雲端寫入要帶作者身分；空值代表沒登入或不同步。
   String? myUid;
 
@@ -2083,6 +2087,30 @@ class AppState extends ChangeNotifier {
   /// **併入而非取代**：示範用的貼文還撐著「動態牆長什麼樣」這件事，
   /// 全新的平台上一篇真的貼文都沒有。同一個 ID 以雲端那份為準 ——
   /// 它帶著別人的按讚與留言，本地那份沒有。
+  /// 重新從雲端讀貼文。回傳是否真的讀到了。
+  ///
+  /// **為什麼需要這個**：[applyCloudPosts] 原本只在登入那一刻被呼叫一次
+  /// （見 `AuthGate._syncProfile`），所以 B 已經登入著、A 這時發文，
+  /// **B 看不到** —— 要把 App 完全重新載入才會出現。
+  /// 那是 `[QA-01]` 第 6 項「A 發文了 B 好像沒看到」的前半，
+  /// 假貼文那一半先修掉了，這一半漏到 2026-09-18 才補。
+  ///
+  /// 空值來源（沒接後端、或既有測試）回傳 false，呼叫端據此不顯示下拉。
+  ///
+  /// 這不是即時訂閱。真正的即時要 `.snapshots()`，那會動到整個讀取層，
+  /// 留給 `[BE-07]` 那批一起做（見 PROGRESS.md 第 5 節）。
+  Future<bool> refreshCloudPosts() async {
+    final src = postSource;
+    if (src == null) return false;
+    try {
+      applyCloudPosts(await src.recent(limit: kPostFeedLimit));
+      return true;
+    } catch (_) {
+      // 讀不到就維持畫面上現有的貼文 —— 下拉失敗不該把動態牆清空。
+      return false;
+    }
+  }
+
   void applyCloudPosts(List<Post> cloud) {
     for (final p in cloud) {
       final i = posts.indexWhere((x) => x.id == p.id);
@@ -6003,7 +6031,11 @@ class AppState extends ChangeNotifier {
   // 自訂訓練 Aggregate —— 使用者端的管理頁與管理員端的待審佇列讀同一份
   // ===========================================================================
 
-  late List<CustomPlan> customPlans = buildCustomPlans();
+  /// 自訂訓練。**示範資料裡有 3 份 `isMine: false` 的別人的課表**，
+  /// 而 [resetToNewAccount] 刻意只清「我的」（它保留的是「這個世界」）——
+  /// 於是那 3 份會經 [selectableCustomPlans] 的「全平台已公開」那一類
+  /// 出現在課表選擇頁。這是 `[QA-02e]` 清查時漏掉的第 17 個集合。
+  late List<CustomPlan> customPlans = demo ? buildCustomPlans() : [];
 
   /// 待審的公開課表 —— 佇列的來源即為自訂訓練，不另存一份案件清單。
   List<CustomPlan> get pendingPublicPlans => customPlans

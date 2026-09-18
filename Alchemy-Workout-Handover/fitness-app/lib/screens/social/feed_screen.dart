@@ -103,25 +103,63 @@ class _PostList extends StatelessWidget {
   final String empty;
   const _PostList({required this.posts, required this.empty});
 
+  /// 下拉重新整理。
+  ///
+  /// 貼文原本只在登入那一刻讀一次，所以 B 已經登入著、A 這時發文，
+  /// B 要把 App 完全重新載入才看得到（`[QA-01]` 第 6 項的前半）。
+  ///
+  /// **沒接後端時不掛這個**：示範模式的貼文就在記憶體裡，
+  /// 給一個下拉了什麼都不會變的手勢，比沒有這個手勢更糟。
+  Widget _refreshable(BuildContext context, Widget child) {
+    final s = AppScope.of(context);
+    if (s.postSource == null) return child;
+    return RefreshIndicator(
+      onRefresh: s.refreshCloudPosts,
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (posts.isEmpty) {
-      return EmptyState(
-        icon: Icons.forum_outlined,
-        title: '這裡還沒有貼文',
-        message: empty,
-        action: AppButton(
-          label: '發第一篇',
-          icon: Icons.edit_outlined,
-          onPressed: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const ComposePostScreen())),
+      // 空狀態也要能下拉 —— 「還沒有貼文」與「別人發了但我還沒讀到」
+      // 在畫面上長得一模一樣，而後者正是這次要修的問題。
+      // EmptyState 本身不捲動，所以包一層撐滿高度的可捲區。
+      return _refreshable(
+        context,
+        LayoutBuilder(
+          builder: (context, box) => ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              ConstrainedBox(
+                constraints: BoxConstraints(minHeight: box.maxHeight),
+                child: EmptyState(
+                  icon: Icons.forum_outlined,
+                  title: '這裡還沒有貼文',
+                  message: empty,
+                  action: AppButton(
+                    label: '發第一篇',
+                    icon: Icons.edit_outlined,
+                    onPressed: () {
+                      if (socialLocked(context, '發文')) return;
+                      Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const ComposePostScreen()));
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 50),
-      children: [for (final p in posts) _PostCard(post: p)],
+    return _refreshable(
+      context,
+      ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 50),
+        children: [for (final p in posts) _PostCard(post: p)],
+      ),
     );
   }
 }
