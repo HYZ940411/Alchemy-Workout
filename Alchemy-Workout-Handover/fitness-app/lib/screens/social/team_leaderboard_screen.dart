@@ -97,8 +97,8 @@ class _TeamLeaderboardScreenState extends State<TeamLeaderboardScreen> {
                 if (regroup)
                   AppCard(
                     child: Text(
-                      '重新分隊期（每月前 $kRegroupDays 天）：兩個團隊分數都不累加。'
-                      '個人排行榜分數照常 —— 它限制的是「隊」，不是「練」。',
+                      '重新分隊期（每月前 $kRegroupDays 天）：兩個團隊分數都不累加，'
+                      '個人排行榜分數照常。',
                       style: T.caption(),
                     ),
                   ),
@@ -140,7 +140,7 @@ class _TeamLeaderboardScreenState extends State<TeamLeaderboardScreen> {
                 AppCard(
                   child: Text(
                     '本週期自始至終未達 $kTeamMinSize 人的隊伍不參與排名、也不領獎勵，'
-                    '但分數照常累積 —— 加總本身不需要因人數不足而停止。'
+                    '但分數照常累積。'
                     '曾經達到過 $kTeamMinSize 人的隊伍即使月底跌破，仍保留排名與獎勵資格。',
                     style: T.caption(),
                   ),

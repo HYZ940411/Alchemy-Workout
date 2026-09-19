@@ -126,8 +126,7 @@ class SettingsScreen extends StatelessWidget {
                 if (s.demo) ...[
                   const SizedBox(height: 6),
                   Text(
-                    '不含平台目錄與社群假資料（動作庫、貼文、訂單、團隊、後台佇列）'
-                    '—— 那些在真實系統裡來自伺服器，不是這台裝置上的東西。',
+                    '不含動作庫、貼文、訂單、團隊與後台佇列。',
                     style: T.caption(),
                   ),
                   const SizedBox(height: 14),
@@ -139,7 +138,7 @@ class SettingsScreen extends StatelessWidget {
                         context,
                         title: '清除存檔？',
                         message: '這台裝置上的進度會全部刪除，'
-                            '下次開啟回到最初的假資料。這個動作無法復原。',
+                            '下次開啟回到最初的示範資料。這個動作無法復原。',
                         confirmLabel: '清除',
                         destructive: true,
                       );

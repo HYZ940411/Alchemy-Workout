@@ -83,12 +83,6 @@ class _NoviceTaskScreenState extends State<NoviceTaskScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: S.sm),
-                  Text(
-                    '目標次數由範本給定，不可調整；系統也不驗證你實際做了幾下 ——'
-                    '新手任務是引導，不是考核。勾錯了可以取消。',
-                    style: T.caption(),
-                  ),
                 ],
               ),
             ),

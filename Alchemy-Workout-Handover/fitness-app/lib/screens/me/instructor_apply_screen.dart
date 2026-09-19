@@ -384,8 +384,7 @@ class _Info extends StatelessWidget {
 String? _note(AppState s) => switch (s.instructorStage) {
       InstructorStage.screening => '評分處理中：AI 品質評分失敗，待隔日重跑。',
       InstructorStage.pendingReview =>
-        '簡答題已送出，等管理員人工審核（7 個工作天內完成）。'
-            '逾時不會自動通過 —— 教官是具權限的身分。',
+        '簡答題已送出，等管理員人工審核（7 個工作天內完成）。逾時不會自動通過。',
       InstructorStage.rejected => s.instructorRejectStage == null
           ? '申請已被駁回。'
           : '申請在「${s.instructorRejectStage}」這一關被駁回，'

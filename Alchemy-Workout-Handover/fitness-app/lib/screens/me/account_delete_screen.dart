@@ -89,9 +89,7 @@ class _AccountDeleteScreenState extends State<AccountDeleteScreen> {
                     ),
                   ),
                 Text(
-                  '取消申請時不重設任何計時基準、也不補償期間的損失。'
-                  '停權是平台把人擋在門外，申請刪除是你自己的選擇 ——'
-                  '能力值退步不是懲罰，是量測。',
+                  '取消申請時不重設任何計時基準、也不補償期間的損失。',
                   style: T.caption(),
                 ),
               ],

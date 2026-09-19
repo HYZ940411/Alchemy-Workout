@@ -55,8 +55,8 @@ class _PreferredTimesScreenState extends State<PreferredTimesScreen> {
                 Text('哪些時候你有空可以訓練？', style: T.h3()),
                 const SizedBox(height: S.sm),
                 Text(
-                  '問的是有空，不是你平常幾點練 —— 剛開始練的人多半還沒有固定時間，'
-                  '但答得出自己哪時候有空。以 $kSlotMinutes 分鐘為單位，區間不跨日。',
+                  '問的是有空，不是你平常幾點練。'
+                  '以 $kSlotMinutes 分鐘為單位，區間不跨日。',
                   style: T.caption(),
                 ),
               ],

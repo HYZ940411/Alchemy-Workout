@@ -401,8 +401,7 @@ class _TimedTaskCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: S.sm),
               child: Text(
-                '你今天已經完成過這項任務，但那一次的分數記在前一支隊伍帳上 ——'
-                '中途加入者只貢獻加入後產生的分數。',
+                '你今天已經完成過這項任務，但那一次的分數記在前一支隊伍帳上。',
                 style: T.caption(),
               ),
             ),
@@ -595,8 +594,7 @@ class _TeamSearchState extends State<_TeamSearch> {
               Text(
                 cooling
                     ? '換隊冷卻剩餘 ${_left(s.switchCooldownLeft)}，'
-                        '期間不可申請加入別人的隊。自己開一隊不受冷卻限制 ——'
-                        '新隊沒有既有的名單或分數會被你動到。'
+                        '期間不可申請加入別人的隊。自己開一隊不受冷卻限制。'
                     : '可以自己開一隊，也可以申請加入公開團隊或等待隊長邀請。',
                 style: const TextStyle(
                     color: AppColors.textDim, fontSize: 12.5, height: 1.5),
