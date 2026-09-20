@@ -202,6 +202,46 @@ void main() {
       expect(sent, names, reason: '送的必須是他眼前這一份，不是別的課表');
     });
 
+    test('看不出意圖時不猜、不扣點、不產建議', () async {
+      // 使用者打「早安」也換來一份降強度的課表並被扣一點 —— 他從頭到尾
+      // 沒要求調整強度。猜錯的代價不是保守與否，是做了他沒要求的事還收了錢。
+      final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
+      final s = AppState()..aiSource = fake;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      final before = s.aiTotal;
+      s.aiRequest(AiSource.beforeTraining, '早安');
+      s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
+
+      expect(s.aiStage[AiSource.beforeTraining], AiStage.clarifying,
+          reason: '停在追問，不往下走');
+      expect(s.aiIntent[AiSource.beforeTraining], isNull);
+      expect(s.aiTotal, before, reason: '未扣點');
+      expect(fake.sent, isNull, reason: '根本不該呼叫模型');
+      expect(s.aiConversations[AiSource.beforeTraining]!.last.text,
+          contains('看不出你想往哪個方向調'));
+    });
+
+    test('再問一次答得出來就繼續', () async {
+      final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
+      final s = AppState()..aiSource = fake;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '早安');
+      s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
+      s.aiConfirmDemand(AiSource.beforeTraining, '減少組數');
+
+      expect(s.aiStage[AiSource.beforeTraining], AiStage.analyzing);
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
+    });
+
+    test('parseIntent 認得出三個方向，認不出的回空值', () {
+      expect(AppState.parseIntent('整體降強度'), AdjustIntent.easier);
+      expect(AppState.parseIntent('想加重一點'), AdjustIntent.harder);
+      expect(AppState.parseIntent('組數少一點'), AdjustIntent.trim);
+      expect(AppState.parseIntent('早安'), isNull);
+      expect(AppState.parseIntent('我早餐吃蘑菇麵'), isNull);
+      expect(AppState.parseIntent(''), isNull);
+    });
+
     test('使用者原本那幾句話會送給模型 —— 不再被丟掉', () async {
       final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
       final s = AppState()..aiSource = fake;

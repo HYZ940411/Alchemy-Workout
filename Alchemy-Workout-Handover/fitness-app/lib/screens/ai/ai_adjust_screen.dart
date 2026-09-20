@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../design/tokens.dart';
+import '../../domain/ai_adjust.dart';
 import '../../domain/community.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
@@ -373,47 +374,73 @@ class _Composer extends StatelessWidget {
             ],
           ));
         }
-        return wrap(Row(
+        return wrap(Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: TextField(
-                controller: ctrl,
-                style: T.body(),
-                minLines: 1,
-                maxLines: 4,
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: stage == AiStage.idle ? '想怎麼調整？' : '回答 AI 的問題…',
-                  hintStyle: T.body(color: C.textSecondary),
-                  filled: true,
-                  fillColor: C.bgPage,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: S.base, vertical: S.md),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(22),
-                    borderSide: BorderSide.none,
+            // 追問階段直接給三顆按鈕。**打字不是必要的** ——
+            // 意圖本來就只有三個值，讓人用猜的去打字，猜不中就換來
+            // 一句「我看不懂」，那是把系統的限制變成使用者的問題。
+            if (stage == AiStage.clarifying) ...[
+              Wrap(
+                spacing: S.sm,
+                runSpacing: S.sm,
+                children: [
+                  for (final i in AdjustIntent.values)
+                    OutlinedButton(
+                      onPressed: () {
+                        state.aiConfirmDemand(source, adjustIntentNames[i]!);
+                        onSent();
+                      },
+                      child: Text(adjustIntentNames[i]!, style: T.caption()),
+                    ),
+                ],
+              ),
+              const SizedBox(height: S.sm),
+            ],
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: ctrl,
+                    style: T.body(),
+                    minLines: 1,
+                    maxLines: 4,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: stage == AiStage.idle ? '想怎麼調整？' : '回答 AI 的問題…',
+                      hintStyle: T.body(color: C.textSecondary),
+                      filled: true,
+                      fillColor: C.bgPage,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: S.base, vertical: S.md),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(22),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: S.sm),
-            SizedBox(
-              width: Sz.tapTarget,
-              height: Sz.tapTarget,
-              child: IconButton(
-                onPressed: () {
-                  final text = ctrl.text.trim();
-                  if (text.isEmpty) return;
-                  if (stage == AiStage.idle) {
-                    state.aiRequest(source, text);
-                  } else {
-                    state.aiConfirmDemand(source, text);
-                  }
-                  ctrl.clear();
-                  onSent();
-                },
-                icon: const Icon(Icons.send_rounded, color: C.actionPrimary),
-              ),
+                const SizedBox(width: S.sm),
+                SizedBox(
+                  width: Sz.tapTarget,
+                  height: Sz.tapTarget,
+                  child: IconButton(
+                    onPressed: () {
+                      final text = ctrl.text.trim();
+                      if (text.isEmpty) return;
+                      if (stage == AiStage.idle) {
+                        state.aiRequest(source, text);
+                      } else {
+                        state.aiConfirmDemand(source, text);
+                      }
+                      ctrl.clear();
+                      onSent();
+                    },
+                    icon: const Icon(Icons.send_rounded, color: C.actionPrimary),
+                  ),
+                ),
+              ],
             ),
           ],
         ));

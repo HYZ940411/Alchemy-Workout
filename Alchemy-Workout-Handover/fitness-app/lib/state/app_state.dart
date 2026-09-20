@@ -4839,9 +4839,13 @@ class AppState extends ChangeNotifier {
     return said.length > 200 ? said.substring(0, 200) : said;
   }
 
-  /// 從使用者的回答解析出意圖。認不出來時取「整體降強度」——
-  /// 這是三者中最保守的一個，猜錯的代價最小。
-  static AdjustIntent parseIntent(String answer) {
+  /// 從使用者的回答解析出意圖。**認不出來就回空值，不猜。**
+  ///
+  /// 原本認不出來時一律取「整體降強度」，理由是「三者中最保守，
+  /// 猜錯的代價最小」。那個推論是錯的：使用者打「早安」也會換來一份
+  /// 降強度的課表**並且被扣一點**，而他從頭到尾沒要求調整強度。
+  /// 猜錯的代價不是保守與否，是**做了他沒要求的事還收了錢**。
+  static AdjustIntent? parseIntent(String answer) {
     final a = answer.trim();
     for (final i in AdjustIntent.values) {
       if (a.contains(adjustIntentNames[i]!)) return i;
@@ -4852,7 +4856,7 @@ class AppState extends ChangeNotifier {
     if (a.contains('少') || a.contains('減') || a.contains('組')) {
       return AdjustIntent.trim;
     }
-    return AdjustIntent.easier;
+    return null;
   }
 
   /// 本次調整的意圖與建議，逐來源各一份。
@@ -4971,7 +4975,19 @@ class AppState extends ChangeNotifier {
   void aiConfirmDemand(AiSource src, String answer) {
     if (aiStage[src] != AiStage.clarifying) return;
     _say(src, AiTurnRole.user, answer);
-    aiIntent[src] = parseIntent(answer);
+
+    final intent = parseIntent(answer);
+    if (intent == null) {
+      // **不推進階段、不扣點、不產建議。** 寧可再問一次，也不要送出
+      // 一份使用者沒要求的課表 —— 他會照著那份練。
+      _say(src, AiTurnRole.ai,
+          '抱歉，我看不出你想往哪個方向調。請從這三個裡挑一個：'
+          '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
+          '本次未扣點。');
+      notifyListeners();
+      return;
+    }
+    aiIntent[src] = intent;
     aiStage[src] = AiStage.analyzing;
     notifyListeners();
   }
