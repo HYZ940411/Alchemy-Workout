@@ -16,6 +16,7 @@ import 'package:http/testing.dart';
 
 import 'package:fitness_app/data/ai_suggestion.dart';
 import 'package:fitness_app/data/ai_suggestion_http.dart';
+import 'package:fitness_app/domain/ability.dart';
 import 'package:fitness_app/domain/ai_adjust.dart';
 import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/models.dart';
