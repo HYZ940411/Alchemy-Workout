@@ -148,7 +148,7 @@ flutter build macos --release
       **都已實作並測過**，只差真的送出去 —— 投資報酬最高的一項
 - [ ] 【CC】`[BE-07]` 評分邏輯搬上 Cloud Functions。
       **務必保持只有一份實作**（見第 6 節第 3 條）—— 移植成兩份是這個專案最可能踩的坑
-- [ ] 【CC】`[BE-08]` 接 Gemini API 取代本地規則引擎。
+- [x] 【CC】`[BE-08]` 接 Gemini API 取代本地規則引擎。 ✅2026-09-20
       對話介面、扣點、失敗退點、重試都已做好，換掉後端即可
 - [ ] 【人→CC】`[BE-09]` App Check ＋ Secret Manager。
       **若先做手機簡訊驗證，這項要提前** —— 簡訊被刷是真的會付錢
@@ -372,7 +372,6 @@ flutter build macos --release
    檢舉裁決、私訊回覆）。目前靠「我的 → 流程示範 → 模擬對方」控制台代打 ——
    那個控制台不繞過任何 Precondition，只是代替對方按送出。等 `[BE-04]`。
 3. **沒有帳號系統。** 換裝置或清瀏覽器資料就從頭開始。
-4. **AI 調整是本地規則引擎**（降強度／升強度／減組數），不是 Gemini。等 `[BE-08]`。
 5. **通知只在 App 內**，沒有真的推播。等 `[BE-06]`。
 
 ### 資料與文件
@@ -627,3 +626,5 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-20 | **修掉一個既有的免費點數 bug（`aiFail` 無條件退點）。** 接外部 AI 時新寫的測試踩到：`aiFail()` 只要 `aiCostsCredit(src)` 就退 1 點，但**扣點的時機是「成功產出建議時」**，而失敗可能發生在那之前 —— 畫面上的「模擬逾時」按鈕就顯示在 `AiStage.analyzing`（`aiProduceSuggestion` 還沒跑、還沒扣），接了外部 API 之後網路錯誤也一樣。結果是**使用者每失敗一次就白賺一點 AI 點數**。修法：新增 `aiCharged` 旗標記錄「這一輪有沒有真的扣過」，`aiFail` 只退真的扣過的，訊息也跟著分「已扣的點數已退還」與「本次未扣點」；`aiAccept` 與 `aiReset` 清旗標（接受之後那一點就定了，不該被之後的失敗退掉）。**這個 bug 活到現在的原因很具體：既有測試沒有任何一條呼叫過 `aiFail`**，那條路從來沒被測過。`test/ai_source_test.dart` 增至 18 條，其中 3 條專門釘這件事 |
 | 2026-09-20 | **`[BE-08]` Worker 已部署，前端已接線。** 端點 `https://alchemy-workout-ai.alchemy-workout-ntub.workers.dev`（Cloudflare 免費方案，未綁信用卡，`[BE-10]` 升 Blaze 因此**不再是 `BE-08` 的前置**）。部署後煙霧測試三項全過：無 token 回 401、假 token 也回 401（代表 JWT 驗證真的在跑，不是只看有沒有標頭）、CORS 預檢只放行 `https://alchemy-workout.web.app`。`AuthService` 新增 `idToken()`（讓 `firebase_auth` 留在 `lib/data/` 裡，`ai_suggestion_http.dart` 不必知道它存在）；`FitnessApp` 與 `AuthGate` 新增選用 `aiSource`，登入後設給 `AppState`；`main.dart` 注入 `HttpAiSuggestionSource`。**空值仍代表走端內規則，既有測試零改動。** 過程中踩到兩個環境問題並記錄於 `workers/README.md`：(1) Codespaces 沒有瀏覽器且 OAuth 回呼指向容器內的 `localhost:8976`，`wrangler login` 必定逾時 —— 改在 Mac 上部署（`workers/` 是純 TypeScript，不需要 Flutter）；(2) macOS 的 zsh 互動模式預設不把 `#` 當註解，給指令時不可加行末註解。**待驗證**：`flutter analyze`／`flutter test`（預期 1,498）、以及登入後實際跑一次調整確認回傳 `source: gemini`。**在實際跑通之前，手冊第 3 章仍不得寫入 Gemini** |
 | 2026-09-20 | `[BE-08]` 前端接線**已驗證**：Codespaces `flutter analyze` 乾淨、`flutter test --timeout 90s` **1,498 passed**。尚未部署 Web 版，也**尚未實際跑通一次 Gemini 呼叫** —— 在那之前手冊第 3 章不得寫入 Gemini。**注意**：Worker 的 CORS 只放行 `https://alchemy-workout.web.app`，Firebase Hosting 另一個網域 `alchemy-workout.firebaseapp.com` 會被擋，測試時要用 `.web.app` 那個 |
+| 2026-09-20 | **`[BE-08]` 完成並上線。** 使用者實測通過：Web 版部署後登入、跑一次訓練調整，建議由 Gemini 產生。第 5 節第 4 條「AI 調整是本地規則引擎，不是 Gemini」依該節規定移除。**與原始設計的兩處偏離**：(1) 代理跑在 **Cloudflare Workers** 而非 Cloud Functions —— 兩者解的是同一個問題（金鑰不能放前端），而前者免費方案不需綁信用卡，故 `[BE-10]` 升 Blaze 不再是 `BE-08` 的前置（但仍是 `[BE-07]` 的前置）；(2) **沒有 RAG**。規格原本寫「檢索增強生成接地技術」，但實作送給模型的是使用者當前課表，不是從知識庫檢索，因此手冊第 3 章不寫 RAG。**防幻覺改以伺服器端驗證達成**：`clamp()` 拿模型輸出逐項對照送上去的課表，索引／名稱對不上、組數超過原本 +2、重量偏離原值 ±50%、次數不在 1–50 者一律丟棄，整份不合格則退回本地規則引擎 —— 使用者永遠拿得到可用的建議 |
+| 2026-09-20 | **系統手冊第 3 章第五輪：Gemini 寫回去。** 前四輪為「只寫做完的」而移除 AI 相關敘述，現在它真的在跑，依同一原則寫回。累計 **133 筆編輯、23 段**，字數 2,637 → **2,825（+188）**。三階段第三段由「資料上雲與安全性」改為「**資料上雲與 AI 整合**」；段 456 補上 Gemini 模型、Cloudflare Workers 代理、金鑰不在前端、伺服器端逐項驗證與退回本地規則；段 467「AI 推理引擎」回復並補「呼叫經自建代理服務轉發，金鑰不置於前端」；段 478 改為「訓練調整建議引擎」；3-3 後端技術補 Google AI Studio (Gemini API) 與 Cloudflare Workers，安全性防護補「AI 金鑰由自建代理服務保管」。**RAG／Cloud Functions／Serverless／FCM／App Check／Secret Manager／Postman／iOS／艾佛烈效應仍全數不出現**，章內也仍無「規劃」「尚未」等字樣 |
