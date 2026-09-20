@@ -57,7 +57,7 @@ export default {
       : null;
     if (!uid) return fail(401, "請先登入。", origin);
 
-    let body: {intent?: unknown; exercises?: unknown};
+    let body: {intent?: unknown; exercises?: unknown; note?: unknown};
     try {
       body = await req.json();
     } catch {
@@ -66,6 +66,9 @@ export default {
 
     const intent = body.intent;
     const exercises = body.exercises as PlanExercise[] | undefined;
+    // 使用者自己打的話。非字串一律當作沒有 —— 這是外部輸入，
+    // 型別都不對的東西沒必要送進 prompt。
+    const note = typeof body.note === "string" ? body.note : undefined;
     if (!isIntent(intent)) return fail(400, "intent 不合法。", origin);
     if (!Array.isArray(exercises) || exercises.length === 0) {
       return fail(400, "課表是空的。", origin);
@@ -74,7 +77,8 @@ export default {
     let source = "rule";
     let changes = ruleFallback(exercises, intent);
     try {
-      const fromModel = await askGemini(exercises, intent, env.GEMINI_API_KEY);
+      const fromModel =
+        await askGemini(exercises, intent, env.GEMINI_API_KEY, note);
       // 模型全軍覆沒（整份都沒通過驗證）時不讓使用者空手而回。
       if (fromModel.length > 0) {
         source = "gemini";

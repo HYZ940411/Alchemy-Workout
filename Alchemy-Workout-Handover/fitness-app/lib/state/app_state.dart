@@ -4806,8 +4806,10 @@ class AppState extends ChangeNotifier {
       return;
     }
     _say(src, AiTurnRole.user, demand);
-    // AI 已再次確認需求。選項寫死是刻意的：本專案不接外部 LLM，
-    // 追問的作用是取得一個明確的意圖，讓建議產得出來。
+    // 追問的作用是取得一個明確的**意圖**（三值列舉），建議才產得出來。
+    // 接上 Gemini（`[BE-08]`）之後，使用者原本的那幾句話會連同意圖
+    // 一起送給模型當脈絡（見 [_aiNote]）—— 但意圖本身仍限三選一，
+    // 而伺服器端的逐項驗證在模型回話之後才跑，使用者寫什麼都越不過去。
     _say(src, AiTurnRole.ai,
         '了解。${switch (src) {
           AiSource.beforeTraining => '這份課表',
@@ -4818,6 +4820,23 @@ class AppState extends ChangeNotifier {
         '（${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}）');
     aiStage[src] = AiStage.clarifying;
     notifyListeners();
+  }
+
+  /// 使用者在這段對話裡自己打的話。
+  ///
+  /// **只取使用者說的，不含系統與 AI 的回話**，也濾掉「整體降強度」那種
+  /// 單純在回答三選一的句子 —— 那已經表達成 [aiIntent] 了，再送一次
+  /// 只是佔篇幅。截斷到 200 字：這是要送進 prompt 的外部輸入，
+  /// 不設上限等於讓使用者決定 prompt 有多長。
+  String? _aiNote(AiSource src) {
+    final names = adjustIntentNames.values.toSet();
+    final said = aiConversations[src]!
+        .where((t) => t.role == AiTurnRole.user)
+        .map((t) => t.text.trim())
+        .where((t) => t.isNotEmpty && !names.contains(t))
+        .join('\n');
+    if (said.isEmpty) return null;
+    return said.length > 200 ? said.substring(0, 200) : said;
   }
 
   /// 從使用者的回答解析出意圖。認不出來時取「整體降強度」——
@@ -4991,7 +5010,11 @@ class AppState extends ChangeNotifier {
     RemoteSuggestion got;
     try {
       got = await remote.suggest(
-          exercises: target, intent: intent, onlyFrom: from);
+        exercises: target,
+        intent: intent,
+        onlyFrom: from,
+        note: _aiNote(src),
+      );
     } catch (_) {
       // 逾時與服務錯誤在使用者眼裡沒有差別，都是「這次沒成功」。
       aiFail(src, AiFailReason.serviceError);

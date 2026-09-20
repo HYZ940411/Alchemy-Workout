@@ -40,6 +40,7 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
     required List<PlanExercise> exercises,
     required AdjustIntent intent,
     int onlyFrom = 0,
+    String? note,
   }) async {
     final token = await idToken();
     if (token == null || token.isEmpty) {
@@ -56,6 +57,7 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
           },
           body: jsonEncode({
             'intent': intent.name,
+            if (note != null && note.isNotEmpty) 'note': note,
             ...encodePlan(exercises, onlyFrom),
           }),
         )

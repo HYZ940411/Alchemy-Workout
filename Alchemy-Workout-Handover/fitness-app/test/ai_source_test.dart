@@ -34,8 +34,13 @@ class _FakeSource implements AiSuggestionSource {
     required List<PlanExercise> exercises,
     required AdjustIntent intent,
     int onlyFrom = 0,
+    String? note,
   }) async {
-    sent = {'intent': intent.name, ...encodePlan(exercises, onlyFrom)};
+    sent = {
+      'intent': intent.name,
+      if (note != null) 'note': note,
+      ...encodePlan(exercises, onlyFrom),
+    };
     if (throws) throw Exception('逾時');
     final data = reply!;
     return RemoteSuggestion(
@@ -197,6 +202,41 @@ void main() {
       expect(sent, names, reason: '送的必須是他眼前這一份，不是別的課表');
     });
 
+    test('使用者原本那幾句話會送給模型 —— 不再被丟掉', () async {
+      final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
+      final s = AppState()..aiSource = fake;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.duringTraining, '幫我保留一個動作就好');
+      s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
+
+      await s.aiProduceSuggestionAsync(AiSource.duringTraining);
+
+      expect(fake.sent!['note'], '幫我保留一個動作就好');
+      expect(fake.sent!['intent'], 'trim', reason: '意圖仍然只有三選一');
+    });
+
+    test('只回答三選一時不送 note —— 那已經表達成 intent 了', () async {
+      final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
+      final s = AppState()..aiSource = fake;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.duringTraining, '整體降強度');
+      s.aiConfirmDemand(AiSource.duringTraining, '整體降強度');
+
+      await s.aiProduceSuggestionAsync(AiSource.duringTraining);
+      expect(fake.sent!.containsKey('note'), isFalse);
+    });
+
+    test('補充過長時截斷 —— 不讓使用者決定 prompt 有多長', () async {
+      final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
+      final s = AppState()..aiSource = fake;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.duringTraining, '很' * 500);
+      s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
+
+      await s.aiProduceSuggestionAsync(AiSource.duringTraining);
+      expect((fake.sent!['note'] as String).length, 200);
+    });
+
     test('模型回的建議會取代端內規則的結果', () async {
       final base = AppState()
         ..startWorkout(AppState()
@@ -291,6 +331,32 @@ void main() {
 
       expect(seen.headers['Authorization'], 'Bearer tok');
       expect(jsonDecode(seen.body)['intent'], 'easier');
+    });
+
+    test('使用者自己打的話會一起送出去', () async {
+      late http.Request seen;
+      final s = src(MockClient((r) async {
+        seen = r;
+        return http.Response(
+            jsonEncode({'source': 'rule', 'changes': []}), 200);
+      }));
+      await s.suggest(
+        exercises: _plan(),
+        intent: AdjustIntent.trim,
+        note: '幫我保留一個動作就好',
+      );
+      expect(jsonDecode(utf8.decode(seen.bodyBytes))['note'], '幫我保留一個動作就好');
+    });
+
+    test('沒有補充時不送 note 這個欄位', () async {
+      late http.Request seen;
+      final s = src(MockClient((r) async {
+        seen = r;
+        return http.Response(
+            jsonEncode({'source': 'rule', 'changes': []}), 200);
+      }));
+      await s.suggest(exercises: _plan(), intent: AdjustIntent.easier);
+      expect(jsonDecode(seen.body).containsKey('note'), isFalse);
     });
 
     test('沒登入就不送出去 —— 不浪費一趟往返', () async {

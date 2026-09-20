@@ -37,10 +37,15 @@ abstract class AiSuggestionSource {
   ///
   /// [onlyFrom] 之前的動作已經練完了，不送上去也不調整。
   /// 擲出例外代表這一次失敗 —— 呼叫端應走既有的「已扣點後退還」流程。
+  ///
+  /// [note] 是**使用者自己打的那幾句話**。原樣送給模型當作額外脈絡，
+  /// 但它**不能推翻任何驗證規則** —— 伺服器端的逐項驗證在模型回話之後
+  /// 才跑，使用者寫什麼都越不過去。
   Future<RemoteSuggestion> suggest({
     required List<PlanExercise> exercises,
     required AdjustIntent intent,
     int onlyFrom = 0,
+    String? note,
   });
 }
 
