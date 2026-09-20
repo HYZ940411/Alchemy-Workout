@@ -9,14 +9,39 @@ Cloudflare Workers 免費方案不需要，是同一個問題的另一種解法�
 
 ## 部署
 
+### 在 Codespaces（沒有瀏覽器）
+
+`wrangler login` 走 OAuth —— 它開瀏覽器、然後在**容器內部的**
+`localhost:8976` 等回呼。Codespaces 兩個條件都不成立，必定逾時。
+改用 API token：
+
+1. https://dash.cloudflare.com/profile/api-tokens → Create Token
+2. 選 **Edit Cloudflare Workers** 範本 → Continue → Create Token
+3. 複製那串（只會顯示一次）
+
 ```bash
 cd workers
 npm install
-npx wrangler login                    # 瀏覽器授權，不用信用卡
+export CLOUDFLARE_API_TOKEN='貼在這裡'    # 不要寫進任何檔案
 
-# 金鑰。這個指令會在終端機提示你貼上，只存在 Cloudflare，不進版控
+# 金鑰。會在終端機提示你貼上，只存在 Cloudflare，不進版控
 npx wrangler secret put GEMINI_API_KEY
 
+npx wrangler deploy
+```
+
+帳號不只一個時 wrangler 會要你指定，再加：
+
+```bash
+export CLOUDFLARE_ACCOUNT_ID='dash 網址 /accounts/ 後面那一段'
+```
+
+### 在有瀏覽器的機器上
+
+```bash
+cd workers && npm install
+npx wrangler login
+npx wrangler secret put GEMINI_API_KEY
 npx wrangler deploy
 ```
 
