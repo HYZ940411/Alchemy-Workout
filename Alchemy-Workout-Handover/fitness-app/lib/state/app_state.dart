@@ -2020,6 +2020,9 @@ class AppState extends ChangeNotifier {
   void applyPublicProfiles(List<PublicProfile> others) {
     for (final p in others) {
       nameByUid[p.uid] = p.displayName;
+      // **整份留著**。只取 rank 與 grade 的話，六維明細就在這裡被丟掉了，
+      // 而檔案頁上的雷達圖需要它 —— 拿不到就只能顯示我自己的，那是錯的。
+      publicProfiles[p.displayName] = p;
       if (socialUsers.any((u) => u.name == p.displayName)) continue;
       socialUsers.add(SocialUser(
         name: p.displayName,
@@ -2032,6 +2035,66 @@ class AppState extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  /// 別人的公開檔案，依暱稱索引（[BE-11] 批次 1）。
+  ///
+  /// **只有雲端同步過的人在裡面。** 示範用的那幾位不在 —— 對他們
+  /// [abilityOf] 會回空值，而畫面必須把「沒有資料」畫成沒有資料。
+  final Map<String, PublicProfile> publicProfiles = {};
+
+  /// 某人的粉絲數。看自己請用 [followerCount]。
+  int followersOf(String name) =>
+      _mine(name) ? followerCount : (otherFollowerCounts[name] ?? 0);
+
+  /// 某人在檔案頁上該顯示的六維能力值。
+  ///
+  /// **回空值代表「我這裡沒有他的六維明細」**，可能是對方關掉了對外可見，
+  /// 也可能是他根本不在公開檔案裡。兩種情況都不該拿我自己的點數頂上 ——
+  /// 那會讓每個人的檔案頁長得跟我一模一樣。
+  Map<Dim, int>? abilityOf(String name) {
+    if (_mine(name)) return points;
+    // 教官身分讓兩個可見度開關失效（〈使用者 Aggregate〉的規定），
+    // 所以教官一律看得到六維。
+    final ins = instructors.where((i) => i.name == name).firstOrNull;
+    if (ins != null) return ins.ability;
+    return publicProfiles[name]?.ability;
+  }
+
+  /// 某人的綜合能力等級。回空值代表對方未公開。
+  String? gradeOf(String name) {
+    if (_mine(name)) return overallGrade(points);
+    final a = abilityOf(name);
+    if (a != null) return overallGrade(a);
+    final p = publicProfiles[name];
+    if (p != null) return p.grade;
+    // 示範用的使用者沒有六維明細，但帶著綜合等級。
+    return socialUsers.any((u) => u.name == name) ? userOf(name).grade : null;
+  }
+
+  /// 某人的階級。
+  int rankOf(String name) {
+    if (_mine(name)) return rank;
+    final ins = instructors.where((i) => i.name == name).firstOrNull;
+    return ins?.rank ?? publicProfiles[name]?.rank ?? userOf(name).rank;
+  }
+
+  /// 某人的教官聲望。非教官回空值。
+  int? reputationOf(String name) {
+    if (_mine(name)) return isInstructor ? instructorReputation : null;
+    final ins = instructors.where((i) => i.name == name).firstOrNull;
+    return ins?.reputation ?? publicProfiles[name]?.reputation;
+  }
+
+  /// 某人在檔案頁上該列出的貼文。
+  ///
+  /// **看別人只列公開的**：僅關注者與私人兩種可見範圍是發文者指定的，
+  /// 檔案頁不是繞過它的後門。看自己則三種都列 —— 那本來就是我的東西。
+  List<Post> postsBy(String name) => posts
+      .where((p) =>
+          !p.deleted &&
+          p.author == name &&
+          (_mine(name) || p.visibility == PostVisibility.public))
+      .toList();
 
   /// 暱稱 → uid。[nameByUid] 的反查 —— 畫面上拿得到的是暱稱，
   /// 而雲端要的是 uid。
@@ -4116,6 +4179,47 @@ class AppState extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  /// 開一段與這個人的對話 —— 已經有就用既有那段，沒有就開一段新的。
+  ///
+  /// 在此之前**沒有任何地方開得了新對話**：`conversations` 只從示範資料
+  /// 或雲端來，於是「私訊」這件事只能回覆別人先發起的對話。
+  ///
+  /// 單方刪除過的對話會重新出現在我這一側：我主動要找他講話，
+  /// 就不該還把它藏著 —— 對方那一側本來也沒被刪過。
+  ///
+  /// **不受新手任務閘門約束。** 規格鎖的是發文、按讚、留言、分享、關注
+  /// 五項，私訊不在其中。封鎖與停權由呼叫端各自判斷。
+  Conversation conversationWith(String name) {
+    final i = conversations.indexWhere((c) => c.peer == name);
+    if (i >= 0) {
+      final c = conversations[i];
+      if (c.deletedByMe) {
+        c.deletedByMe = false;
+        notifyListeners();
+      }
+      return c;
+    }
+    final conv = Conversation(
+      id: _nextConversationId(),
+      peer: name,
+      peerRank: rankOf(name),
+      peerIsInstructor: instructors.any((x) => x.name == name),
+    );
+    conversations.add(conv);
+    notifyListeners();
+    return conv;
+  }
+
+  /// 本機對話 ID。雲端那一份的 ID 由兩個 uid 合成（見 [_cloudConvId]），
+  /// 這裡只要在本機不撞號就好。
+  String _nextConversationId() {
+    var n = conversations.length + 1;
+    while (conversations.any((c) => c.id == 'c$n')) {
+      n++;
+    }
+    return 'c$n';
   }
 
   /// 使用者已刪除對話。單方刪除，對方仍可見；訊息本身不可刪除。

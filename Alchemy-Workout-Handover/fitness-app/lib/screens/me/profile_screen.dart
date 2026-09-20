@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../domain/ability.dart';
 import '../../domain/rank.dart';
 import '../../design/skeleton.dart';
 import '../../state/app_state.dart';
@@ -9,6 +8,7 @@ import '../social/follow_list_screen.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/radar_chart.dart';
+import '../social/chat_screen.dart';
 import '../social/social_lock.dart';
 
 /// Read Model：使用者個人檔案頁
@@ -20,6 +20,13 @@ import '../social/social_lock.dart';
 /// 於是社群裡看到的人點不進去，也就關注不了（`[QA-02i]`）。
 ///
 /// 點到自己就開自己的那一頁（沒有「關注自己」這種東西）。
+///
+/// **這一頁整頁的資料都要跟著 [ProfileScreen.viewing] 走。**
+/// 入口補好之後（`[QA-02i]`）畫面終於點得進去，才看得出裡面的欄位
+/// 幾乎全部讀的是 `s.` —— 我自己的階級、我自己的粉絲數、我自己的
+/// 六維點數、動態牆上的前兩則貼文。於是每個人的檔案頁長得一模一樣，
+/// 而且顯示的是看的人自己。與 `[QA-02f]`／`[QA-02i]` 同一種病：
+/// 每一塊各自是對的，接縫是斷的。
 void openProfile(BuildContext context, String name) {
   final self = AppScope.of(context).displayName;
   Navigator.of(context).push(MaterialPageRoute(
@@ -36,9 +43,15 @@ class ProfileScreen extends StatelessWidget {
     final s = AppScope.of(context);
     final isSelf = viewing == null;
     final name = viewing ?? s.displayName;
-    // 他人檢視時受可見性設定約束；本人一律看得到。
-    final showDims = isSelf || s.abilityPublic;
-    final showOverall = isSelf || s.overallGradePublic;
+    // **可見度不是由我這邊的開關決定的。** 原本寫 `s.abilityPublic`，
+    // 那是「我要不要公開我的」，拿來決定「我看不看得到他的」是反的。
+    // 對方公開了什麼，就由我們手上有沒有他那份資料如實反映。
+    final ability = s.abilityOf(name);
+    final grade = s.gradeOf(name);
+    final reputation = s.reputationOf(name);
+    final isInstructor =
+        isSelf ? s.isInstructor : s.instructors.any((i) => i.name == name);
+    final myPosts = s.postsBy(name);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -79,7 +92,7 @@ class ProfileScreen extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    if (s.isInstructor && isSelf) ...[
+                    if (isInstructor) ...[
                       const SizedBox(width: 8),
                       const Pill('教官'),
                     ],
@@ -91,38 +104,46 @@ class ProfileScreen extends StatelessWidget {
                     Expanded(
                       child: StatTile(
                         label: '階級',
-                        value: '${s.rank}',
+                        value: '${s.rankOf(name)}',
                         unit: '/ 99',
                       ),
                     ),
                     Expanded(
                       // 粉絲數為儲存欄位，點進去看的是關注關係本身。
+                      // **只有自己那一頁點得進去** —— 那份清單是我的關注
+                      // 與我的粉絲，掛在別人的粉絲數上會開出不相干的東西。
                       child: GestureDetector(
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                const FollowListScreen(initialTab: 1),
-                          ),
-                        ),
+                        onTap: isSelf
+                            ? () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const FollowListScreen(initialTab: 1),
+                                  ),
+                                )
+                            : null,
                         behavior: HitTestBehavior.opaque,
                         child: StatTile(
                           label: '粉絲數',
-                          value: '${s.followerCount}',
+                          value: '${s.followersOf(name)}',
                         ),
                       ),
                     ),
-                    if (s.isInstructor)
+                    if (reputation != null)
                       Expanded(
                         child: StatTile(
                           label: '聲望點數',
-                          value: '${s.instructorReputation}',
+                          value: '$reputation',
                           valueColor: C.accentDeep,
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                ProgressBar(value: rankProgressOf(s.totalExp).ratio),
+                // 階級進度要有對方的累積經驗值才畫得出來，而公開檔案
+                // 不含那個欄位 —— 畫一條看自己的進度掛在別人名下是錯的。
+                if (isSelf) ...[
+                  const SizedBox(height: 12),
+                  ProgressBar(value: rankProgressOf(s.totalExp).ratio),
+                ],
               ],
             ),
           ),
@@ -144,6 +165,29 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
+                Expanded(
+                  child: AppButton(
+                    label: '開始聊天',
+                    kind: BtnKind.secondary,
+                    // 私訊**不受新手任務閘門約束** —— 規格鎖的是發文、
+                    // 按讚、留言、分享、關注五項。封鎖過的人不給聊；
+                    // 停權者的攔截在對話頁送出那一步，讀得到不代表送得出。
+                    onPressed: s.isBlocked(name)
+                        ? null
+                        : () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ChatScreen(
+                                  conversation: s.conversationWith(name),
+                                ),
+                              ),
+                            ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
                 Expanded(
                   child: Builder(builder: (context) {
                     // 拜師的對象只能是教官。這一頁看的是一般使用者，
@@ -170,7 +214,7 @@ class ProfileScreen extends StatelessWidget {
             ),
           ],
           const SectionLabel('能力值'),
-          if (showDims)
+          if (ability != null)
             // F 圖表型骨架：六邊形實心 ＋ 數值列。
             // 新使用者六維有初始值，故本區塊沒有空狀態。
             LoadBoundary(
@@ -181,11 +225,11 @@ class ProfileScreen extends StatelessWidget {
               builder: (context) => Panel(
                 child: Column(
                   children: [
-                    Center(child: RadarChart(points: s.points)),
+                    Center(child: RadarChart(points: ability)),
                     const SizedBox(height: 6),
-                    if (showOverall)
+                    if (grade != null)
                       Text(
-                        '綜合能力等級　${overallGrade(s.points)}',
+                        '綜合能力等級　$grade',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -195,12 +239,12 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
             )
-          else if (showOverall)
+          else if (grade != null)
             Panel(
               child: Column(
                 children: [
                   Text(
-                    overallGrade(s.points),
+                    grade,
                     style: const TextStyle(
                       fontSize: 34,
                       fontWeight: FontWeight.w900,
@@ -227,7 +271,18 @@ class ProfileScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Column(
               children: [
-                for (final p in s.visiblePosts.take(2))
+                // 原本取的是 `s.visiblePosts` —— 那是整個動態牆，
+                // 於是別人的檔案頁列的是不相干的人寫的東西。
+                if (myPosts.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      isSelf ? '你還沒有發過貼文。' : '$name 沒有公開的貼文。',
+                      style: const TextStyle(
+                          color: AppColors.textDim, fontSize: 12.5),
+                    ),
+                  ),
+                for (final p in myPosts.take(2))
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Align(
