@@ -9,6 +9,7 @@ import '../domain/clock.dart';
 // 換日規則已移入 clock.dart（假資料產生器也要用同一套）。
 // 轉出以維持既有呼叫端不變 —— 19 處在本檔、5 個測試檔。
 export '../domain/clock.dart' show businessDate;
+import '../data/ai_suggestion.dart';
 import '../domain/ai_adjust.dart';
 import '../domain/decay.dart';
 import '../domain/novice.dart';
@@ -4945,6 +4946,67 @@ class AppState extends ChangeNotifier {
     _say(src, AiTurnRole.user, answer);
     aiIntent[src] = parseIntent(answer);
     aiStage[src] = AiStage.analyzing;
+    notifyListeners();
+  }
+
+  // --- 外部 AI（[BE-08]）---
+
+  /// 外部的建議來源。**空值代表不接外部 API**，走端內規則 ——
+  /// 既有測試全部走這條，行為與接上之前一模一樣。
+  AiSuggestionSource? aiSource;
+
+  /// 最後一次建議是誰產的。空值代表是端內規則產的。
+  SuggestionOrigin? aiLastOrigin;
+
+  /// 產生建議 —— 有接外部 API 就走它，沒接就走端內規則。
+  ///
+  /// **失敗一律走既有的 [aiFail]**：已扣的點數退還、維持原課表、
+  /// 使用者看得到重試。那條路本來就在，這裡只是多了一個觸發它的理由。
+  Future<void> aiProduceSuggestionAsync(AiSource src) async {
+    final remote = aiSource;
+    if (remote == null) {
+      aiProduceSuggestion(src);
+      return;
+    }
+    if (aiStage[src] != AiStage.analyzing) return;
+
+    final target = _aiTarget(src);
+    if (target.isEmpty) {
+      _say(src, AiTurnRole.system, '這份課表還沒有動作，沒有東西可以調整。未扣點。');
+      aiStage[src] = AiStage.idle;
+      notifyListeners();
+      return;
+    }
+    final from = src == AiSource.duringTraining ? (session?.exerciseIndex ?? 0) : 0;
+    final intent = aiIntent[src] ?? AdjustIntent.easier;
+
+    RemoteSuggestion got;
+    try {
+      got = await remote.suggest(
+          exercises: target, intent: intent, onlyFrom: from);
+    } catch (_) {
+      // 逾時與服務錯誤在使用者眼裡沒有差別，都是「這次沒成功」。
+      aiFail(src, AiFailReason.serviceError);
+      return;
+    }
+    // 畫面可能在等待期間被關掉或重設。
+    if (aiStage[src] != AiStage.analyzing) return;
+
+    if (got.suggestion.changes.isEmpty || got.suggestion.isEmpty) {
+      _say(src, AiTurnRole.system, '以目前的內容，這個方向沒有可調的空間。未扣點。');
+      aiStage[src] = AiStage.idle;
+      notifyListeners();
+      return;
+    }
+
+    if (aiCostsCredit(src)) spendAiCredit(aiSourceNames[src]!);
+    aiLastOrigin = got.origin;
+    aiSuggestion[src] = got.suggestion;
+    _say(src, AiTurnRole.ai,
+        '建議如下（${adjustIntentNames[intent]}）：\n'
+        '${got.suggestion.changes.map((c) => '· ${c.summary}').join('\n')}\n'
+        '作用範圍：${aiSourceScope[src]}');
+    aiStage[src] = AiStage.proposed;
     notifyListeners();
   }
 

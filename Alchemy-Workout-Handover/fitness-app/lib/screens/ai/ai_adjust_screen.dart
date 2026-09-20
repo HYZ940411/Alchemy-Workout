@@ -44,12 +44,12 @@ class _AiAdjustScreenState extends State<AiAdjustScreen> {
 
   void _startAnalyzing(AppState s) {
     analyzeTimer?.cancel();
-    // Demo：模擬系統呼叫 AI API 的等待
-    analyzeTimer = Timer(const Duration(milliseconds: 900), () {
-      if (mounted) {
-        s.aiProduceSuggestion(src);
-        _toBottom();
-      }
+    // 沒接外部 API 時這段延遲是**模擬**呼叫的等待；接上之後它是送出前的
+    // 一小段緩衝，真正的等待發生在 aiProduceSuggestionAsync 裡面。
+    analyzeTimer = Timer(const Duration(milliseconds: 900), () async {
+      if (!mounted) return;
+      await s.aiProduceSuggestionAsync(src);
+      if (mounted) _toBottom();
     });
   }
 

@@ -45,6 +45,9 @@ dependencies:
   firebase_core: ^4.14.0
   firebase_auth: ^6.6.1
   cloud_firestore: ^6.9.0
+  # [BE-08]：呼叫我們自己的 adjustPlan 函式。
+  # **金鑰不在這裡** —— 它在 Secret Manager，App 只呼叫自己的端點。
+  cloud_functions: ^6.0.0
   # 刻意**不**加 google_sign_in：改用 firebase_auth 內建的 OAuth 流程。
   # 理由見 lib/data/auth.dart 的類別註解（Web 按鈕外觀、Android SHA-1）。
 
