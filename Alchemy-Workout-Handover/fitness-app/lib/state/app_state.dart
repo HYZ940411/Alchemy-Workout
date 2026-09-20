@@ -4840,6 +4840,14 @@ class AppState extends ChangeNotifier {
   final Map<AiSource, AdjustIntent> aiIntent = {};
   final Map<AiSource, AdjustSuggestion> aiSuggestion = {};
 
+  /// 這一輪有沒有真的扣過點。
+  ///
+  /// **[aiFail] 不能無條件退點。** 扣點的時機是「成功產出建議時」，
+  /// 而失敗可能發生在那之前 —— 畫面上的「模擬逾時」就顯示在
+  /// `analyzing` 階段，接了外部 API 之後網路錯誤也一樣。
+  /// 沒扣卻退，使用者每失敗一次就白賺一點。
+  final Map<AiSource, bool> aiCharged = {};
+
   /// 該來源要調整的那份課表。
   ///
   /// 訓練前／訓練中調整看的是**本次訓練課表快照**；自動優化看的是
@@ -4999,7 +5007,10 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    if (aiCostsCredit(src)) spendAiCredit(aiSourceNames[src]!);
+    if (aiCostsCredit(src)) {
+      spendAiCredit(aiSourceNames[src]!);
+      aiCharged[src] = true;
+    }
     aiLastOrigin = got.origin;
     aiSuggestion[src] = got.suggestion;
     _say(src, AiTurnRole.ai,
@@ -5039,7 +5050,10 @@ class AppState extends ChangeNotifier {
     }
 
     // 扣點時點為 AI 呼叫成功產出建議時。
-    if (aiCostsCredit(src)) spendAiCredit(aiSourceNames[src]!);
+    if (aiCostsCredit(src)) {
+      spendAiCredit(aiSourceNames[src]!);
+      aiCharged[src] = true;
+    }
     aiSuggestion[src] = suggestion;
     _say(src, AiTurnRole.ai,
         '建議如下（${adjustIntentNames[intent]}）：\n'
@@ -5054,14 +5068,20 @@ class AppState extends ChangeNotifier {
   void aiFail(AiSource src, AiFailReason reason) {
     aiLastFailReason = reason;
     aiRetryCount += 1;
-    if (aiCostsCredit(src)) {
+    // **只退真的扣過的那一點。** 扣點時機是「成功產出建議時」，
+    // 而失敗可能發生在那之前（`analyzing` 階段的逾時、外部 API 的
+    // 網路錯誤）—— 沒扣卻退，每失敗一次就白賺一點。
+    final charged = aiCostsCredit(src) && (aiCharged[src] ?? false);
+    if (charged) {
       // 退還不另立 Event
       aiMonthly += 1;
       _logCredit(CreditChange.refund, 1, aiSourceNames[src]!);
     }
+    aiCharged[src] = false;
     _say(src, AiTurnRole.system,
         'AI 調整已失敗（${aiFailReasonNames[reason]}，已重試 $aiRetryCount 次）。'
-        '維持原本次訓練課表，不套用任何調整。已扣的點數已退還，請稍後再試。');
+        '維持原本次訓練課表，不套用任何調整。'
+        '${charged ? '已扣的點數已退還，' : '本次未扣點，'}請稍後再試。');
     aiStage[src] = AiStage.failed;
     notifyListeners();
   }
@@ -5075,6 +5095,8 @@ class AppState extends ChangeNotifier {
     if (aiStage[src] != AiStage.proposed) return;
     final suggestion = aiSuggestion[src];
     if (suggestion == null) return;
+    // 接受之後那一點就定了 —— 不該被之後任何一次失敗退掉。
+    aiCharged[src] = false;
 
     switch (src) {
       case AiSource.beforeTraining:
@@ -5169,6 +5191,7 @@ class AppState extends ChangeNotifier {
     aiStage[src] = AiStage.idle;
     aiIntent.remove(src);
     aiSuggestion.remove(src);
+    aiCharged[src] = false;
     aiRetryCount = 0;
     notifyListeners();
   }

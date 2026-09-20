@@ -224,14 +224,44 @@ void main() {
       expect(s.aiLastOrigin, SuggestionOrigin.gemini);
     });
 
-    test('失敗走既有的退點流程 —— 點數淨額為零', () async {
+    test('還沒產出建議就失敗 —— 不退不該退的點', () async {
+      // 這是既有的 bug，接外部 API 才踩到：畫面上的「模擬逾時」
+      // 顯示在 analyzing 階段，而扣點發生在「成功產出建議」時。
+      // aiFail 原本無條件退 1 點 —— 使用者每失敗一次就白賺一點。
+      final s = upToAnalyzing(null);
+      final before = s.aiTotal;
+      s.aiFail(AiSource.beforeTraining, AiFailReason.timeout);
+      expect(s.aiTotal, before, reason: '沒扣過就不該退');
+    });
+
+    test('扣過了才退 —— 成功產出後失敗，點數淨額為零', () async {
+      final s = upToAnalyzing(null);
+      final before = s.aiTotal;
+      await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
+      expect(s.aiTotal, before - 1, reason: '前提：成功產出時扣了一點');
+
+      s.aiFail(AiSource.beforeTraining, AiFailReason.timeout);
+      expect(s.aiTotal, before, reason: '扣了就要退回來');
+    });
+
+    test('接受之後的失敗不退點 —— 那一點已經定了', () async {
+      final s = upToAnalyzing(null);
+      final before = s.aiTotal;
+      await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
+      s.aiAccept(AiSource.beforeTraining);
+      s.aiFail(AiSource.beforeTraining, AiFailReason.timeout);
+      expect(s.aiTotal, before - 1);
+    });
+
+    test('外部 API 失敗走既有的退點流程 —— 點數淨額為零', () async {
       final s = upToAnalyzing(_FakeSource(throws: true));
       final before = s.aiTotal;
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
 
       expect(s.aiStage[AiSource.beforeTraining], AiStage.failed);
-      expect(s.aiTotal, before, reason: '扣了要退回來');
+      expect(s.aiTotal, before,
+          reason: '失敗在產出之前，所以沒扣到也不該退 —— 淨額為零');
       expect(s.aiSuggestion[AiSource.beforeTraining], isNull,
           reason: '失敗時維持原課表，不留半份建議');
     });
