@@ -233,13 +233,27 @@ void main() {
       expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
     });
 
-    test('parseIntent 認得出三個方向，認不出的回空值', () {
+    test('parseIntent：三個方向都要有寬鬆比對', () {
+      // easier 原本是預設值，所以一條寬鬆比對都沒有。改掉預設之後
+      // 若不補上，「想降強度」這種最自然的說法反而認不出來。
       expect(AppState.parseIntent('整體降強度'), AdjustIntent.easier);
+      expect(AppState.parseIntent('今天肩膀緊，想降強度'), AdjustIntent.easier);
+      expect(AppState.parseIntent('今天很累'), AdjustIntent.easier);
       expect(AppState.parseIntent('想加重一點'), AdjustIntent.harder);
+      expect(AppState.parseIntent('減少組數'), AdjustIntent.trim);
       expect(AppState.parseIntent('組數少一點'), AdjustIntent.trim);
+    });
+
+    test('parseIntent：曖昧與無關的一律回空值', () {
       expect(AppState.parseIntent('早安'), isNull);
       expect(AppState.parseIntent('我早餐吃蘑菇麵'), isNull);
       expect(AppState.parseIntent(''), isNull);
+      // 系統沒有「替換動作」這個意圖，認不出來才是對的。
+      expect(AppState.parseIntent('換掉臥推'), isNull);
+      // 「太難了」是想降強度，舊版的 `難` 會判成升強度 —— 剛好相反。
+      expect(AppState.parseIntent('太難了'), isNull);
+      // 「減強度」講的不是組數，舊版的 `減` 會判成減組數。
+      expect(AppState.parseIntent('減強度'), isNull);
     });
 
     test('使用者原本那幾句話會送給模型 —— 不再被丟掉', () async {

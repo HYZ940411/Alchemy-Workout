@@ -4850,10 +4850,22 @@ class AppState extends ChangeNotifier {
     for (final i in AdjustIntent.values) {
       if (a.contains(adjustIntentNames[i]!)) return i;
     }
-    if (a.contains('升') || a.contains('加重') || a.contains('難')) {
+    // 寬鬆比對。**三個方向都要有**：`easier` 原本是預設值，所以一條
+    // 都沒有 —— 改掉預設之後，「想降強度」這種最自然的說法反而會
+    // 變成「我看不懂」。
+    //
+    // **曖昧的詞一律不收。** 移除了原本的 `難`（「今天這個太難」是想
+    // 降強度，判成升強度剛好相反）、`少` 與 `減`（「減強度」「少做一點
+    // 重量」講的都不是組數）。認不出來就再問一次，那不丟臉；
+    // 猜錯方向讓人照著練才是問題。
+    if (a.contains('升') || a.contains('加重') || a.contains('加強')) {
       return AdjustIntent.harder;
     }
-    if (a.contains('少') || a.contains('減') || a.contains('組')) {
+    if (a.contains('降') || a.contains('輕') || a.contains('簡單') ||
+        a.contains('緩') || a.contains('累')) {
+      return AdjustIntent.easier;
+    }
+    if (a.contains('組')) {
       return AdjustIntent.trim;
     }
     return null;
