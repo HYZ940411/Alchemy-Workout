@@ -22,7 +22,14 @@ Cloudflare Workers 免費方案不需要，是同一個問題的另一種解法�
 ```bash
 cd workers
 npm install
-export CLOUDFLARE_API_TOKEN='貼在這裡'    # 不要寫進任何檔案
+
+# **不要用 export TOKEN='...'。** 那會把金鑰留在終端機畫面與
+# shell history 裡。read -s 不回顯、也不進 history：
+read -rsp 'Cloudflare API token: ' CLOUDFLARE_API_TOKEN && export CLOUDFLARE_API_TOKEN
+# 貼上後按 Enter。畫面不會顯示任何東西，那是正常的。
+#
+# dash 上 token 下方那段 curl 驗證指令**不要整塊複製** ——
+# 要的只有 cfut_ 開頭的那一串本身。
 
 # 金鑰。會在終端機提示你貼上，只存在 Cloudflare，不進版控
 npx wrangler secret put GEMINI_API_KEY
