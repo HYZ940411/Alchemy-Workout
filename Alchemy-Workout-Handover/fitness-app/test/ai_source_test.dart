@@ -8,9 +8,14 @@
 // **不接外部 API 時行為必須與接上之前一模一樣** —— 那是既有一千多條
 // 測試的前提，這裡第一組就釘住它。
 
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'package:fitness_app/data/ai_suggestion.dart';
+import 'package:fitness_app/data/ai_suggestion_http.dart';
 import 'package:fitness_app/domain/ai_adjust.dart';
 import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/models.dart';
@@ -228,6 +233,79 @@ void main() {
       expect(s.aiTotal, before, reason: '扣了要退回來');
       expect(s.aiSuggestion[AiSource.beforeTraining], isNull,
           reason: '失敗時維持原課表，不留半份建議');
+    });
+  });
+
+  group('HTTP 實作', () {
+    final url = Uri.parse('https://example.workers.dev');
+
+    HttpAiSuggestionSource src(
+      MockClient client, {
+      String? token = 'tok',
+    }) =>
+        HttpAiSuggestionSource(
+          endpoint: url,
+          idToken: () async => token,
+          client: client,
+        );
+
+    test('帶上 Bearer token —— Worker 靠它擋掉別人', () async {
+      late http.Request seen;
+      final s = src(MockClient((r) async {
+        seen = r;
+        return http.Response(
+            jsonEncode({'source': 'rule', 'changes': []}), 200);
+      }));
+      await s.suggest(exercises: _plan(), intent: AdjustIntent.easier);
+
+      expect(seen.headers['Authorization'], 'Bearer tok');
+      expect(jsonDecode(seen.body)['intent'], 'easier');
+    });
+
+    test('沒登入就不送出去 —— 不浪費一趟往返', () async {
+      var called = false;
+      final s = src(
+        MockClient((_) async {
+          called = true;
+          return http.Response('{}', 200);
+        }),
+        token: null,
+      );
+      await expectLater(
+        s.suggest(exercises: _plan(), intent: AdjustIntent.easier),
+        throwsA(isA<StateError>()),
+      );
+      expect(called, isFalse);
+    });
+
+    test('非 200 視為失敗 —— 交給既有的退點流程', () async {
+      final s = src(MockClient((_) async => http.Response('boom', 500)));
+      await expectLater(
+        s.suggest(exercises: _plan(), intent: AdjustIntent.easier),
+        throwsA(isA<http.ClientException>()),
+      );
+    });
+
+    test('中文以 UTF-8 解，動作名稱才對得上', () async {
+      final s = src(MockClient((_) async => http.Response.bytes(
+            utf8.encode(jsonEncode({
+              'source': 'gemini',
+              'changes': [
+                {
+                  'index': 0,
+                  'name': '槓鈴臥推',
+                  'after': [
+                    {'weight': 55, 'reps': 10},
+                  ],
+                },
+              ],
+            })),
+            200,
+          )));
+      final got =
+          await s.suggest(exercises: _plan(), intent: AdjustIntent.easier);
+      expect(got.origin, SuggestionOrigin.gemini);
+      expect(got.suggestion.changes.single.exerciseName, '槓鈴臥推');
     });
   });
 }

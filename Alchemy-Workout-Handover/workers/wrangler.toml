@@ -1,0 +1,13 @@
+name = "alchemy-workout-ai"
+main = "src/index.ts"
+compatibility_date = "2024-11-06"
+
+[vars]
+# 允許呼叫這個端點的來源。**不要改成 "*"** —— 那等於把代理開放給全世界，
+# 配額會被別人燒光（金鑰是免費層，被盜用的後果就是配額歸零）。
+ALLOWED_ORIGIN = "https://alchemy-workout.web.app"
+# Firebase 專案 ID。驗 ID token 時要比對 aud 與 iss。
+FIREBASE_PROJECT_ID = "alchemy-workout"
+
+# 金鑰**不寫在這個檔案裡**。用底下這個指令設，它只存在 Cloudflare：
+#   npx wrangler secret put GEMINI_API_KEY
