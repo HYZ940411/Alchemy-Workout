@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../data/ai_suggestion.dart';
 import '../data/auth.dart';
 import '../data/platform_data.dart';
 import '../data/public_profile.dart';
@@ -40,6 +41,9 @@ class AuthGate extends StatefulWidget {
   /// 也要讀別人的，所以需要知道「我是誰」。空值代表不同步。
   final PublicProfileSource Function(String uid)? profileFor;
 
+  /// 外部的 AI 建議來源（[BE-08]）。空值代表走端內規則。
+  final AiSuggestionSource? aiSource;
+
   /// 關注關係的來源（[BE-11] 批次 2）。空值代表不同步。
   final FollowSource Function(String uid)? followsFor;
 
@@ -62,6 +66,7 @@ class AuthGate extends StatefulWidget {
     required this.storeFor,
     this.platformData,
     this.profileFor,
+    this.aiSource,
     this.followsFor,
     this.postsFor,
     this.chatsFor,
@@ -199,6 +204,11 @@ class _AuthGateState extends State<AuthGate> {
         widget.state.mentorSource = mentor;
         widget.state.applyCloudBonds(await mentor.bonds());
       }
+
+      // AI 代理。**不需要 uid，也不必在這裡載入任何東西** —— 它只在
+      // 使用者按下調整時才被呼叫，token 那時候現抓。放在這裡只是為了
+      // 讓「接外部服務」這件事集中在同一個地方。
+      widget.state.aiSource = widget.aiSource;
 
       final follows = widget.followsFor?.call(uid);
       if (follows != null) {

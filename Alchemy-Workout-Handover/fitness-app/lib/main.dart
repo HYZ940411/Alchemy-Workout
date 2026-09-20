@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'data/ai_suggestion.dart';
+import 'data/ai_suggestion_http.dart';
 import 'data/auth.dart';
 import 'data/platform_data.dart';
 import 'data/platform_data_firestore.dart';
@@ -78,6 +80,14 @@ Future<void> main() async {
     chatsFor: (uid) => FirestoreChats(uid: uid),
     teamsFor: (uid) => FirestoreTeams(uid: uid),
     mentorFor: (uid) => FirestoreMentor(uid: uid),
+    // [BE-08]：訓練調整建議交給 Gemini 產生。
+    // **呼叫的是我們自己的 Worker，不是 Gemini** —— 金鑰在 Cloudflare
+    // 的 secret 裡，前端看不到它。Worker 失敗或模型輸出不合格時，
+    // 伺服器會退回與 App 內同一組規則，使用者照樣拿得到建議。
+    aiSource: HttpAiSuggestionSource(
+      endpoint: Uri.parse('https://alchemy-workout-ai.alchemy-workout-ntub.workers.dev'),
+      idToken: auth.idToken,
+    ),
   ));
 }
 
@@ -101,6 +111,10 @@ class FitnessApp extends StatefulWidget {
   /// 公開檔案的來源（[BE-11] 批次 1）。空值代表不同步 ——
   /// **既有測試全部走這條**，社群清單與上雲前完全一樣。
   final PublicProfileSource Function(String uid)? profileFor;
+
+  /// 外部的 AI 建議來源（[BE-08]）。空值代表走端內規則 ——
+  /// **既有測試全部走這條**。
+  final AiSuggestionSource? aiSource;
 
   /// 關注關係的來源（[BE-11] 批次 2）。空值代表不同步 ——
   /// **既有測試全部走這條**。
@@ -126,6 +140,7 @@ class FitnessApp extends StatefulWidget {
     this.storeFor,
     this.platformData,
     this.profileFor,
+    this.aiSource,
     this.followsFor,
     this.postsFor,
     this.chatsFor,
@@ -193,6 +208,7 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                     (uid) => FirestoreStore(uid: uid),
                 platformData: widget.platformData,
                 profileFor: widget.profileFor,
+                aiSource: widget.aiSource,
                 followsFor: widget.followsFor,
                 postsFor: widget.postsFor,
                 chatsFor: widget.chatsFor,

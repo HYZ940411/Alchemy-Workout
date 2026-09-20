@@ -1,5 +1,7 @@
 # 健金術 AI 代理（Cloudflare Worker）
 
+**已部署**：https://alchemy-workout-ai.alchemy-workout-ntub.workers.dev
+
 `[BE-08]`。存在的唯一理由是**金鑰不能放在前端**——Flutter Web 建置出來的
 `main.dart.js` 會原封不動送到每一位訪客手上。
 

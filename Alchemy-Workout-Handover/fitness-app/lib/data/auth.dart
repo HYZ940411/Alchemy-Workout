@@ -35,6 +35,13 @@ class AuthService {
 
   User? get currentUser => _auth.currentUser;
 
+  /// 目前使用者的 Firebase ID token。沒登入回空值。
+  ///
+  /// 給 `[BE-08]` 的 AI 代理用 —— Worker 靠它認出是誰在呼叫。
+  /// **放在這裡而不是讓呼叫端自己抓**：`firebase_auth` 就該只出現在
+  /// `lib/data/` 底下，`ai_suggestion_http.dart` 不必知道它的存在。
+  Future<String?> idToken() async => _auth.currentUser?.getIdToken();
+
   /// 用 Google 帳號登入。
   ///
   /// 使用者中途取消時回傳 `false`，不算錯誤 —— 呼叫端不必顯示任何訊息，
