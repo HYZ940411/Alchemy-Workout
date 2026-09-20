@@ -174,13 +174,16 @@ class ProfileScreen extends StatelessWidget {
                     // 停權者的攔截在對話頁送出那一步，讀得到不代表送得出。
                     onPressed: s.isBlocked(name)
                         ? null
-                        : () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => ChatScreen(
-                                  conversation: s.conversationWith(name),
-                                ),
-                              ),
-                            ),
+                        : () {
+                            // **先建好再 push。** 寫在 `builder:` 裡的話
+                            // `conversationWith` 的 `notifyListeners()` 會在
+                            // build 期間觸發，Flutter 當場拋例外 ——
+                            // 也就是「第一次找某人聊天」必定閃退。
+                            final c = s.conversationWith(name);
+                            Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => ChatScreen(conversation: c),
+                            ));
+                          },
                   ),
                 ),
               ],

@@ -235,8 +235,11 @@ void main() {
 
     testWidgets('封鎖過的人不給聊', (t) async {
       final s = AppState();
-      s.blockUser('Yuki');
-      await _open(t, s, 'Yuki');
+      // **不能挑 Yuki** —— 他是我隊伍的成員，而規格明訂同隊的人不能封鎖
+      // （`blockBlockedReason`）。挑一個不在隊上的人，並把封鎖成功
+      // 這件事當成前提斷言 —— 否則封鎖失敗時這條測試會靜靜地驗錯東西。
+      expect(s.blockUser('Ashley'), isTrue, reason: '前提：封鎖要真的成立');
+      await _open(t, s, 'Ashley');
       final btn = t.widget<AppButton>(
         find.ancestor(of: find.text('開始聊天'), matching: find.byType(AppButton)));
       expect(btn.onPressed, isNull);

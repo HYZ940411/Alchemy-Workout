@@ -2023,6 +2023,12 @@ class AppState extends ChangeNotifier {
       // **整份留著**。只取 rank 與 grade 的話，六維明細就在這裡被丟掉了，
       // 而檔案頁上的雷達圖需要它 —— 拿不到就只能顯示我自己的，那是錯的。
       publicProfiles[p.displayName] = p;
+      // **粉絲數以雲端為準，而且要在 continue 之前寫。**
+      // 原本寫在下面用 `putIfAbsent`，但 `socialUsers.add()` 會先觸發
+      // `otherFollowerCounts` 這個 late 欄位初始化，那份初始值是用
+      // 示範公式 `40 + rank * 3` 算的 —— 等輪到 putIfAbsent 時鍵已經在了，
+      // 雲端讀回來的真實數字就這樣被一個假數字蓋掉。
+      otherFollowerCounts[p.displayName] = p.followers;
       if (socialUsers.any((u) => u.name == p.displayName)) continue;
       socialUsers.add(SocialUser(
         name: p.displayName,
@@ -2031,7 +2037,6 @@ class AppState extends ChangeNotifier {
         // 不猜、也不留空白造成版面破洞。
         grade: p.grade ?? 'E',
       ));
-      otherFollowerCounts.putIfAbsent(p.displayName, () => p.followers);
     }
     notifyListeners();
   }
