@@ -38,7 +38,7 @@ class _FakeSource implements AiSuggestionSource {
   }) async {
     sent = {
       'intent': intent.name,
-      if (note != null) 'note': note,
+      'note': ?note,
       ...encodePlan(exercises, onlyFrom),
     };
     if (throws) throw Exception('逾時');
