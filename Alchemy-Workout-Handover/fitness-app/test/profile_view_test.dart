@@ -94,6 +94,20 @@ void main() {
       expect(s.followersOf('Neo'), 3);
     });
 
+    test('雲端來了本機沒有的人也加得進去 —— 示範清單必須是可增長的', () {
+      // `buildSocialUsers()` 原本回傳 `const [...]`，於是 `applyPublicProfiles`
+      // 的 `socialUsers.add()` 會拋 `Cannot add to an unmodifiable list`。
+      // 也就是說這條路從 `[BE-11]` 批次 1 寫出來就是壞的 —— 只要雲端回傳
+      // 一位本機沒有的使用者就當場炸。沒人發現，是因為沒有測試餵過新名字。
+      final s = AppState();
+      final before = s.socialUsers.length;
+      s.applyPublicProfiles([
+        const PublicProfile(uid: 'u-new', displayName: '新來的', rank: 5),
+      ]);
+      expect(s.socialUsers.length, before + 1);
+      expect(s.userOf('新來的').rank, 5);
+    });
+
     test('對方關掉六維可見度時仍拿不到，綜合等級照給', () {
       final s = AppState();
       s.applyPublicProfiles([

@@ -620,14 +620,17 @@ List<HistoryEntry> buildHistory() {
 
 // --- 社群關係與通知 ---
 
-List<SocialUser> buildSocialUsers() => const [
-      SocialUser(name: '深蹲王', rank: 41, grade: 'B'),
-      SocialUser(name: 'CoreMax', rank: 55, grade: 'A'),
-      SocialUser(name: '早鳥訓練', rank: 27, grade: 'C'),
-      SocialUser(name: '硬舉狂魔', rank: 62, grade: 'A'),
-      SocialUser(name: 'Yuki', rank: 19, grade: 'C'),
-      SocialUser(name: '核心怪物', rank: 33, grade: 'B'),
-      SocialUser(name: 'Ashley', rank: 38, grade: 'B'),
+/// **不可以是 `const` 清單。** `applyPublicProfiles` 會把雲端讀回來、
+/// 本機還沒有的使用者 `add` 進來，而 `const` 清單是不可修改的 ——
+/// 那會在第一位新使用者到達時拋 `Cannot add to an unmodifiable list`。
+List<SocialUser> buildSocialUsers() => [
+      const SocialUser(name: '深蹲王', rank: 41, grade: 'B'),
+      const SocialUser(name: 'CoreMax', rank: 55, grade: 'A'),
+      const SocialUser(name: '早鳥訓練', rank: 27, grade: 'C'),
+      const SocialUser(name: '硬舉狂魔', rank: 62, grade: 'A'),
+      const SocialUser(name: 'Yuki', rank: 19, grade: 'C'),
+      const SocialUser(name: '核心怪物', rank: 33, grade: 'B'),
+      const SocialUser(name: 'Ashley', rank: 38, grade: 'B'),
     ];
 
 List<String> buildFollowers() =>
