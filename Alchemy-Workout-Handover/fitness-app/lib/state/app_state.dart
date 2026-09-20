@@ -2595,7 +2595,13 @@ class AppState extends ChangeNotifier {
   // 團隊
   // ===========================================================================
 
-  Team? myTeam = buildMyTeam();
+  /// **要跟著 [demo] 走。** 這是唯一漏掉旗標的使用者狀態集合。
+  ///
+  /// `resetToNewAccount()` 有清它，但那只在「讀不到存檔」時跑 ——
+  /// 第二次之後的登入走的是 `applySnapshot()`，而 `myTeam` **不在快照裡**
+  /// （見 `app_state_snapshot.dart`），於是每次重開都從這裡重新長出
+  /// 一支「晨型人訓練隊」，隊友是三個不存在的人。
+  late Team? myTeam = demo ? buildMyTeam() : null;
 
   // --- 團隊上雲（[BE-14]）---
 
@@ -2627,7 +2633,15 @@ class AppState extends ChangeNotifier {
   /// 但「查不到」可能只是還沒建過隊，不該把示範用的隊伍清掉 ——
   /// 那會讓沒接後端的流程示範整個消失。
   void applyCloudTeam(CloudTeam? t) {
-    if (t == null || t.disbanded) return;
+    // **雲端說沒有，就是沒有。** 原本在這裡直接 `return`，於是本機那支
+    // 示範隊伍會原封不動留著 —— 已登入但還沒加入任何隊伍的人，
+    // 看到的是一支他從未加入的隊，和三個不存在的隊友。
+    if (t == null || t.disbanded) {
+      myTeam = null;
+      teamJoinedAt = null;
+      notifyListeners();
+      return;
+    }
 
     myTeam = Team(
       id: t.id,
@@ -2846,7 +2860,8 @@ class AppState extends ChangeNotifier {
   ///
   /// **自己建立的團隊為空值**：無懲罰窗口的理由是「誤入」，
   /// 自己開的隊不是誤入，解散它也不是。
-  DateTime? teamJoinedAt = DateTime.now().subtract(const Duration(days: 20));
+  late DateTime? teamJoinedAt =
+      demo ? DateTime.now().subtract(const Duration(days: 20)) : null;
 
   /// 我送出、尚待回應的加入申請（方向＝使用者申請）。
   /// 與隊長邀請共用同一個〈團隊成員資格申請 Aggregate〉，以方向欄位區分。
@@ -7418,6 +7433,9 @@ class AppState extends ChangeNotifier {
     following.clear();
     blockedUsers.clear();
     sentApplications.clear();
+    // 加入／退出的時戳也要清 —— 新帳號沒有換隊冷卻，也沒有誤入窗口。
+    teamJoinedAt = null;
+    teamLeftAt = null;
     inbox.clear();
     myTeam = null;
     myInstructor = null;
