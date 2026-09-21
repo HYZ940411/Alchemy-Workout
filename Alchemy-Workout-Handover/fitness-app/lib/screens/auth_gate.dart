@@ -107,6 +107,20 @@ class _AuthGateState extends State<AuthGate> {
   @override
   void initState() {
     super.initState();
+
+    // **AI 代理在這裡接，不要放進 `_syncProfile`。**
+    //
+    // 它原本在那裡面，而那個函式有六個接連的網路 await（發布公開檔案、
+    // 讀別人的、貼文、私訊、團隊、師徒），整段包在 try/catch 裡。
+    // 任何一個失敗，catch 吞掉，`aiSource` 就永遠不會被設 ——
+    // 而 `aiProduceSuggestionAsync` 看到空值會**靜靜地**退回端內規則，
+    // 不留任何痕跡。症狀是「AI 建議沒有理由、替換動作說沒東西可換、
+    // Worker 的 log 完全沒有流量」，查到第三層才會發現原因在這裡。
+    //
+    // 它不需要 uid，也不需要載入任何東西 —— token 是按下調整那一刻
+    // 才抓的。沒有理由讓它依賴六個不相干的網路呼叫。
+    widget.state.aiSource = widget.aiSource;
+
     _sub = widget.auth.authStateChanges().listen(_onAuthChanged);
   }
 
@@ -204,11 +218,6 @@ class _AuthGateState extends State<AuthGate> {
         widget.state.mentorSource = mentor;
         widget.state.applyCloudBonds(await mentor.bonds());
       }
-
-      // AI 代理。**不需要 uid，也不必在這裡載入任何東西** —— 它只在
-      // 使用者按下調整時才被呼叫，token 那時候現抓。放在這裡只是為了
-      // 讓「接外部服務」這件事集中在同一個地方。
-      widget.state.aiSource = widget.aiSource;
 
       final follows = widget.followsFor?.call(uid);
       if (follows != null) {
