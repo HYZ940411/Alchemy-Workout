@@ -264,7 +264,13 @@ export async function askGemini(
       signal: AbortSignal.timeout(20000),
     },
   );
-  if (!res.ok) throw new Error(`gemini ${res.status}`);
+  if (!res.ok) {
+    // **把回應內容一起丟出去。** 只給狀態碼的話，`wrangler tail` 上
+    // 看到的是「gemini 404」—— 那可能是模型名稱過期、金鑰沒權限、
+    // 或配額用盡，三者的處置完全不同。Gemini 的錯誤回應講得出是哪一種。
+    const body = await res.text().catch(() => "");
+    throw new Error(`gemini ${res.status}: ${body.slice(0, 300)}`);
+  }
 
   const data = await res.json() as {
     candidates?: { content?: { parts?: { text?: string }[] } }[];

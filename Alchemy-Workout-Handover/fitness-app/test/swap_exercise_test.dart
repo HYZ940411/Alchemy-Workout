@@ -196,6 +196,25 @@ void main() {
     });
   });
 
+  test('換了動作就不算空建議 —— 即使逐組目標一樣', () {
+    final s = AppState();
+    s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+    final pe = s.session!.exercises.first;
+    final cand = s.swapCandidatesFor(pe.exercise).first;
+
+    final sug = AdjustSuggestion(intent: AdjustIntent.swap, changes: [
+      AdjustChange(
+        exerciseIndex: 0,
+        exerciseName: pe.exercise.name,
+        before: [...pe.planned],
+        after: [...pe.planned],
+        replacement: cand,
+      ),
+    ]);
+    expect(sug.isEmpty, isFalse,
+        reason: '把做不了的動作換成做得到的，本身就是改動');
+  });
+
   test('規則引擎不換動作 —— 那不是一條 ×0.9 算得出來的東西', () {
     final s = AppState();
     final plan = s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty);

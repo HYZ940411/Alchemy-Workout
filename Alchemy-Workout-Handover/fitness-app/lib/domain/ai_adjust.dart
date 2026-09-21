@@ -106,7 +106,13 @@ class AdjustSuggestion {
   final List<AdjustChange> changes;
   const AdjustSuggestion({required this.intent, required this.changes});
 
+  /// 這份建議等於什麼都沒改。
+  ///
+  /// **換了動作就不算空的**，即使逐組目標一模一樣 —— 把做不了的動作
+  /// 換成做得到的，本身就是改動。漏掉這一項的話，一次成功的替換會被
+  /// 當成「沒有可調的空間」擋下來。
   bool get isEmpty => changes.every((c) =>
+      c.replacement == null &&
       !c.setsChanged &&
       c.before.first.targetWeight == c.after.first.targetWeight &&
       c.before.first.targetReps == c.after.first.targetReps);

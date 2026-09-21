@@ -91,7 +91,10 @@ export default {
         changes = fromModel;
       }
     } catch (e) {
-      console.error("gemini 呼叫失敗，改用規則", e);
+      console.error(
+        "gemini 呼叫失敗，改用規則：",
+        e instanceof Error ? e.message : String(e),
+      );
     }
 
     return new Response(JSON.stringify({source, changes}), {
