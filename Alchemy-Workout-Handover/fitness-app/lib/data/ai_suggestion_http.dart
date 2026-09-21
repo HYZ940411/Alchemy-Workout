@@ -41,6 +41,7 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
     required AdjustIntent intent,
     int onlyFrom = 0,
     String? note,
+    AdjustContext? context,
   }) async {
     final token = await idToken();
     if (token == null || token.isEmpty) {
@@ -58,7 +59,7 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
           body: jsonEncode({
             'intent': intent.name,
             if (note != null && note.isNotEmpty) 'note': note,
-            ...encodePlan(exercises, onlyFrom),
+            ...encodePlan(exercises, onlyFrom, context: context),
           }),
         )
         // 使用者在等。逾時就讓它走既有的「失敗退點」流程，

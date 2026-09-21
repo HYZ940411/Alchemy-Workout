@@ -15,7 +15,7 @@
 import {verifyIdToken} from "./auth";
 import {
   askGemini, isIntent, ruleFallback,
-  type PlanExercise,
+  type AdjustContext, type PlanExercise,
 } from "./adjust";
 
 interface Env {
@@ -57,7 +57,10 @@ export default {
       : null;
     if (!uid) return fail(401, "請先登入。", origin);
 
-    let body: {intent?: unknown; exercises?: unknown; note?: unknown};
+    let body: {
+      intent?: unknown; exercises?: unknown;
+      note?: unknown; context?: unknown;
+    };
     try {
       body = await req.json();
     } catch {
@@ -69,6 +72,9 @@ export default {
     // 使用者自己打的話。非字串一律當作沒有 —— 這是外部輸入，
     // 型別都不對的東西沒必要送進 prompt。
     const note = typeof body.note === "string" ? body.note : undefined;
+    const ctx = body.context && typeof body.context === "object" ?
+      body.context as AdjustContext :
+      undefined;
     if (!isIntent(intent)) return fail(400, "intent 不合法。", origin);
     if (!Array.isArray(exercises) || exercises.length === 0) {
       return fail(400, "課表是空的。", origin);
@@ -78,7 +84,7 @@ export default {
     let changes = ruleFallback(exercises, intent);
     try {
       const fromModel =
-        await askGemini(exercises, intent, env.GEMINI_API_KEY, note);
+        await askGemini(exercises, intent, env.GEMINI_API_KEY, note, ctx);
       // 模型全軍覆沒（整份都沒通過驗證）時不讓使用者空手而回。
       if (fromModel.length > 0) {
         source = "gemini";

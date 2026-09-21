@@ -35,11 +35,12 @@ class _FakeSource implements AiSuggestionSource {
     required AdjustIntent intent,
     int onlyFrom = 0,
     String? note,
+    AdjustContext? context,
   }) async {
     sent = {
       'intent': intent.name,
       'note': ?note,
-      ...encodePlan(exercises, onlyFrom),
+      ...encodePlan(exercises, onlyFrom, context: context),
     };
     if (throws) throw Exception('逾時');
     final data = reply!;
@@ -164,6 +165,42 @@ void main() {
       expect(s.changes.single.before.first.targetWeight, 60);
     });
 
+    test('模型給的理由會被帶回來', () {
+      final s = decodeSuggestion({
+        'changes': [
+          {
+            'index': 0,
+            'name': '槓鈴臥推',
+            'after': [
+              {'weight': 55, 'reps': 10},
+            ],
+            'reason': '你上次 60 公斤第三組只完成 6 下。',
+          },
+        ],
+      }, _plan(), AdjustIntent.easier, 0);
+      expect(s.changes.single.reason, '你上次 60 公斤第三組只完成 6 下。');
+      expect(s.changes.single.detail, contains('你上次 60 公斤'));
+    });
+
+    test('沒有理由或理由是空白時回空值 —— 不在畫面上留一行空的', () {
+      for (final r in [null, '', '   ', 42]) {
+        final s = decodeSuggestion({
+          'changes': [
+            {
+              'index': 0,
+              'name': '槓鈴臥推',
+              'after': [
+                {'weight': 55, 'reps': 10},
+              ],
+              'reason': r,
+            },
+          ],
+        }, _plan(), AdjustIntent.easier, 0);
+        expect(s.changes.single.reason, isNull, reason: 'reason=$r');
+        expect(s.changes.single.detail, s.changes.single.summary);
+      }
+    });
+
     test('分得出是模型產的還是規則產的', () {
       expect(originOf({'source': 'gemini'}), SuggestionOrigin.gemini);
       expect(originOf({'source': 'rule'}), SuggestionOrigin.rule);
@@ -254,6 +291,39 @@ void main() {
       expect(AppState.parseIntent('太難了'), isNull);
       // 「減強度」講的不是組數，舊版的 `減` 會判成減組數。
       expect(AppState.parseIntent('減強度'), isNull);
+    });
+
+    test('歷來成績會送給模型 —— 這是它勝過規則的唯一憑據', () async {
+      final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
+      final s = AppState()..aiSource = fake;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+
+      await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
+
+      final ctx = fake.sent!['context'] as Map<String, dynamic>;
+      expect(ctx['bodyweightKg'], s.bodyweightKg);
+      expect(ctx['isMale'], s.isMale);
+      expect(ctx['experience'], s.experience);
+      expect(ctx['goal'], s.commonGoal);
+      expect(ctx['equipment'], isNotEmpty);
+      expect(ctx.containsKey('recent'), isTrue);
+    });
+
+    test('脈絡裡沒有身分 —— 暱稱與 uid 一律不送', () async {
+      final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
+      final s = AppState()..aiSource = fake;
+      s.myUid = 'uid-12345';
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+
+      await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
+
+      final body = fake.sent.toString();
+      expect(body, isNot(contains('uid-12345')));
+      expect(body, isNot(contains(s.displayName)));
     });
 
     test('使用者原本那幾句話會送給模型 —— 不再被丟掉', () async {

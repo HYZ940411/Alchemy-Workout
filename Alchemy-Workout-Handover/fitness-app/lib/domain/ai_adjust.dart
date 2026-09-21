@@ -33,11 +33,19 @@ class AdjustChange {
   /// 調整前的逐組目標，供畫面對照。
   final List<PlannedSet> before;
 
+  /// 這一筆為什麼這樣調。**空值代表這一次沒有理由可說** ——
+  /// 端內規則產的建議就是這種：它只會算，說不出所以然。
+  ///
+  /// 有了它，建議才不只是一組數字。使用者自己也會把 60 改成 55，
+  /// 他需要的是「為什麼是 55 不是 50」。
+  final String? reason;
+
   const AdjustChange({
     required this.exerciseIndex,
     required this.exerciseName,
     required this.before,
     required this.after,
+    this.reason,
   });
 
   bool get setsChanged => before.length != after.length;
@@ -59,6 +67,11 @@ class AdjustChange {
     return '$exerciseName　${w(b.targetWeight)}kg × ${b.targetReps} 下'
         ' → ${w(a.targetWeight)}kg × ${a.targetReps} 下';
   }
+
+  /// 畫面上這一筆的完整文字：一行數字，有理由就再一行。
+  ///
+  /// **理由縮排一格**，讀起來才分得出「改什麼」與「為什麼」。
+  String get detail => reason == null ? summary : '$summary\n　　$reason';
 }
 
 /// 一份建議。

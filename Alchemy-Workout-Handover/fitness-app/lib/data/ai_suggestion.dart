@@ -46,12 +46,66 @@ abstract class AiSuggestionSource {
     required AdjustIntent intent,
     int onlyFrom = 0,
     String? note,
+    AdjustContext? context,
   });
 }
 
-/// 送出去的形狀。**只送動作名稱與逐組目標**，不送使用者是誰、
-/// 不送身高體重 —— 調整建議用不到，送了就是白白擴大外洩面。
-Map<String, dynamic> encodePlan(List<PlanExercise> exercises, int onlyFrom) => {
+/// 一位使用者身上與「該怎麼調這份課表」有關的事實。
+///
+/// **這是 AI 能不能勝過一條規則的全部關鍵。** 在此之前模型只收得到
+/// 動作名稱與目標組數 —— 它知道的東西不比 `ai_adjust.dart` 那組規則多，
+/// 所以也做不出比它好的事，只能猜一個「降一成」。
+///
+/// **不送的東西**：暱稱、uid、電子郵件、生日、任何社群內容。
+/// 體重與性別有送 —— DOTS 標準化本來就靠它們，少了就算不準。
+class AdjustContext {
+  final double bodyweightKg;
+  final bool isMale;
+
+  /// 經驗級別與健身目標。決定「降一成」對這個人是多還是少。
+  final String experience;
+  final String goal;
+
+  /// 持有器材。**替換動作的調整依據**（〈02_Aggregate定義〉§持有器材明細）。
+  final List<String> equipment;
+
+  /// 動作名稱 → 這個人練它的歷來成績（舊→新，最多取最近幾次）。
+  final Map<String, List<({double weight, int reps})>> recent;
+
+  const AdjustContext({
+    required this.bodyweightKg,
+    required this.isMale,
+    required this.experience,
+    required this.goal,
+    this.equipment = const [],
+    this.recent = const {},
+  });
+
+  Map<String, dynamic> toJson() => {
+        'bodyweightKg': bodyweightKg,
+        'isMale': isMale,
+        'experience': experience,
+        'goal': goal,
+        'equipment': equipment,
+        'recent': {
+          for (final e in recent.entries)
+            e.key: [
+              for (final r in e.value) {'weight': r.weight, 'reps': r.reps},
+            ],
+        },
+      };
+}
+
+/// 送出去的形狀。
+///
+/// **仍然不送身分**：沒有暱稱、沒有 uid、沒有電子郵件。送的是
+/// 「這份課表長什麼樣」與「這個人練起來是什麼水準」。
+Map<String, dynamic> encodePlan(
+  List<PlanExercise> exercises,
+  int onlyFrom, {
+  AdjustContext? context,
+}) =>
+    {
       'exercises': [
         for (var i = onlyFrom; i < exercises.length; i++)
           {
@@ -62,6 +116,7 @@ Map<String, dynamic> encodePlan(List<PlanExercise> exercises, int onlyFrom) => {
             ],
           },
       ],
+      if (context != null) 'context': context.toJson(),
     };
 
 /// 把回來的東西接回本機的型別。
@@ -95,11 +150,16 @@ AdjustSuggestion decodeSuggestion(
     ];
     if (after.isEmpty) continue;
 
+    final reason = m['reason'];
     changes.add(AdjustChange(
       exerciseIndex: i,
       exerciseName: pe.exercise.name,
       before: [...pe.planned],
       after: after,
+      // 只收字串，而且要有內容 —— 模型回個空字串不該變成畫面上的空行。
+      reason: reason is String && reason.trim().isNotEmpty
+          ? reason.trim()
+          : null,
     ));
   }
   return AdjustSuggestion(intent: intent, changes: changes);

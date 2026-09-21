@@ -4854,6 +4854,35 @@ class AppState extends ChangeNotifier {
     return said.length > 200 ? said.substring(0, 200) : said;
   }
 
+  /// 送給模型的脈絡（`[BE-08]` 方案 A）。
+  ///
+  /// **這是 AI 能不能勝過一條規則的關鍵。** 在此之前模型只收得到動作
+  /// 名稱與目標組數 —— 它知道的不比 `ai_adjust.dart` 那組規則多，
+  /// 所以也做不出比它好的事。有了歷來成績，它才說得出
+  /// 「你上次這個重量第三組只完成 6 下」這種規則講不出的話。
+  ///
+  /// **不含身分**：沒有暱稱、uid、電子郵件、生日。體重與性別有送 ——
+  /// DOTS 標準化本來就靠它們。
+  AdjustContext _aiContext(List<PlanExercise> target) {
+    final stats = exerciseStats;
+    return AdjustContext(
+      bodyweightKg: bodyweightKg,
+      isMale: isMale,
+      experience: experience,
+      goal: commonGoal,
+      equipment: ownedEquipment.toList(),
+      recent: {
+        for (final pe in target)
+          if (stats[pe.exercise.id]?.trend.isNotEmpty ?? false)
+            pe.exercise.name: [
+              // 只取最近五次。再多對模型沒有幫助，卻讓 prompt 變長。
+              for (final t in stats[pe.exercise.id]!.trend.reversed.take(5))
+                (weight: t.weight, reps: t.reps),
+            ].reversed.toList(),
+      },
+    );
+  }
+
   /// 從使用者的回答解析出意圖。**認不出來就回空值，不猜。**
   ///
   /// 原本認不出來時一律取「整體降強度」，理由是「三者中最保守，
@@ -5057,6 +5086,7 @@ class AppState extends ChangeNotifier {
         intent: intent,
         onlyFrom: from,
         note: _aiNote(src),
+        context: _aiContext(target),
       );
     } catch (_) {
       // 逾時與服務錯誤在使用者眼裡沒有差別，都是「這次沒成功」。
@@ -5081,7 +5111,7 @@ class AppState extends ChangeNotifier {
     aiSuggestion[src] = got.suggestion;
     _say(src, AiTurnRole.ai,
         '建議如下（${adjustIntentNames[intent]}）：\n'
-        '${got.suggestion.changes.map((c) => '· ${c.summary}').join('\n')}\n'
+        '${got.suggestion.changes.map((c) => '· ${c.detail}').join('\n')}\n'
         '作用範圍：${aiSourceScope[src]}');
     aiStage[src] = AiStage.proposed;
     notifyListeners();
@@ -5123,7 +5153,7 @@ class AppState extends ChangeNotifier {
     aiSuggestion[src] = suggestion;
     _say(src, AiTurnRole.ai,
         '建議如下（${adjustIntentNames[intent]}）：\n'
-        '${suggestion.changes.map((c) => '· ${c.summary}').join('\n')}\n'
+        '${suggestion.changes.map((c) => '· ${c.detail}').join('\n')}\n'
         '作用範圍：${aiSourceScope[src]}');
     aiStage[src] = AiStage.proposed;
     notifyListeners();

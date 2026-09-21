@@ -15,7 +15,29 @@ export type Intent = "easier" | "harder" | "trim";
 
 export interface PlannedSet { weight: number; reps: number }
 export interface PlanExercise { name: string; sets: PlannedSet[] }
-export interface Change { index: number; name: string; after: PlannedSet[] }
+export interface Change {
+  index: number;
+  name: string;
+  after: PlannedSet[];
+  /** 這一筆為什麼這樣調。規則產的沒有 —— 它只會算，說不出所以然。 */
+  reason?: string;
+}
+
+/**
+ * 這位使用者身上與「該怎麼調」有關的事實。
+ *
+ * **不含身分** —— 沒有暱稱、uid、電子郵件。體重與性別有送，
+ * DOTS 標準化本來就靠它們。
+ */
+export interface AdjustContext {
+  bodyweightKg?: number;
+  isMale?: boolean;
+  experience?: string;
+  goal?: string;
+  equipment?: string[];
+  /** 動作名稱 → 歷來成績（舊→新）。 */
+  recent?: Record<string, { weight: number; reps: number }[]>;
+}
 
 const INTENT_TEXT: Record<Intent, string> = {
   easier: "整體降低強度：降低單組負荷，但盡量維持總訓練量",
@@ -101,7 +123,17 @@ export function clamp(exercises: PlanExercise[], raw: unknown): Change[] {
       if (bad) { ok = false; break; }
       after.push({weight: w === 0 ? 0 : round2p5(w), reps: r});
     }
-    if (ok) out.push({index, name: src.name, after});
+    if (ok) {
+      // 理由是純文字，**不驗數值**，但要限長 —— 模型話多不是使用者的問題，
+      // 但那一行要塞得進畫面。
+      const r = typeof c.reason === "string" ? c.reason.trim() : "";
+      out.push({
+        index,
+        name: src.name,
+        after,
+        ...(r ? {reason: r.slice(0, 120)} : {}),
+      });
+    }
   }
   return out;
 }
@@ -121,13 +153,32 @@ export function buildPrompt(
   exercises: PlanExercise[],
   intent: Intent,
   note?: string,
+  ctx?: AdjustContext,
 ): string {
+  const who: string[] = [];
+  if (ctx?.experience) who.push(`經驗：${ctx.experience}`);
+  if (ctx?.goal) who.push(`目標：${ctx.goal}`);
+  if (ctx?.bodyweightKg) who.push(`體重：${ctx.bodyweightKg} 公斤`);
+  if (ctx?.isMale !== undefined) who.push(`性別：${ctx.isMale ? "男" : "女"}`);
+  if (ctx?.equipment?.length) who.push(`可用器材：${ctx.equipment.join("、")}`);
+
+  const history = ctx?.recent && Object.keys(ctx.recent).length > 0 ?
+    [
+      "這位使用者練這些動作的歷來成績（舊→新，最多五次）：",
+      JSON.stringify(ctx.recent),
+      "**請據此說明理由**，例如某次某重量只完成幾下。",
+      "",
+    ] :
+    [];
+
   return [
     "你是重量訓練的課表調整助手。只依照下列這份課表作答，",
     "不得新增、刪除或替換任何動作，不得引用課表以外的動作。",
     "",
     `調整方向：${INTENT_TEXT[intent]}`,
     "",
+    ...(who.length ? ["使用者：", who.join("；"), ""] : []),
+    ...history,
     "課表（JSON）：",
     JSON.stringify(exercises),
     "",
@@ -142,7 +193,12 @@ export function buildPrompt(
       ] :
       []),
     "請只輸出 JSON 陣列，不要有任何說明文字或程式碼框，格式為：",
-    "[{\"index\":0,\"name\":\"動作名稱\",\"after\":[{\"weight\":60,\"reps\":8}]}]",
+    "[{\"index\":0,\"name\":\"動作名稱\",\"after\":[{\"weight\":60,\"reps\":8}]," +
+      "\"reason\":\"為什麼這樣調\"}]",
+    "",
+    "reason 用繁體中文、一句話、60 字以內，**要講得出依據** ——",
+    "有歷來成績就引用它（例如「上次 60 公斤第三組只完成 6 下」），",
+    "沒有就說明這個調整對這個經驗級別與目標的意義。不要空泛地說「降低強度」。",
     "",
     "限制：index 與 name 必須與上方課表一致；weight 為公斤，",
     "自體重動作維持 0，其餘不得偏離原重量的 ±50%；reps 介於 1 到 50。",
@@ -154,6 +210,7 @@ export async function askGemini(
   intent: Intent,
   apiKey: string,
   note?: string,
+  ctx?: AdjustContext,
 ): Promise<Change[]> {
   const res = await fetch(
     "https://generativelanguage.googleapis.com/v1beta/models/" +
@@ -162,7 +219,7 @@ export async function askGemini(
       method: "POST",
       headers: {"Content-Type": "application/json", "x-goog-api-key": apiKey},
       body: JSON.stringify({
-        contents: [{parts: [{text: buildPrompt(exercises, intent, note)}]}],
+        contents: [{parts: [{text: buildPrompt(exercises, intent, note, ctx)}]}],
         generationConfig: {
           temperature: 0.2,
           responseMimeType: "application/json",
