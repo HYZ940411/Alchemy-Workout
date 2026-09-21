@@ -4793,6 +4793,10 @@ class AppState extends ChangeNotifier {
   /// Precondition：AI 點數餘額足夠。不足者產生「AI 調整已拒絕」——
   /// **不扣點**、維持原訓練內容、導向 AI 點數購買頁。
   /// 這與「AI 調整已失敗」（已扣點後退還）的 Postcondition 相反，兩者不合併。
+  /// 提出調整要求。
+  ///
+  /// [demand] 為空字串時不記錄使用者發言 —— 那是「開啟畫面即追問」
+  /// 的入口（[aiOpen]），不是使用者真的說了什麼。
   void aiRequest(AiSource src, String demand) {
     if (aiStage[src] == AiStage.rejected) return; // 拒絕後不可重新提出
     // 名額足夠者須先確認意願；名額已滿者直接放行（改走快照）。
@@ -4806,7 +4810,10 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    _say(src, AiTurnRole.user, demand);
+    // **空字串代表「開啟畫面就直接問」**，不是使用者說的話。
+    // 原本一定要使用者先打一句才會進到追問，但那一句除了當脈絡之外
+    // 沒有任何作用 —— 意圖仍限三選一。少一步就少一步。
+    if (demand.trim().isNotEmpty) _say(src, AiTurnRole.user, demand);
     // 追問的作用是取得一個明確的**意圖**（三值列舉），建議才產得出來。
     // 接上 Gemini（`[BE-08]`）之後，使用者原本的那幾句話會連同意圖
     // 一起送給模型當脈絡（見 [_aiNote]）—— 但意圖本身仍限三選一，
@@ -4937,6 +4944,16 @@ class AppState extends ChangeNotifier {
             ],
       },
     );
+  }
+
+  /// 開啟調整畫面 —— 直接進到追問，不要求使用者先打一句話。
+  ///
+  /// **只在對話還是空的、且尚未開始時才動作。** 否則回到已經進行到
+  /// 一半的對話會被重新問一次。
+  void aiOpen(AiSource src) {
+    if (aiStage[src] != AiStage.idle) return;
+    if (aiConversations[src]!.isNotEmpty) return;
+    aiRequest(src, '');
   }
 
   /// 從使用者的回答解析出意圖。**認不出來就回空值，不猜。**

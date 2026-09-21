@@ -27,6 +27,17 @@ class _AiAdjustScreenState extends State<AiAdjustScreen> {
   AiSource get src => widget.source;
 
   @override
+  void initState() {
+    super.initState();
+    // 一進來就直接問「要怎麼調」，不必先打一句話。
+    // **要等第一幀之後** —— `aiOpen` 會 `notifyListeners()`，在 build
+    // 期間觸發的話 Flutter 當場拋例外。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppScope.of(context).aiOpen(src);
+    });
+  }
+
+  @override
   void dispose() {
     ctrl.dispose();
     scroll.dispose();
@@ -408,7 +419,11 @@ class _Composer extends StatelessWidget {
                     maxLines: 4,
                     decoration: InputDecoration(
                       isDense: true,
-                      hintText: stage == AiStage.idle ? '想怎麼調整？' : '回答 AI 的問題…',
+                      // 追問階段已經有三顆按鈕，打字是補充說明用的 ——
+                      // 那些話會連同意圖一起送給模型當脈絡。
+                      hintText: stage == AiStage.idle
+                          ? '想怎麼調整？'
+                          : '選上面一個方向，或補充說明…',
                       hintStyle: T.body(color: C.textSecondary),
                       filled: true,
                       fillColor: C.bgPage,

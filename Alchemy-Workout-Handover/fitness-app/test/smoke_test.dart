@@ -225,10 +225,7 @@ void main() {
     await t.tap(find.widgetWithText(AppButton, 'AI 訓練前調整').first);
     await t.pumpAndSettle();
 
-    // 提出調整要求 → AI 再次確認需求
-    await t.enterText(find.byType(TextField).first, '今天肩膀緊，想降強度');
-    await t.tap(find.byIcon(Icons.send_rounded));
-    await t.pumpAndSettle();
+    // 開啟畫面即追問 —— 不必先打一句話（`aiOpen`）。
     expect(find.textContaining('要怎麼調'), findsOneWidget);
 
     // 使用者確認需求 → 分析 → 產出建議
@@ -255,10 +252,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.widgetWithText(AppButton, 'AI 訓練前調整').first);
     await t.pumpAndSettle();
-    await t.enterText(find.byType(TextField).first, '想換動作');
-    await t.tap(find.byIcon(Icons.send_rounded));
-    await t.pumpAndSettle();
-    // 這條測的是拒絕流程，前置給一個認得出的答案就好。
+    // 開啟畫面即追問。這條測的是拒絕流程，前置給一個認得出的答案就好。
     await t.enterText(find.byType(TextField).first, '減少組數');
     await t.tap(find.byIcon(Icons.send_rounded));
     await t.pump(const Duration(seconds: 2));

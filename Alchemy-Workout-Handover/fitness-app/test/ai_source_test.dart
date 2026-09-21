@@ -240,6 +240,42 @@ void main() {
       expect(sent, names, reason: '送的必須是他眼前這一份，不是別的課表');
     });
 
+    test('開啟畫面就直接追問，不必先打一句話', () {
+      final s = AppState();
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+
+      s.aiOpen(AiSource.beforeTraining);
+
+      expect(s.aiStage[AiSource.beforeTraining], AiStage.clarifying);
+      final turns = s.aiConversations[AiSource.beforeTraining]!;
+      expect(turns.length, 1, reason: '只有 AI 那一句，沒有假造的使用者發言');
+      expect(turns.single.role, AiTurnRole.ai);
+      expect(turns.single.text, contains('要怎麼調'));
+      expect(turns.single.text, contains('替換做不了的動作'));
+    });
+
+    test('對話已經開始就不重複問', () {
+      final s = AppState();
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiOpen(AiSource.beforeTraining);
+      final n = s.aiConversations[AiSource.beforeTraining]!.length;
+
+      s.aiOpen(AiSource.beforeTraining);
+
+      expect(s.aiConversations[AiSource.beforeTraining]!.length, n);
+    });
+
+    test('沒有假造的使用者發言就不會被當成補充說明', () async {
+      final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
+      final s = AppState()..aiSource = fake;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiOpen(AiSource.beforeTraining);
+      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+
+      await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
+      expect(fake.sent!.containsKey('note'), isFalse);
+    });
+
     test('看不出意圖時不猜、不扣點、不產建議', () async {
       // 使用者打「早安」也換來一份降強度的課表並被扣一點 —— 他從頭到尾
       // 沒要求調整強度。猜錯的代價不是保守與否，是做了他沒要求的事還收了錢。
