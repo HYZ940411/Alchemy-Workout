@@ -36,6 +36,7 @@ class _FakeSource implements AiSuggestionSource {
     int onlyFrom = 0,
     String? note,
     AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
   }) async {
     sent = {
       'intent': intent.name,

@@ -178,19 +178,19 @@ void main() {
     });
 
     test('已完成任何一組就不給還原 —— 那些成績記在現在這個動作名下', () {
-      final (s, _, __) = swapped();
+      final (s, _, _) = swapped();
       s.session!.records[0][0].state = SetState.done;
       expect(s.restoreReplacedExercise(0), isFalse);
     });
 
     test('已結算就不給還原', () {
-      final (s, _, __) = swapped();
+      final (s, _, _) = swapped();
       s.session = null;
       expect(s.restoreReplacedExercise(0), isFalse);
     });
 
     test('索引超出範圍回 false，不拋例外', () {
-      final (s, _, __) = swapped();
+      final (s, _, _) = swapped();
       expect(s.restoreReplacedExercise(-1), isFalse);
       expect(s.restoreReplacedExercise(999), isFalse);
     });
