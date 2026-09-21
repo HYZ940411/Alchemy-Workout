@@ -634,8 +634,15 @@ class _CurrentExercise extends StatelessWidget {
                       onPressed: () {
                         final s = AppScope.of(context);
                         final i = s.session!.exercises.indexOf(pe);
-                        s.restoreReplacedExercise(i);
-                        showToast(context, '已還原為 ${pe.replacedFrom!.name}');
+                        // **看回傳值再決定要說什麼。** 原本一律跳「已還原」，
+                        // 但規格擋下「該動作已有完成的組」—— 那種情況下
+                        // 畫面會說一件沒發生的事。
+                        showToast(
+                          context,
+                          s.restoreReplacedExercise(i)
+                              ? '已還原為 ${pe.replacedFrom!.name}'
+                              : '這個動作已經做過組，不能還原了。',
+                        );
                       },
                       kind: BtnKind.secondary,
                     ),

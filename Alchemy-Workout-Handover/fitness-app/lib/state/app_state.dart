@@ -1364,20 +1364,6 @@ class AppState extends ChangeNotifier {
 
   /// 使用者已還原被替換的動作。
   /// 只改本次訓練課表快照，組數與各組目標沿用 —— 換的是動作，不是課表結構。
-  void restoreReplacedExercise(int index) {
-    final s = session;
-    if (s == null || index < 0 || index >= s.exercises.length) return;
-    final pe = s.exercises[index];
-    final origin = pe.replacedFrom;
-    if (origin == null) return;
-    s.exercises[index] = PlanExercise(
-      exercise: origin,
-      planned: pe.planned,
-      restSeconds: pe.restSeconds,
-    );
-    notifyListeners();
-  }
-
   /// 略過目前這一組 —— 不想練的組不勾選即可，該組不計入已完成組數，
   /// 僅使進度百分比低於 100%。這**不是**「使用者已取消該組」：
   /// 那一個的 Precondition 是該組已經完成過，見 [uncheckSet]。
@@ -4854,6 +4840,69 @@ class AppState extends ChangeNotifier {
     return said.length > 200 ? said.substring(0, 200) : said;
   }
 
+  /// 使用者執行「還原被替換的動作」（`01_Command清單.md`）。
+  ///
+  /// 三個 Precondition 一個都不能少（〈訓練紀錄流程〉）：
+  /// 該動作為「AI 已替換動作」的結果、**該動作尚無任何已完成的組**、
+  /// 且本次訓練尚未結算。
+  ///
+  /// **逐個還原，非整批**；且**不改動已落地的自訂訓練** ——
+  /// 承既有裁決「訓練中的調整只改一次性的快照」。
+  ///
+  /// 已知風險（規格明載）：走到這條路的原因多半是器材不足，還原的原動作
+  /// 有可能是他當下做不了的。**模型不阻擋**，由使用者自行判斷。
+  bool restoreReplacedExercise(int index) {
+    // 結算後 `session` 即為空值 —— 「本次訓練尚未結算」這個 Precondition
+    // 由它表達，不另設旗標。
+    final ss = session;
+    if (ss == null) return false;
+    if (index < 0 || index >= ss.exercises.length) return false;
+
+    final pe = ss.exercises[index];
+    final original = pe.replacedFrom;
+    if (original == null) return false;
+
+    // 做過任何一組就不給還原 —— 那些成績記在現在這個動作名下。
+    final done = index < ss.records.length &&
+        ss.records[index].any((r) => r.state == SetState.done);
+    if (done) return false;
+
+    ss.exercises[index] = PlanExercise(
+      exercise: original,
+      // 還原含各組的目標重量與次數（規格 Postcondition）。
+      planned: [...(pe.replacedPlanned ?? pe.planned)],
+      restSeconds: pe.restSeconds,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// 這個動作的替代候選 —— 同肌群、且目前器材做得到。
+  ///
+  /// **候選由前端算，不把 527 筆動作庫送進 prompt。** 那樣 prompt 會
+  /// 爆炸，而且模型可能回一個不存在的動作；改成只送候選、要模型從中
+  /// 挑一個，驗證就變成「挑的在不在候選裡」——滴水不漏。
+  ///
+  /// 依據是「持有器材明細」（`02_Aggregate定義.md` §1324）。
+  List<Exercise> swapCandidatesFor(Exercise e, {int limit = 5}) {
+    final have = availableEquipment;
+    return [
+      for (final x in platformExercises)
+        if (x.id != e.id &&
+            x.dim == e.dim &&
+            x.type == e.type &&
+            () {
+              final need = requiredEquipment(x.equipment);
+              return need.isEmpty || need.every(have.contains);
+            }())
+          x,
+    ]
+        // 相對強度相近的排前面 —— 換動作不該順便換掉訓練強度。
+        ..sort((a, b) => (a.relativeIntensity - e.relativeIntensity)
+            .abs()
+            .compareTo((b.relativeIntensity - e.relativeIntensity).abs()));
+  }
+
   /// 送給模型的脈絡（`[BE-08]` 方案 A）。
   ///
   /// **這是 AI 能不能勝過一條規則的關鍵。** 在此之前模型只收得到動作
@@ -4863,7 +4912,7 @@ class AppState extends ChangeNotifier {
   ///
   /// **不含身分**：沒有暱稱、uid、電子郵件、生日。體重與性別有送 ——
   /// DOTS 標準化本來就靠它們。
-  AdjustContext _aiContext(List<PlanExercise> target) {
+  AdjustContext _aiContext(List<PlanExercise> target, {bool swap = false}) {
     final stats = exerciseStats;
     return AdjustContext(
       bodyweightKg: bodyweightKg,
@@ -4879,6 +4928,13 @@ class AppState extends ChangeNotifier {
               for (final t in stats[pe.exercise.id]!.trend.reversed.take(5))
                 (weight: t.weight, reps: t.reps),
             ].reversed.toList(),
+      },
+      candidates: {
+        for (final pe in target)
+          if (swap)
+            pe.exercise.name: [
+              for (final c in swapCandidatesFor(pe.exercise).take(5)) c.name,
+            ],
       },
     );
   }
@@ -4902,6 +4958,12 @@ class AppState extends ChangeNotifier {
     // 降強度，判成升強度剛好相反）、`少` 與 `減`（「減強度」「少做一點
     // 重量」講的都不是組數）。認不出來就再問一次，那不丟臉；
     // 猜錯方向讓人照著練才是問題。
+    // 換動作要排在最前面 —— 「換掉臥推」含「換」，而不含其他方向的詞，
+    // 但先比對強度類的話，未來加詞容易誤判。
+    if (a.contains('換') || a.contains('替代') || a.contains('做不了') ||
+        a.contains('沒有器材') || a.contains('器材不')) {
+      return AdjustIntent.swap;
+    }
     if (a.contains('升') || a.contains('加重') || a.contains('加強')) {
       return AdjustIntent.harder;
     }
@@ -5086,7 +5148,13 @@ class AppState extends ChangeNotifier {
         intent: intent,
         onlyFrom: from,
         note: _aiNote(src),
-        context: _aiContext(target),
+        context: _aiContext(target, swap: intent == AdjustIntent.swap),
+        candidates: intent == AdjustIntent.swap
+            ? {
+                for (final pe in target)
+                  pe.exercise.name: swapCandidatesFor(pe.exercise).take(5).toList(),
+              }
+            : const {},
       );
     } catch (_) {
       // 逾時與服務錯誤在使用者眼裡沒有差別，都是「這次沒成功」。

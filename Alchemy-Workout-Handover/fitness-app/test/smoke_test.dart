@@ -258,8 +258,7 @@ void main() {
     await t.enterText(find.byType(TextField).first, '想換動作');
     await t.tap(find.byIcon(Icons.send_rounded));
     await t.pumpAndSettle();
-    // 「換掉臥推」系統做不到（沒有「替換動作」這個意圖），新行為會
-    // 停在追問不往下走 —— 這條測的是拒絕流程，前置要給認得出的答案。
+    // 這條測的是拒絕流程，前置給一個認得出的答案就好。
     await t.enterText(find.byType(TextField).first, '減少組數');
     await t.tap(find.byIcon(Icons.send_rounded));
     await t.pump(const Duration(seconds: 2));

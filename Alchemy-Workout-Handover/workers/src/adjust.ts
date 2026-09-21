@@ -11,7 +11,7 @@
  * **使用者永遠拿得到一份可用的建議**，差別只在它來自模型還是規則。
  */
 
-export type Intent = "easier" | "harder" | "trim";
+export type Intent = "easier" | "harder" | "trim" | "swap";
 
 export interface PlannedSet { weight: number; reps: number }
 export interface PlanExercise { name: string; sets: PlannedSet[] }
@@ -21,6 +21,8 @@ export interface Change {
   after: PlannedSet[];
   /** 這一筆為什麼這樣調。規則產的沒有 —— 它只會算，說不出所以然。 */
   reason?: string;
+  /** 替換後的動作名稱。只有 intent=swap 時才會有。 */
+  replacement?: string;
 }
 
 /**
@@ -37,16 +39,19 @@ export interface AdjustContext {
   equipment?: string[];
   /** 動作名稱 → 歷來成績（舊→新）。 */
   recent?: Record<string, { weight: number; reps: number }[]>;
+  /** 動作名稱 → 允許替換成的動作。**模型只能從這裡挑。** */
+  candidates?: Record<string, string[]>;
 }
 
 const INTENT_TEXT: Record<Intent, string> = {
   easier: "整體降低強度：降低單組負荷，但盡量維持總訓練量",
   harder: "整體提高強度：提高負荷，組數與次數維持",
   trim: "減少訓練量：減少組數，重量與次數維持",
+  swap: "替換動作：把做不了的動作換成同肌群、器材做得到的另一個",
 };
 
 export const isIntent = (v: unknown): v is Intent =>
-  v === "easier" || v === "harder" || v === "trim";
+  v === "easier" || v === "harder" || v === "trim" || v === "swap";
 
 /** 場館槓片以 2.5kg 為級距，推到小數點沒有意義。 */
 const round2p5 = (kg: number) => Math.round(kg / 2.5) * 2.5;
@@ -82,6 +87,11 @@ export function ruleFallback(
       // 砍到 0 組等於刪掉這個動作，那是「移除動作」不是「減量」。
       after = e.sets.length > 1 ? e.sets.slice(0, -1) : e.sets;
       break;
+    case "swap":
+      // **規則挑不出替代動作。** 那要看肌群、器材與這個人的水準，
+      // 不是一條 ×0.9 算得出來的東西。模型失敗時就維持原樣。
+      after = e.sets;
+      break;
     }
     return {index, name: e.name, after};
   });
@@ -92,7 +102,11 @@ export function ruleFallback(
  *
  * 界線不是品味問題 —— 模型算錯一個數字，使用者照著做會受傷。
  */
-export function clamp(exercises: PlanExercise[], raw: unknown): Change[] {
+export function clamp(
+  exercises: PlanExercise[],
+  raw: unknown,
+  candidates?: Record<string, string[]>,
+): Change[] {
   if (!Array.isArray(raw)) return [];
   const out: Change[] = [];
 
@@ -127,10 +141,21 @@ export function clamp(exercises: PlanExercise[], raw: unknown): Change[] {
       // 理由是純文字，**不驗數值**，但要限長 —— 模型話多不是使用者的問題，
       // 但那一行要塞得進畫面。
       const r = typeof c.reason === "string" ? c.reason.trim() : "";
+
+      // 替換後的動作**只能是候選清單裡的那幾個**。模型回別的一律丟棄
+      // 整筆 —— 它可能憑空發明一個不存在的動作，使用者照著做不出來。
+      let swapTo: string | undefined;
+      if (typeof c.replacement === "string" && c.replacement) {
+        const allowed = candidates?.[src.name] ?? [];
+        if (!allowed.includes(c.replacement)) continue;
+        swapTo = c.replacement;
+      }
+
       out.push({
         index,
         name: src.name,
         after,
+        ...(swapTo ? {replacement: swapTo} : {}),
         ...(r ? {reason: r.slice(0, 120)} : {}),
       });
     }
@@ -179,6 +204,16 @@ export function buildPrompt(
     "",
     ...(who.length ? ["使用者：", who.join("；"), ""] : []),
     ...history,
+    ...(intent === "swap" && ctx?.candidates ?
+      [
+        "每個動作可替換成的候選（**只能從這裡挑，不得自行發明**）：",
+        JSON.stringify(ctx.candidates),
+        "替換時請在該筆加上 \"replacement\":\"候選動作名稱\"，",
+        "並依新動作給出合適的重量與次數 —— 換了動作，原本的重量多半不適用。",
+        "不需要替換的動作就不要加 replacement，維持原樣即可。",
+        "",
+      ] :
+      []),
     "課表（JSON）：",
     JSON.stringify(exercises),
     "",
@@ -235,5 +270,5 @@ export async function askGemini(
     candidates?: { content?: { parts?: { text?: string }[] } }[];
   };
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  return clamp(exercises, JSON.parse(text));
+  return clamp(exercises, JSON.parse(text), ctx?.candidates);
 }

@@ -47,6 +47,9 @@ abstract class AiSuggestionSource {
     int onlyFrom = 0,
     String? note,
     AdjustContext? context,
+
+    /// 動作名稱 → 允許替換成的動作。空的代表這一次不換動作。
+    Map<String, List<Exercise>> candidates = const {},
   });
 }
 
@@ -72,6 +75,12 @@ class AdjustContext {
   /// 動作名稱 → 這個人練它的歷來成績（舊→新，最多取最近幾次）。
   final Map<String, List<({double weight, int reps})>> recent;
 
+  /// 動作名稱 → 可用來替換它的候選動作名稱。
+  ///
+  /// **候選由前端算好再送**，不把 527 筆動作庫塞進 prompt。模型只能
+  /// 從這份清單挑，挑了別的一律丟棄 —— 驗證因此變得簡單且滴水不漏。
+  final Map<String, List<String>> candidates;
+
   const AdjustContext({
     required this.bodyweightKg,
     required this.isMale,
@@ -79,6 +88,7 @@ class AdjustContext {
     required this.goal,
     this.equipment = const [],
     this.recent = const {},
+    this.candidates = const {},
   });
 
   Map<String, dynamic> toJson() => {
@@ -93,6 +103,7 @@ class AdjustContext {
               for (final r in e.value) {'weight': r.weight, 'reps': r.reps},
             ],
         },
+        if (candidates.isNotEmpty) 'candidates': candidates,
       };
 }
 
@@ -124,12 +135,16 @@ Map<String, dynamic> encodePlan(
 /// **索引要加回 [onlyFrom]**：送上去的是切過的清單，伺服器回的 index
 /// 是那份切片裡的位置，而 `applySuggestion` 對的是原始課表的位置。
 /// 這裡沒加回去的話，訓練中調整會把建議套到已經練完的動作上。
+/// [candidates] 為「動作名稱 → 允許替換成的動作」。**這是第二道驗證** ——
+/// 伺服器已經比對過一次，這裡再比一次；模型回一個不在清單裡的動作，
+/// 或呼叫端根本沒給候選，就當作沒有替換，只收強度調整。
 AdjustSuggestion decodeSuggestion(
   Map<String, dynamic> data,
   List<PlanExercise> exercises,
   AdjustIntent intent,
-  int onlyFrom,
-) {
+  int onlyFrom, {
+  Map<String, List<Exercise>> candidates = const {},
+}) {
   final raw = (data['changes'] as List?) ?? const [];
   final changes = <AdjustChange>[];
 
@@ -150,12 +165,26 @@ AdjustSuggestion decodeSuggestion(
     ];
     if (after.isEmpty) continue;
 
+    // 替換後的動作。只認候選清單裡的 —— 模型回別的一律當作沒換。
+    Exercise? replacement;
+    final rn = m['replacement'];
+    if (rn is String && rn.isNotEmpty) {
+      for (final c in candidates[pe.exercise.name] ?? const <Exercise>[]) {
+        if (c.name == rn) {
+          replacement = c;
+          break;
+        }
+      }
+      if (replacement == null) continue; // 說要換卻換不出來，整筆不要
+    }
+
     final reason = m['reason'];
     changes.add(AdjustChange(
       exerciseIndex: i,
       exerciseName: pe.exercise.name,
       before: [...pe.planned],
       after: after,
+      replacement: replacement,
       // 只收字串，而且要有內容 —— 模型回個空字串不該變成畫面上的空行。
       reason: reason is String && reason.trim().isNotEmpty
           ? reason.trim()

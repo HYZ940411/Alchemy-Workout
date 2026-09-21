@@ -95,6 +95,13 @@ class PlanExercise {
   /// 該動作為「AI 已替換動作」的結果時有值，可展開檢視原動作。
   final Exercise? replacedFrom;
 
+  /// 原動作的逐組目標。**還原時要一併還原它** ——
+  /// 規格明訂「還原為原動作，**含其各組的目標重量與次數**」
+  /// （〈訓練紀錄流程〉的還原路徑 Postcondition）。
+  /// 只存 `replacedFrom` 的話，還原回去的是替代動作的重量，
+  /// 那個重量是為了另一個動作算的。
+  final List<PlannedSet>? replacedPlanned;
+
   /// 課表指定的組間休息秒數 —— 取值優先序的第一順位，空值則退回動作層級預設。
   final int? restSeconds;
 
@@ -102,6 +109,7 @@ class PlanExercise {
     required this.exercise,
     required this.planned,
     this.replacedFrom,
+    this.replacedPlanned,
     this.restSeconds,
   });
 }

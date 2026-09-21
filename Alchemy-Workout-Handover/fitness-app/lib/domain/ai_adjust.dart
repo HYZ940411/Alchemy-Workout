@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'models.dart';
 
-/// 調整的意圖。對應 AI 追問「要整體降強度，還是只換掉特定動作」的兩個答案。
+/// 調整的意圖。對應 AI 追問「要怎麼調」的幾個答案。
 enum AdjustIntent {
   /// 整體降強度：重量下修、次數上調，維持訓練量但降低單組負荷。
   easier,
@@ -12,12 +12,22 @@ enum AdjustIntent {
 
   /// 減量：砍掉每個動作的最後一組。
   trim,
+
+  /// 替換動作 —— 把做不了的動作換成同肌群、且器材做得到的另一個。
+  ///
+  /// **這是規格早就定義的 Command**（`01_Command清單.md`〈替換動作〉→
+  /// Event「AI 已替換動作」，攜帶原動作 ID、替換後動作 ID、替換原因），
+  /// 以「持有器材明細」為調整依據（`02_Aggregate定義.md` §1324）。
+  /// 在此之前沒有任何呼叫端 —— 連 [PlanExercise.replacedFrom] 這個欄位
+  /// 都已經存在，只是從來沒有人寫進去過。
+  swap,
 }
 
 const adjustIntentNames = <AdjustIntent, String>{
   AdjustIntent.easier: '整體降強度',
   AdjustIntent.harder: '整體升強度',
   AdjustIntent.trim: '減少組數',
+  AdjustIntent.swap: '替換做不了的動作',
 };
 
 /// 一個動作的一項變更。**AI 只產出建議，不套用** —— 故建議是一份
@@ -33,6 +43,12 @@ class AdjustChange {
   /// 調整前的逐組目標，供畫面對照。
   final List<PlannedSet> before;
 
+  /// 替換後的動作。**空值代表這一筆只改強度，沒換動作。**
+  ///
+  /// 有值時 [after] 是換過去之後的逐組目標 —— 換了動作，原本的重量
+  /// 多半不適用，模型要一併給新的。
+  final Exercise? replacement;
+
   /// 這一筆為什麼這樣調。**空值代表這一次沒有理由可說** ——
   /// 端內規則產的建議就是這種：它只會算，說不出所以然。
   ///
@@ -45,6 +61,7 @@ class AdjustChange {
     required this.exerciseName,
     required this.before,
     required this.after,
+    this.replacement,
     this.reason,
   });
 
@@ -52,6 +69,15 @@ class AdjustChange {
 
   /// 一行人話。畫面直接用它，不各自拼字串。
   String get summary {
+    final r = replacement;
+    if (r != null) {
+      final a = after.first;
+      String w(double v) => v == v.roundToDouble() ? '${v.round()}' : '$v';
+      final load = a.targetWeight == 0
+          ? '${a.targetReps} 下'
+          : '${w(a.targetWeight)}kg × ${a.targetReps} 下';
+      return '$exerciseName → ${r.name}　$load × ${after.length} 組';
+    }
     if (setsChanged) {
       return '$exerciseName　${before.length} 組 → ${after.length} 組';
     }
@@ -127,6 +153,11 @@ AdjustSuggestion buildSuggestion(
               s.targetReps,
             ),
         ];
+      case AdjustIntent.swap:
+        // **規則引擎不換動作。** 挑替代動作要看肌群、器材與這個人的
+        // 水準，那不是一條 ×0.9 算得出來的東西。沒有模型時這個方向
+        // 產不出建議 —— `aiProduceSuggestion` 會回「沒有可調的空間」。
+        after = before;
       case AdjustIntent.trim:
         // 砍最後一組，但至少留一組 —— 砍到 0 組等於刪掉這個動作，
         // 那是「移除動作」不是「減量」。
@@ -157,10 +188,18 @@ List<PlanExercise> applySuggestion(
     if (c.exerciseIndex < 0 || c.exerciseIndex >= out.length) continue;
     final pe = out[c.exerciseIndex];
     if (pe.exercise.name != c.exerciseName) continue; // 對位不上就不套
+    final r = c.replacement;
     out[c.exerciseIndex] = PlanExercise(
-      exercise: pe.exercise,
+      exercise: r ?? pe.exercise,
       planned: c.after,
-      replacedFrom: pe.replacedFrom,
+      // **換動作時記下原動作。** 規格要求訓練進行中頁標示「已替換」
+      // 並可展開檢視原動作，還原入口也在那裡
+      //（`04_ReadModel清單.md` §1858、`01_Command清單.md`〈還原被替換的動作〉）。
+      // 已經是替換結果的再換一次，原動作仍指向最初那一個 ——
+      // 使用者要還原的是他本來選的課表，不是中間某一版。
+      replacedFrom: r != null ? (pe.replacedFrom ?? pe.exercise) : pe.replacedFrom,
+      replacedPlanned:
+          r != null ? (pe.replacedPlanned ?? [...pe.planned]) : pe.replacedPlanned,
       restSeconds: pe.restSeconds,
     );
   }

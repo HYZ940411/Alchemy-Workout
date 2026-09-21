@@ -279,14 +279,16 @@ void main() {
       expect(AppState.parseIntent('想加重一點'), AdjustIntent.harder);
       expect(AppState.parseIntent('減少組數'), AdjustIntent.trim);
       expect(AppState.parseIntent('組數少一點'), AdjustIntent.trim);
+      // 「換掉臥推」在補上 swap 之前是認不出來的 —— 那時系統做不到，
+      // 現在做得到了。
+      expect(AppState.parseIntent('換掉臥推'), AdjustIntent.swap);
+      expect(AppState.parseIntent('這個器材不在我這'), AdjustIntent.swap);
     });
 
     test('parseIntent：曖昧與無關的一律回空值', () {
       expect(AppState.parseIntent('早安'), isNull);
       expect(AppState.parseIntent('我早餐吃蘑菇麵'), isNull);
       expect(AppState.parseIntent(''), isNull);
-      // 系統沒有「替換動作」這個意圖，認不出來才是對的。
-      expect(AppState.parseIntent('換掉臥推'), isNull);
       // 「太難了」是想降強度，舊版的 `難` 會判成升強度 —— 剛好相反。
       expect(AppState.parseIntent('太難了'), isNull);
       // 「減強度」講的不是組數，舊版的 `減` 會判成減組數。

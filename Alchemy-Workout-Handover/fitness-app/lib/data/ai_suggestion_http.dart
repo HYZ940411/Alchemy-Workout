@@ -42,6 +42,7 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
     int onlyFrom = 0,
     String? note,
     AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
   }) async {
     final token = await idToken();
     if (token == null || token.isEmpty) {
@@ -73,7 +74,8 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
         (jsonDecode(utf8.decode(res.bodyBytes)) as Map).cast<String, dynamic>();
     return RemoteSuggestion(
       originOf(data),
-      decodeSuggestion(data, exercises, intent, onlyFrom),
+      decodeSuggestion(data, exercises, intent, onlyFrom,
+          candidates: candidates),
     );
   }
 }
