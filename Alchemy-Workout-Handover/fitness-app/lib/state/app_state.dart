@@ -5342,22 +5342,27 @@ class AppState extends ChangeNotifier {
             rationale: adjustRationale[intent],
           )
         : got.suggestion;
+    // **用標題區分來源，不另外加一個灰框。**
+    //
+    // 原本退回規則時會多一句「AI 分析暫時無法使用」—— 那句話對使用者
+    // 沒有用（建議照樣可用），但**完全不留痕跡也不行**：靜默退回已經
+    // 咬過這個專案四次，這次也是靠它才查出 `gemini-2.5-flash` 退役。
+    //
+    // 折衷：標題有沒有「AI」兩個字就是答案。不佔版面，也分得出來。
+    final byModel = got.origin == SuggestionOrigin.gemini;
     _say(src, AiTurnRole.ai,
-        '建議如下（${adjustIntentNames[intent]}）：\n'
+        '${byModel ? 'AI ' : ''}建議如下（${adjustIntentNames[intent]}）：\n'
         '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n')}\n'
         '${aiSuggestion[src]!.rationale == null ? '' : '\n${aiSuggestion[src]!.rationale}\n'}'
         '\n作用範圍：${aiSourceScope[src]}');
     // **退回規則引擎時要說出來。** 不說的話，使用者看到的是一份
     // 看起來正常、其實沒經過模型的建議 —— 他只會覺得 AI 變笨了，
     // 而真正的原因躺在一個沒有人會去看的 log 裡。
-    if (got.origin == SuggestionOrigin.rule) {
-      // **對使用者講人話。** 伺服器回的是原始錯誤（HTTP 狀態碼加一段
-      // JSON），那是給我們查問題用的，不是給使用者看的 ——
-      // 他看到一串 `"status": "INVALID_ARGUMENT"` 只會更困惑。
-      // 技術細節留在開發者模式裡，那裡的讀者本來就是我們自己。
-      _say(src, AiTurnRole.system,
-          'AI 分析暫時無法使用，本次改由內建規則產生建議。'
-          '${developerMode && got.error != null ? '\n\n〔開發者〕${got.error}' : ''}');
+    // 技術細節只給開發者模式。原始錯誤是 HTTP 狀態碼加一段 JSON，
+    // 那是給我們查問題用的 —— 使用者看到 `"status": "NOT_FOUND"`
+    // 只會更困惑，而且他手上那份建議本來就是可用的。
+    if (developerMode && got.error != null) {
+      _say(src, AiTurnRole.system, '〔開發者〕${got.error}');
     }
     aiStage[src] = AiStage.proposed;
     notifyListeners();

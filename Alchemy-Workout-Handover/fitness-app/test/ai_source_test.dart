@@ -440,23 +440,36 @@ void main() {
       return s;
     }
 
-    test('退回規則時會在對話裡說出來', () async {
-      // 靜默退回比失敗更難查：畫面看起來正常，只是「AI 變笨了」。
+    test('退回規則時標題不帶「AI」—— 靜默退回咬過這個專案四次', () async {
       final s = await produced(source: 'rule', error: 'gemini 404: 模型不存在');
+      final texts =
+          s.aiConversations[AiSource.beforeTraining]!.map((t) => t.text);
+      expect(texts.any((t) => t.startsWith('建議如下')), isTrue);
+      expect(texts.any((t) => t.startsWith('AI 建議如下')), isFalse);
+    });
 
-      final last = s.aiConversations[AiSource.beforeTraining]!.last;
-      expect(last.role, AiTurnRole.system);
-      expect(last.text, contains('AI 分析暫時無法使用'));
+    test('模型產的標題帶「AI」', () async {
+      final s = await produced(source: 'gemini');
+      final texts =
+          s.aiConversations[AiSource.beforeTraining]!.map((t) => t.text);
+      expect(texts.any((t) => t.startsWith('AI 建議如下')), isTrue);
+    });
+
+    test('使用者看不到那個灰框 —— 建議本來就是可用的，不必多一句', () async {
+      final s = await produced(source: 'rule', error: '隨便什麼錯');
+      final texts =
+          s.aiConversations[AiSource.beforeTraining]!.map((t) => t.text).join();
+      expect(texts, isNot(contains('暫時無法使用')));
+      expect(texts, isNot(contains('隨便什麼錯')));
     });
 
     test('對使用者不丟原始錯誤 —— 那串 JSON 是給我們查問題用的', () async {
       final s = await produced(
           source: 'rule',
           error: 'listModels 400: {"error":{"status":"INVALID_ARGUMENT"}}');
-      final last = s.aiConversations[AiSource.beforeTraining]!.last;
-      expect(last.text, contains('AI 分析暫時無法使用'));
-      expect(last.text, isNot(contains('INVALID_ARGUMENT')));
-      expect(last.text, isNot(contains('400')));
+      final texts =
+          s.aiConversations[AiSource.beforeTraining]!.map((t) => t.text).join();
+      expect(texts, isNot(contains('INVALID_ARGUMENT')));
     });
 
     test('開發者模式才看得到技術細節', () async {
@@ -479,13 +492,6 @@ void main() {
           s.aiConversations[AiSource.beforeTraining]!.map((t) => t.text).join();
       expect(texts, contains('總反覆量維持不變'),
           reason: '規則引擎逐筆說不出話，但整條規則的依據講得出來');
-    });
-
-    test('模型產的就不會多那一句', () async {
-      final s = await produced(source: 'gemini');
-      final texts =
-          s.aiConversations[AiSource.beforeTraining]!.map((t) => t.text);
-      expect(texts.any((t) => t.contains('未經 AI 分析')), isFalse);
     });
 
     test('追問那一句不再說「了解。」—— 前面沒有話可以了解', () {
