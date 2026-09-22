@@ -243,7 +243,7 @@ export function buildPrompt(
 const API = "https://generativelanguage.googleapis.com/v1beta";
 
 /** 第一順位的模型。挑不到時由 [pickModel] 改問 API 有哪些可用。 */
-const PREFERRED = "gemini-2.5-flash";
+const PREFERRED = "gemini-3.6-flash";
 
 /** 這個 isolate 內已經確認可用的模型名稱。 */
 let resolved: string | null = null;
@@ -300,7 +300,44 @@ async function pickModel(apiKey: string): Promise<string> {
   return pick;
 }
 
+/**
+ * Google 在 404 訊息裡會直接說該改用哪一個：
+ *   「This model models/X is no longer available to new users.
+ *     Please update your code to use models/Y」
+ *
+ * **把 Y 挖出來直接重試。** `listModels` 回報的可用清單與這把金鑰
+ * 實際能呼叫的並不一致（清單有 2.5-flash，呼叫卻說新使用者不能用），
+ * 所以光靠挑清單不夠 —— 真正權威的答案在錯誤訊息裡。
+ */
+function suggestedModel(body: string): string | null {
+  const m = body.match(/use\s+models\/([\w.-]+)/);
+  return m ? m[1] : null;
+}
+
 export async function askGemini(
+  exercises: PlanExercise[],
+  intent: Intent,
+  apiKey: string,
+  note?: string,
+  ctx?: AdjustContext,
+): Promise<Change[]> {
+  try {
+    return await _ask(exercises, intent, apiKey, note, ctx);
+  } catch (e) {
+    // 只對「換一個模型就能好」的情況重試一次，其餘照常往上丟。
+    const msg = e instanceof Error ? e.message : String(e);
+    const next = msg.includes("404") ? suggestedModel(msg) : null;
+    if (next == null || next === resolved) rethrow(e);
+    resolved = next;
+    return _ask(exercises, intent, apiKey, note, ctx);
+  }
+}
+
+function rethrow(e: unknown): never {
+  throw e;
+}
+
+async function _ask(
   exercises: PlanExercise[],
   intent: Intent,
   apiKey: string,
