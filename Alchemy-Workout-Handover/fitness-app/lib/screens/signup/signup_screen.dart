@@ -31,6 +31,10 @@ class SignUpScreen extends StatefulWidget {
   /// 第一次註冊時沒有東西可覆蓋，問了只會讓人以為自己要弄壞什麼。
   final bool firstRun;
 
+  /// 這台裝置登入過 —— 登入頁講「歡迎回來」而不是「建立帳號」。
+  /// 由 [AuthGate] 從裝置層的記事本讀出來。
+  final bool returning;
+
   /// 已經在 App 外面授權過的電子郵件（目前只有 Google 登入會給）。
   ///
   /// 有值代表「入口這一關已經過了」——[AuthGate] 已經收到登入事件，
@@ -54,6 +58,7 @@ class SignUpScreen extends StatefulWidget {
     this.authorizedEmail,
     this.suggestedName,
     this.auth,
+    this.returning = false,
   });
   @override
   State<SignUpScreen> createState() => _SignUpScreenState();
@@ -194,6 +199,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         );
       case -3:
         return LoginPane(
+          returning: widget.returning,
           onPhone: (phone) => setState(() {
             d.entry = SignUpEntry.phone;
             d.phone = phone;

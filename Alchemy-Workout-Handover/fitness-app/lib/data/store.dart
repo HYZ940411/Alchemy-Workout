@@ -12,6 +12,26 @@ import 'store_io.dart' if (dart.library.js_interop) 'store_web.dart' as impl;
 /// [main] 只認這一個函式，不知道自己跑在哪個平台上。
 Store defaultStore() => impl.createStore();
 
+/// 這台裝置的小記事本。**與使用者無關**，只記得住跨帳號都成立的事。
+///
+/// 目前只放一件事：這台裝置成功登入過。登入頁在還不知道使用者是誰的
+/// 時候需要它 —— 對已經有帳號的人說「選一種方式**建立帳號**」，
+/// 第一個感覺是「我以前註冊過卻忘了？」。
+Store deviceStore() => impl.createDeviceStore();
+
+/// 這台裝置成功登入過沒有。讀不出來一律當作沒有 ——
+/// 猜錯的方向要選傷害小的那一邊：對老手說「開始吧」只是囉嗦，
+/// 對新手說「歡迎回來」會讓他以為自己忘了舊帳號。
+Future<bool> hasSignedInBefore(Store s) async {
+  try {
+    return (await s.load())?['signedIn'] == true;
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<void> markSignedIn(Store s) => s.save({'signedIn': true});
+
 /// 存讀的邊界。
 ///
 /// App 其餘部分只認這個介面，不知道資料實際上放在哪 ——

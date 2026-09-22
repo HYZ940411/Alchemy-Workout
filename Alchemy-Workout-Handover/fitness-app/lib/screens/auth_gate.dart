@@ -34,6 +34,10 @@ class AuthGate extends StatefulWidget {
   /// 建立這個帳號的儲存後端。測試改傳一個假的，就不必連真的 Firestore。
   final Store Function(String uid) storeFor;
 
+  /// 這台裝置的小記事本。**不綁 uid** —— 登入頁要在還不知道使用者是誰
+  /// 的時候，回答「這台裝置登入過嗎」。空值代表不記（既有測試走這條）。
+  final Store? deviceStore;
+
   /// 平台公用唯讀資料的來源（[BE-12]）。空值代表不載入，維持本地後備。
   final PlatformDataSource? platformData;
 
@@ -64,6 +68,7 @@ class AuthGate extends StatefulWidget {
     required this.auth,
     required this.state,
     required this.storeFor,
+    this.deviceStore,
     this.platformData,
     this.profileFor,
     this.aiSource,
@@ -104,6 +109,12 @@ class _AuthGateState extends State<AuthGate> {
   /// 擋 `authStateChanges` 在權杖換新時重發使用者而重複同步。
   String? _profileSyncedFor;
 
+  /// 這台裝置成功登入過沒有。決定登入頁說「開始吧」還是「歡迎回來」。
+  ///
+  /// **讀完之前先當作沒有。** 猜錯的方向要選傷害小的那一邊：對老手說
+  /// 「開始吧」只是囉嗦，對新手說「歡迎回來」會讓他以為自己忘了舊帳號。
+  bool _returning = false;
+
   @override
   void initState() {
     super.initState();
@@ -121,10 +132,25 @@ class _AuthGateState extends State<AuthGate> {
     // 才抓的。沒有理由讓它依賴六個不相干的網路呼叫。
     widget.state.aiSource = widget.aiSource;
 
+    // 讀裝置層的記事本。**不 await** —— 讀不到只是文案退回「開始吧」，
+    // 不該擋住登入頁畫出來。
+    final dev = widget.deviceStore;
+    if (dev != null) {
+      hasSignedInBefore(dev).then((seen) {
+        if (mounted && seen) setState(() => _returning = true);
+      });
+    }
+
     _sub = widget.auth.authStateChanges().listen(_onAuthChanged);
   }
 
   void _onAuthChanged(User? user) {
+    // 登入成功就記下來。**即發即忘**：寫不進去最多是下次文案退回
+    // 「開始吧」，不該影響登入本身。
+    if (user != null) {
+      final dev = widget.deviceStore;
+      if (dev != null) markSignedIn(dev).catchError((_) {});
+    }
     if (user != null && _hydratedFor != user.uid) {
       _hydratedFor = user.uid;
       // 先呼叫再 setState：hydrate 是同步把狀態設成 loading 的，
@@ -277,6 +303,8 @@ class _AuthGateState extends State<AuthGate> {
     if (_user == null) {
       return SignUpScreen(
         firstRun: true,
+        // 這台裝置登入過的話，講的是「歡迎回來」而不是「建立帳號」。
+        returning: _returning,
         auth: widget.auth,
         // 註冊流程走完不必做什麼 —— 畫面要不要換由這個 Gate 決定，
         // 它看的是登入狀態，不是註冊流程的完成回呼。

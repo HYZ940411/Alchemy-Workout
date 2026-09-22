@@ -31,11 +31,15 @@ class LoginPane extends StatefulWidget {
   /// 換頁是 [AuthGate] 收到登入事件之後的事，兩邊都推進會變成競態。
   final Future<bool> Function()? onGoogle;
 
+  /// 這台裝置登入過。**文案分兩種的理由寫在標題那一行的註解裡。**
+  final bool returning;
+
   const LoginPane({
     super.key,
     required this.onPhone,
     required this.onThirdParty,
     this.onGoogle,
+    this.returning = false,
   });
 
   @override
@@ -100,14 +104,23 @@ class _LoginPaneState extends State<LoginPane> {
         padding:
             const EdgeInsets.fromLTRB(S.base, S.xl, S.base, S.scrollBottom),
         children: [
-          // **不可以寫「歡迎回來」** —— 這一頁只有第一次來的人看得到
-          //（AppBar 標題就是「建立帳號」）。對素未謀面的人說「回來」，
-          // 第一個感覺是「我是不是以前註冊過卻忘了」。
-          // 等真的有「既有帳號登入」那條路徑時，再依情境分兩種文案。
-          Text('開始吧', style: T.h1()),
+          // **兩種文案**（`[BE-04]` 之後才做得到，當初的註解就說了
+          // 「等真的有『既有帳號登入』那條路徑時，再依情境分兩種」）。
+          //
+          // 對素未謀面的人說「回來」，第一個感覺是「我是不是以前註冊過
+          // 卻忘了」；反過來，對每次重開都看到這一頁的老使用者說
+          // 「選一種方式**建立帳號**」，他會以為自己的帳號不見了。
+          //
+          // 判斷來自裝置層的小記事本（`deviceStore`），**讀不到一律
+          // 當作沒登入過** —— 猜錯的方向選傷害小的那一邊。
+          Text(widget.returning ? '歡迎回來' : '開始吧', style: T.h1()),
           const SizedBox(height: S.sm),
-          Text('選一種方式建立帳號，只要一分鐘',
-              style: T.body(color: C.textSecondary)),
+          Text(
+            widget.returning
+                ? '用原本的方式登入，進度都在'
+                : '選一種方式建立帳號，只要一分鐘',
+            style: T.body(color: C.textSecondary),
+          ),
           const SizedBox(height: S.xl),
 
           Text('手機號碼', style: T.caption()),

@@ -13,6 +13,10 @@ import 'store.dart';
 /// Web 版連編都編不起來。
 Store createStore() => FileStore();
 
+/// 裝置層的小記事本，**不綁 uid** —— 登入頁要在還不知道使用者是誰的
+/// 時候，回答「這台裝置登入過嗎」。
+Store createDeviceStore() => FileStore(fileName: 'device.json');
+
 /// 本機檔案。寫在系統的「應用程式文件」目錄，重開機仍在。
 ///
 /// **先寫暫存檔再改名**：直接覆寫時，若寫到一半就被關掉，

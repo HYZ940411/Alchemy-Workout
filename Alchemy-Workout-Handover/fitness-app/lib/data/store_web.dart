@@ -7,6 +7,10 @@ import 'store.dart';
 /// 這個平台的預設儲存後端。見 [store.dart] 的條件匯入。
 Store createStore() => WebStore();
 
+/// 裝置層的小記事本，**不綁 uid** —— 登入頁要在還不知道使用者是誰的
+/// 時候，回答「這台裝置登入過嗎」。
+Store createDeviceStore() => WebStore(key: 'device.json');
+
 /// 瀏覽器的 localStorage。
 ///
 /// 與 [FileStore] 是同一份契約的兩個實作，行為要一致 ——

@@ -206,6 +206,10 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                 state: state,
                 storeFor: widget.storeFor ??
                     (uid) => FirestoreStore(uid: uid),
+                // 裝置層的小記事本 —— 只記「這台裝置登入過」，不綁 uid。
+                // **測試不傳**，於是登入頁一律走「開始吧」那一版，
+                // 既有測試不受影響。
+                deviceStore: deviceStore(),
                 platformData: widget.platformData,
                 profileFor: widget.profileFor,
                 aiSource: widget.aiSource,
