@@ -240,6 +240,52 @@ export function buildPrompt(
   ].join("\n");
 }
 
+const API = "https://generativelanguage.googleapis.com/v1beta";
+
+/** 第一順位的模型。挑不到時由 [pickModel] 改問 API 有哪些可用。 */
+const PREFERRED = "gemini-2.0-flash";
+
+/** 這個 isolate 內已經確認可用的模型名稱。 */
+let resolved: string | null = null;
+
+/**
+ * 決定要用哪個模型。
+ *
+ * **不要把模型名稱寫死後就不管。** 型號會退役，而退役那天的症狀是
+ * 每次呼叫都 404、伺服器安靜地退回規則引擎，使用者只會覺得
+ * 「AI 怎麼變笨了」。這裡改為向 API 問一次有哪些模型可用，
+ * 挑一個支援 generateContent 的 flash 系列。
+ */
+async function pickModel(apiKey: string): Promise<string> {
+  if (resolved) return resolved;
+
+  const res = await fetch(`${API}/models`, {
+    headers: {"x-goog-api-key": apiKey},
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`listModels ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = await res.json() as {
+    models?: { name?: string; supportedGenerationMethods?: string[] }[];
+  };
+  const usable = (data.models ?? [])
+    .filter((m) =>
+      (m.supportedGenerationMethods ?? []).includes("generateContent"))
+    .map((m) => (m.name ?? "").replace(/^models\//, ""))
+    .filter((n) => n.length > 0);
+
+  // 偏好：指定的那個 → 任何 flash（快又便宜）→ 隨便一個能用的。
+  const pick = usable.find((n) => n === PREFERRED) ??
+    usable.find((n) => n.includes("flash")) ??
+    usable[0];
+  if (!pick) throw new Error("listModels: 沒有任何支援 generateContent 的模型");
+
+  resolved = pick;
+  return pick;
+}
+
 export async function askGemini(
   exercises: PlanExercise[],
   intent: Intent,
@@ -247,9 +293,9 @@ export async function askGemini(
   note?: string,
   ctx?: AdjustContext,
 ): Promise<Change[]> {
+  const model = await pickModel(apiKey);
   const res = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/" +
-      "gemini-2.0-flash:generateContent",
+    `${API}/models/${model}:generateContent`,
     {
       method: "POST",
       headers: {"Content-Type": "application/json", "x-goog-api-key": apiKey},
@@ -265,11 +311,12 @@ export async function askGemini(
     },
   );
   if (!res.ok) {
-    // **把回應內容一起丟出去。** 只給狀態碼的話，`wrangler tail` 上
-    // 看到的是「gemini 404」—— 那可能是模型名稱過期、金鑰沒權限、
-    // 或配額用盡，三者的處置完全不同。Gemini 的錯誤回應講得出是哪一種。
+    // **把回應內容一起丟出去。** 只給狀態碼的話看到的是「gemini 404」——
+    // 那可能是模型名稱過期、金鑰沒權限、或配額用盡，三者的處置完全不同。
     const body = await res.text().catch(() => "");
-    throw new Error(`gemini ${res.status}: ${body.slice(0, 300)}`);
+    // 這個模型不能用了，下次重新挑。
+    resolved = null;
+    throw new Error(`gemini ${model} ${res.status}: ${body.slice(0, 300)}`);
   }
 
   const data = await res.json() as {

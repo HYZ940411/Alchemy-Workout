@@ -4828,8 +4828,10 @@ class AppState extends ChangeNotifier {
     // 接上 Gemini（`[BE-08]`）之後，使用者原本的那幾句話會連同意圖
     // 一起送給模型當脈絡（見 [_aiNote]）—— 但意圖本身仍限三選一，
     // 而伺服器端的逐項驗證在模型回話之後才跑，使用者寫什麼都越不過去。
+    // **不說「了解。」** —— 開啟畫面就直接問了（見 [aiOpen]），
+    // 前面沒有任何一句話可以「了解」。
     _say(src, AiTurnRole.ai,
-        '了解。${switch (src) {
+        '${switch (src) {
           AiSource.beforeTraining => '這份課表',
           AiSource.planAdjust => '這份課表的動作',
           AiSource.duringTraining => '剩下的動作',
@@ -5239,6 +5241,14 @@ class AppState extends ChangeNotifier {
         '建議如下（${adjustIntentNames[intent]}）：\n'
         '${got.suggestion.changes.map((c) => '· ${c.detail}').join('\n')}\n'
         '作用範圍：${aiSourceScope[src]}');
+    // **退回規則引擎時要說出來。** 不說的話，使用者看到的是一份
+    // 看起來正常、其實沒經過模型的建議 —— 他只會覺得 AI 變笨了，
+    // 而真正的原因躺在一個沒有人會去看的 log 裡。
+    if (got.origin == SuggestionOrigin.rule) {
+      _say(src, AiTurnRole.system,
+          '本次由內建規則產生，未經 AI 分析'
+          '${got.error == null ? '。' : '：${got.error}'}');
+    }
     aiStage[src] = AiStage.proposed;
     notifyListeners();
   }

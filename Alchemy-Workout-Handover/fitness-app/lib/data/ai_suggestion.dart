@@ -29,7 +29,16 @@ enum SuggestionOrigin { gemini, rule }
 class RemoteSuggestion {
   final SuggestionOrigin origin;
   final AdjustSuggestion suggestion;
-  const RemoteSuggestion(this.origin, this.suggestion);
+
+  /// 模型沒能產出時的原因。**空值代表這一次是模型產的。**
+  ///
+  /// 有值仍然會附上一份可用的建議（伺服器退回規則引擎）—— 但那件事
+  /// 一定要講出來。**靜默退回比失敗更難查**：畫面上看起來一切正常，
+  /// 只是「AI 變笨了」，而真正的原因（模型退役、金鑰沒權限、配額用盡）
+  /// 只存在於一個沒有人會去看的 log 裡。
+  final String? error;
+
+  const RemoteSuggestion(this.origin, this.suggestion, {this.error});
 }
 
 abstract class AiSuggestionSource {
@@ -196,3 +205,9 @@ AdjustSuggestion decodeSuggestion(
 
 SuggestionOrigin originOf(Map<String, dynamic> data) =>
     data['source'] == 'gemini' ? SuggestionOrigin.gemini : SuggestionOrigin.rule;
+
+/// 伺服器回報的失敗原因。沒有就回空值。
+String? errorOf(Map<String, dynamic> data) {
+  final e = data['error'];
+  return e is String && e.trim().isNotEmpty ? e.trim() : null;
+}

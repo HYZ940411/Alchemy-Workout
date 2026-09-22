@@ -81,23 +81,27 @@ export default {
     }
 
     let source = "rule";
+    let error: string | undefined;
     let changes = ruleFallback(exercises, intent);
     try {
       const fromModel =
         await askGemini(exercises, intent, env.GEMINI_API_KEY, note, ctx);
-      // 模型全軍覆沒（整份都沒通過驗證）時不讓使用者空手而回。
       if (fromModel.length > 0) {
         source = "gemini";
         changes = fromModel;
+      } else {
+        // 模型回了東西但整份都沒通過驗證 —— 不讓使用者空手而回，
+        // 但這件事要講出來，不然看起來跟「模型正常」一模一樣。
+        error = "模型的建議沒有通過驗證";
       }
     } catch (e) {
-      console.error(
-        "gemini 呼叫失敗，改用規則：",
-        e instanceof Error ? e.message : String(e),
-      );
+      error = e instanceof Error ? e.message : String(e);
+      console.error("gemini 呼叫失敗，改用規則：", error);
     }
 
-    return new Response(JSON.stringify({source, changes}), {
+    // **把失敗原因回給前端。** 只寫進 log 的話，使用者看到的是一份
+    // 「看起來正常、其實是規則產的」建議 —— 靜默退回比失敗更難查。
+    return new Response(JSON.stringify({source, changes, error}), {
       headers: {"Content-Type": "application/json", ...cors(origin)},
     });
   },

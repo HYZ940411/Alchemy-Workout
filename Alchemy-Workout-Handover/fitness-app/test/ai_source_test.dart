@@ -48,6 +48,7 @@ class _FakeSource implements AiSuggestionSource {
     return RemoteSuggestion(
       originOf(data),
       decodeSuggestion(data, exercises, intent, onlyFrom),
+      error: errorOf(data),
     );
   }
 }
@@ -200,6 +201,13 @@ void main() {
         expect(s.changes.single.reason, isNull, reason: 'reason=$r');
         expect(s.changes.single.detail, s.changes.single.summary);
       }
+    });
+
+    test('伺服器回報的失敗原因會被帶回來', () {
+      expect(errorOf({'error': 'gemini 404: 模型不存在'}), 'gemini 404: 模型不存在');
+      expect(errorOf(const {}), isNull);
+      expect(errorOf({'error': '   '}), isNull, reason: '空白不算原因');
+      expect(errorOf({'error': 42}), isNull);
     });
 
     test('分得出是模型產的還是規則產的', () {
@@ -398,6 +406,64 @@ void main() {
 
       await s.aiProduceSuggestionAsync(AiSource.duringTraining);
       expect((fake.sent!['note'] as String).length, 200);
+    });
+
+    /// 走到「產出建議」那一步。**changes 不能是空的** ——
+    /// 空的會在「沒有可調的空間」就提前返回，走不到後面那幾句。
+    Future<AppState> produced({
+      required String source,
+      String? error,
+    }) async {
+      final base = AppState();
+      base.startWorkout(
+          base.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      final first = base.session!.exercises.first;
+
+      final s = AppState()
+        ..aiSource = _FakeSource(reply: {
+          'source': source,
+          if (error != null) 'error': error,
+          'changes': [
+            {
+              'index': 0,
+              'name': first.exercise.name,
+              'after': [
+                {'weight': first.planned.first.targetWeight, 'reps': 33},
+              ],
+            },
+          ],
+        });
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '');
+      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
+      return s;
+    }
+
+    test('退回規則時會在對話裡說出來，而且講得出原因', () async {
+      // 靜默退回比失敗更難查：畫面看起來正常，只是「AI 變笨了」。
+      final s = await produced(source: 'rule', error: 'gemini 404: 模型不存在');
+
+      final last = s.aiConversations[AiSource.beforeTraining]!.last;
+      expect(last.role, AiTurnRole.system);
+      expect(last.text, contains('未經 AI 分析'));
+      expect(last.text, contains('gemini 404'));
+    });
+
+    test('模型產的就不會多那一句', () async {
+      final s = await produced(source: 'gemini');
+      final texts =
+          s.aiConversations[AiSource.beforeTraining]!.map((t) => t.text);
+      expect(texts.any((t) => t.contains('未經 AI 分析')), isFalse);
+    });
+
+    test('追問那一句不再說「了解。」—— 前面沒有話可以了解', () {
+      final s = AppState();
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiOpen(AiSource.beforeTraining);
+      final first = s.aiConversations[AiSource.beforeTraining]!.single.text;
+      expect(first, isNot(startsWith('了解')));
+      expect(first, startsWith('這份課表要怎麼調'));
     });
 
     test('模型回的建議會取代端內規則的結果', () async {

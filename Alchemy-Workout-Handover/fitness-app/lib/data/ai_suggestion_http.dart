@@ -76,6 +76,7 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
       originOf(data),
       decodeSuggestion(data, exercises, intent, onlyFrom,
           candidates: candidates),
+      error: errorOf(data),
     );
   }
 }
