@@ -243,7 +243,7 @@ export function buildPrompt(
 const API = "https://generativelanguage.googleapis.com/v1beta";
 
 /** 第一順位的模型。挑不到時由 [pickModel] 改問 API 有哪些可用。 */
-const PREFERRED = "gemini-2.0-flash";
+const PREFERRED = "gemini-2.5-flash";
 
 /** 這個 isolate 內已經確認可用的模型名稱。 */
 let resolved: string | null = null;
@@ -270,16 +270,30 @@ async function pickModel(apiKey: string): Promise<string> {
   const data = await res.json() as {
     models?: { name?: string; supportedGenerationMethods?: string[] }[];
   };
-  const usable = (data.models ?? [])
+  const all = (data.models ?? [])
     .filter((m) =>
       (m.supportedGenerationMethods ?? []).includes("generateContent"))
     .map((m) => (m.name ?? "").replace(/^models\//, ""))
     .filter((n) => n.length > 0);
 
+  // **先濾掉不能拿來做這件事的。** 清單裡混著 TTS、圖像、實驗版與
+  // 其他家族（gemma）—— 挑到 `gemini-2.5-flash-preview-tts` 的話
+  // 每次呼叫都會失敗，而症狀跟「金鑰壞了」一模一樣。
+  const usable = all.filter((n) =>
+    n.startsWith("gemini-") &&
+    !n.includes("tts") &&
+    !n.includes("image") &&
+    !n.includes("audio") &&
+    !n.includes("vision") &&
+    !n.includes("embedding") &&
+    !n.includes("preview") &&
+    !n.includes("exp"));
+
   // 偏好：指定的那個 → 任何 flash（快又便宜）→ 隨便一個能用的。
   const pick = usable.find((n) => n === PREFERRED) ??
     usable.find((n) => n.includes("flash")) ??
-    usable[0];
+    usable[0] ??
+    all[0];
   if (!pick) throw new Error("listModels: 沒有任何支援 generateContent 的模型");
 
   resolved = pick;
