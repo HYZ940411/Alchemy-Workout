@@ -4416,6 +4416,9 @@ class AppState extends ChangeNotifier {
         // 每筆訂單於確認購買當下鎖定自己的到期時點 ——
         // 事後調整保留時間不影響已成立的訂單。
         holdUntil: p.kind == ProductKind.physical ? now.add(kStockHold) : null,
+        // **在這裡凍結，不在發放時回頭查商品** —— 管理員事後調整發放量
+        // 不該回溯影響已成立的訂單。
+        aiCredits: p.aiCredits * qty,
       ),
     );
     if (shipping != null) lastShipping = shipping;
@@ -4551,6 +4554,13 @@ class AppState extends ChangeNotifier {
     o.state = OrderState.delivered;
     o.deliveryManual = false;
     o.deliveryFailReason = null;
+    // **真的把東西發出去。** 在此之前這裡只把訂單標成「已發放」，
+    // 卻什麼都沒發 —— 使用者買了「AI 點數 ×10」，訂單顯示已發放，
+    // 餘額卻一點都沒增加。
+    if (o.aiCredits > 0) {
+      aiPermanent += o.aiCredits;
+      _logCredit(CreditChange.purchase, o.aiCredits, o.productName);
+    }
     notifyListeners();
   }
 
@@ -4845,6 +4855,37 @@ class AppState extends ChangeNotifier {
         .join('\n');
     if (said.isEmpty) return null;
     return said.length > 200 ? said.substring(0, 200) : said;
+  }
+
+  /// 把雲端讀到的公開團隊併進清單（`[BE-11]` 批次 4）。
+  ///
+  /// **在此之前 `TeamSource.openTeams()` 沒有任何呼叫端** —— 方法寫好了、
+  /// 測試也有，就是沒有人叫它。於是真實帳號的「找團隊」永遠是空的：
+  /// `publicTeams` 只從示範資料來，而那份對真實帳號是空清單。
+  ///
+  /// **排除自己已經在的那一隊** —— 它顯示在「我的團隊」，
+  /// 再出現在「可加入的公開團隊」裡只會讓人以為自己沒加入。
+  void applyPublicTeams(List<CloudTeam> cloud) {
+    final mine = myTeam?.id;
+    publicTeams
+      ..clear()
+      ..addAll([
+        for (final t in cloud)
+          if (t.id != mine && !t.disbanded)
+            PublicTeam(
+              t.name,
+              t.members.length,
+              t.capacity,
+              id: t.id,
+              isPublic: t.isPublic,
+              peakSize: t.peakSize,
+              members: [
+                for (final e in t.members.entries)
+                  TeamMember(e.value.name, e.value.rank, e.value.role),
+              ],
+            ),
+      ]);
+    notifyListeners();
   }
 
   /// 使用者執行「還原被替換的動作」（`01_Command清單.md`）。

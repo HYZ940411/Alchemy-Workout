@@ -1,0 +1,198 @@
+// 四個線上回報的缺陷，三種病因。
+//
+// ## 一、發放只改狀態，沒發東西
+// 買「AI 點數 ×10」→ 訂單顯示已發放 → 餘額一點都沒增加。
+// `deliverOrder()` 只把 `state` 設成 delivered。
+//
+// ## 二、方法寫好了，沒有呼叫端
+// `TeamSource.openTeams()` 有實作、有測試，就是沒有人叫它 ——
+// 真實帳號的「找團隊」永遠是空的。
+// AI 點數頁的兩個購買入口也一樣：`const _Channel(...)` 沒有 `onTap`。
+//
+// ## 三、整段共用一個 try，一塊失敗全滅
+// `AuthGate._syncProfile()` 的六個網路 await 包在同一個 try 裡。
+// 任何一個拋例外，後面全部不執行 —— 而且沒有任何跡象。
+// 這個結構造成過三次線上故障（AI 代理沒接上、團隊刷新就消失、私訊讀不到）。
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:fitness_app/data/team_data.dart';
+import 'package:fitness_app/domain/community.dart';
+import 'package:fitness_app/domain/commerce.dart';
+import 'package:fitness_app/state/app_state.dart';
+
+void main() {
+  group('虛擬商品要真的發放', () {
+    Order buy(AppState s, String productId) {
+      final p = s.products.firstWhere((x) => x.id == productId);
+      expect(s.confirmPurchase(p, p.specs.first, 1), isNull, reason: '前提：買得成');
+      return s.orders.first;
+    }
+
+    test('買 AI 點數 ×10，付款後永久點數 +10', () {
+      final s = AppState()..coins = 99999;
+      final before = s.aiPermanent;
+
+      final o = buy(s, 'v1');
+      expect(s.aiPermanent, before, reason: '待付款階段不該先發');
+
+      s.payOrder(o);
+
+      expect(o.state, OrderState.delivered);
+      expect(s.aiPermanent, before + 10);
+    });
+
+    test('單次調整使用權 +1 點', () {
+      final s = AppState()..coins = 99999;
+      final before = s.aiPermanent;
+      s.payOrder(buy(s, 'v2'));
+      expect(s.aiPermanent, before + 1);
+    });
+
+    test('發放數額在下單當下凍結 —— 事後改商品不回溯', () {
+      final s = AppState()..coins = 99999;
+      final o = buy(s, 'v1');
+      expect(o.aiCredits, 10);
+
+      // 管理員把商品改成只發 1 點。
+      final i = s.products.indexWhere((x) => x.id == 'v1');
+      final old = s.products[i];
+      s.products[i] = Product(
+        id: old.id, name: old.name, kind: old.kind, emoji: old.emoji,
+        specs: old.specs, aiCredits: 1,
+      );
+
+      final before = s.aiPermanent;
+      s.payOrder(o);
+      expect(s.aiPermanent, before + 10, reason: '已成立的訂單照原本的發');
+    });
+
+    test('實體商品不發點數', () {
+      final s = AppState()..coins = 99999;
+      final p = s.products.firstWhere((x) => x.kind == ProductKind.physical);
+      expect(p.aiCredits, 0);
+    });
+
+    test('發放進異動明細，查得到是哪一筆買的', () {
+      final s = AppState()..coins = 99999;
+      s.payOrder(buy(s, 'v1'));
+      final e = s.creditHistory.first;
+      expect(e.kind, CreditChange.purchase);
+      expect(e.delta, 10);
+      expect(e.source, contains('AI 點數'));
+    });
+  });
+
+  group('公開團隊要看得到', () {
+    CloudTeam team(String id, String name, {bool isPublic = true}) => CloudTeam(
+          id: id,
+          name: name,
+          isPublic: isPublic,
+          members: {
+            'u-$id': CloudMember(
+              name: '隊長$id',
+              rank: 10,
+              role: TeamRole.leader,
+              joinedAt: DateTime(2026, 1, 1),
+            ),
+          },
+        );
+
+    test('雲端的公開團隊會進 publicTeams', () {
+      final s = AppState(demo: false);
+      expect(s.publicTeams, isEmpty, reason: '前提：真實帳號本來是空的');
+
+      s.applyPublicTeams([team('a', '晨跑隊'), team('b', '重訓隊')]);
+
+      expect(s.publicTeams.map((t) => t.name), ['晨跑隊', '重訓隊']);
+      expect(s.publicTeams.first.members, hasLength(1));
+    });
+
+    test('自己已經在的那一隊不重複出現', () {
+      final s = AppState(demo: false);
+      s.applyCloudTeam(team('mine', '我的隊'));
+      s.applyPublicTeams([team('mine', '我的隊'), team('other', '別人的隊')]);
+      expect(s.publicTeams.map((t) => t.name), ['別人的隊']);
+    });
+
+    test('已解散的不列', () {
+      final s = AppState(demo: false);
+      s.applyPublicTeams([
+        const CloudTeam(id: 'x', name: '沒了', members: {}, disbanded: true),
+      ]);
+      expect(s.publicTeams, isEmpty);
+    });
+  });
+
+  group('複合查詢都要有索引', () {
+    // fake_cloud_firestore 不檢查索引，所以 20 條團隊測試全綠、線上卻查不到。
+    // 這條測試讀的是索引宣告檔，不連任何服務。
+    final declared = (jsonDecode(
+      File('firestore.indexes.json').readAsStringSync(),
+    ) as Map)['indexes'] as List;
+
+    String key(String col, List<String> fields) => '$col:${fields.join(",")}';
+    final have = {
+      for (final i in declared)
+        key(i['collectionGroup'] as String,
+            [for (final f in i['fields']) f['fieldPath'] as String]),
+    };
+
+    for (final want in const [
+      ['conversations', 'participants', 'lastAt'],
+      ['teams', 'memberUids', 'disbanded'],
+      ['teams', 'isPublic', 'disbanded'],
+      ['mentor_bonds', 'apprenticeUid', 'state'],
+      ['requests', 'uid', 'isInvite'],
+    ]) {
+      test('${want.first} 的 ${want.skip(1).join(" + ")} 有索引', () {
+        expect(have, contains(key(want.first, want.skip(1).toList())),
+            reason: '缺了它，線上這個查詢會直接拋例外');
+      });
+    }
+
+    test('程式碼裡的複合查詢沒有新增未宣告的', () {
+      // 新增複合查詢卻忘了宣告索引，是這次四個故障裡兩個的成因。
+      final files = Directory('lib/data')
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('_firestore.dart'));
+      var chains = 0;
+      for (final f in files) {
+        final src = f.readAsStringSync();
+        for (final m in RegExp(r'(?:\.where|\.orderBy)\([^)]*\)\s*(?:\.where|\.orderBy)\(')
+            .allMatches(src)) {
+          chains++;
+          expect(m, isNotNull);
+        }
+      }
+      expect(chains, 5,
+          reason: '複合查詢從 5 個變了 —— 請同步檢查 firestore.indexes.json');
+    });
+  });
+
+  group('登入後同步：一塊失敗不該波及其他塊', () {
+    final src = File('lib/screens/auth_gate.dart').readAsStringSync();
+
+    test('每一塊各自 try，不是整段共用一個', () {
+      final i = src.indexOf('Future<void> _syncProfile(');
+      expect(i, isNot(-1));
+      final body = src.substring(i, src.indexOf('@override', i));
+      expect(RegExp(r'await step\(').allMatches(body).length, greaterThanOrEqualTo(6),
+          reason: '公開檔案、貼文、私訊、我的團隊、公開團隊、師徒、關注各一塊');
+    });
+
+    test('來源在載入之前就接好 —— 讀取失敗不該讓之後的寫入全掉', () {
+      final i = src.indexOf('Future<void> _syncProfile(');
+      final body = src.substring(i, src.indexOf('@override', i));
+      for (final f in ['postSource', 'chatSource', 'teamSource', 'mentorSource',
+        'followSource']) {
+        expect(body.indexOf('state.$f ='), lessThan(body.indexOf('await step(')),
+            reason: '$f 要排在第一個 await 之前');
+      }
+    });
+  });
+}

@@ -168,68 +168,99 @@ class _AuthGateState extends State<AuthGate> {
   ///
   /// **不 await**：即發即忘。這件事失敗不該擋住使用者進場 ——
   /// 社群功能拿不到別人的資料只是少了內容，訓練與簽到照樣能用。
+  ///
+  /// ## 為什麼每一塊各自 try
+  ///
+  /// 原本整段包在**同一個** `try/catch` 裡。於是任何一個 await 失敗，
+  /// catch 吞掉，**後面每一塊都不執行** —— 而且完全沒有跡象。
+  ///
+  /// 這個結構造成過三個線上故障，當時看起來毫不相干：
+  ///   · AI 代理從來沒被接上（`aiSource` 那行排在最後面）
+  ///   · 建立團隊後重新整理就消失（`teamSource` 沒設，寫不上雲端）
+  ///   · 私訊讀不到（`conversations` 的複合查詢缺索引而拋例外，
+  ///     連帶把它後面的團隊、師徒、關注一起帶走）
+  ///
+  /// **一塊失敗不該波及其他塊。** 它們之間只有一個真正的順序相依：
+  /// `applyPublicProfiles` 要先跑，因為其餘幾塊都靠 `nameByUid`
+  /// 把 uid 翻回暱稱。除此之外互不相干。
   Future<void> _syncProfile(String uid) async {
     if (_profileSyncedFor == uid) return;
     final make = widget.profileFor;
     if (make == null) return;
     _profileSyncedFor = uid;
+
+    /// 跑一塊。失敗只影響這一塊，並讓整趟同步之後可以重試。
+    Future<void> step(String what, Future<void> Function() body) async {
+      try {
+        await body();
+      } catch (e) {
+        debugPrint('登入後同步「$what」失敗：$e');
+        _profileSyncedFor = null; // 允許下次登入事件重試
+      }
+    }
+
+    // **來源先接上，再談載入。** 接來源不需要網路，卻是之後每一次
+    // 寫入雲端的前提 —— 埋在載入後面的話，任何一次讀取失敗都會讓
+    // 使用者接下來做的事全部只留在記憶體裡。
+    widget.state.myUid = uid;
+    widget.state.postSource = widget.postsFor?.call(uid);
+    widget.state.chatSource = widget.chatsFor?.call(uid);
+    widget.state.teamSource = widget.teamsFor?.call(uid);
+    widget.state.mentorSource = widget.mentorFor?.call(uid);
+    widget.state.followSource = widget.followsFor?.call(uid);
+
+    // 先寫再讀：讓自己在別人的清單裡也看得到，
+    // 順序顛倒的話新使用者第一次登入不會出現在任何人的清單上。
+    //
+    // **這一塊要先完成**：其餘每一塊都靠 `nameByUid` 把 uid 翻回暱稱。
     final src = make(uid);
-    try {
-      // 先寫再讀：讓自己在別人的清單裡也看得到，
-      // 順序顛倒的話新使用者第一次登入不會出現在任何人的清單上。
+    await step('公開檔案', () async {
       await src.publish(widget.state.myPublicProfile(uid));
       widget.state.applyPublicProfiles(await src.others(limit: 50));
+    });
 
-      // **一定要在 applyPublicProfiles 之後**：applyFollows 靠 nameByUid
-      // 把 uid 翻回暱稱，而那張表是上一行填的。順序顛倒的話一個都翻不出來。
-      // 貼文：先把來源與身分交給 AppState（之後的按讚／留言才寫得上去），
-      // 再把既有的貼文讀回來。
-      final postsSrc = widget.postsFor?.call(uid);
-      if (postsSrc != null) {
-        widget.state.myUid = uid;
-        widget.state.postSource = postsSrc;
-        widget.state.applyCloudPosts(
-            await postsSrc.recent(limit: AppState.kPostFeedLimit));
-      }
+    final posts = widget.state.postSource;
+    if (posts != null) {
+      await step('貼文', () async {
+        widget.state
+            .applyCloudPosts(await posts.recent(limit: AppState.kPostFeedLimit));
+      });
+    }
 
-      // 私訊。要排在 applyPublicProfiles 之後 —— 對話裡的 uid 要靠
-      // nameByUid 翻成暱稱才畫得出來。
-      final chats = widget.chatsFor?.call(uid);
-      if (chats != null) {
-        widget.state.myUid = uid;
-        widget.state.chatSource = chats;
-        widget.state.applyCloudConversations(await chats.conversations(limit: 50));
-      }
+    final chats = widget.state.chatSource;
+    if (chats != null) {
+      await step('私訊', () async {
+        widget.state
+            .applyCloudConversations(await chats.conversations(limit: 50));
+      });
+    }
 
-      // 團隊。同樣排在 applyPublicProfiles 之後 —— 隊員的暱稱要從
-      // 雲端的 uid 翻回來才畫得出名字。
-      final teams = widget.teamsFor?.call(uid);
-      if (teams != null) {
-        widget.state.myUid = uid;
-        widget.state.teamSource = teams;
+    final teams = widget.state.teamSource;
+    if (teams != null) {
+      await step('我的團隊', () async {
         widget.state.applyCloudTeam(await teams.myTeam());
-      }
+      });
+      // **另外一塊。** 讀我的隊伍失敗，不該連公開團隊清單也看不到。
+      await step('公開團隊', () async {
+        widget.state.applyPublicTeams(await teams.openTeams());
+      });
+    }
 
-      // 師徒。同樣要排在 applyPublicProfiles 之後 —— 教官的暱稱
-      // 要從 uid 翻回來。
-      final mentor = widget.mentorFor?.call(uid);
-      if (mentor != null) {
-        widget.state.myUid = uid;
-        widget.state.mentorSource = mentor;
+    final mentor = widget.state.mentorSource;
+    if (mentor != null) {
+      await step('師徒', () async {
         widget.state.applyCloudBonds(await mentor.bonds());
-      }
+      });
+    }
 
-      final follows = widget.followsFor?.call(uid);
-      if (follows != null) {
-        widget.state.followSource = follows;
+    final follows = widget.state.followSource;
+    if (follows != null) {
+      await step('關注', () async {
         widget.state.applyFollows(
           await follows.following(),
           await follows.followers(),
         );
-      }
-    } catch (_) {
-      // 允許下次登入事件重試。
-      _profileSyncedFor = null;
+      });
     }
   }
 

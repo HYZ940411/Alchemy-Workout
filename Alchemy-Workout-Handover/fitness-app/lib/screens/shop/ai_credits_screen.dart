@@ -6,6 +6,7 @@ import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
 import 'membership_screen.dart';
+import 'product_detail_screen.dart';
 
 /// Read Model：AI 點數頁
 class AiCreditsScreen extends StatelessWidget {
@@ -83,13 +84,18 @@ class AiCreditsScreen extends StatelessWidget {
               MaterialPageRoute(builder: (_) => const MembershipScreen()),
             ),
           ),
-          const _Channel(
+          // **這兩列原本沒有 onTap** —— 純展示，按了什麼都不會發生。
+          // 規格明訂它們「導向〈虛擬商品購買流程〉」
+          //（`04_ReadModel清單.md`〈AI 點數餘額頁〉三個取得入口）。
+          _Channel(
             title: '金幣購買單次調整使用權限',
             detail: '150 金幣 ＝ 30 元',
+            onTap: () => _openProduct(context, 'v2'),
           ),
-          const _Channel(
+          _Channel(
             title: '法幣購買 AI 點數',
             detail: '依 SKU 定價，購得為永久點數，不重置、不過期',
+            onTap: () => _openProduct(context, 'v1'),
           ),
           const SectionLabel('異動明細'),
           Panel(
@@ -104,6 +110,19 @@ class AiCreditsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 開對應的虛擬商品。商品被下架時不給一個按了沒事的按鈕。
+void _openProduct(BuildContext context, String id) {
+  final s = AppScope.of(context);
+  final p = s.products.where((x) => x.id == id).firstOrNull;
+  if (p == null) {
+    showToast(context, '這個商品目前沒有上架。');
+    return;
+  }
+  Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => ProductDetailScreen(product: p)),
+  );
 }
 
 class _Channel extends StatelessWidget {

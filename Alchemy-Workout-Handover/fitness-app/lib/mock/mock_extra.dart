@@ -391,11 +391,13 @@ List<Product> buildProducts() => [
         id: 'v1', name: 'AI 點數 ×10', kind: ProductKind.virtual, emoji: '✨',
         images: const ['im_badge'],
         specs: [ProductSpec('10 點', 1500, 999)],
+        aiCredits: 10,
       ),
       Product(
         id: 'v2', name: '單次 AI 調整使用權', kind: ProductKind.virtual, emoji: '⚡',
         images: const ['im_chart'],
         specs: [ProductSpec('1 次', 150, 999)],
+        aiCredits: 1,
         note: '150 金幣 ＝ 30 元',
       ),
       Product(

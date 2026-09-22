@@ -41,6 +41,12 @@ class Product {
   final List<String> images;
   final List<ProductSpec> specs;
   final String? note;
+
+  /// 這件虛擬商品發放幾點**永久** AI 點數。實體商品為 0。
+  ///
+  /// **發放的是數額，不是名稱。** 靠商品名稱去猜要發什麼，改個名字
+  /// 就發不出來了 —— 比照獎勵信箱只存數額不存顯示文字的既有設計。
+  final int aiCredits;
   Product({
     required this.id,
     required this.name,
@@ -48,6 +54,7 @@ class Product {
     required this.emoji,
     required this.specs,
     this.note,
+    this.aiCredits = 0,
     List<String>? images,
   }) : images = images ?? const [];
 }
@@ -149,6 +156,12 @@ class Order {
   /// 預扣庫存的保留到期時點。僅待付款的實體訂單有值。
   final DateTime? holdUntil;
 
+  /// 本筆訂單應發放的永久 AI 點數（已乘上數量）。
+  ///
+  /// **在確認購買當下凍結**，不在發放時回頭查商品 —— 商品的發放量
+  /// 事後被管理員改動，不該回溯影響已成立的訂單。
+  final int aiCredits;
+
   /// 物流單號。出貨時記錄，系統不再追蹤後續物流狀態。
   String? trackingNo;
 
@@ -186,6 +199,7 @@ class Order {
     this.deliveryRetries = 0,
     this.deliveryManual = false,
     this.deliveryFailReason,
+    this.aiCredits = 0,
   });
 
   /// 發放尚未完成：已付款、尚未發放。
