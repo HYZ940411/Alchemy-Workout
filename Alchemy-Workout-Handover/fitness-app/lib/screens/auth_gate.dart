@@ -270,12 +270,25 @@ class _AuthGateState extends State<AuthGate> {
       await step('公開團隊', () async {
         widget.state.applyPublicTeams(await teams.openTeams());
       });
+      // 待回應的團隊請求。**在此之前沒有任何呼叫端** —— 送出的申請
+      // 寫進了 Firestore，但收件的那一方從來不去讀，於是隊長永遠
+      // 看不到有人申請加入。要排在 applyCloudTeam 之後：分流時要
+      // 知道我自己的隊伍 ID。
+      await step('團隊請求', () async {
+        widget.state.applyCloudTeamRequests(
+            await teams.requestsFor(uid, myTeamId: widget.state.myTeam?.id));
+      });
     }
 
     final mentor = widget.state.mentorSource;
     if (mentor != null) {
       await step('師徒', () async {
         widget.state.applyCloudBonds(await mentor.bonds());
+      });
+      // 待回應的師徒申請。**同樣在此之前沒有任何呼叫端** ——
+      // 送出的拜師申請寫進了 Firestore，教官永遠看不到。
+      await step('師徒申請', () async {
+        widget.state.applyCloudMentorRequests(await mentor.requestsFor(uid));
       });
     }
 

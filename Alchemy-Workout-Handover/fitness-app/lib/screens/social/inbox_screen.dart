@@ -25,8 +25,14 @@ class _InboxScreenState extends State<InboxScreen> {
     return Scaffold(
       backgroundColor: C.bgPage,
       appBar: AppBar(title: const Text('收件匣')),
-      body: items.isEmpty
-          ? _empty()
+      // 下拉重新整理 —— 沒有即時訂閱，對方送出申請時我這邊不會自己跳出來。
+      body: RefreshIndicator(
+        onRefresh: AppScope.of(context).refreshInbound,
+        child: items.isEmpty
+          // 空的時候也要拉得動：收件匣沒東西才最需要「再看一次」。
+          ? ListView(children: [SizedBox(
+              height: MediaQuery.of(context).size.height * 0.7,
+              child: _empty())])
           : ListView(
               padding: const EdgeInsets.fromLTRB(
                   S.base, S.base, S.base, S.scrollBottom),
@@ -41,6 +47,7 @@ class _InboxScreenState extends State<InboxScreen> {
                 ],
               ],
             ),
+      ),
     );
   }
 

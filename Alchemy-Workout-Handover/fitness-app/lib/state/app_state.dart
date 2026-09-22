@@ -2187,6 +2187,42 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 重新向雲端拿一次私訊與待回應請求。
+  ///
+  /// **這是「沒有即時訂閱」的代償。** `lib/data/` 底下沒有任何
+  /// `.snapshots()`，跨使用者的東西只在登入時載入一次 —— 對方傳了
+  /// 訊息或送出申請，我這邊要登出再登入才看得到。那不是可以交付的
+  /// 使用體驗，所以至少給一個下拉重新整理。
+  ///
+  /// 真正的解法是即時訂閱（`PROGRESS.md` 第 5 節 0c），那會動到整個讀取層。
+  ///
+  /// 逐塊各自 try：讀不到私訊不該連帶讓請求也刷不出來。
+  Future<void> refreshInbound() async {
+    final uid = myUid;
+    if (uid == null) return;
+
+    final chats = chatSource;
+    if (chats != null) {
+      try {
+        applyCloudConversations(await chats.conversations(limit: 50));
+      } catch (_) {/* 維持現有內容，不清空 */}
+    }
+    final teams = teamSource;
+    if (teams != null) {
+      try {
+        applyCloudTeam(await teams.myTeam());
+        applyCloudTeamRequests(
+            await teams.requestsFor(uid, myTeamId: myTeam?.id));
+      } catch (_) {/* 同上 */}
+    }
+    final mentor = mentorSource;
+    if (mentor != null) {
+      try {
+        applyCloudMentorRequests(await mentor.requestsFor(uid));
+      } catch (_) {/* 同上 */}
+    }
+  }
+
   void applyCloudPosts(List<Post> cloud) {
     for (final p in cloud) {
       final i = posts.indexWhere((x) => x.id == p.id);
@@ -4857,6 +4893,66 @@ class AppState extends ChangeNotifier {
         .join('\n');
     if (said.isEmpty) return null;
     return said.length > 200 ? said.substring(0, 200) : said;
+  }
+
+  /// 把雲端讀到的師徒申請收進待回應清單（`[BE-11]` 批次 5）。
+  ///
+  /// 與團隊請求同一個缺口：`MentorSource.requestsFor()` 有實作、有測試，
+  /// 就是沒有人叫它 —— 送出的拜師申請寫進了 Firestore，教官永遠看不到。
+  ///
+  /// 方向由 `fromMentor` 決定：教官發起＝他邀我當學徒；學徒發起＝
+  /// 有人想拜我為師。兩者在模型裡是不同的 [InboundKind]。
+  void applyCloudMentorRequests(List<MentorRequest> cloud) {
+    for (final r in cloud) {
+      if (r.expiresAt.isBefore(now)) continue;
+      receiveInbound(InboundRequest(
+        id: r.id,
+        kind: r.fromMentor
+            ? InboundKind.mentorInvite
+            : InboundKind.apprenticeApply,
+        from: r.fromName,
+        fromRank: r.fromRank,
+        // 師徒兩向的 subject 都與 from 同值（見 `InboundRequest.subject`）。
+        subject: r.fromName,
+        sentAt: r.at,
+      ));
+    }
+    notifyListeners();
+  }
+
+  /// 把雲端讀到的團隊請求分流進來（`[BE-11]` 批次 4）。
+  ///
+  /// **在此之前 `TeamSource.requestsFor()` 沒有任何呼叫端** —— 送出的
+  /// 申請確實寫進了 Firestore，但收件的那一方從來不去讀，於是隊長
+  /// 永遠看不到有人申請加入。與 `openTeams()` 一模一樣的缺口。
+  ///
+  /// 兩個方向進不同的地方，因為模型本來就分得很清楚：
+  ///   · `isInvite` ＝ 隊長邀我入隊 → 我的待回應請求（[inbox]）
+  ///   · 否則 ＝ 別人申請加入我的隊 → 那一隊自己的 [Team.applications]
+  ///
+  /// `InboundKind` 沒有「有人申請加入我的團隊」這個值，**那是對的** ——
+  /// 它掛在團隊底下，不是掛在我身上；我卸任隊長之後那些申請仍屬於那支隊。
+  void applyCloudTeamRequests(List<TeamRequest> cloud) {
+    final t = myTeam;
+    for (final r in cloud) {
+      if (r.expiresAt.isBefore(now)) continue; // 逾期的不收
+      if (r.isInvite) {
+        receiveInbound(InboundRequest(
+          id: 'ti-${r.teamId}',
+          kind: InboundKind.teamInvite,
+          from: r.name,
+          fromRank: r.rank,
+          // 團隊邀請的 subject 是**團隊名**，from 才是隊長。
+          subject: r.teamName,
+          sentAt: r.expiresAt.subtract(kInboundTtl),
+        ));
+      } else if (t != null && r.teamId == t.id) {
+        if (t.applications.any((a) => a.name == r.name)) continue;
+        if (t.members.any((m) => m.name == r.name)) continue;
+        t.applications.add(PendingRequest(r.name, r.rank, r.expiresAt));
+      }
+    }
+    notifyListeners();
   }
 
   /// 把雲端讀到的公開團隊併進清單（`[BE-11]` 批次 4）。

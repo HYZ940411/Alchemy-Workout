@@ -104,8 +104,14 @@ class _List extends StatelessWidget {
             (b.last?.at ?? DateTime(0)).compareTo(a.last?.at ?? DateTime(0)),
       );
 
-    return ListView(
+    // **下拉重新整理是「沒有即時訂閱」的代償。** 跨使用者的東西只在
+    // 登入時載入一次，對方傳了訊息我這邊要登出再登入才看得到。
+    return RefreshIndicator(
+      onRefresh: AppScope.of(context).refreshInbound,
+      child: ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 50),
+      // 內容不足一頁時也要拉得動，否則沒有訊息的人反而刷不了。
+      physics: const AlwaysScrollableScrollPhysics(),
       children: [
         for (final c in sorted)
           Padding(
@@ -191,6 +197,7 @@ class _List extends StatelessWidget {
             ),
           ),
       ],
+    ),
     );
   }
 }
