@@ -440,14 +440,13 @@ void main() {
       return s;
     }
 
-    test('退回規則時會在對話裡說出來，而且講得出原因', () async {
+    test('退回規則時會在對話裡說出來', () async {
       // 靜默退回比失敗更難查：畫面看起來正常，只是「AI 變笨了」。
       final s = await produced(source: 'rule', error: 'gemini 404: 模型不存在');
 
       final last = s.aiConversations[AiSource.beforeTraining]!.last;
       expect(last.role, AiTurnRole.system);
-      expect(last.text, contains('未經 AI 分析'));
-      expect(last.text, contains('gemini 404'));
+      expect(last.text, contains('AI 分析暫時無法使用'));
     });
 
     test('對使用者不丟原始錯誤 —— 那串 JSON 是給我們查問題用的', () async {

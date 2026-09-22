@@ -166,10 +166,20 @@ class Team {
     this.dailyRankPos = 0,
     this.timedRankPos = 0,
     this.lockedGroupSize = 3,
-    this.invites = const [],
-    this.applications = const [],
+    // **不可以是 `const []`。** 兩份清單都會被 `add`／`remove`
+    // （收到申請、核准、拒絕、撤回），而 `const` 清單不可修改 ——
+    // 任何沒有明確傳入這兩個參數的 Team（`createTeam()` 建的、
+    // `applyCloudTeam()` 從雲端載入的）一收到申請就拋
+    // `Cannot add to an unmodifiable list`。
+    //
+    // 與 `buildSocialUsers()` 當初那個 bug 一模一樣，寫法比照
+    // 同建構子裡的 `contributions` 與 `timedCredited`。
+    List<PendingRequest>? invites,
+    List<PendingRequest>? applications,
     Set<String>? timedCredited,
   })  : contributions = contributions ?? {},
+        invites = invites ?? [],
+        applications = applications ?? [],
         timedCredited = timedCredited ?? {};
 }
 

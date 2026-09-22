@@ -36,6 +36,47 @@ void main() {
         expiresAt: DateTime.now().add(left),
       );
 
+  group('隊伍的兩份請求清單必須可增長', () {
+    // `Team` 的 invites 與 applications 原本預設 `const []` —— 不可修改。
+    // 於是 `createTeam()` 建的隊、`applyCloudTeam()` 從雲端載入的隊，
+    // **一收到申請就拋 `Cannot add to an unmodifiable list`**。
+    // 與當初 `buildSocialUsers()` 那個 bug 一模一樣。
+
+    test('自己開一隊之後，別人申請加入不會拋例外', () {
+      final s = AppState(demo: false)..displayName = '我';
+      expect(s.createTeam('新隊伍'), isTrue);
+      expect(() => s.peerAppliesToMyTeam('路人甲', 12), returnsNormally);
+      expect(s.myTeam!.applications, hasLength(1));
+    });
+
+    test('雲端載入的隊伍也一樣', () {
+      final s = AppState(demo: false);
+      s.applyCloudTeam(CloudTeam(
+        id: 't-cloud',
+        name: '雲端隊',
+        members: {
+          'u-me': CloudMember(
+            name: '我',
+            rank: 10,
+            role: TeamRole.leader,
+            joinedAt: DateTime(2026),
+          ),
+        },
+      ));
+      expect(() => s.myTeam!.applications.add(
+            PendingRequest('路人乙', 9, DateTime.now()),
+          ), returnsNormally);
+    });
+
+    test('沒傳的話預設就是可增長的空清單', () {
+      final t = Team(id: 't', name: 'x', isPublic: true, members: const []);
+      expect(() => t.applications.add(
+            PendingRequest('甲', 1, DateTime.now())), returnsNormally);
+      expect(() => t.invites.add(
+            PendingRequest('乙', 1, DateTime.now())), returnsNormally);
+    });
+  });
+
   group('團隊請求要分流到正確的地方', () {
     test('別人申請加入我的隊 → 進那一隊的待回應清單', () {
       final s = AppState()..myTeam = Team(id: 't-mine', name: '我的隊', isPublic: true, members: const []);
