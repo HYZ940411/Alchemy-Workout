@@ -422,7 +422,7 @@ void main() {
       final s = AppState()
         ..aiSource = _FakeSource(reply: {
           'source': source,
-          if (error != null) 'error': error,
+          'error': ?error,
           'changes': [
             {
               'index': 0,
