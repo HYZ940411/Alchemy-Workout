@@ -100,11 +100,38 @@ class AdjustChange {
   String get detail => reason == null ? summary : '$summary\n　　$reason';
 }
 
+/// 每個調整方向的依據。**規則引擎也要講得出為什麼。**
+///
+/// 使用者自己就會把 60 改成 55 —— 他需要的是「為什麼是 55 不是 50」。
+/// 模型沒接上時至少要說得出這一條規則的訓練學依據，
+/// 而不是丟三行數字就結束。
+///
+/// **措辭不假裝是分析**：這是一條固定規則，不是看著這個人的紀錄算的。
+const adjustRationale = <AdjustIntent, String>{
+  AdjustIntent.easier: '重量降一成、每組多兩下 —— 總反覆量維持不變，'
+      '降的是單組負荷。狀況不好時先保住動作品質，比硬撐重量有意義。',
+  AdjustIntent.harder: '重量加半成、次數不變 —— 漸進超負荷的幅度刻意取小，'
+      '每次一小步比偶爾一大步更不容易受傷，也更容易連續達成。',
+  AdjustIntent.trim: '砍掉每個動作的最後一組，前面幾組的重量與次數不動 —— '
+      '縮短的是總時間，不是強度。時間不夠時，減組數比減重量划算。',
+  AdjustIntent.swap: '把做不了的動作換成同肌群、器材做得到的另一個，'
+      '並依新動作重算重量。',
+};
+
 /// 一份建議。
 class AdjustSuggestion {
   final AdjustIntent intent;
   final List<AdjustChange> changes;
-  const AdjustSuggestion({required this.intent, required this.changes});
+
+  /// 這份建議整體的依據。空值代表逐筆的 [AdjustChange.reason] 已經講夠了
+  /// —— 模型會針對每個動作各給一條理由，那比一句通則有用。
+  final String? rationale;
+
+  const AdjustSuggestion({
+    required this.intent,
+    required this.changes,
+    this.rationale,
+  });
 
   /// 這份建議等於什麼都沒改。
   ///
@@ -178,7 +205,12 @@ AdjustSuggestion buildSuggestion(
       after: after,
     ));
   }
-  return AdjustSuggestion(intent: intent, changes: changes);
+  return AdjustSuggestion(
+    intent: intent,
+    changes: changes,
+    // 規則產的建議逐筆說不出話（它只會算），但整條規則的依據講得出來。
+    rationale: adjustRationale[intent],
+  );
 }
 
 /// 把建議套進一份課表，回傳新的動作清單。**不就地修改傳入的清單。**

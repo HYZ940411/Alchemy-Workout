@@ -200,6 +200,9 @@ AdjustSuggestion decodeSuggestion(
           : null,
     ));
   }
+  // 模型逐筆各給一條理由，那比一句通則有用 —— 所以遠端來的建議
+  // 不附整體依據。退回規則時那一份是 `buildSuggestion()` 產的，
+  // 它自己會帶上 `adjustRationale`。
   return AdjustSuggestion(intent: intent, changes: changes);
 }
 

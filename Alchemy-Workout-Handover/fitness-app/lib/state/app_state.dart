@@ -5332,18 +5332,32 @@ class AppState extends ChangeNotifier {
       aiCharged[src] = true;
     }
     aiLastOrigin = got.origin;
-    aiSuggestion[src] = got.suggestion;
+    // 伺服器退回規則時，逐筆是沒有理由的（規則只會算）。至少補上
+    // 這條規則的訓練學依據 —— 使用者要的是「為什麼這樣改」，
+    // 不是三行數字。
+    aiSuggestion[src] = got.origin == SuggestionOrigin.rule
+        ? AdjustSuggestion(
+            intent: got.suggestion.intent,
+            changes: got.suggestion.changes,
+            rationale: adjustRationale[intent],
+          )
+        : got.suggestion;
     _say(src, AiTurnRole.ai,
         '建議如下（${adjustIntentNames[intent]}）：\n'
-        '${got.suggestion.changes.map((c) => '· ${c.detail}').join('\n')}\n'
-        '作用範圍：${aiSourceScope[src]}');
+        '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n')}\n'
+        '${aiSuggestion[src]!.rationale == null ? '' : '\n${aiSuggestion[src]!.rationale}\n'}'
+        '\n作用範圍：${aiSourceScope[src]}');
     // **退回規則引擎時要說出來。** 不說的話，使用者看到的是一份
     // 看起來正常、其實沒經過模型的建議 —— 他只會覺得 AI 變笨了，
     // 而真正的原因躺在一個沒有人會去看的 log 裡。
     if (got.origin == SuggestionOrigin.rule) {
+      // **對使用者講人話。** 伺服器回的是原始錯誤（HTTP 狀態碼加一段
+      // JSON），那是給我們查問題用的，不是給使用者看的 ——
+      // 他看到一串 `"status": "INVALID_ARGUMENT"` 只會更困惑。
+      // 技術細節留在開發者模式裡，那裡的讀者本來就是我們自己。
       _say(src, AiTurnRole.system,
-          '本次由內建規則產生，未經 AI 分析'
-          '${got.error == null ? '。' : '：${got.error}'}');
+          'AI 分析暫時無法使用，本次改由內建規則產生建議。'
+          '${developerMode && got.error != null ? '\n\n〔開發者〕${got.error}' : ''}');
     }
     aiStage[src] = AiStage.proposed;
     notifyListeners();
@@ -5386,7 +5400,8 @@ class AppState extends ChangeNotifier {
     _say(src, AiTurnRole.ai,
         '建議如下（${adjustIntentNames[intent]}）：\n'
         '${suggestion.changes.map((c) => '· ${c.detail}').join('\n')}\n'
-        '作用範圍：${aiSourceScope[src]}');
+        '${suggestion.rationale == null ? '' : '\n${suggestion.rationale}\n'}'
+        '\n作用範圍：${aiSourceScope[src]}');
     aiStage[src] = AiStage.proposed;
     notifyListeners();
   }

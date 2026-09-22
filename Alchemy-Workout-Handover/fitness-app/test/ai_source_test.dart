@@ -450,6 +450,38 @@ void main() {
       expect(last.text, contains('gemini 404'));
     });
 
+    test('對使用者不丟原始錯誤 —— 那串 JSON 是給我們查問題用的', () async {
+      final s = await produced(
+          source: 'rule',
+          error: 'listModels 400: {"error":{"status":"INVALID_ARGUMENT"}}');
+      final last = s.aiConversations[AiSource.beforeTraining]!.last;
+      expect(last.text, contains('AI 分析暫時無法使用'));
+      expect(last.text, isNot(contains('INVALID_ARGUMENT')));
+      expect(last.text, isNot(contains('400')));
+    });
+
+    test('開發者模式才看得到技術細節', () async {
+      final s = await produced(source: 'rule', error: 'listModels 400: boom');
+      s.developerMode = true;
+      // 重跑一次才會用到新的旗標。
+      s.aiReset(AiSource.beforeTraining);
+      s.aiRequest(AiSource.beforeTraining, '');
+      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
+
+      final texts =
+          s.aiConversations[AiSource.beforeTraining]!.map((t) => t.text);
+      expect(texts.any((t) => t.contains('listModels 400')), isTrue);
+    });
+
+    test('退回規則時仍講得出為什麼這樣改', () async {
+      final s = await produced(source: 'rule', error: '隨便什麼錯');
+      final texts =
+          s.aiConversations[AiSource.beforeTraining]!.map((t) => t.text).join();
+      expect(texts, contains('總反覆量維持不變'),
+          reason: '規則引擎逐筆說不出話，但整條規則的依據講得出來');
+    });
+
     test('模型產的就不會多那一句', () async {
       final s = await produced(source: 'gemini');
       final texts =
