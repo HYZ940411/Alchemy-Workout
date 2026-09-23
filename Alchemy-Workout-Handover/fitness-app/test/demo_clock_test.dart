@@ -82,7 +82,9 @@ void main() {
 
     test('補簽的可選範圍跟著時鐘走', () {
       final s = AppState();
-      final d = s.now.subtract(const Duration(days: 2));
+      // **以營業日起算，不是日曆日** —— 換日時點 04:00，00:00–03:59
+      // 這四個小時裡兩者差一天，寫成 `s.now.subtract` 會讓這條只在凌晨紅。
+      final d = businessDate(s.now).subtract(const Duration(days: 2));
       expect(s.daysAgo(d), 2);
       s.advanceDemoClock(const Duration(days: 5));
       expect(s.daysAgo(d), 7);

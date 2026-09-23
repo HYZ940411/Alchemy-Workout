@@ -6,8 +6,17 @@ import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/state/app_state.dart';
 
+/// 距今 [daysAgo] 個**營業日**的一天。
+///
+/// **不可以寫成 `s.now.subtract(...)`。** 換日時點是當地 04:00，所以
+/// 00:00–03:59 這四個小時裡 `businessDate(now)` 還停在前一天，而
+/// `now.subtract()` 算的是日曆日 —— 兩者差一天，`daysAgo` 就少一。
+/// 那會讓這個檔案的測試**只在凌晨紅**，白天怎麼跑都是綠的。
+///
+/// `app_state.dart` 的 `daysAgo` 註解講的正是這一類漏洞（它說那是
+/// 最後一處，其實漏了測試自己）；2026-09-24 00:18 的一次執行照出來。
 MakeupDay _missed(AppState s, int daysAgo) => MakeupDay(
-      s.now.subtract(Duration(days: daysAgo)),
+      businessDate(s.now).subtract(Duration(days: daysAgo)),
       MakeupDayState.missed,
     );
 
