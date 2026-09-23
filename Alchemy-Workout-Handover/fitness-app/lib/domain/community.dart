@@ -106,14 +106,30 @@ class TeamMember {
   final String name;
   final int rank;
   final TeamRole role;
-  const TeamMember(this.name, this.rank, this.role);
+
+  /// 雲端身分。**示範資料的假隊友沒有 uid，所以可以是空值。**
+  ///
+  /// 在此之前這裡只有顯示名稱，要寫回雲端時再拿名稱去公開檔案裡反查
+  /// uid —— 反查不到就整個跳過，而且是無聲的。踢人、轉讓隊長、核准
+  /// 申請全都走那條路：只讀得到 50 筆公開檔案，對方不在裡面就
+  /// **畫面上成功、雲端什麼都沒發生**，重新整理就打回原形。
+  ///
+  /// uid 本來就跟著雲端資料一起來的，不該丟掉再猜回來。
+  final String? uid;
+
+  const TeamMember(this.name, this.rank, this.role, {this.uid});
 }
 
 class PendingRequest {
   final String name;
   final int rank;
   final DateTime expiresAt; // 各自 7 天逾期
-  const PendingRequest(this.name, this.rank, this.expiresAt);
+
+  /// 申請／邀請對象的雲端身分。理由同 [TeamMember.uid] ——
+  /// `TeamRequest.uid` 是雲端讀來的，轉成本機這筆時不該丟掉。
+  final String? uid;
+
+  const PendingRequest(this.name, this.rank, this.expiresAt, {this.uid});
 }
 
 class Team {

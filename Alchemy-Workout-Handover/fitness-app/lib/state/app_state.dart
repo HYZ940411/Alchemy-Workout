@@ -2653,8 +2653,19 @@ class AppState extends ChangeNotifier {
   }
 
   /// 這位成員的 uid。示範用的假隊友不在公開檔案裡，回傳空值。
-  String? _memberUid(String name) =>
-      name == displayName ? myUid : uidOf(name);
+  ///
+  /// [carried] 是這筆資料自己帶著的 uid（從雲端讀來時一併保留）。
+  /// **有就用它，不要反查** —— 反查只看得到已載入的那 50 筆公開檔案，
+  /// 對方不在裡面就回傳空值，於是整個雲端寫入被無聲跳過。
+  String? _memberUid(String name, [String? carried]) =>
+      carried ?? (name == displayName ? myUid : uidOf(name));
+
+  /// 雲端寫入因為認不出對方是誰而沒送出 —— 記進 [syncReport]，
+  /// 讓開發者模式看得到。畫面已經改了、雲端沒動，這是最難查的一種失敗。
+  void _cannotIdentify(String what, String name) {
+    reportSync('團隊操作', '「$what」沒有送上雲端：認不出「$name」的身分，'
+        '重新整理後會打回原形');
+  }
 
   CloudMember _asCloudMember(TeamMember m) => CloudMember(
         name: m.name,
@@ -2686,10 +2697,14 @@ class AppState extends ChangeNotifier {
       capacity: t.capacity,
       members: [
         for (final e in t.members.entries)
-          TeamMember(e.value.name, e.value.rank, e.value.role),
+          TeamMember(e.value.name, e.value.rank, e.value.role, uid: e.key),
       ],
       lockedGroupSize: t.peakSize,
     );
+    // **雲端說我已經在隊上，本機那筆「已送出的申請」就該消失。**
+    // 一次只能屬於一個團隊，申請被核准後它已經沒有意義了 ——
+    // 留著的話畫面會同時顯示「已加入」和「等隊長回應」。
+    sentApplications.clear();
     notifyListeners();
   }
 
@@ -2706,8 +2721,12 @@ class AppState extends ChangeNotifier {
     if (m.role == TeamRole.leader) return;
     if (!t.members.contains(m)) return;
     t.members.remove(m);
-    final who = _memberUid(m.name);
-    if (who != null) _pushTeam((src, _) => src.removeMember(t.id, who));
+    final who = _memberUid(m.name, m.uid);
+    if (who == null) {
+      _cannotIdentify('踢除成員', m.name);
+    } else {
+      _pushTeam((src, _) => src.removeMember(t.id, who));
+    }
     notifyListeners();
   }
 
@@ -2719,11 +2738,18 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t == null || !iAmLeader || t.isFull) return false;
     if (!t.applications.remove(r)) return false;
-    final m = TeamMember(r.name, r.rank, TeamRole.member);
+    final who = _memberUid(r.name, r.uid);
+    final m = TeamMember(r.name, r.rank, TeamRole.member, uid: who);
     t.members.add(m);
     // 加入成員與清掉那筆申請是同一件事的兩半。
-    final who = _memberUid(r.name);
-    if (who != null) {
+    //
+    // 這兩件事沒做成的後果，正是使用者回報的那兩個症狀：
+    // 申請沒刪掉 → 隊長一重新整理，那筆申請又回來了；
+    // 成員沒寫進 memberUids → 申請人那邊 `myTeam()` 查不到，
+    // 畫面上依然沒有隊伍，還得再申請一次。
+    if (who == null) {
+      _cannotIdentify('核准申請', r.name);
+    } else {
       _pushTeam((src, _) async {
         await src.putMember(t.id, who, _asCloudMember(m));
         await src.dropRequest(t.id, who);
@@ -2738,8 +2764,12 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t == null || !iAmLeader) return;
     t.applications.remove(r);
-    final who = _memberUid(r.name);
-    if (who != null) _pushTeam((src, _) => src.dropRequest(t.id, who));
+    final who = _memberUid(r.name, r.uid);
+    if (who == null) {
+      _cannotIdentify('拒絕申請', r.name);
+    } else {
+      _pushTeam((src, _) => src.dropRequest(t.id, who));
+    }
     notifyListeners();
   }
 
@@ -2748,8 +2778,12 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t == null || !iAmLeader) return;
     t.invites.remove(r);
-    final who = _memberUid(r.name);
-    if (who != null) _pushTeam((src, _) => src.dropRequest(t.id, who));
+    final who = _memberUid(r.name, r.uid);
+    if (who == null) {
+      _cannotIdentify('取消邀請', r.name);
+    } else {
+      _pushTeam((src, _) => src.dropRequest(t.id, who));
+    }
     notifyListeners();
   }
 
@@ -2763,13 +2797,15 @@ class AppState extends ChangeNotifier {
     if (!t.members.contains(to)) return false;
     final i = t.members.indexWhere((m) => m.role == TeamRole.leader);
     final old = t.members[i];
-    t.members[i] = TeamMember(old.name, old.rank, TeamRole.member);
+    final oldUid = _memberUid(old.name, old.uid);
+    final newUid = _memberUid(to.name, to.uid);
+    t.members[i] = TeamMember(old.name, old.rank, TeamRole.member, uid: oldUid);
     final j = t.members.indexOf(to);
-    t.members[j] = TeamMember(to.name, to.rank, TeamRole.leader);
+    t.members[j] = TeamMember(to.name, to.rank, TeamRole.leader, uid: newUid);
     // 兩個人的角色一起換。只寫一邊的話雲端會同時有兩位隊長、或一位都沒有。
-    final oldUid = _memberUid(old.name);
-    final newUid = _memberUid(to.name);
-    if (oldUid != null && newUid != null) {
+    if (oldUid == null || newUid == null) {
+      _cannotIdentify('轉讓隊長', oldUid == null ? old.name : to.name);
+    } else {
       _pushTeam((src, _) async {
         await src.putMember(t.id, oldUid, _asCloudMember(t.members[i]));
         await src.putMember(t.id, newUid, _asCloudMember(t.members[j]));
@@ -3103,7 +3139,7 @@ class AppState extends ChangeNotifier {
       isPublic: t.isPublic,
       members: [
         ...t.members,
-        TeamMember(displayName, rank, TeamRole.member),
+        TeamMember(displayName, rank, TeamRole.member, uid: myUid),
       ],
       // 這支隊已經掙到的分數要帶過來 —— 不帶的話我一加入，
       // 它的日常分數就從 12540 掉成 0，畫面上是一支剛開的新隊。
@@ -3384,7 +3420,7 @@ class AppState extends ChangeNotifier {
       id: newId('t'),
       name: trimmed,
       isPublic: isPublic,
-      members: [TeamMember(displayName, rank, TeamRole.leader)],
+      members: [TeamMember(displayName, rank, TeamRole.leader, uid: myUid)],
       // 新隊本週期的最高成員數就是 1，未達下限 3 人 —— 分數照常累積，
       // 但這個月不參與排名也不領獎勵。
       lockedGroupSize: 1,
@@ -4963,7 +4999,9 @@ class AppState extends ChangeNotifier {
       } else if (t != null && r.teamId == t.id) {
         if (t.applications.any((a) => a.name == r.name)) continue;
         if (t.members.any((m) => m.name == r.name)) continue;
-        t.applications.add(PendingRequest(r.name, r.rank, r.expiresAt));
+        // **uid 一定要帶著。** 核准時要用它寫回雲端，靠名稱反查會失敗。
+        t.applications
+            .add(PendingRequest(r.name, r.rank, r.expiresAt, uid: r.uid));
       }
     }
     notifyListeners();
@@ -4993,7 +5031,8 @@ class AppState extends ChangeNotifier {
               peakSize: t.peakSize,
               members: [
                 for (final e in t.members.entries)
-                  TeamMember(e.value.name, e.value.rank, e.value.role),
+                  TeamMember(e.value.name, e.value.rank, e.value.role,
+                      uid: e.key),
               ],
             ),
       ]);
