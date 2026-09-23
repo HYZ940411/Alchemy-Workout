@@ -185,8 +185,14 @@ void main() {
     });
 
     test('畫面上不再說「由排程執行」 —— 沒有排程', () {
-      final ui =
-          File('lib/screens/me/account_delete_screen.dart').readAsStringSync();
+      // **只看給使用者看的字，不看註解。**
+      // 這條測試原本讀整份原始碼，於是被檔案裡那句「不要寫『由排程執行』」
+      // 的註解自己絆倒 —— 測試讀的東西要跟它斷言的東西是同一種。
+      final ui = File('lib/screens/me/account_delete_screen.dart')
+          .readAsStringSync()
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
       expect(ui, isNot(contains('由排程執行')),
           reason: '排程需要 Cloud Functions，目前是在下次登入時執行的');
       expect(ui, contains('下次登入'));
