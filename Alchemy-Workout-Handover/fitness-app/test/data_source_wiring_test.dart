@@ -53,6 +53,20 @@ const _allowed = <String, String>{
   'MentorSource.answer': '教官側本機模型缺學徒身分，見 [BE-15]',
 };
 
+/// 與別的介面撞名、因此這道檢查驗不了的方法。
+///
+/// **每一筆都要寫「怎麼人工確認的」。** 這張表的用途不是讓測試變綠，
+/// 是讓「這幾支沒被真正檢查」這件事**看得見**。
+const _ambiguous = <String, String>{
+  'MentorSource.dropRequest':
+      '2026-09-24 接上：`_dropCloudRequest()` 的師徒分支',
+  'TeamSource.dropRequest': '拒絕申請、取消邀請、撤回申請、`_dropCloudRequest()`',
+  'MentorSource.sendRequest': '`applyMentor()` 送出拜師申請',
+  'TeamSource.sendRequest': '申請加入公開團隊、隊長邀請成員',
+  'PostSource.publish': '`publishPost()` 與 `shareWorkout()`',
+  'PublicProfileSource.publish': '`publishMyProfile()` 與 `AuthGate._syncProfile`',
+};
+
 /// 從 `abstract class X { ... }` 裡抓出方法名。
 List<(String cls, String method)> _interfaceMethods(String src) {
   final out = <(String, String)>[];
@@ -92,6 +106,25 @@ void main() {
       }
     }
     final code = callers.toString();
+
+    // **撞名要具名承認，不能靜默放行。**
+    //
+    // 比對的是方法名，所以兩個介面有同名方法時，只要其中一支有人呼叫，
+    // 另一支沒接線的就會被誤判為已接。`MentorSource.dropRequest` 就是
+    // 這樣漏掉的。發現新的撞名時，這條測試會失敗並要求你把它寫進
+    // `_ambiguous` —— 附上「這一支是怎麼人工確認過的」。
+    final byName = <String, List<String>>{};
+    for (final (cls, method) in methods) {
+      (byName[method] ??= []).add(cls);
+    }
+    final collisions = {
+      for (final e in byName.entries)
+        if (e.value.length > 1)
+          for (final cls in e.value) '$cls.${e.key}',
+    };
+    expect(collisions.difference(_ambiguous.keys.toSet()), isEmpty,
+        reason: '這幾支方法與別的介面撞名，這道檢查對它們無效。\n'
+            '人工確認它們真的有呼叫端之後，寫進 _ambiguous 並註明怎麼確認的。');
 
     final dead = <String>[];
     for (final (cls, method) in methods) {

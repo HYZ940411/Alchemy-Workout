@@ -3366,6 +3366,7 @@ class AppState extends ChangeNotifier {
       case InboundKind.teamInvite:
         final t = publicTeams.firstWhere((x) => x.name == r.subject);
         _joinPublicTeam(t);
+        _pushJoinedTeam();
       case InboundKind.mentorInvite:
         final i = instructors.where((x) => x.name == r.from).firstOrNull ??
             Instructor(
@@ -3399,9 +3400,60 @@ class AppState extends ChangeNotifier {
     // 教官看得到學徒、學徒看不到教官，而且誰都不知道為什麼。
     if (r.kind != InboundKind.teamInvite) _pushBond(r);
 
+    // 請求已經回應完了，把雲端那筆清掉。**團隊那筆要排在入隊之後** ——
+    // 安全規則允許我把自己加進名冊的條件，正是「有一筆給我的待回應請求」
+    // （見 `firestore.rules` 的 teams update 規則），先刪就把自己鎖在外面了。
+    _dropCloudRequest(r);
+
     inbox.remove(r);
     notifyListeners();
     return true;
+  }
+
+  /// 接受團隊邀請後，把自己寫進雲端的名冊。
+  ///
+  /// **在此之前這一步不存在。** `_joinPublicTeam()` 整個函式沒有一行雲端
+  /// 寫入，而登入時是 `teams.myTeam()` 去查「我在哪支隊」—— 查不到，
+  /// 於是接受邀請、重新整理，團隊就不見了。
+  ///
+  /// 申請被核准那條路徑不必走這裡：隊長的 `approveApplication()` 已經
+  /// 把我 `putMember` 上去了，而那時我的申請也被他刪掉了 ——
+  /// 再寫一次反而會被安全規則擋下（規則要求那筆請求還在）。
+  void _pushJoinedTeam() {
+    final t = myTeam;
+    final me = myUid;
+    if (t == null || me == null) return;
+    final me2 = t.members.where((m) => m.uid == me).firstOrNull;
+    if (me2 == null) return;
+    _pushTeam((src, _) => src.putMember(t.id, me, _asCloudMember(me2)));
+  }
+
+  /// 把雲端那筆待回應請求清掉。
+  ///
+  /// **接受與拒絕都要做。** 在此之前兩條路徑都只從本機的 `inbox` 移除 ——
+  /// 雲端那筆還在，下次登入 `applyCloudTeamRequests`／
+  /// `applyCloudMentorRequests` 又把它撈回來。使用者拒絕了三次，
+  /// 它出現了四次。
+  ///
+  /// 這與「撤回申請」那個已修的 bug 是同一句話：本機移掉、雲端還在。
+  void _dropCloudRequest(InboundRequest r) {
+    switch (r.kind) {
+      case InboundKind.teamInvite:
+        final id = myTeam?.id ??
+            publicTeams
+                .where((t) => t.name == r.subject && t.id.isNotEmpty)
+                .map((t) => t.id)
+                .firstOrNull;
+        final me = myUid;
+        if (id == null || me == null) return;
+        _pushTeam((src, _) => src.dropRequest(id, me));
+      case InboundKind.mentorInvite:
+      case InboundKind.apprenticeApply:
+        // `MentorSource.dropRequest` 在此之前**一個呼叫端都沒有**。
+        // `data_source_wiring_test` 沒抓到它，因為 `TeamSource` 也有一支
+        // 同名方法而那支有人呼叫 —— 那正是該檔案開頭寫明的撞名漏抓。
+        mentorSource?.dropRequest(r.id).catchError((_) {});
+    }
   }
 
   /// 接受師徒請求時把關係寫上雲端。
@@ -3444,6 +3496,8 @@ class AppState extends ChangeNotifier {
   /// 拒絕後該筆失效，對方可再次送出，無冷卻期（承既有裁決）。
   void declineInbound(InboundRequest r) {
     if (!inbox.remove(r)) return;
+    // 拒絕也要把雲端那筆清掉，否則下次登入它又跑出來。
+    _dropCloudRequest(r);
     notifyListeners();
   }
 
