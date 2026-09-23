@@ -107,6 +107,30 @@ class _AccountDeleteScreenState extends State<AccountDeleteScreen> {
               Navigator.of(context).pop();
             },
           ),
+          // **不等冷靜期，現在就刪。**
+          //
+          // 冷靜期防的是誤按與被脅迫，不是防使用者自己改變主意 ——
+          // 沒有這顆按鈕，申請之後帳號會被鎖成「只能取消申請」，
+          // 而唯一的出路要等 30 天，等於卡在半死不活的狀態裡。
+          // Google 與 Apple 的帳號刪除都同時提供這兩條路。
+          //
+          // 只在真的接了後端時出現：示範模式沒有帳號可以刪。
+          if (s.deleteAccountJob != null) ...[
+            const SizedBox(height: S.md),
+            SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                label: '不等了，立即永久刪除',
+                kind: BtnKind.secondary,
+                onPressed: () => _deleteNow(context, s),
+              ),
+            ),
+            const SizedBox(height: S.sm),
+            Text(
+              '跳過剩下的冷靜期，當場刪除帳號與全部資料。這個動作無法復原。',
+              style: T.caption(),
+            ),
+          ],
         ],
       ),
     );
@@ -255,6 +279,39 @@ class _AccountDeleteScreenState extends State<AccountDeleteScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _deleteNow(BuildContext context, AppState s) async {
+    final ok = await showAppDialog(
+      context,
+      title: '立即永久刪除帳號？',
+      message: '不等冷靜期，現在就刪除帳號與全部資料 —— '
+          '能力值、訓練歷史、簽到紀錄、金幣與 AI 點數都不會回來，'
+          '也無法復原。',
+      confirmLabel: '永久刪除',
+      destructive: true,
+    );
+    if (ok != true || !context.mounted) return;
+
+    final err = await s.deleteAccountJob?.call();
+    if (!context.mounted) return;
+    if (err != null) {
+      // **刪除失敗要講得出是哪一步。** 靜靜地什麼都不發生，
+      // 使用者只會以為 App 壞了，而這件事他有權知道結果。
+      await showAppDialog(
+        context,
+        title: '刪除未完成',
+        message: err,
+        // 這個彈窗只是告知，兩顆按鈕都只是關掉它 ——
+        // 所以兩邊的字都要讀得通，不能留一顆「取消」在那裡讓人以為
+        // 按了就會撤銷什麼。
+        confirmLabel: '知道了',
+        cancelLabel: '關閉',
+      );
+      return;
+    }
+    // 成功之後 Auth 那條 stream 會宣布「沒有人登入」，
+    // AuthGate 自己會切回註冊流程 —— 這裡不必也不該自己導頁。
   }
 
   Future<void> _confirm(BuildContext context, AppState s) async {

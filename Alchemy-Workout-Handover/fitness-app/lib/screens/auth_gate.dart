@@ -168,6 +168,13 @@ class _AuthGateState extends State<AuthGate> {
           .hydrate(widget.storeFor(user.uid))
           .then((_) => _executeDeletionIfDue(user.uid));
     }
+    // **在這裡接，不要放進 `_syncProfile`。** 那個函式在
+    // `profileFor == null` 時會提早返回，而「能不能刪自己的帳號」
+    // 不該取決於公開檔案有沒有接上。
+    if (user != null) {
+      final uid = user.uid;
+      widget.state.deleteAccountJob = () => _deleteEverything(uid);
+    }
     // 平台資料的讀取需要已登入（安全規則要求 auth != null）。
     // **不 await**：載入是即發即忘的，完成時 applyPlatformData 會 notifyListeners
     // 觸發重繪，不擋載入畫面等網路（動作庫等離線後備本就已在記憶體裡）。
@@ -205,24 +212,37 @@ class _AuthGateState extends State<AuthGate> {
     final s = widget.state;
     if (!s.pendingDeletion) return;
     if ((s.deletionDaysLeft ?? 1) > 0) return;
+    final err = await _deleteEverything(uid);
+    if (err != null) debugPrint('冷靜期屆滿的自動刪除未完成：$err');
+  }
 
+  /// 刪掉這個帳號的一切。回傳 null 代表成功，否則是給使用者看的一句話。
+  ///
+  /// 兩個呼叫端：冷靜期屆滿時的自動刪除（[_executeDeletionIfDue]），
+  /// 以及使用者在待刪除頁自己按「立即永久刪除」（經
+  /// [AppState.deleteAccountJob]）。**兩條路要走同一份實作** ——
+  /// 刪除是不可逆的，兩份實作意味著其中一份遲早會漏掉一步。
+  Future<String?> _deleteEverything(String uid) async {
     try {
       // 公開檔案先刪：少了這一步，帳號都沒了，別人在「找人」裡還看得到他。
       await widget.profileFor?.call(uid).remove();
       await widget.storeFor(uid).clear();
     } catch (e) {
-      debugPrint('刪除雲端資料失敗：$e');
-      return; // 資料沒刪掉就不刪帳號 —— 刪了就再也回不去清它
+      // 資料沒刪掉就不刪帳號 —— 帳號一沒，安全規則就認不得他是誰，
+      // 剩下的資料誰也刪不掉，會永遠留在那裡。
+      return '雲端資料沒有刪成功，帳號保留未刪：$e';
     }
 
     final err = await widget.auth.deleteAccount();
-    if (err != null) {
-      // `requires-recent-login`：刪帳號不可逆，Firebase 不讓太舊的
-      // 工作階段做。資料已經刪了，帳號留著 —— 下次登入會再試一次，
-      // 而那時的工作階段是新的。
-      debugPrint('刪除帳號失敗（$err），資料已清除，下次登入重試');
-      await widget.auth.signOut();
-    }
+    if (err == null) return null;
+
+    // 資料已經刪了，帳號還在。登出讓下一次登入重試 —— 那時的工作階段
+    // 是新的，`requires-recent-login` 就不會再擋。
+    await widget.auth.signOut();
+    return err == 'requires-recent-login'
+        ? '資料已全部刪除。帳號本身需要剛登入過才能刪 —— 請再登入一次，'
+            '系統會自動把它刪掉。'
+        : '資料已全部刪除，但帳號沒刪掉（$err）。請再登入一次重試。';
   }
 
   Future<void> _loadPlatformData() async {

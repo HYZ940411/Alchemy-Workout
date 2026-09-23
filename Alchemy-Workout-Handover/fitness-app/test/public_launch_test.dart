@@ -159,8 +159,30 @@ void main() {
       expect(src, contains('deletionDaysLeft'));
     });
 
+    test('使用者不必等滿冷靜期 —— 待刪除頁有立即刪除', () {
+      final ui =
+          File('lib/screens/me/account_delete_screen.dart').readAsStringSync();
+      // 沒有這顆按鈕，申請之後帳號會被鎖成「只能取消申請」，
+      // 而唯一的出路要等 30 天 —— 卡在半死不活的狀態裡。
+      expect(ui, contains('deleteAccountJob'));
+      expect(ui, contains('立即永久刪除'));
+    });
+
+    test('自動刪除與立即刪除走同一份實作', () {
+      // 刪除是不可逆的。兩份實作意味著其中一份遲早會漏掉一步，
+      // 而漏掉的那一步是「使用者的資料還留在雲端」。
+      expect(src, contains('_deleteEverything'));
+      final auto = src.substring(
+          src.indexOf('_executeDeletionIfDue(String'),
+          src.indexOf('Future<String?> _deleteEverything('));
+      expect(auto, contains('_deleteEverything('),
+          reason: '冷靜期屆滿的那條路要呼叫共用實作，不可自己再寫一份');
+      expect(src, contains('deleteAccountJob = () => _deleteEverything('),
+          reason: '畫面那條路也要走同一份');
+    });
+
     test('順序：先刪 Firestore，最後才刪 Auth 帳號', () {
-      final body = src.substring(src.indexOf('_executeDeletionIfDue(String'));
+      final body = src.substring(src.indexOf('Future<String?> _deleteEverything('));
       final profile = body.indexOf('.remove()');
       final store = body.indexOf('.clear()');
       final account = body.indexOf('deleteAccount()');
@@ -175,13 +197,15 @@ void main() {
     });
 
     test('雲端資料沒刪成功就不刪帳號', () {
-      final body = src.substring(src.indexOf('_executeDeletionIfDue(String'));
-      final fail = body.indexOf('刪除雲端資料失敗');
+      final body =
+          src.substring(src.indexOf('Future<String?> _deleteEverything('));
       final account = body.indexOf('deleteAccount()');
-      expect(fail, isNot(-1));
-      expect(account, greaterThan(fail));
-      expect(body.substring(fail, account), contains('return'),
-          reason: '刪了帳號就再也回不去清那些資料');
+      expect(account, isNot(-1));
+      // 刪資料那一步失敗時**直接返回**，走不到刪帳號 ——
+      // 刪了帳號就再也回不去清那些資料。
+      expect(body.substring(0, account),
+          contains("return '雲端資料沒有刪成功"),
+          reason: '雲端資料沒刪掉卻繼續刪帳號的話，那些資料會永遠留在那裡');
     });
 
     test('畫面上不再說「由排程執行」 —— 沒有排程', () {

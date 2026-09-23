@@ -8209,6 +8209,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 真的把這個帳號刪掉。回傳 null 代表成功，否則是給使用者看的一句話。
+  ///
+  /// **由 `AuthGate` 注入。** 刪除要動到 Firebase Auth 帳號、Firestore 上的
+  /// 使用者資料與公開檔案，那三個來源都在 `AuthGate` 手上 —— `AppState`
+  /// 看不到它們，也不該為了刪帳號而認識它們。
+  ///
+  /// 空值代表沒接後端（既有測試與示範模式走這條）。
+  Future<String?> Function()? deleteAccountJob;
+
   /// 使用者已取消刪除帳號申請 → 待刪除 → 正常。
   ///
   /// **不重設任何計時基準、不補償期間的損失**：冷靜期間所有計時與排程照常，
