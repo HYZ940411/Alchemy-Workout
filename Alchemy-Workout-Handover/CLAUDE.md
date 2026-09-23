@@ -75,6 +75,20 @@ Web 建置在 Codespaces 上若以 `exit code -15` 結束，**那不是編譯錯
 wasm 編譯）並在建置前印出可用記憶體。還是不夠就把 Codespace 換成
 4 核心以上的機型。
 
+### Firebase 設定檔
+
+`fitness-app/lib/firebase_options.dart` 與 `android/app/google-services.json`
+**在版控裡，這是刻意的**。`lib/main.dart` 直接 import 前者，少了它編譯不過。
+
+裡面的 apiKey 不是憑證而是識別碼 —— 本來就會被打包進 `main.dart.js` 與 APK
+送給每一位訪客。把關的是 `firestore.rules`，防濫用靠 Google Cloud Console
+的 API key 網域限制。
+
+**真正的機密是 service account 私鑰**（`*-firebase-adminsdk-*.json`），
+那個由上層 `.gitignore` 擋掉，任何情況下都不可進版控。
+
+這兩個檔案由 `flutterfire configure` 產生。換 Firebase 專案才需要重跑。
+
 資料重新產生（改了 CSV 才需要）：
 
 ```bash
