@@ -69,6 +69,12 @@ flutter build macos --release
 ./tools/build_web.sh                     # Web 建置，不要用 flutter build web
 ```
 
+Web 建置在 Codespaces 上若以 `exit code -15` 結束，**那不是編譯錯誤** ——
+-15 是 SIGTERM，行程被系統殺掉，幾乎都是記憶體不夠。
+`build_web.sh` 已加上 `--no-wasm-dry-run`（省掉一整趟只為檢查相容性的
+wasm 編譯）並在建置前印出可用記憶體。還是不夠就把 Codespace 換成
+4 核心以上的機型。
+
 資料重新產生（改了 CSV 才需要）：
 
 ```bash

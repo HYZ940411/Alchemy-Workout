@@ -17,8 +17,20 @@ if [ ! -x "$VENV/bin/python" ]; then
   "$VENV/bin/pip" install -q fonttools brotli
 fi
 
-echo "→ flutter build web --release"
-flutter build web --release
+# 建置前先把可用記憶體印出來。
+#
+# dart2js 曾在 Codespaces 上以 `exit code -15`（SIGTERM）死掉 ——
+# 那不是編譯錯誤，是行程被系統殺掉，幾乎都是記憶體不夠。
+# 訊息裡完全看不出這件事，所以先把數字擺在這裡。
+if command -v free >/dev/null 2>&1; then
+  echo "→ 可用記憶體：$(free -h | awk '/^Mem:/ {print $7 " / " $2}')"
+fi
+
+# `--no-wasm-dry-run`：Flutter 預設會**額外編一次 wasm** 只為了檢查
+# 相容性，我們沒有要出 wasm 版，那一趟純粹是多花一份記憶體與時間。
+# 這個專案在 2 核心的 Codespace 上就是死在這裡。
+echo "→ flutter build web --release --no-wasm-dry-run"
+flutter build web --release --no-wasm-dry-run
 
 echo "→ 子集化字型"
 "$VENV/bin/python" tools/subset_web_fonts.py
