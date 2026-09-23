@@ -169,8 +169,13 @@ void main() {
           expect(m, isNotNull);
         }
       }
-      expect(chains, 5,
-          reason: '複合查詢從 5 個變了 —— 請同步檢查 firestore.indexes.json');
+      // 6 而不是 5：`requestsFor()` 多了一段「我自己送出、還沒被回應的
+      // 申請」（collection group，uid + isInvite）。它與「誰邀我入隊」
+      // **兩個欄位相同、都是等值比較**，所以共用同一個複合索引，
+      // 不必新增宣告 —— 這條測試要的是「你有沒有回頭確認過」，
+      // 不是「每條查詢都要有自己的索引」。
+      expect(chains, 6,
+          reason: '複合查詢從 6 個變了 —— 請同步檢查 firestore.indexes.json');
     });
   });
 
