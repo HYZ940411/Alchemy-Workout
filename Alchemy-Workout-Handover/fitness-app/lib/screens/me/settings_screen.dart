@@ -183,6 +183,16 @@ class SettingsScreen extends StatelessWidget {
             // 「申請送得出去、對方看不到」查了三輪都在猜，就是因為
             // 這幾條路徑什麼都不說。
             const SectionLabel('登入同步', trailing: '開發者模式'),
+            if (s.chatSendError != null) ...[
+              Panel(
+                color: C.statusError.withValues(alpha: 0.08),
+                border: C.statusError,
+                child: Text('最近一次私訊送出失敗：\n${s.chatSendError}',
+                    style: const TextStyle(
+                        fontSize: 11.5, color: C.statusError)),
+              ),
+              const SizedBox(height: 10),
+            ],
             Panel(
               child: s.syncReport.isEmpty
                   ? const Text(

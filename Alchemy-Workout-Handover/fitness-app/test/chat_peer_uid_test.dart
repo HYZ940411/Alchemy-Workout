@@ -133,6 +133,70 @@ void main() {
     });
   });
 
+  group('重新整理不該讓開著的聊天頁變成孤兒', () {
+    // `applyCloudConversations` 原本是 `conversations[i] = conv` ——
+    // 整個換掉物件。而聊天頁是 `ChatScreen(conversation: c)`，
+    // 把那個物件**抓在手上**的：一換掉，之後打的字加進孤兒裡，
+    // 畫面上看得到，清單與雲端都沒有；雲端來的新訊息也永遠畫不出來。
+
+    test('同一個 Conversation 物件會被就地更新', () async {
+      await seed();
+      final s = await receiver();
+      final held = s.conversations.single; // 聊天頁手上那份
+
+      // 對方又傳了一則，然後重新整理。
+      await FirestoreChats(uid: 'uid-a', firestore: db).send(
+        'uid-b',
+        CloudMessage(
+          id: 'm2',
+          senderUid: 'uid-a',
+          text: '七點好嗎',
+          at: DateTime(2026, 9, 22, 21),
+        ),
+        myName: '阿甲',
+        peerName: '阿乙',
+      );
+      s.applyCloudConversations(
+          await FirestoreChats(uid: 'uid-b', firestore: db).conversations());
+
+      // 同一個物件，不是新的。
+      expect(identical(s.conversations.single, held), isTrue);
+      // 而且手上那份看得到新訊息。
+      expect(held.messages.map((m) => m.text), contains('七點好嗎'));
+    });
+
+    test('重新整理之後，從手上那份送出去的訊息仍然寫得到雲端', () async {
+      await seed();
+      final s = await receiver();
+      final held = s.conversations.single;
+      s.applyCloudConversations(
+          await FirestoreChats(uid: 'uid-b', firestore: db).conversations());
+
+      s.sendMessage(held, '好');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final asA =
+          await FirestoreChats(uid: 'uid-a', firestore: db).conversations();
+      expect(asA.single.messages.map((m) => m.text), contains('好'));
+    });
+  });
+
+  test('不知道我是誰的時候不送 —— 作者空白的訊息誰都認不出來', () async {
+    await seed();
+    final s = await receiver();
+    s.myUid = null; // 登入同步還沒跑完
+
+    s.sendMessage(s.conversations.single, '這則不該上雲');
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    // 雲端只有原本那一則。作者空字串的訊息會在雙方畫面上
+    // 都畫成「對方傳來的」，靠左、灰色。
+    final asA =
+        await FirestoreChats(uid: 'uid-a', firestore: db).conversations();
+    expect(asA.single.messages, hasLength(1));
+    expect(s.chatSendError, isNotNull);
+  });
+
   test('第一則訊息也送得出去 —— 對話本體與訊息同一批寫入', () async {
     final src = FirestoreChats(uid: 'uid-a', firestore: db);
     final s = AppState(demo: false)

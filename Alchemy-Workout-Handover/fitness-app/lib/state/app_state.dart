@@ -4227,6 +4227,18 @@ class AppState extends ChangeNotifier {
   /// 雲端的私訊。**空值代表不同步** —— 既有測試走這條。
   ChatSource? chatSource;
 
+  /// 最近一次私訊送上雲失敗的原因。**畫面要講出來** ——
+  /// 送不出去的訊息在畫面上與送出去的長得一模一樣，不講的話
+  /// 使用者要等到重新載入、訊息消失了才知道，而那時已經無從追查。
+  /// 讀過就清掉（[consumeChatSendError]）。
+  String? chatSendError;
+
+  String? consumeChatSendError() {
+    final e = chatSendError;
+    chatSendError = null;
+    return e;
+  }
+
   /// 這段對話在雲端的 ID。對方不在公開檔案裡（示範用的假使用者就是這種）
   /// 時回傳空值 —— 那段對話只存在本機。
   /// 這段對話在雲端的 ID。**優先用對話自己帶著的 uid**，
@@ -4277,11 +4289,22 @@ class AppState extends ChangeNotifier {
       );
 
       final i = conversations.indexWhere((x) => x.peer == peerName);
-      if (i >= 0) {
-        conversations[i] = conv;
-      } else {
+      if (i < 0) {
         conversations.add(conv);
+        continue;
       }
+      // **就地更新，不換物件。**
+      //
+      // 原本是 `conversations[i] = conv` —— 但聊天頁是用
+      // `ChatScreen(conversation: c)` 把那個物件**抓在手上**的。
+      // 一換掉，開著的聊天頁手上那份就成了孤兒：之後打的字加進孤兒裡，
+      // 畫面上看得到，清單與雲端都沒有；而雲端來的新訊息也永遠畫不出來。
+      // 只要中途發生過任何一次重新整理，那段對話就壞在那裡。
+      final live = conversations[i];
+      live.deletedByMe = conv.deletedByMe;
+      live.messages
+        ..clear()
+        ..addAll(conv.messages);
     }
     notifyListeners();
   }
@@ -4380,18 +4403,24 @@ class AppState extends ChangeNotifier {
     // （本機以位置辨識就夠），但雲端的每則訊息需要一個文件 ID。
     final peerUid = c.peerUid ?? uidOf(c.peer);
     final src = chatSource;
-    if (peerUid == null && src != null) {
-      // 認不出對方是誰 → 訊息只存在我的記憶體裡，對方永遠收不到，
-      // 而畫面上它就躺在那裡，看起來跟送出成功一模一樣。
+    final me = myUid;
+    if (src != null && (peerUid == null || me == null)) {
+      // 認不出對方是誰（或不知道我自己是誰）→ 訊息只存在我的記憶體裡，
+      // 對方永遠收不到，而畫面上它就躺在那裡，看起來跟送出成功一模一樣。
+      //
+      // **`me` 為空時絕對不能硬送。** 原本寫的是 `senderUid: myUid ?? ''`，
+      // 那會在雲端留下一則作者是空字串的訊息 —— 誰都認不出是我送的，
+      // 於是它在雙方的畫面上都會畫成「對方傳來的」，靠左、灰色。
       _cannotIdentify('發送私訊', c.peer);
+      chatSendError = me == null ? '還不知道我是誰（尚未完成登入同步）' : '認不出「${c.peer}」是誰';
     }
-    if (peerUid != null && src != null) {
+    if (peerUid != null && src != null && me != null) {
       src
           .send(
             peerUid,
             CloudMessage(
               id: newId('msg'),
-              senderUid: myUid ?? '',
+              senderUid: me,
               text: body,
               at: now,
               category: category,
@@ -4400,7 +4429,14 @@ class AppState extends ChangeNotifier {
             myName: displayName,
             peerName: c.peer,
           )
-          .catchError((_) {});
+          .catchError((Object e) {
+        // **不能無聲。** 私訊送不出去，畫面上那則訊息照樣躺在那裡，
+        // 看起來跟成功一模一樣 —— 直到重新載入才發現它不見了，
+        // 而那時已經無從得知是哪一則、為什麼。
+        chatSendError = '$e';
+        reportSync('私訊送出', '失敗：$e');
+        notifyListeners();
+      });
     }
 
     if (v == FilterVerdict.flagged) {

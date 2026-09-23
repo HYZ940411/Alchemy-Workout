@@ -356,6 +356,15 @@ class _ChatScreenState extends State<ChatScreen> {
                       showToast(context, '這則訊息含明顯違規內容，未送出。');
                       return;
                     }
+                    // 送上雲是即發即忘的，失敗會晚一點才回來 ——
+                    // 等一拍再看有沒有錯誤，有就講出來。
+                    Future<void>.delayed(const Duration(seconds: 2), () {
+                      if (!context.mounted) return;
+                      final err = s.consumeChatSendError();
+                      if (err != null) {
+                        showToast(context, '這則訊息沒有送到對方那裡，重新載入後會消失。');
+                      }
+                    });
                     if (v == FilterVerdict.flagged) {
                       showToast(context, '已送出。內容經自動過濾標記待審。');
                     }
