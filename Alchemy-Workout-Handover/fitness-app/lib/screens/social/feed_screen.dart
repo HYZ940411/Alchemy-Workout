@@ -3,14 +3,13 @@ import 'package:flutter/material.dart';
 
 import '../../design/image_library.dart';
 import '../../domain/community.dart';
-import '../../domain/admin.dart';
 import '../../state/app_state.dart';
-import 'report_sheet.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
 import '../me/profile_screen.dart';
 import 'compose_post_screen.dart';
 import 'post_detail_screen.dart';
+import 'post_menu.dart';
 import 'social_lock.dart';
 
 /// Read Model：社群動態牆 —— 分頁為「關注」與「探索」。
@@ -191,7 +190,7 @@ class _PostCard extends StatelessWidget {
                   Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => openProfile(context, post.author),
+                      onTap: () => openProfile(context, post.author, uid: post.authorUid),
                       child: Row(
                         children: [
                           CircleAvatar(
@@ -220,9 +219,16 @@ class _PostCard extends StatelessWidget {
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    if (post.authorReputation != null) ...[
+                                    // 作者**現在**的教官聲望。被撤銷教官身分
+                                    // 的人不該還掛著這枚徽章；發文後才當上
+                                    // 教官的人則該有。貼文上那份只在查不到
+                                    // 他的公開檔案時墊底。
+                                    if (s.reputationOf(post.author,
+                                            uid: post.authorUid,
+                                            fallback: post.authorReputation)
+                                        case final rep?) ...[
                                       const SizedBox(width: 6),
-                                      Pill('教官 ${post.authorReputation}'),
+                                      Pill('教官 $rep'),
                                     ],
                                   ],
                                 ),
@@ -231,7 +237,10 @@ class _PostCard extends StatelessWidget {
                                   children: [
                                     Flexible(
                                       child: Text(
-                                        '${post.authorRank} 階　·　'
+                                        // **作者現在的階級，不是發文當下那個。**
+                                        // `post.authorRank` 只在查不到作者的
+                                        // 公開檔案時墊底（見 `Post.authorRank`）。
+                                        '${s.rankOf(post.author, uid: post.authorUid, fallback: post.authorRank)} 階　·　'
                                         '${_ago(post.at)}　·　'
                                         '${postVisibilityNames[post.visibility]}',
                                         style: T.caption(),
@@ -252,13 +261,11 @@ class _PostCard extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    onPressed: () => showReportSheet(
-                      context,
-                      target: ReportTarget.post,
-                      targetKey: reportKey(ReportTarget.post, post.id),
-                      content: post.text,
-                      accused: post.author,
-                    ),
+                    // **自己的貼文開的是編輯／刪除，不是檢舉。**
+                    // 在此之前這裡無條件開檢舉單 —— 點自己的貼文會看到
+                    // 「檢舉這篇貼文」。判斷在 `showPostMenu` 裡，
+                    // 與貼文詳情頁共用同一支，不再各寫一次。
+                    onPressed: () => showPostMenu(context, s, post),
                     icon: const Icon(
                       Icons.more_horiz,
                       size: 18,

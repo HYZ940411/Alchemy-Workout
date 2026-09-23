@@ -27,16 +27,24 @@ import '../social/social_lock.dart';
 /// 六維點數、動態牆上的前兩則貼文。於是每個人的檔案頁長得一模一樣，
 /// 而且顯示的是看的人自己。與 `[QA-02f]`／`[QA-02i]` 同一種病：
 /// 每一塊各自是對的，接縫是斷的。
-void openProfile(BuildContext context, String name) {
+/// [uid] 是呼叫端手上那個人的雲端身分，**拿得到就一定要傳**。
+///
+/// 暱稱可以改 —— 只給名字的話，對方改名之後這一頁的階級與六維會一起
+/// 掉回預設值。貼文、私訊、名冊上本來就帶著 uid。
+void openProfile(BuildContext context, String name, {String? uid}) {
   final self = AppScope.of(context).displayName;
   Navigator.of(context).push(MaterialPageRoute(
-    builder: (_) => ProfileScreen(viewing: name == self ? null : name),
+    builder: (_) =>
+        ProfileScreen(viewing: name == self ? null : name, viewingUid: uid),
   ));
 }
 
 class ProfileScreen extends StatelessWidget {
   final String? viewing; // null 表示看自己
-  const ProfileScreen({super.key, this.viewing});
+
+  /// 被看的人的雲端身分。空值時退回用暱稱反查（見 [openProfile]）。
+  final String? viewingUid;
+  const ProfileScreen({super.key, this.viewing, this.viewingUid});
 
   @override
   Widget build(BuildContext context) {
@@ -46,9 +54,11 @@ class ProfileScreen extends StatelessWidget {
     // **可見度不是由我這邊的開關決定的。** 原本寫 `s.abilityPublic`，
     // 那是「我要不要公開我的」，拿來決定「我看不看得到他的」是反的。
     // 對方公開了什麼，就由我們手上有沒有他那份資料如實反映。
-    final ability = s.abilityOf(name);
-    final grade = s.gradeOf(name);
-    final reputation = s.reputationOf(name);
+    // 拿得到 uid 就用 uid 查 —— 暱稱可以改，uid 不會。
+    final uid = isSelf ? s.myUid : (viewingUid ?? s.uidOf(name));
+    final ability = s.abilityOf(name, uid: uid);
+    final grade = s.gradeOf(name, uid: uid);
+    final reputation = s.reputationOf(name, uid: uid);
     final isInstructor =
         isSelf ? s.isInstructor : s.instructors.any((i) => i.name == name);
     final myPosts = s.postsBy(name);
@@ -104,7 +114,7 @@ class ProfileScreen extends StatelessWidget {
                     Expanded(
                       child: StatTile(
                         label: '階級',
-                        value: '${s.rankOf(name)}',
+                        value: '${s.rankOf(name, uid: uid)}',
                         unit: '/ 99',
                       ),
                     ),
@@ -124,7 +134,7 @@ class ProfileScreen extends StatelessWidget {
                         behavior: HitTestBehavior.opaque,
                         child: StatTile(
                           label: '粉絲數',
-                          value: '${s.followersOf(name)}',
+                          value: '${s.followersOf(name, uid: uid)}',
                         ),
                       ),
                     ),

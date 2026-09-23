@@ -29,6 +29,7 @@ import 'screens/auth_gate.dart';
 import 'screens/boot_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/signup/signup_screen.dart';
+import 'screens/signup/terms_reconsent_screen.dart';
 import 'screens/train/tasks_screen.dart';
 import 'state/app_state.dart';
 import 'theme.dart';
@@ -260,6 +261,39 @@ class _FirstRunGateState extends State<FirstRunGate> {
           setState(() => _needsSignUp = false);
           openNoviceTaskAfterSignUp(context);
         },
+      );
+    }
+    return const _TermsGate();
+  }
+}
+
+/// 條款改版後，既有使用者於下次登入時須重新同意
+/// （〈註冊流程〉、〈02_Aggregate定義〉的「已同意條款版本」）。
+///
+/// **排在註冊閘門之後。** 還沒註冊完的人本來就會在註冊流程裡遇到條款頁，
+/// 在這裡再擋一次會變成兩道 —— `termsReconsentNeeded` 也因此帶了
+/// `signUpCompleted` 這個條件，兩邊各擋一次是刻意的重複防守。
+///
+/// **同一個閂鎖寫法**（理由見 [FirstRunGate]）：只在第一次 build 決定。
+/// 直接跟著 `termsReconsentNeeded` 走的話，按下同意的那一刻畫面會在
+/// `agreeTerms()` 的 `notifyListeners()` 裡重建，而那時 `onAgreed`
+/// 還沒跑完。
+class _TermsGate extends StatefulWidget {
+  const _TermsGate();
+
+  @override
+  State<_TermsGate> createState() => _TermsGateState();
+}
+
+class _TermsGateState extends State<_TermsGate> {
+  bool? _needsAgree;
+
+  @override
+  Widget build(BuildContext context) {
+    _needsAgree ??= AppScope.of(context).termsReconsentNeeded;
+    if (_needsAgree == true) {
+      return TermsReconsentScreen(
+        onAgreed: () => setState(() => _needsAgree = false),
       );
     }
     return const HomeShell();

@@ -40,6 +40,21 @@ class Comment {
 class Post {
   final String id;
   final String author;
+
+  /// 作者的雲端身分。**示範資料的假作者沒有 uid，所以可以是空值。**
+  ///
+  /// 這個值本來就跟著貼文一起存在雲端（`posts/{id}.authorUid`），
+  /// 只是讀回來時被丟掉了 —— 於是畫面只剩暱稱可用，而暱稱可以改。
+  final String? authorUid;
+
+  /// 發文當下作者的階級。**這不是要顯示的值。**
+  ///
+  /// 顯示的階級一律問 `AppState.rankOf(author, uid: authorUid)` 拿現值 ——
+  /// 階級代表「這個人現在多強」，不是歷史事實。這個欄位只在公開檔案
+  /// 查不到（對方久未上線、剛好沒撈到）時墊底，總比顯示 1 階好。
+  ///
+  /// 2026-09-23 之前反過來：這個值就是顯示值，所以作者從 11 階練到
+  /// 40 階，他 11 階時發的那篇永遠寫著 11 階。
   final int authorRank;
   final int? authorReputation; // 僅教官身分者有值
 
@@ -71,6 +86,7 @@ class Post {
     required this.authorRank,
     required this.text,
     required this.at,
+    this.authorUid,
     this.authorReputation,
     this.attachedWorkout,
     this.visibility = PostVisibility.public,
@@ -468,6 +484,12 @@ int applyReputation(int current, int delta) =>
 
 class Instructor {
   final String name;
+
+  /// 教官的雲端身分。**示範資料的假教官沒有 uid，所以可以是空值。**
+  final String? uid;
+
+  /// **這不是要顯示的值。** 顯示的階級一律問 `AppState.rankOf` 拿現值，
+  /// 這個欄位只在查不到他的公開檔案時墊底。
   final int rank;
 
   /// 教官聲望。**屬於這位教官**，不是評分者的 ——
@@ -482,6 +504,7 @@ class Instructor {
   Instructor({
     required this.name,
     required this.rank,
+    this.uid,
     required this.reputation,
     required this.apprentices,
     required this.apprenticeCap,
@@ -524,6 +547,11 @@ class MentorTask {
 
 class Apprentice {
   final String name;
+
+  /// 學徒的雲端身分。**示範資料的假學徒沒有 uid，所以可以是空值。**
+  final String? uid;
+
+  /// **這不是要顯示的值**，只在查不到他的公開檔案時墊底 —— 顯示的是現值。
   final int rank;
   final Map<Dim, int> ability;
   final List<String> recentWorkouts;
@@ -531,6 +559,7 @@ class Apprentice {
   const Apprentice({
     required this.name,
     required this.rank,
+    this.uid,
     required this.ability,
     required this.recentWorkouts,
     this.scoredThisWeek = 0,

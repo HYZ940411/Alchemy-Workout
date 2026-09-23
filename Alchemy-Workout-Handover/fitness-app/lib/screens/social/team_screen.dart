@@ -163,7 +163,8 @@ class _MyTeam extends StatelessWidget {
                             // 各成員的本隊已貢獻分數。加總即為月累計日常分數 ——
                             // 沒有這一列，團隊分數就是個查不回去的孤兒數字。
                             Text(
-                              '${m.rank} 階　·　本隊已貢獻 '
+                              // 隊友現在的階級。名冊上那份是他加入當下存的。
+                              '${s.rankOf(m.name, uid: m.uid, fallback: m.rank)} 階　·　本隊已貢獻 '
                               '${team.contributions[m.name] ?? 0} 分',
                               style: const TextStyle(
                                   color: AppColors.textDim, fontSize: 11.5),
@@ -482,7 +483,8 @@ class _RequestRow extends StatelessWidget {
                     gone
                         // 逾期後該筆失效，對方可再次申請、隊長可再次邀請。
                         ? '已逾期，${isInvite ? '可再次邀請' : '對方可再次申請'}'
-                        : '階級 ${req.rank}　·　'
+                        // 申請／受邀者現在的階級，不是送出當下那個。
+                        : '階級 ${s.rankOf(req.name, uid: req.uid, fallback: req.rank)}　·　'
                             '${left.inDays} 天 ${left.inHours % 24} 小時後逾期',
                     style: const TextStyle(
                         color: AppColors.textFaint, fontSize: 11.5),

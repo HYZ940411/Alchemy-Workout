@@ -100,8 +100,9 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                       ),
                       title: t.members[i].name,
                       // 團隊只有隊長與成員兩種角色，沒有副隊長。
+                      // 隊友現在的階級。名冊上那份是他加入當下存的。
                       subtitle: '${teamRoleNames[t.members[i].role]}'
-                          '　·　階級 ${t.members[i].rank}',
+                          '　·　階級 ${s.rankOf(t.members[i].name, uid: t.members[i].uid, fallback: t.members[i].rank)}',
                       showDivider: i != t.members.length - 1,
                     ),
                 ]),

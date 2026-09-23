@@ -64,6 +64,17 @@ const int kSignUpMakeupTickets = 1;
 /// 二、**審核不寫具體時數。** 草稿寫「24 小時內」，但〈審核時限設定〉的
 ///     初始值是檢舉 7 天、申訴 72 小時，而且那四項時限是**後台可調參數** ——
 ///     條款寫死一個數字，等於承諾了平台做不到、而且隨時會變的事。
+/// 現行條款版本。**改 [kTermsSections] 的條文就要動這個數字。**
+///
+/// 規格三處都寫著「條款改版後，既有使用者於下次登入時須重新同意」
+/// （〈註冊流程〉、〈01_Command清單〉、〈02_Aggregate定義〉的「已同意條款版本」）。
+/// 那套機制唯一的觸發條件就是這個字串跟使用者存檔裡那個對不上 ——
+/// **忘了改這裡，改版就不會要求任何人重新同意，而且沒有任何跡象。**
+///
+/// 2026-09-18 條文由 v3.2 改為 v4.0 時，這個機制還不存在，
+/// 所以那一次沒有任何既有使用者被要求重新同意（PROGRESS.md 第 5 節 0b）。
+const String kTermsVersion = 'v4.0';
+
 const kTermsSections = <(String, String)>[
   (
     '',
@@ -163,9 +174,11 @@ class SignUpDraft {
   String? email;
 
   bool termsAgreed = false;
-  /// 條文見 [kTermsSections]。改條文就要動這個版本號 ——
-  /// 規格要求「條款改版後既有使用者於下次登入時須重新同意」。
-  String termsVersion = 'v4.0';
+
+  /// 這份草稿要同意的條款版本。**一律取 [kTermsVersion]，不另外寫死** ——
+  /// 兩個地方各寫一個版本號的話，改條文時只改到一個，那套「改版要重新
+  /// 同意」的機制就會安靜地不觸發。
+  String termsVersion = kTermsVersion;
 
   /// 入口已完成 —— 手機須驗證通過，第三方須授權完成。
   bool get entryDone =>

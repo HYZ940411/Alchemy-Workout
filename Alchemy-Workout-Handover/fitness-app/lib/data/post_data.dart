@@ -36,4 +36,10 @@ abstract class PostSource {
 
   /// 貼文已刪除。**軟刪除** —— 貼文可被檢舉，硬刪除會讓案件失去證據。
   Future<void> markPostDeleted(String postId);
+
+  /// 留言已編輯。規則比照貼文，編輯歷史一併覆寫。
+  Future<void> updateCommentText(String postId, Comment c);
+
+  /// 留言已刪除。同樣是軟刪除 —— 已刪除的留言仍供獎勵回收與成就計數判定。
+  Future<void> markCommentDeleted(String postId, String commentId);
 }

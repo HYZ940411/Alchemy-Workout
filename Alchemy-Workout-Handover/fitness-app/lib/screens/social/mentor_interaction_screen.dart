@@ -119,7 +119,10 @@ class _ApprenticeTab extends StatelessWidget {
                 style: T.body(weight: selected ? FontWeight.w600 : null),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            Text('${a.rank} 階', style: T.caption()),
+            // 學徒現在的階級，不是他拜師當下那個。
+            Text(
+                '${AppScope.of(context).rankOf(a.name, uid: a.uid, fallback: a.rank)} 階',
+                style: T.caption()),
           ],
         ),
       );

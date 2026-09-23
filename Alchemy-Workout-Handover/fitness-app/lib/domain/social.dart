@@ -7,12 +7,21 @@ library;
 /// 社群裡的一個人。名稱在本專案即為識別碼。
 class SocialUser {
   final String name;
+
+  /// 雲端身分。**示範資料的假使用者沒有 uid，所以可以是空值。**
+  ///
+  /// 名稱在示範資料裡當識別碼用，但**暱稱可以改** —— 要拿去查對方
+  /// 現在的階級與六維時一律用這個，查不到才退回用名稱。
+  final String? uid;
+
+  /// **這不是要顯示的值**，只在查不到他的公開檔案時墊底。
   final int rank;
   final String grade; // 綜合能力等級
   const SocialUser({
     required this.name,
     required this.rank,
     required this.grade,
+    this.uid,
   });
 }
 

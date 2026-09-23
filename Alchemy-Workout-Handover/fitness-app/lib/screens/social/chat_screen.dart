@@ -177,7 +177,11 @@ class _List extends StatelessWidget {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              if (c.peerIsInstructor) ...[
+                              // 對方**現在**是不是教官。`c.peerIsInstructor`
+                              // 是開這個對話當下存的 —— 教官身分會被撤銷。
+                              if (AppScope.of(context).isInstructorOf(c.peer,
+                                  uid: c.peerUid,
+                                  fallback: c.peerIsInstructor)) ...[
                                 const SizedBox(width: 6),
                                 const Pill('教官'),
                               ],
@@ -269,10 +273,13 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              '${c.peerRank} 階',
+              // 對方現在的階級。`c.peerRank` 是開這個對話當下存下來的，
+              // 只在查不到他的公開檔案時墊底。
+              '${s.rankOf(c.peer, uid: c.peerUid, fallback: c.peerRank)} 階',
               style: const TextStyle(color: AppColors.textDim, fontSize: 11.5),
             ),
-            if (c.peerIsInstructor) ...[
+            if (s.isInstructorOf(c.peer,
+                uid: c.peerUid, fallback: c.peerIsInstructor)) ...[
               const SizedBox(width: 6),
               const Pill('教官'),
             ],

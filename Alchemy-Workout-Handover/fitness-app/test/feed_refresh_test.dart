@@ -43,6 +43,10 @@ class _FakePosts implements PostSource {
   Future<void> updatePostText(String postId, Post p) async {}
   @override
   Future<void> markPostDeleted(String postId) async {}
+  @override
+  Future<void> updateCommentText(String postId, Comment c) async {}
+  @override
+  Future<void> markCommentDeleted(String postId, String commentId) async {}
 }
 
 Post _post(String id, String author) => Post(

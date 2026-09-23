@@ -31,6 +31,10 @@ class FirestorePosts implements PostSource {
       // 一頁 20 篇就是 20 次額外查詢。作者事後改暱稱時舊貼文仍顯示當時的
       // 名字 —— 那與〈訓練紀錄〉凍結歷史值是同一個取捨。
       'authorName': p.author,
+      // **階級跟著存，但它不是顯示值。** 上面那個取捨只適用於暱稱：
+      // 暱稱是歷史紀錄，階級是「這個人現在多強」。讀回來之後
+      // `AppState.rankOf` 會以公開檔案上的現值為準，這一份只在查不到時
+      // 墊底（見 `Post.authorRank`）。
       'authorRank': p.authorRank,
       if (p.authorReputation != null) 'authorReputation': p.authorReputation,
       'text': p.text,
@@ -91,6 +95,26 @@ class FirestorePosts implements PostSource {
     await _col.doc(postId).update({'deleted': true});
   }
 
+  @override
+  Future<void> updateCommentText(String postId, Comment c) async {
+    await _col.doc(postId).collection('comments').doc(c.id).update({
+      'text': c.text,
+      'edits': [
+        for (final e in c.edits)
+          {'before': e.$1, 'at': Timestamp.fromDate(e.$2)},
+      ],
+    });
+  }
+
+  @override
+  Future<void> markCommentDeleted(String postId, String commentId) async {
+    await _col
+        .doc(postId)
+        .collection('comments')
+        .doc(commentId)
+        .update({'deleted': true});
+  }
+
   // ===========================================================================
   // 讀取
   // ===========================================================================
@@ -141,6 +165,9 @@ class FirestorePosts implements PostSource {
     return Post(
       id: id,
       author: author,
+      // **這個值一直都存在雲端，只是以前讀回來時被丟掉。** 沒有它，
+      // 畫面上就只剩暱稱可以拿去查作者的階級 —— 而暱稱可以改。
+      authorUid: j['authorUid'] is String ? j['authorUid'] as String : null,
       authorRank: j['authorRank'] is num ? (j['authorRank'] as num).round() : 1,
       authorReputation: j['authorReputation'] is num
           ? (j['authorReputation'] as num).round()

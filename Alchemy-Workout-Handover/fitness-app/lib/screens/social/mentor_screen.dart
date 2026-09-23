@@ -147,7 +147,8 @@ class _InstructorCard extends StatelessWidget {
                               fontSize: 15.5, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 3),
                       Text(
-                        '${instructor.rank} 階　·　'
+                        // 教官現在的階級，不是建立師徒關係當下那個。
+                        '${s.rankOf(instructor.name, uid: instructor.uid, fallback: instructor.rank)} 階　·　'
                         '綜合 ${overallGrade(instructor.ability)}　·　'
                         '聲望 ${instructor.reputation}',
                         style: const TextStyle(

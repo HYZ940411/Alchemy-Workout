@@ -41,6 +41,7 @@ extension AppStateSnapshot on AppState {
         'isMale': isMale,
         'registeredOn': _iso(registeredOn),
         'signUpCompleted': signUpCompleted,
+        'agreedTermsVersion': agreedTermsVersion,
 
         // --- 註冊問卷的四個欄位（已落地的值） ---
         'daysPerWeek': daysPerWeek,
@@ -308,6 +309,9 @@ extension AppStateSnapshot on AppState {
     isMale = boolOf('isMale', isMale);
     registeredOn = _date(j['registeredOn']) ?? registeredOn;
     signUpCompleted = boolOf('signUpCompleted', signUpCompleted);
+    // **讀不到就是空值，不是沿用預設的現行版本。** 這個欄位 2026-09-24
+    // 才加，舊存檔一個都沒有 —— 沿用預設等於替他們按了同意鍵。
+    agreedTermsVersion = pick<String>('agreedTermsVersion');
 
     daysPerWeek = intOf('daysPerWeek', daysPerWeek);
     duration = pick<String>('duration') ?? duration;

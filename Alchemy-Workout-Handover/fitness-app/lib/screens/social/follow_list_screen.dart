@@ -113,9 +113,13 @@ class _List extends StatelessWidget {
             Text(name.characters.first, style: T.body(weight: FontWeight.w700)),
       ),
       title: name,
-      subtitle: '階級 ${u.rank}　·　綜合 ${u.grade}',
+      // 現在的階級與綜合等級。`u` 那份是我第一次見到他時存下來的 ——
+      // 在此之前 `applyPublicProfiles` 對已在清單裡的人直接跳過，
+      // 所以這裡顯示的比貼文上那個凍結值還舊。
+      subtitle: '階級 ${s.rankOf(name, uid: u.uid, fallback: u.rank)}'
+          '　·　綜合 ${s.gradeOf(name, uid: u.uid) ?? u.grade}',
       // 點整列進他的公開檔案（`[QA-02i]`）。關注鍵在右邊，各自的觸控區。
-      onTap: () => openProfile(context, name),
+      onTap: () => openProfile(context, name, uid: u.uid),
       // 取消關注屬破壞性動作，用次要樣式（§4.5 R-23）；
       // 兩種狀態共用同一顆按鈕，寬度固定才不會左右跳動。
       trailing: SizedBox(

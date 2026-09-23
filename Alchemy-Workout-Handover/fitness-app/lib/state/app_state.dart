@@ -412,7 +412,26 @@ class AppState extends ChangeNotifier {
   // --- 經驗值 / 金幣 / 階級 ---
   // 階級 45 —— 自訂訓練名額為 4（初始 2 ＋ 里程碑 25、45 各 +1），
   // 與這位假使用者手上的四份自訂訓練相符。
-  int totalExp = 1700;
+  int _totalExp = 1700;
+
+  /// 累計經驗值。**寫入這裡會順手偵測升階**（見下方 setter）。
+  int get totalExp => _totalExp;
+
+  /// 經驗值一改就比對階級有沒有跨過門檻，跨過就把公開檔案重寫上雲。
+  ///
+  /// **為什麼掛在這裡，不是掛在每個加經驗值的地方**：全專案有十一處會動
+  /// `totalExp`（簽到、結算、成就、師徒任務、新手任務、回歸任務、管理員歸零
+  /// ……）。逐一去加「記得同步」的話，漏掉一處就是一個查不出來的陳舊階級，
+  /// 而且之後每新增一個經驗值來源都要再記得一次。收斂到 setter 就不會漏。
+  ///
+  /// 在此之前公開檔案**只在登入那一刻寫一次**（`AuthGate._syncProfile`），
+  /// 所以這個 session 內升的階，別人一律要等到我下次登入才看得到。
+  set totalExp(int v) {
+    final before = rankForExp(_totalExp);
+    _totalExp = v;
+    if (rankForExp(v) != before) publishMyProfile();
+  }
+
   int coins = 640;
   int get rank => rankForExp(totalExp);
 
@@ -1978,10 +1997,24 @@ class AppState extends ChangeNotifier {
 
   // --- 公開檔案（[BE-11] 批次 1）---
 
+  /// 雲端的公開檔案。**空值代表不同步** —— 既有測試走這條。
+  ///
+  /// 在此之前這個來源只有 `AuthGate` 自己握著，所以「把我的公開檔案寫上去」
+  /// 這件事只在登入那一刻發生得了。升階要即時同步就得讓狀態層也拿得到。
+  PublicProfileSource? profileSource;
+
   /// uid → 暱稱。跨使用者資料在雲端以 uid 為鍵，畫面上要顯示的是暱稱，
   /// 這張表就是兩者之間的翻譯。批次 2 起的關注／貼文都靠它把
   /// 雲端的 uid 還原成畫面認得的暱稱。
   final Map<String, String> nameByUid = {};
+
+  /// 暱稱 → uid。[nameByUid] 的反查。
+  ///
+  /// **這是退路，不是主路。** 暱稱可以改而 uid 不會，所以拿得到 uid 的
+  /// 呼叫端一律直接給 uid（[rankOf] 等幾支都收 `uid:` 具名參數）。
+  /// 只有畫面上真的只剩暱稱時才走這裡 —— 對方改過暱稱就查不到了，
+  /// 那時候退回示範資料的預設值，不會顯示成 1 階。
+  final Map<String, String> _uidByName = {};
 
   /// 我自己要公開出去的那一份。
   ///
@@ -2000,82 +2033,197 @@ class AppState extends ChangeNotifier {
         specialties: instructorSpecialties.toList(),
       );
 
+  /// 把我自己的公開檔案重寫上雲。
+  ///
+  /// **即發即忘、吞掉錯誤**：與關注、貼文同一套 —— 同步失敗不該擋住
+  /// 使用者手上正在做的事，下次升階或下次登入會再寫一次。
+  void publishMyProfile() {
+    final src = profileSource;
+    final uid = myUid;
+    if (src == null || uid == null) return;
+    src.publish(myPublicProfile(uid)).catchError((_) {});
+  }
+
   /// 把雲端讀到的其他使用者併進來（[BE-11] 批次 1）。
   ///
   /// **是併入而不是取代。** 現階段動態牆上的貼文、對話、教官清單仍指向
   /// 示範用的那幾位；直接換掉會讓那些畫面指到不存在的人。
-  /// 等批次 2–4 把貼文與師徒也搬上雲，示範資料才有辦法整批退場。
   void applyPublicProfiles(List<PublicProfile> others) {
     for (final p in others) {
       nameByUid[p.uid] = p.displayName;
+      _uidByName[p.displayName] = p.uid;
       // **整份留著**。只取 rank 與 grade 的話，六維明細就在這裡被丟掉了，
       // 而檔案頁上的雷達圖需要它 —— 拿不到就只能顯示我自己的，那是錯的。
-      publicProfiles[p.displayName] = p;
-      // **粉絲數以雲端為準，而且要在 continue 之前寫。**
-      // 原本寫在下面用 `putIfAbsent`，但 `socialUsers.add()` 會先觸發
+      publicProfiles[p.uid] = p;
+      // **粉絲數以雲端為準，而且要在下面那個 add 之前寫。**
+      // 原本寫在後面用 `putIfAbsent`，但 `socialUsers.add()` 會先觸發
       // `otherFollowerCounts` 這個 late 欄位初始化，那份初始值是用
       // 示範公式 `40 + rank * 3` 算的 —— 等輪到 putIfAbsent 時鍵已經在了，
       // 雲端讀回來的真實數字就這樣被一個假數字蓋掉。
       otherFollowerCounts[p.displayName] = p.followers;
-      if (socialUsers.any((u) => u.name == p.displayName)) continue;
-      socialUsers.add(SocialUser(
+
+      // 對方關閉了綜合等級的對外可見時，畫面顯示最低階 ——
+      // 不猜、也不留空白造成版面破洞。
+      final u = SocialUser(
         name: p.displayName,
+        uid: p.uid,
         rank: p.rank,
-        // 對方關閉了綜合等級的對外可見時，畫面顯示最低階 ——
-        // 不猜、也不留空白造成版面破洞。
         grade: p.grade ?? 'E',
-      ));
+      );
+      // **已經在清單裡的人要更新，不是跳過。**
+      //
+      // 原本這裡是 `if (socialUsers.any(...)) continue;` —— 只有「第一次
+      // 見到這個人」才寫入，之後每次登入從雲端讀回來的新階級全被丟掉。
+      // 於是「找人」與關注／粉絲清單顯示的是**我第一次見到他時**的階級，
+      // 比貼文上那個凍結值還舊。
+      final i = socialUsers.indexWhere((x) => x.name == p.displayName);
+      if (i >= 0) {
+        socialUsers[i] = u;
+      } else {
+        socialUsers.add(u);
+      }
     }
     notifyListeners();
   }
 
-  /// 別人的公開檔案，依暱稱索引（[BE-11] 批次 1）。
+  /// 別人的公開檔案，**依 uid 索引**（[BE-11] 批次 1）。
+  ///
+  /// **鍵是 uid 不是暱稱。** 暱稱可以改 —— 以暱稱為鍵的話，對方改名之後
+  /// 這份快取就再也對不上，階級與六維一起掉回預設值。
   ///
   /// **只有雲端同步過的人在裡面。** 示範用的那幾位不在 —— 對他們
   /// [abilityOf] 會回空值，而畫面必須把「沒有資料」畫成沒有資料。
   final Map<String, PublicProfile> publicProfiles = {};
 
+  /// 正在路上的 uid。避免同一個人被重複查 —— 動態牆一頁二十篇貼文
+  /// 可能全是同一位作者，不擋的話就是二十次相同的查詢。
+  final Set<String> _profilesInFlight = {};
+
+  /// 補齊這些 uid 的公開檔案。**已經有的、正在查的都不會再查一次。**
+  ///
+  /// 登入時的 [PublicProfileSource.others] 只撈得到最近活躍的前 200 位，
+  /// 而畫面上會出現的人不一定在那 200 位裡 —— 久未上線的作者、剛加入的
+  /// 隊友、三年前那篇貼文的主人都是。在這一支之前，他們的階級與六維
+  /// 一律取預設值（階級顯示 1），而且**人越多越常發生**。
+  ///
+  /// 呼叫端不必 await：查回來會 [notifyListeners]，畫面自己重畫。
+  Future<void> ensureProfiles(Iterable<String> uids) async {
+    final src = profileSource;
+    if (src == null) return;
+
+    final want = {
+      for (final u in uids)
+        if (u.isNotEmpty &&
+            u != myUid &&
+            !publicProfiles.containsKey(u) &&
+            !_profilesInFlight.contains(u))
+          u,
+    };
+    if (want.isEmpty) return;
+
+    _profilesInFlight.addAll(want);
+    try {
+      applyPublicProfiles(await src.byUids(want.toList()));
+    } catch (_) {
+      // 查不到就維持現狀 —— 一次網路失敗不該把畫面上的階級洗成預設值。
+    } finally {
+      // **查無此人也要移出 in-flight**，否則那個 uid 會被永遠鎖住；
+      // 但下次呼叫又會再查一次，這是刻意的：對方可能是稍後才註冊的。
+      _profilesInFlight.removeAll(want);
+    }
+  }
+
+  /// 這個暱稱對應到的公開檔案。拿得到 uid 請直接給 [uid]。
+  PublicProfile? _profile(String name, String? uid) {
+    final key = uid ?? _uidByName[name];
+    return key == null ? null : publicProfiles[key];
+  }
+
+  /// 這是不是我自己。有 uid 就以 uid 為準 —— 暱稱可能跟別人撞名。
+  bool _isMe(String name, String? uid) =>
+      uid != null && myUid != null ? uid == myUid : _mine(name);
+
   /// 某人的粉絲數。看自己請用 [followerCount]。
-  int followersOf(String name) =>
-      _mine(name) ? followerCount : (otherFollowerCounts[name] ?? 0);
+  ///
+  /// **以 [otherFollowerCounts] 為先，不是公開檔案上那個數字。** 兩者都是
+  /// 雲端來的（`applyPublicProfiles` 每次載入都會把它寫成雲端值），差別是
+  /// 前者還帶著我剛剛按下去的那一次關注／取消關注。反過來取的話，
+  /// 我關注了某人、他的粉絲數卻紋風不動 —— 那個 +1 被雲端快照蓋掉了。
+  int followersOf(String name, {String? uid}) => _isMe(name, uid)
+      ? followerCount
+      : (otherFollowerCounts[name] ?? _profile(name, uid)?.followers ?? 0);
 
   /// 某人在檔案頁上該顯示的六維能力值。
   ///
   /// **回空值代表「我這裡沒有他的六維明細」**，可能是對方關掉了對外可見，
   /// 也可能是他根本不在公開檔案裡。兩種情況都不該拿我自己的點數頂上 ——
   /// 那會讓每個人的檔案頁長得跟我一模一樣。
-  Map<Dim, int>? abilityOf(String name) {
-    if (_mine(name)) return points;
+  Map<Dim, int>? abilityOf(String name, {String? uid}) {
+    if (_isMe(name, uid)) return points;
+    final cloud = _profile(name, uid)?.ability;
+    if (cloud != null) return cloud;
     // 教官身分讓兩個可見度開關失效（〈使用者 Aggregate〉的規定），
-    // 所以教官一律看得到六維。
-    final ins = instructors.where((i) => i.name == name).firstOrNull;
-    if (ins != null) return ins.ability;
-    return publicProfiles[name]?.ability;
+    // 所以教官一律看得到六維。示範資料的教官只在這份清單裡。
+    return instructors.where((i) => i.name == name).firstOrNull?.ability;
   }
 
   /// 某人的綜合能力等級。回空值代表對方未公開。
-  String? gradeOf(String name) {
-    if (_mine(name)) return overallGrade(points);
-    final a = abilityOf(name);
+  String? gradeOf(String name, {String? uid}) {
+    if (_isMe(name, uid)) return overallGrade(points);
+    final a = abilityOf(name, uid: uid);
     if (a != null) return overallGrade(a);
-    final p = publicProfiles[name];
+    final p = _profile(name, uid);
     if (p != null) return p.grade;
     // 示範用的使用者沒有六維明細，但帶著綜合等級。
     return socialUsers.any((u) => u.name == name) ? userOf(name).grade : null;
   }
 
   /// 某人的階級。
-  int rankOf(String name) {
-    if (_mine(name)) return rank;
+  ///
+  /// **一律回「他現在的階級」，不是任何時點的快照。** 貼文、私訊、團隊
+  /// 名冊、收件匣在雲端都各自存了一份發生當下的階級，那些值只是這裡
+  /// 查不到時的墊底（見各呼叫端的 `fallback`）—— 顯示的第一順位永遠是
+  /// 公開檔案上的現值。2026-09-23 之前反過來：發文當下寫死進 `posts`
+  /// 文件，作者從 11 階練到 40 階，那篇貼文永遠寫著 11 階。
+  /// [fallback] 是呼叫端手上那份快照（貼文、對話、名冊上存的那個值）。
+  /// **只在這裡完全查不到這個人時才用得到** —— 顯示一個他真的曾經有過的
+  /// 階級，比顯示 1 階好。
+  int rankOf(String name, {String? uid, int? fallback}) {
+    if (_isMe(name, uid)) return rank;
+    final cloud = _profile(name, uid)?.rank;
+    if (cloud != null) return cloud;
     final ins = instructors.where((i) => i.name == name).firstOrNull;
-    return ins?.rank ?? publicProfiles[name]?.rank ?? userOf(name).rank;
+    if (ins != null) return ins.rank;
+    final known = socialUsers.where((u) => u.name == name).firstOrNull;
+    if (known != null) return known.rank;
+    return fallback ?? 1;
   }
 
-  /// 某人的教官聲望。非教官回空值。
-  int? reputationOf(String name) {
-    if (_mine(name)) return isInstructor ? instructorReputation : null;
+  /// 某人**現在**的教官聲望。非教官回空值。
+  ///
+  /// [fallback] 是呼叫端手上那份快照（貼文上的 `authorReputation`），
+  /// 只在完全查不到這個人時用。
+  int? reputationOf(String name, {String? uid, int? fallback}) {
+    if (_isMe(name, uid)) return isInstructor ? instructorReputation : null;
+    final p = _profile(name, uid);
+    // **檔案在手上就以它為準，不可以再退回快照。** 它說不是教官就是不是 ——
+    // 退回去的話，被撤銷教官身分的人在舊貼文上會一直掛著那枚徽章。
+    if (p != null) return p.reputation;
     final ins = instructors.where((i) => i.name == name).firstOrNull;
-    return ins?.reputation ?? publicProfiles[name]?.reputation;
+    if (ins != null) return ins.reputation;
+    return fallback;
+  }
+
+  /// 某人**現在**是不是教官。
+  ///
+  /// 教官身分會被撤銷（`revokeInstructor`），所以這件事跟階級一樣
+  /// 不能存快照 —— 對話框上那枚「教官」徽章原本是開對話當下存的。
+  bool isInstructorOf(String name, {String? uid, bool fallback = false}) {
+    if (_isMe(name, uid)) return isInstructor;
+    final p = _profile(name, uid);
+    if (p != null) return p.isInstructor;
+    if (instructors.any((i) => i.name == name)) return true;
+    return fallback;
   }
 
   /// 某人在檔案頁上該列出的貼文。
@@ -2091,12 +2239,7 @@ class AppState extends ChangeNotifier {
 
   /// 暱稱 → uid。[nameByUid] 的反查 —— 畫面上拿得到的是暱稱，
   /// 而雲端要的是 uid。
-  String? uidOf(String name) {
-    for (final e in nameByUid.entries) {
-      if (e.value == name) return e.key;
-    }
-    return null;
-  }
+  String? uidOf(String name) => _uidByName[name];
 
   // --- 關注關係上雲（[BE-11] 批次 2）---
 
@@ -2158,6 +2301,31 @@ class AppState extends ChangeNotifier {
     if (src == null || uid == null) return;
     job(src, uid).catchError((_) {});
   }
+
+  /// 與 [_pushSocial] 同一件事，但**等它做完並回報成功與否**。
+  ///
+  /// 給刪除用。沒接後端時回真 —— 那是示範模式與既有測試走的路，
+  /// 「沒有雲端可寫」不是失敗。
+  Future<bool> _pushSocialTracked(
+      Future<void> Function(PostSource src, String uid) job) async {
+    final src = postSource;
+    final uid = myUid;
+    if (src == null || uid == null) return true;
+    try {
+      await job(src, uid);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 這則留言掛在哪篇貼文底下。
+  ///
+  /// 留言本身不帶貼文 ID（雲端是子集合，父層由路徑決定），而寫回雲端
+  /// 要指定父文件 —— 所以反查一次。找不到回空字串，呼叫端的雲端寫入
+  /// 會失敗並被吞掉，不影響本機。
+  String _postIdOf(Comment c) =>
+      posts.where((p) => p.comments.contains(c)).firstOrNull?.id ?? '';
 
   /// 把雲端的貼文併進動態牆（[BE-11] 批次 3）。
   ///
@@ -2250,6 +2418,12 @@ class AppState extends ChangeNotifier {
     // 動態牆依時間由新到舊。
     posts.sort((a, b) => b.at.compareTo(a.at));
     notifyListeners();
+
+    // 把這一批作者的公開檔案補齊 —— 他們的階級要顯示現值，而登入時
+    // 只撈得到最近活躍的前 200 位，久沒上線的作者不在裡面。
+    // **不 await**：補到了會自己 notifyListeners 重畫，補不到就用
+    // 貼文上那份快照墊底。動態牆不該為了階級而等網路。
+    ensureProfiles([for (final p in cloud) ?p.authorUid]);
   }
 
   // --- 封鎖（獨立 Aggregate，不附屬於對話）---
@@ -2397,6 +2571,7 @@ class AppState extends ChangeNotifier {
     final post = Post(
       id: newId('p'),
       author: displayName,
+      authorUid: myUid,
       authorRank: rank,
       text: text,
       images: images,
@@ -2536,6 +2711,7 @@ class AppState extends ChangeNotifier {
     final post = Post(
       id: newId('share-'),
       author: displayName,
+      authorUid: myUid,
       authorRank: rank,
       text: text.trim().isEmpty ? '今天練完了。' : text.trim(),
       at: now,
@@ -2555,6 +2731,16 @@ class AppState extends ChangeNotifier {
 
   bool _mine(String author) => author == displayName;
 
+  /// 這篇貼文是不是我發的。
+  ///
+  /// **以 uid 為準，暱稱只是退路。** 暱稱可以撞名、日後也會開放修改 ——
+  /// 到那時候「我改了暱稱，自己的舊貼文變成別人的」會一次影響編輯、
+  /// 刪除與這顆「⋯」要開哪一組選單。貼文本來就帶著 `authorUid`。
+  ///
+  /// 這件事原本散在畫面上各寫一次（`p.author == s.displayName`），
+  /// 而動態牆那一處根本沒寫 —— 見 `showPostMenu`。
+  bool isMyPost(Post p) => _isMe(p.author, p.authorUid);
+
   /// 貼文已編輯。編輯前的內容與時戳寫入編輯歷史，**保留完整歷史版本**；
   /// 已編輯旗標設為真，讀者看得到「已編輯」。
   bool editPost(Post p, String text) {
@@ -2563,16 +2749,39 @@ class AppState extends ChangeNotifier {
     p.edits.add((p.text, now));
     p.text = text.trim();
     notifyListeners();
+    // **在此之前這一行不存在。** `PostSource.updatePostText` 早就寫好了，
+    // Firestore 的實作也完整，就是沒有人呼叫 —— 於是編輯只改記憶體，
+    // 重新整理變回舊內容，別人從頭到尾看到的是原版。
+    //
+    // 編輯沿用即發即忘：失敗了內容還在，使用者可以再改一次。
+    // **刪除不能這樣**（見 [deletePost]）。
+    _pushSocial((src, _) => src.updatePostText(p.id, p));
     return true;
   }
 
   /// 貼文已刪除。**軟刪除**：資料保留，因為貼文可被檢舉。
   /// 已刪除貼文的按讚與留言一併隱藏但保留，供獎勵回收與成就計數判定使用。
-  bool deletePost(Post p) {
-    if (!_mine(p.author) || p.deleted) return false;
+  /// 回傳**要顯示給使用者的訊息**；空值代表成功。
+  ///
+  /// ## 為什麼刪除不能即發即忘
+  ///
+  /// 按讚、留言、編輯失敗了都還好 —— 東西還在，再做一次就是。
+  /// **刪除失敗不一樣：使用者以為東西沒了，實際上還在別人眼前。**
+  /// 那正是這次要修的困惑，靜靜地失敗只是把它換個地方發生。
+  ///
+  /// 所以雲端寫不進去就**把本機的刪除收回**：讓貼文重新出現，並說明原因。
+  /// 看到它還在、知道為什麼，比以為刪掉了好。
+  Future<String?> deletePost(Post p) async {
+    if (!isMyPost(p) || p.deleted) return null;
     p.deleted = true;
     notifyListeners();
-    return true;
+
+    if (!await _pushSocialTracked((src, _) => src.markPostDeleted(p.id))) {
+      p.deleted = false;
+      notifyListeners();
+      return '刪除沒有成功，貼文還在。網路恢復後再試一次。';
+    }
+    return null;
   }
 
   /// 動態牆看得到的貼文。
@@ -2585,16 +2794,26 @@ class AppState extends ChangeNotifier {
     c.edits.add((c.text, now));
     c.text = text.trim();
     notifyListeners();
+    _pushSocial((src, _) => src.updateCommentText(_postIdOf(c), c));
     return true;
   }
 
   /// 留言已刪除。同樣是軟刪除，且不回收已發放的獎勵 ——
   /// 刪除後重新留言是新的留言 ID，屬新的一次互動。
-  bool deleteComment(Comment c) {
-    if (!_mine(c.author) || c.deleted) return false;
+  /// 回傳要顯示給使用者的訊息；空值代表成功。理由同 [deletePost]。
+  Future<String?> deleteComment(Comment c) async {
+    if (!_mine(c.author) || c.deleted) return null;
+    final postId = _postIdOf(c);
     c.deleted = true;
     notifyListeners();
-    return true;
+
+    if (!await _pushSocialTracked(
+        (src, _) => src.markCommentDeleted(postId, c.id))) {
+      c.deleted = false;
+      notifyListeners();
+      return '刪除沒有成功，留言還在。網路恢復後再試一次。';
+    }
+    return null;
   }
 
   /// 使用者已關注帳號 / 已取消關注。
@@ -3105,6 +3324,7 @@ class AppState extends ChangeNotifier {
         final i = instructors.where((x) => x.name == r.from).firstOrNull ??
             Instructor(
               name: r.from,
+              uid: r.fromUid,
               rank: r.fromRank,
               reputation: 0,
               apprentices: 0,
@@ -3120,6 +3340,7 @@ class AppState extends ChangeNotifier {
       case InboundKind.apprenticeApply:
         apprentices.add(Apprentice(
           name: r.from,
+          uid: r.fromUid,
           rank: r.fromRank,
           ability: const {},
           recentWorkouts: const [],
@@ -3585,7 +3806,10 @@ class AppState extends ChangeNotifier {
       myInstructor = instructors.where((i) => i.name == name).firstOrNull ??
           Instructor(
             name: name,
-            rank: 1,
+            uid: b.mentorUid,
+            // **在此之前這裡寫死 1。** 非示範帳號的 `instructors` 是空的，
+            // 所以真實使用者的教官一律顯示 1 階 —— 那不是過期，是根本沒查。
+            rank: rankOf(name, uid: b.mentorUid),
             reputation: kInstructorInitialReputation,
             apprentices: 0,
             apprenticeCap: kApprenticeCapInitial,
@@ -5042,6 +5266,7 @@ class AppState extends ChangeNotifier {
             ? InboundKind.mentorInvite
             : InboundKind.apprenticeApply,
         from: r.fromName,
+        fromUid: r.fromUid,
         fromRank: r.fromRank,
         // 師徒兩向的 subject 都與 from 同值（見 `InboundRequest.subject`）。
         subject: r.fromName,
@@ -5093,6 +5318,7 @@ class AppState extends ChangeNotifier {
           id: 'ti-${r.teamId}',
           kind: InboundKind.teamInvite,
           from: r.name,
+          fromUid: r.uid,
           fromRank: r.rank,
           // 團隊邀請的 subject 是**團隊名**，from 才是隊長。
           subject: r.teamName,
@@ -7834,6 +8060,36 @@ class AppState extends ChangeNotifier {
   /// 讀不到存檔就把它設為 false，走完整的註冊流程。
   bool signUpCompleted = true;
 
+  /// 已同意的條款版本（〈02_Aggregate定義〉的「已同意條款版本」欄位）。
+  ///
+  /// **預設為現行版本，是示範用身分的一部分** —— 與 [signUpCompleted]
+  /// 同一個道理：直接 `AppState()` 建出來的那位假使用者已經同意過了。
+  /// 真實使用者的值由存檔決定，讀不到就是空值（見 [termsReconsentNeeded]）。
+  String? agreedTermsVersion = kTermsVersion;
+
+  /// 下次登入要不要請他重新同意條款。
+  ///
+  /// 規格：「條款改版後，既有使用者於下次登入時須重新同意」
+  /// （〈註冊流程〉、〈02_Aggregate定義〉）。
+  ///
+  /// **空值代表沒同意過，也要重新同意。** 這個欄位是 2026-09-24 才加的，
+  /// 在那之前的存檔一律查無版本 —— 而他們實際同意的是 v3.2（v4.0 是
+  /// 2026-09-18 改的），本來就該重看。反過來把查無版本當成「已同意現行版」，
+  /// 等於替他們按了同意鍵。
+  ///
+  /// **還沒註冊完的人不算** —— 他們本來就會在註冊流程裡遇到條款頁，
+  /// 在這裡再擋一次會變成兩道。
+  bool get termsReconsentNeeded =>
+      signUpCompleted && agreedTermsVersion != kTermsVersion;
+
+  /// 使用者已同意服務條款（含條款改版後的重新同意）。
+  ///
+  /// 〈01_Command清單〉的「同意服務條款」。註冊流程走完時也會經過這裡。
+  void agreeTerms() {
+    agreedTermsVersion = kTermsVersion;
+    notifyListeners();
+  }
+
   /// 10 項全數填畢方可完成註冊；獎勵為金幣 100 ＋ 補簽券 ×1，無經驗值。
   /// 使用者帳號已建立的 Postcondition —— 把帳號層級的計數器一次歸位。
   ///
@@ -8027,6 +8283,11 @@ class AppState extends ChangeNotifier {
     signUpCompleted = true;
     // 使用者帳號已建立 —— 兩個 Aggregate 一併產生，計時自註冊日起算。
     resetToNewAccount();
+    // 註冊流程裡已經按過同意 —— 記下版本，否則他下一次登入又被要求一次。
+    // **排在 resetToNewAccount() 之後**，理由同下面那條暱稱：
+    // 那一步歸零的是進度不是身分，但順序顛倒的話，日後有人往那裡加一行
+    // 「條款版本歸位」，新註冊的人一進 App 就會再被要求同意一次。
+    agreedTermsVersion = kTermsVersion;
     coins += kSignUpCoins;
     grantMakeupTickets(kSignUpMakeupTickets);
     // 暱稱。**要排在 resetToNewAccount() 之後** —— 那一步不碰 displayName

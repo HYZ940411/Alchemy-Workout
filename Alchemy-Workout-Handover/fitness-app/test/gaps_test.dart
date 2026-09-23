@@ -224,26 +224,26 @@ void main() {
       expect(s.editPost(other, '亂改'), isFalse);
     });
 
-    test('刪除為軟刪除：動態牆看不到，但資料還在', () {
+    test('刪除為軟刪除：動態牆看不到，但資料還在', () async {
       final s = AppState();
       final mine = Post(
           id: 'y', author: s.displayName, authorRank: 1, text: 'hi',
           at: DateTime.now());
       s.posts.add(mine);
       final n = s.visiblePosts.length;
-      expect(s.deletePost(mine), isTrue);
+      expect(await s.deletePost(mine), isNull);
       expect(s.visiblePosts.length, n - 1);
       expect(s.posts.contains(mine), isTrue,
           reason: '貼文可被檢舉，硬刪除會使案件失去證據');
     });
 
-    test('留言刪除同樣是軟刪除，且隱藏但保留', () {
+    test('留言刪除同樣是軟刪除，且隱藏但保留', () async {
       final s = AppState();
       final p = s.posts.first;
       s.addComment(p, '我的留言');
       final c = p.comments.last;
       final n = p.visibleComments.length;
-      expect(s.deleteComment(c), isTrue);
+      expect(await s.deleteComment(c), isNull);
       expect(p.visibleComments.length, n - 1);
       expect(p.comments.contains(c), isTrue);
     });

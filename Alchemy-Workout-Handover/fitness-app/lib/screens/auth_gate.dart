@@ -308,11 +308,17 @@ class _AuthGateState extends State<AuthGate> {
     widget.state.reportSource = widget.reportsFor?.call(uid);
     widget.state.followSource = widget.followsFor?.call(uid);
 
+    // **公開檔案的來源也要交給狀態層。** 在此之前只有這個畫面握著它，
+    // 於是「把我的公開檔案寫上去」只在這裡發生得了 —— 這個 session 內
+    // 升的階，別人要等我下次登入才看得到。交出去之後 `AppState` 才能
+    // 在升階當下重寫，也才能按 uid 隨用隨取補齊沒撈到的人。
+    final src = make(uid);
+    widget.state.profileSource = src;
+
     // 先寫再讀：讓自己在別人的清單裡也看得到，
     // 順序顛倒的話新使用者第一次登入不會出現在任何人的清單上。
     //
     // **這一塊要先完成**：其餘每一塊都靠 `nameByUid` 把 uid 翻回暱稱。
-    final src = make(uid);
     await step('公開檔案', () async {
       await src.publish(widget.state.myPublicProfile(uid));
       final others = await src.others(limit: kProfileFetchLimit);

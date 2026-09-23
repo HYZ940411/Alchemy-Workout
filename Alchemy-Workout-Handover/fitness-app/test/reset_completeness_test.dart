@@ -45,6 +45,9 @@ const allowed = <String, String>{
   'isMale': '生理性別',
   'registeredOn': '註冊日',
   'signUpCompleted': '已完成註冊',
+  // 合規紀錄，不是進度 —— 新帳號在註冊流程裡剛按過同意，本來就該有值。
+  // `completeSignUp()` 刻意排在 `resetToNewAccount()` 之後寫入它。
+  'agreedTermsVersion': '已同意的條款版本',
   'daysPerWeek': '問卷：每週訓練天數',
   'duration': '問卷：單次時長',
   'commonGoal': '問卷：目標',

@@ -38,6 +38,29 @@ class FirestorePublicProfile implements PublicProfileSource {
   Future<void> remove() => _col.doc(uid).delete();
 
   @override
+  Future<List<PublicProfile>> byUids(List<String> uids) async {
+    // 自己不必查 —— 自己的階級與六維是即時算的，繞一趟雲端只會拿到舊值。
+    final want = uids.where((u) => u != uid).toSet().toList();
+    if (want.isEmpty) return const [];
+
+    // `whereIn` 一次最多 30 個值，切批後平行查。
+    final chunks = <List<String>>[
+      for (var i = 0; i < want.length; i += kProfileByUidChunk)
+        want.sublist(i, (i + kProfileByUidChunk).clamp(0, want.length)),
+    ];
+
+    final snaps = await Future.wait([
+      for (final c in chunks)
+        _col.where(FieldPath.documentId, whereIn: c).get(),
+    ]);
+
+    return [
+      for (final snap in snaps)
+        for (final d in snap.docs) ?PublicProfile.fromJson(d.id, d.data()),
+    ];
+  }
+
+  @override
   Future<List<PublicProfile>> others({int limit = kProfileFetchLimit}) async {
     // **依最近活躍排序，不是依階級。**
     //
@@ -47,8 +70,9 @@ class FirestorePublicProfile implements PublicProfileSource {
     // 於是使用者一多，**新來的人在整個 App 裡是隱形的** ——
     // 找不到、私訊不了，他的貼文還會顯示錯的階級（讀不到就取預設）。
     //
-    // 活躍排序至少讓「現在在用的人」彼此看得到。真正的解法是按 uid
-    // 隨用隨取，那要動到每一個呼叫端，不在這次的範圍。
+    // 活躍排序讓「現在在用的人」彼此看得到，而畫面上真正會出現的人
+    // 由 [byUids] 隨用隨取補齊 —— 所以這個 limit 現在只影響「找人」頁的
+    // 初始名單，不再是整個 App 認得幾個人的上限。
     final out = <PublicProfile>[];
     final seen = <String>{};
 
