@@ -12,6 +12,7 @@ import '../data/post_data.dart';
 import '../data/chat_data.dart';
 import '../data/team_data.dart';
 import '../data/mentor_data.dart';
+import '../data/report_data.dart';
 import '../data/store.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
@@ -63,6 +64,10 @@ class AuthGate extends StatefulWidget {
   /// 師徒的來源（[BE-14]）。空值代表不同步。
   final MentorSource Function(String uid)? mentorFor;
 
+  /// 檢舉的來源。空值代表不送上雲（既有測試走這條）。
+  /// **只有寫、沒有讀** —— 檢舉佇列是管理端的東西。
+  final ReportSource Function(String uid)? reportsFor;
+
   const AuthGate({
     super.key,
     required this.auth,
@@ -77,6 +82,7 @@ class AuthGate extends StatefulWidget {
     this.chatsFor,
     this.teamsFor,
     this.mentorFor,
+    this.reportsFor,
   });
 
   @override
@@ -155,7 +161,12 @@ class _AuthGateState extends State<AuthGate> {
       _hydratedFor = user.uid;
       // 先呼叫再 setState：hydrate 是同步把狀態設成 loading 的，
       // 所以這之後的第一次 build 就會畫載入中，不會閃到上一個帳號的數字。
-      widget.state.hydrate(widget.storeFor(user.uid));
+      // **冷靜期到了就真的刪。** 這是整個刪除流程唯一真的動手的地方 ——
+      // 在此之前 `requestDeletion()` 只設了一個欄位，冷靜期過了沒有
+      // 任何東西會發生，資料一直都在。畫面上是承諾了的。
+      widget.state
+          .hydrate(widget.storeFor(user.uid))
+          .then((_) => _executeDeletionIfDue(user.uid));
     }
     // 平台資料的讀取需要已登入（安全規則要求 auth != null）。
     // **不 await**：載入是即發即忘的，完成時 applyPlatformData 會 notifyListeners
@@ -174,6 +185,43 @@ class _AuthGateState extends State<AuthGate> {
         _waiting = false;
         _user = user;
       });
+    }
+  }
+
+  /// 冷靜期已過就執行刪除。
+  ///
+  /// ## 為什麼在登入時做，而不是排程
+  ///
+  /// 排程要 Cloud Functions，而那需要 Blaze 方案。登入時檢查的代價是
+  /// **使用者不再登入就不會被刪** —— 對一個「申請刪除後就不打算再來」
+  /// 的人來說，這是實質上的沒刪。這一點要誠實記著，等 `[BE-07]` 上
+  /// Cloud Functions 之後改成排程掃描。
+  ///
+  /// ## 順序不能換
+  ///
+  /// 先刪 Firestore，最後才刪 Auth 帳號 —— 帳號一沒，安全規則就認不得
+  /// 他是誰，剩下的資料誰也刪不掉，會永遠留在那裡。
+  Future<void> _executeDeletionIfDue(String uid) async {
+    final s = widget.state;
+    if (!s.pendingDeletion) return;
+    if ((s.deletionDaysLeft ?? 1) > 0) return;
+
+    try {
+      // 公開檔案先刪：少了這一步，帳號都沒了，別人在「找人」裡還看得到他。
+      await widget.profileFor?.call(uid).remove();
+      await widget.storeFor(uid).clear();
+    } catch (e) {
+      debugPrint('刪除雲端資料失敗：$e');
+      return; // 資料沒刪掉就不刪帳號 —— 刪了就再也回不去清它
+    }
+
+    final err = await widget.auth.deleteAccount();
+    if (err != null) {
+      // `requires-recent-login`：刪帳號不可逆，Firebase 不讓太舊的
+      // 工作階段做。資料已經刪了，帳號留著 —— 下次登入會再試一次，
+      // 而那時的工作階段是新的。
+      debugPrint('刪除帳號失敗（$err），資料已清除，下次登入重試');
+      await widget.auth.signOut();
     }
   }
 
@@ -237,6 +285,7 @@ class _AuthGateState extends State<AuthGate> {
     widget.state.chatSource = widget.chatsFor?.call(uid);
     widget.state.teamSource = widget.teamsFor?.call(uid);
     widget.state.mentorSource = widget.mentorFor?.call(uid);
+    widget.state.reportSource = widget.reportsFor?.call(uid);
     widget.state.followSource = widget.followsFor?.call(uid);
 
     // 先寫再讀：讓自己在別人的清單裡也看得到，
@@ -246,7 +295,7 @@ class _AuthGateState extends State<AuthGate> {
     final src = make(uid);
     await step('公開檔案', () async {
       await src.publish(widget.state.myPublicProfile(uid));
-      final others = await src.others(limit: 50);
+      final others = await src.others(limit: kProfileFetchLimit);
       widget.state.applyPublicProfiles(others);
       return '已發布自己，讀到 ${others.length} 位其他使用者';
     });

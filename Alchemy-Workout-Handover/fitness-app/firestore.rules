@@ -214,6 +214,28 @@ service cloud.firestore {
       allow read: if request.auth != null;
     }
 
+    // --- 檢舉 ---
+    //
+    // **只進不出。** 一般使用者可以送出檢舉，但讀不到佇列 ——
+    // 那裡面有別人的違規內容、檢舉者的身分與累計違規次數。
+    // 讀取與裁決屬於管理端（custom claim）。
+    //
+    // 文件 ID 是「標的＋檢舉者」，所以同一人對同一標的只有一筆；
+    // `set` 會覆寫自己那筆（改了檢舉理由再送一次），這是對的。
+    // 不給 update/delete：送出後自己撤不掉 —— 案件是給管理員看的，
+    // 被檢舉者若能誘使檢舉者撤回，這個機制就沒有意義了。
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if request.auth != null
+                    && request.resource.data.reporterUid == request.auth.uid;
+      allow update: if isAdmin()
+                    || (request.auth != null
+                        && resource.data.reporterUid == request.auth.uid
+                        && request.resource.data.reporterUid
+                             == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
     // --- 貼文、留言、按讚（[BE-11] 批次 3）---
     //
     // 這裡有一個規則設計上的難處：**按讚的人不是作者，卻必須能改貼文**

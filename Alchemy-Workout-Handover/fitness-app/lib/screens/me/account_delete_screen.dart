@@ -61,7 +61,10 @@ class _AccountDeleteScreenState extends State<AccountDeleteScreen> {
                 const SizedBox(height: S.sm),
                 Text(
                   '帳號目前為停用狀態：你登得進來，但只剩「取消刪除帳號申請」可以用。'
-                  '冷靜期屆滿後由排程執行刪除，屆時資料永久移除。',
+                  // **不要寫「由排程執行」。** 目前沒有排程（那需要
+                  // Cloud Functions），刪除是在冷靜期屆滿後的下一次登入
+                  // 時執行的。寫成排程等於承諾一件沒做的事。
+                  '冷靜期屆滿後，下次登入時即執行刪除，資料永久移除。',
                   style: T.caption(),
                 ),
               ],
@@ -145,7 +148,8 @@ class _AccountDeleteScreenState extends State<AccountDeleteScreen> {
                       Text('刪除後有 $days 天冷靜期', style: T.h3()),
                       const SizedBox(height: S.xs),
                       Text(
-                        '期間內重新登入即可取消刪除，$days 天後資料永久移除，無法復原。',
+                        '期間內重新登入即可取消刪除。'
+                        '$days 天後的下一次登入即執行刪除，資料永久移除，無法復原。',
                         style: T.caption(),
                       ),
                     ],

@@ -10,6 +10,7 @@ import '../domain/clock.dart';
 // 轉出以維持既有呼叫端不變 —— 19 處在本檔、5 個測試檔。
 export '../domain/clock.dart' show businessDate;
 import '../data/ai_suggestion.dart';
+import '../data/report_data.dart';
 import '../domain/ai_adjust.dart';
 import '../domain/decay.dart';
 import '../domain/novice.dart';
@@ -4428,6 +4429,16 @@ class AppState extends ChangeNotifier {
         (r) => r.targetKey == targetKey && r.state == CaseState.pending)) {
       return;
     }
+    // 自動過濾命中的也要上雲：它與使用者檢舉走同一個佇列，
+    // 差別只在「來源」欄位（〈檢舉 Aggregate〉）。
+    _pushReport(
+      targetKey: targetKey,
+      target: target,
+      origin: CaseOrigin.autoFlag,
+      content: content,
+      reason: '自動過濾命中疑似違規',
+      accused: accused,
+    );
     reports.insert(
       0,
       ReportCase(
@@ -6032,6 +6043,43 @@ class AppState extends ChangeNotifier {
   // 檢舉 → 處罰 → 申訴
   // ===========================================================================
 
+  /// 雲端的檢舉佇列。**空值代表不同步** —— 既有測試走這條。
+  ///
+  /// 只有寫、沒有讀：檢舉是送出去給別人處理的，一般使用者不該讀得到
+  /// 佇列本身（裡面有別人的違規內容與檢舉者身分）。
+  ReportSource? reportSource;
+
+  /// 把一筆檢舉送上雲。即發即忘，但**失敗要留下痕跡** ——
+  /// 使用者以為自己回報了，實際上沒有人收到，是這裡最糟的結果。
+  void _pushReport({
+    required String targetKey,
+    required ReportTarget target,
+    required CaseOrigin origin,
+    required String content,
+    required String reason,
+    required String accused,
+    String? note,
+  }) {
+    final src = reportSource;
+    final me = myUid;
+    if (src == null || me == null) return;
+    src
+        .file(CloudReport(
+          id: targetKey,
+          targetKey: targetKey,
+          target: target,
+          origin: origin,
+          content: content,
+          reason: reason,
+          note: note,
+          accused: accused,
+          reporterUid: me,
+          reporterName: displayName,
+          at: now,
+        ))
+        .catchError((Object e) => reportSync('檢舉', '送不出去：$e'));
+  }
+
   /// 使用者已檢舉內容。
   ///
   /// 多人檢舉同一標的合併為同一案件；**合併只在案件仍為待審視時有效** ——
@@ -6047,6 +6095,19 @@ class AppState extends ChangeNotifier {
   }) {
     final r = Reporter(
         name: displayName, reason: reason, note: note, at: now);
+
+    // **併案與新案都要送。** 雲端是每位檢舉者各一筆，由管理端依
+    // targetKey 分組 —— 在客戶端併案的話，第二位檢舉者必須先讀得到
+    // 第一位那筆，而檢舉佇列正是一般使用者不該讀得到的東西。
+    _pushReport(
+      targetKey: targetKey,
+      target: target,
+      origin: CaseOrigin.userReport,
+      content: content,
+      reason: reason,
+      note: note,
+      accused: accused,
+    );
 
     final existing = reports.where((c) =>
         c.targetKey == targetKey && c.state == CaseState.pending);

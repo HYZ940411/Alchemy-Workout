@@ -108,4 +108,25 @@ class AuthService {
       }.contains(code);
 
   Future<void> signOut() => _auth.signOut();
+
+  /// 刪除目前登入的帳號本身。
+  ///
+  /// **這只刪 Firebase Auth 那一筆。** Firestore 上的資料要另外刪
+  /// （見 `Store.clear()` 與 `PublicProfileSource.remove()`），而且
+  /// **必須在這一步之前刪完** —— 帳號一沒，安全規則就認不得他是誰了，
+  /// 剩下的資料誰也刪不掉。
+  ///
+  /// 回傳 `'requires-recent-login'` 代表 Firebase 要求重新驗證：
+  /// 刪帳號是不可逆的，登入太久的工作階段不給做。呼叫端要請使用者
+  /// 重新登入一次再來。回傳 null 表示成功。
+  Future<String?> deleteAccount() async {
+    final u = _auth.currentUser;
+    if (u == null) return 'no-current-user';
+    try {
+      await u.delete();
+      return null;
+    } on FirebaseAuthException catch (e) {
+      return e.code;
+    }
+  }
 }

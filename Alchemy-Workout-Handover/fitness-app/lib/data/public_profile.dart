@@ -129,10 +129,24 @@ class PublicProfile {
 ///
 /// 與 [Store]／[PlatformDataSource] 同一套設計：App 只認這個介面，
 /// 測試傳假的就不必連真的 Firestore。
+/// 一次讀多少筆公開檔案。
+///
+/// 這不只是「推薦誰給你看」的數量：暱稱→uid 的對照表、找人、
+/// 別人的階級與六維，全都只認得這份清單裡的人。撈不到的人在 App 裡
+/// **是隱形的** —— 找不到、私訊不了，他的貼文還會顯示錯的階級。
+///
+/// 真正的解法是按 uid 隨用隨取，那要動到每一個呼叫端。在那之前，
+/// 這個數字就是「這個 App 一次認得幾個人」的上限，要誠實看待。
+const int kProfileFetchLimit = 200;
+
 abstract class PublicProfileSource {
   /// 把我自己的公開檔案寫上去（覆寫）。
   Future<void> publish(PublicProfile me);
 
   /// 讀別人的公開檔案。**不含自己** —— 呼叫端要的是「平台上還有誰」。
   Future<List<PublicProfile>> others({int limit});
+
+  /// 刪掉我的公開檔案。帳號刪除時用 —— 少了這一步，
+  /// 帳號都沒了，別人在「找人」裡還看得到他。
+  Future<void> remove();
 }
