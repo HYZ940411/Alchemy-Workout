@@ -104,11 +104,22 @@ service cloud.firestore {
     // **訊息一經發送不可刪除、不可編輯**（規格明訂）。所以 messages
     // 只允許 create，唯一的例外是已讀狀態：任一參與者都要能標記自己讀過，
     // 那必須改到對方送的那則訊息上。用 affectedKeys 限制成只能動 readBy。
+    // **從對話 ID 直接算出參與者，不去 `get()` 那份文件。**
+    //
+    // 原本這裡對對話文件做 `get()`。但第一次傳訊息給某人時，對話文件
+    // 與訊息是**同一個 batch 寫進去的**，而規則的 `get()` 看的是 batch
+    // 之前的狀態 —— 文件還不存在，規則拒絕，整個 batch 被退回。
+    // 也就是**對任何人的第一則訊息一定失敗**，而客戶端是即發即忘、
+    // 吞掉錯誤，所以完全看不出來。
+    //
+    // 對話 ID 由兩個 uid 排序後以底線相接（見 `conversationIdOf`），
+    // 參與者本來就編碼在 ID 裡，不需要再讀一次文件 —— 也省一次讀取。
+    function convParties(convId) {
+      return convId.split('_');
+    }
     function inConversation(convId) {
       return request.auth != null
-             && request.auth.uid in
-                get(/databases/$(database)/documents/conversations/$(convId))
-                  .data.participants;
+             && request.auth.uid in convParties(convId);
     }
 
     match /conversations/{convId} {
@@ -183,6 +194,24 @@ service cloud.firestore {
                       && (targetUid == request.auth.uid || isTeamMember(teamId));
         allow update: if false;
       }
+    }
+
+    // **collection group 查詢吃的不是上面那條巢狀規則。**
+    //
+    // `collectionGroup('requests')`（「誰邀我入隊」）在規則引擎眼中，
+    // 比對的是帶遞迴萬用字元的路徑，不是 `/teams/{teamId}/requests/...`
+    // —— 巢狀規則只適用於明確從那個路徑出發的查詢。少了這一條，
+    // 那個查詢一律 PERMISSION_DENIED。
+    //
+    // 而 `requestsFor()` 先查邀請、再查申請：邀請被拒就整個丟例外，
+    // **後面查「誰申請加入我的隊」那一段根本沒跑到**。呼叫端又是
+    // 即發即忘，於是隊長那一側安靜地永遠是空的。
+    //
+    // 放行範圍與上面那條巢狀規則完全一樣（登入即可讀），沒有放寬。
+    // 全專案只有 teams 底下有名為 requests 的子集合（師徒走的是
+    // 頂層 mentor_requests），所以這條打不到別的東西。
+    match /{path=**}/requests/{targetUid} {
+      allow read: if request.auth != null;
     }
 
     // --- 貼文、留言、按讚（[BE-11] 批次 3）---

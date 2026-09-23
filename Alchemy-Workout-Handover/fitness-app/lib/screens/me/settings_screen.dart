@@ -178,6 +178,44 @@ class SettingsScreen extends StatelessWidget {
                 ],
               ),
             ),
+            // 登入後每一塊同步的結果。這幾塊全部吞掉錯誤 —— 那是對的
+            // （社群讀不到不該擋住訓練），代價是出問題時完全沒有跡象。
+            // 「申請送得出去、對方看不到」查了三輪都在猜，就是因為
+            // 這幾條路徑什麼都不說。
+            const SectionLabel('登入同步', trailing: '開發者模式'),
+            Panel(
+              child: s.syncReport.isEmpty
+                  ? const Text(
+                      '尚未同步。這一份在登入後才會有內容 ——'
+                      '目前是未登入，或還沒跑完。',
+                      style: TextStyle(
+                          color: AppColors.textFaint, fontSize: 11.5),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final e in s.syncReport.entries) ...[
+                          Text(
+                            e.key,
+                            style: const TextStyle(
+                                fontSize: 12.5, fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            e.value,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: e.value.startsWith('失敗') ||
+                                      e.value.contains('⚠️')
+                                  ? C.statusError
+                                  : AppColors.textFaint,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                      ],
+                    ),
+            ),
           ],
           const SectionLabel('訓練設定'),
           Panel(

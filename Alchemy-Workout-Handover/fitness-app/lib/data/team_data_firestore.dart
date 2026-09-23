@@ -66,31 +66,47 @@ class FirestoreTeams implements TeamSource {
   }
 
   @override
-  Future<List<TeamRequest>> requestsFor(String forUid, {String? myTeamId}) async {
+  Future<List<TeamRequest>> requestsFor(
+    String forUid, {
+    String? myTeamId,
+    List<String>? errors,
+  }) async {
+    errors ??= [];
     final out = <TeamRequest>[];
 
-    // 別人邀我入隊：散落在各隊底下，要用 collection group 一次撈。
-    final invites = await _db
-        .collectionGroup('requests')
-        .where('uid', isEqualTo: forUid)
-        .where('isInvite', isEqualTo: true)
-        .get();
-    for (final d in invites.docs) {
-      final r = _requestOf(d.data());
-      if (r != null) out.add(r);
-    }
-
-    // 別人申請加入我的隊：只有隊長看得到，範圍就在自己那一隊底下。
-    if (myTeamId != null) {
-      final applies = await _col
-          .doc(myTeamId)
-          .collection('requests')
-          .where('isInvite', isEqualTo: false)
-          .get();
-      for (final d in applies.docs) {
-        final r = _requestOf(d.data());
-        if (r != null) out.add(r);
-      }
+    // **兩段各自成敗，不互相牽連。**
+    //
+    // 原本是接連兩個 await：邀請那段丟例外，申請那段就整個沒跑到。
+    // 而邀請走的是 collection group 查詢 —— 少一條規則、少一個索引
+    // 都會讓它失敗，卻是「隊長看不到別人的申請」的表象。
+    // 兩件事本來就無關，一邊壞掉不該讓另一邊跟著消失。
+    final results = await Future.wait([
+      // 別人邀我入隊：散落在各隊底下，要用 collection group 一次撈。
+      _db
+          .collectionGroup('requests')
+          .where('uid', isEqualTo: forUid)
+          .where('isInvite', isEqualTo: true)
+          .get()
+          .then<List<TeamRequest>>(_parse)
+          .catchError((Object e) {
+        errors.add('邀請：$e');
+        return <TeamRequest>[];
+      }),
+      // 別人申請加入我的隊：只有隊長看得到，範圍就在自己那一隊底下。
+      if (myTeamId != null)
+        _col
+            .doc(myTeamId)
+            .collection('requests')
+            .where('isInvite', isEqualTo: false)
+            .get()
+            .then<List<TeamRequest>>(_parse)
+            .catchError((Object e) {
+          errors.add('申請：$e');
+          return <TeamRequest>[];
+        }),
+    ]);
+    for (final part in results) {
+      out.addAll(part);
     }
     return out;
   }
@@ -202,6 +218,11 @@ class FirestoreTeams implements TeamSource {
   // ===========================================================================
   // 形狀轉換
   // ===========================================================================
+
+  List<TeamRequest> _parse(QuerySnapshot<Map<String, dynamic>> snap) => [
+        for (final d in snap.docs)
+          if (_requestOf(d.data()) case final r?) r,
+      ];
 
   Map<String, dynamic> _memberJson(CloudMember m) => {
         'name': m.name,

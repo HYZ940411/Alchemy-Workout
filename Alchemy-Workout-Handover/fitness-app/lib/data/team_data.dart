@@ -107,5 +107,12 @@ abstract class TeamSource {
   Future<void> dropRequest(String teamId, String uid);
 
   /// 等我回應的請求：別人邀我入隊、以及（若我是隊長）別人申請加入我的隊。
-  Future<List<TeamRequest>> requestsFor(String uid, {String? myTeamId});
+  /// [errors] 若有傳，實作把**每一段失敗的原因**塞進去。
+  /// 這裡有兩段獨立查詢（邀請、申請），呼叫端是即發即忘 ——
+  /// 沒有這個出口，一段壞掉在畫面上就只是「什麼都沒有」。
+  Future<List<TeamRequest>> requestsFor(
+    String uid, {
+    String? myTeamId,
+    List<String>? errors,
+  });
 }

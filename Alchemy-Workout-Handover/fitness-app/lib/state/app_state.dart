@@ -2187,6 +2187,20 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 登入後每一塊同步的結果。**開發者模式看得到。**
+  ///
+  /// 這幾塊全部是即發即忘、吞掉錯誤 —— 那是對的（社群讀不到不該擋住
+  /// 訓練），但代價是**出問題時完全沒有跡象**。「申請送得出去、對方
+  /// 看不到」查了三輪都在猜，就是因為這裡什麼都不說。
+  ///
+  /// 存的是「這一塊拿到幾筆」或「為什麼失敗」，不是資料本身。
+  final Map<String, String> syncReport = {};
+
+  void reportSync(String step, String result) {
+    syncReport[step] = result;
+    notifyListeners();
+  }
+
   /// 重新向雲端拿一次私訊與待回應請求。
   ///
   /// **這是「沒有即時訂閱」的代償。** `lib/data/` 底下沒有任何

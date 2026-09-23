@@ -216,11 +216,15 @@ class _AuthGateState extends State<AuthGate> {
     _profileSyncedFor = uid;
 
     /// 跑一塊。失敗只影響這一塊，並讓整趟同步之後可以重試。
-    Future<void> step(String what, Future<void> Function() body) async {
+    Future<void> step(String what, Future<String> Function() body) async {
       try {
-        await body();
+        // 回傳值是「拿到什麼」的一句話，記進 syncReport 供開發者模式檢視。
+        // 這幾塊全部吞掉錯誤 —— 那是對的，但出問題時完全沒有跡象，
+        // 「申請送得出去、對方看不到」因此查了三輪都在猜。
+        widget.state.reportSync(what, await body());
       } catch (e) {
         debugPrint('登入後同步「$what」失敗：$e');
+        widget.state.reportSync(what, '失敗：$e');
         _profileSyncedFor = null; // 允許下次登入事件重試
       }
     }
@@ -242,63 +246,84 @@ class _AuthGateState extends State<AuthGate> {
     final src = make(uid);
     await step('公開檔案', () async {
       await src.publish(widget.state.myPublicProfile(uid));
-      widget.state.applyPublicProfiles(await src.others(limit: 50));
+      final others = await src.others(limit: 50);
+      widget.state.applyPublicProfiles(others);
+      return '已發布自己，讀到 ${others.length} 位其他使用者';
     });
 
     final posts = widget.state.postSource;
     if (posts != null) {
       await step('貼文', () async {
-        widget.state
-            .applyCloudPosts(await posts.recent(limit: AppState.kPostFeedLimit));
+        final got = await posts.recent(limit: AppState.kPostFeedLimit);
+        widget.state.applyCloudPosts(got);
+        return '${got.length} 則';
       });
     }
 
     final chats = widget.state.chatSource;
     if (chats != null) {
       await step('私訊', () async {
-        widget.state
-            .applyCloudConversations(await chats.conversations(limit: 50));
+        final got = await chats.conversations(limit: 50);
+        widget.state.applyCloudConversations(got);
+        return '${got.length} 段對話，'
+            '共 ${got.fold<int>(0, (a, c) => a + c.messages.length)} 則訊息';
       });
     }
 
     final teams = widget.state.teamSource;
     if (teams != null) {
       await step('我的團隊', () async {
-        widget.state.applyCloudTeam(await teams.myTeam());
+        final t = await teams.myTeam();
+        widget.state.applyCloudTeam(t);
+        return t == null ? '沒有隊伍' : '${t.name}（${t.members.length} 人）';
       });
       // **另外一塊。** 讀我的隊伍失敗，不該連公開團隊清單也看不到。
       await step('公開團隊', () async {
-        widget.state.applyPublicTeams(await teams.openTeams());
+        final got = await teams.openTeams();
+        widget.state.applyPublicTeams(got);
+        return '${got.length} 支';
       });
       // 待回應的團隊請求。**在此之前沒有任何呼叫端** —— 送出的申請
       // 寫進了 Firestore，但收件的那一方從來不去讀，於是隊長永遠
       // 看不到有人申請加入。要排在 applyCloudTeam 之後：分流時要
       // 知道我自己的隊伍 ID。
       await step('團隊請求', () async {
-        widget.state.applyCloudTeamRequests(
-            await teams.requestsFor(uid, myTeamId: widget.state.myTeam?.id));
+        final myId = widget.state.myTeam?.id;
+        final errors = <String>[];
+        final got =
+            await teams.requestsFor(uid, myTeamId: myId, errors: errors);
+        widget.state.applyCloudTeamRequests(got);
+        return '${got.length} 筆'
+            '（邀請 ${got.where((r) => r.isInvite).length}／'
+            '申請 ${got.where((r) => !r.isInvite).length}）'
+            '${myId == null ? '　⚠️ 我沒有隊伍，查不到別人的申請' : ''}'
+            '${errors.isEmpty ? '' : '　⚠️ ${errors.join('；')}'}';
       });
     }
 
     final mentor = widget.state.mentorSource;
     if (mentor != null) {
       await step('師徒', () async {
-        widget.state.applyCloudBonds(await mentor.bonds());
+        final got = await mentor.bonds();
+        widget.state.applyCloudBonds(got);
+        return '${got.length} 段關係';
       });
       // 待回應的師徒申請。**同樣在此之前沒有任何呼叫端** ——
       // 送出的拜師申請寫進了 Firestore，教官永遠看不到。
       await step('師徒申請', () async {
-        widget.state.applyCloudMentorRequests(await mentor.requestsFor(uid));
+        final got = await mentor.requestsFor(uid);
+        widget.state.applyCloudMentorRequests(got);
+        return '${got.length} 筆';
       });
     }
 
     final follows = widget.state.followSource;
     if (follows != null) {
       await step('關注', () async {
-        widget.state.applyFollows(
-          await follows.following(),
-          await follows.followers(),
-        );
+        final a = await follows.following();
+        final b = await follows.followers();
+        widget.state.applyFollows(a, b);
+        return '關注 ${a.length}／粉絲 ${b.length}';
       });
     }
   }
