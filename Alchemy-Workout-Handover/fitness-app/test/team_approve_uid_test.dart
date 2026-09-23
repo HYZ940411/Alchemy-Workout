@@ -109,6 +109,76 @@ void main() {
     expect(left, isEmpty);
   });
 
+  group('我送出的申請要從雲端讀回來', () {
+    // `sentApplications` 不進存檔，重新載入就空了 —— 使用者看到的是
+    // 「申請被自動取消」，其實雲端那筆還在，隊長也還看得到。
+
+    /// 阿甲申請加入阿乙的隊，然後重新載入（＝一個全新的 AppState）。
+    Future<AppState> reloadedApplicant() async {
+      final asB = FirestoreTeams(uid: 'uid-b', firestore: db);
+      await asB.create(CloudTeam(
+        id: 't1',
+        name: '鐵人小隊',
+        members: {
+          'uid-b': CloudMember(
+            name: '阿乙',
+            rank: 20,
+            role: TeamRole.leader,
+            joinedAt: DateTime(2026, 9, 20),
+          ),
+        },
+      ));
+      final asA = FirestoreTeams(uid: 'uid-a', firestore: db);
+      await asA.sendRequest(TeamRequest(
+        teamId: 't1',
+        teamName: '鐵人小隊',
+        uid: 'uid-a',
+        name: '阿甲',
+        rank: 12,
+        isInvite: false,
+        expiresAt: DateTime.now().add(const Duration(hours: 100)),
+      ));
+
+      final s = AppState(demo: false)
+        ..displayName = '阿甲'
+        ..myUid = 'uid-a'
+        ..teamSource = asA;
+      s.applyCloudTeam(await asA.myTeam()); // 沒有隊
+      s.applyCloudTeamRequests(await asA.requestsFor('uid-a'));
+      return s;
+    }
+
+    test('重新載入之後申請還在，不會像是被自動取消', () async {
+      final s = await reloadedApplicant();
+      expect(s.sentApplications, hasLength(1));
+      expect(s.sentApplications.single.name, '鐵人小隊');
+      // 撤回要用它，靠隊名反查在隊伍額滿時會失敗。
+      expect(s.sentApplications.single.teamId, 't1');
+    });
+
+    test('隊長拒絕之後，重新載入那筆申請就不見了', () async {
+      final s = await reloadedApplicant();
+      await FirestoreTeams(uid: 'uid-b', firestore: db)
+          .dropRequest('t1', 'uid-a');
+
+      final asA = FirestoreTeams(uid: 'uid-a', firestore: db);
+      s.applyCloudTeamRequests(await asA.requestsFor('uid-a'));
+      expect(s.sentApplications, isEmpty);
+    });
+
+    test('撤回會把雲端那筆刪掉 —— 即使該隊已經不在公開清單裡', () async {
+      final s = await reloadedApplicant();
+      expect(s.publicTeams, isEmpty); // 反查必定失敗
+
+      s.withdrawApplication('鐵人小隊');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final left = await FirestoreTeams(uid: 'uid-b', firestore: db)
+          .requestsFor('uid-b', myTeamId: 't1');
+      expect(left, isEmpty);
+    });
+  });
+
   test('雲端說我已經在隊上，本機那筆「已送出的申請」就該消失', () async {
     final s = AppState(demo: false)
       ..displayName = '阿甲'

@@ -95,6 +95,24 @@ class FirestoreTeams implements TeamSource {
         log.add('邀請：$e');
         return <TeamRequest>[];
       }),
+      // **我自己送出、還沒被回應的申請。**
+      //
+      // 在此之前沒有人讀這一段：申請寫進了 Firestore，但本機那筆只活在
+      // 記憶體裡（`sentApplications` 不進存檔），於是重新載入之後
+      // 「已送出申請」就消失了，看起來像是申請被自動取消 ——
+      // 其實雲端那筆好端端地還在，隊長也還看得到。
+      //
+      // 與上面那段共用同一個複合索引（uid + isInvite），不必多建。
+      _db
+          .collectionGroup('requests')
+          .where('uid', isEqualTo: forUid)
+          .where('isInvite', isEqualTo: false)
+          .get()
+          .then<List<TeamRequest>>(_parse)
+          .catchError((Object e) {
+        log.add('我送出的申請：$e');
+        return <TeamRequest>[];
+      }),
       // 別人申請加入我的隊：只有隊長看得到，範圍就在自己那一隊底下。
       if (myTeamId != null)
         _col
@@ -108,8 +126,13 @@ class FirestoreTeams implements TeamSource {
           return <TeamRequest>[];
         }),
     ]);
+    // 兩段 collection group 查詢可能撈到同一筆（例如我申請加入的隊
+    // 剛好就是我的隊），以「隊伍 + 對象」去重。
+    final seen = <String>{};
     for (final part in results) {
-      out.addAll(part);
+      for (final r in part) {
+        if (seen.add('${r.teamId}/${r.uid}')) out.add(r);
+      }
     }
     return out;
   }

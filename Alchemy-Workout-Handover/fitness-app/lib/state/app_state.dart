@@ -2979,7 +2979,8 @@ class AppState extends ChangeNotifier {
   bool applyToTeam(PublicTeam t) {
     if (joinBlockedReason(t) != null) return false;
     final expiresAt = now.add(const Duration(hours: 168));
-    sentApplications.add(PendingRequest(t.name, rank, expiresAt));
+    sentApplications
+        .add(PendingRequest(t.name, rank, expiresAt, teamId: t.id));
     // 申請是我自己送出的，所以帶的是我的 uid（雲端規則也只允許這樣）。
     _pushTeam((src, uid) => src.sendRequest(TeamRequest(
           teamId: t.id,
@@ -2998,14 +2999,21 @@ class AppState extends ChangeNotifier {
 
   /// 撤回申請 —— 申請逾期或被拒後皆可再次申請。
   void withdrawApplication(String teamName) {
-    sentApplications.removeWhere((a) => a.name == teamName);
-    // 本機的申請只記隊名，雲端要的是隊伍 ID —— 從公開隊伍清單反查。
-    // 查不到就只在本機撤回（那筆雲端申請會自行逾期，168 小時後失效）。
-    final id = publicTeams
-        .where((t) => t.name == teamName && t.id.isNotEmpty)
-        .map((t) => t.id)
-        .firstOrNull;
-    if (id != null) _pushTeam((src, uid) => src.dropRequest(id, uid));
+    final a = sentApplications.where((x) => x.name == teamName).firstOrNull;
+    sentApplications.removeWhere((x) => x.name == teamName);
+    // **優先用這筆申請自己帶著的隊伍 ID。** 反查只是退路，而且是壞的：
+    // 公開隊伍清單會濾掉已滿的隊，我申請的隊一被別人填滿就反查不到，
+    // 於是本機撤掉、雲端還在，下次載入那筆申請又跑出來。
+    final id = a?.teamId ??
+        publicTeams
+            .where((t) => t.name == teamName && t.id.isNotEmpty)
+            .map((t) => t.id)
+            .firstOrNull;
+    if (id == null) {
+      _cannotIdentify('撤回申請', teamName);
+    } else {
+      _pushTeam((src, uid) => src.dropRequest(id, uid));
+    }
     notifyListeners();
   }
 
@@ -5000,8 +5008,29 @@ class AppState extends ChangeNotifier {
   /// 它掛在團隊底下，不是掛在我身上；我卸任隊長之後那些申請仍屬於那支隊。
   void applyCloudTeamRequests(List<TeamRequest> cloud) {
     final t = myTeam;
+    final me = myUid;
+
+    // **我送出的申請以雲端為準，整份換掉。**
+    //
+    // `sentApplications` 不進存檔，重新載入就空了 —— 使用者看到的是
+    // 「申請被自動取消」，其實雲端那筆還在，隊長也還看得到。
+    // 反過來，隊長已經拒絕的那筆雲端已經沒有了，本機也該跟著消失，
+    // 所以是整份換掉而不是補進去：存在本機只會兩邊對不齊。
+    if (me != null) {
+      sentApplications
+        ..clear()
+        ..addAll([
+          for (final r in cloud)
+            if (!r.isInvite && r.uid == me && !r.expiresAt.isBefore(now))
+              // 這份清單裡的 name 是**隊名**（見 applyToTeam）。
+              PendingRequest(r.teamName, r.rank, r.expiresAt,
+                  uid: r.uid, teamId: r.teamId),
+        ]);
+    }
+
     for (final r in cloud) {
       if (r.expiresAt.isBefore(now)) continue; // 逾期的不收
+      if (r.uid == me && !r.isInvite) continue; // 上面已經處理過
       if (r.isInvite) {
         receiveInbound(InboundRequest(
           id: 'ti-${r.teamId}',

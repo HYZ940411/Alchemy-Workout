@@ -129,7 +129,20 @@ class PendingRequest {
   /// `TeamRequest.uid` 是雲端讀來的，轉成本機這筆時不該丟掉。
   final String? uid;
 
-  const PendingRequest(this.name, this.rank, this.expiresAt, {this.uid});
+  /// 這筆請求屬於哪一支隊伍。
+  ///
+  /// 撤回申請時要用它。在此之前是拿隊名去公開團隊清單裡反查 ——
+  /// 而那份清單**會濾掉已滿的隊伍**，所以我申請的隊一旦被別人填滿，
+  /// 就再也撤不回來了（本機移掉、雲端還在，下次載入又跑出來）。
+  final String? teamId;
+
+  const PendingRequest(
+    this.name,
+    this.rank,
+    this.expiresAt, {
+    this.uid,
+    this.teamId,
+  });
 }
 
 class Team {
