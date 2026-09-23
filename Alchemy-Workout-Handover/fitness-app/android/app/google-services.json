@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "327690545558",
+    "project_id": "alchemy-workout",
+    "storage_bucket": "alchemy-workout.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:327690545558:android:77a087d406752ca524d5b7",
+        "android_client_info": {
+          "package_name": "com.aibdd.fitness_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "327690545558-c8gv3nvt5hj40n154d78fr7289m9gaet.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCXpPiWji2fI8ZB-JYjIKyRtvK2Sa52304"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "327690545558-c8gv3nvt5hj40n154d78fr7289m9gaet.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
