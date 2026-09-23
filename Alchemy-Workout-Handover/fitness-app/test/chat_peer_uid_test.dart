@@ -15,7 +15,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_app/data/chat_data.dart';
 import 'package:fitness_app/data/chat_data_firestore.dart';
 import 'package:fitness_app/data/public_profile.dart';
-import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 void main() {
