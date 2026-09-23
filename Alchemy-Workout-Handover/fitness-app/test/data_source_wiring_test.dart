@@ -43,10 +43,14 @@ const _allowed = <String, String>{
   // 使用者 2026-09-24 選擇先修貼文那一組，並明示這一項不可遺忘。
   // 列在這裡是為了讓這道檢查能保護「之後新增的」介面方法；
   // **這四行要在師徒接線完成時一起刪掉**，刪不掉就代表那項還沒做完。
-  'MentorSource.bond': '接受拜師／收徒後沒有寫雲端，兩邊重整關係就消失（0d）',
-  'MentorSource.recover': '三天內恢復師徒關係只在本機生效（0d）',
-  'MentorSource.ask': '學徒提問不上雲，教官看不到（0d）',
-  'MentorSource.answer': '教官回答不上雲，學徒看不到（0d）',
+  // `bond`／`recover`／`ask` 已於 2026-09-24 接上。
+  //
+  // **`answer` 不是漏接，是教官側的本機模型還沒做。**
+  // `answerQuestion()` 整個函式只有一個計數器 —— 連回答的文字都沒存，
+  // 也不知道是回哪一則。`mentorTasks`／`questions` 是一份共用清單，
+  // 沒記錄「這則是哪位學徒的」，而雲端的問答掛在特定關係下。
+  // 見 PROGRESS.md 的 `[BE-15]`。
+  'MentorSource.answer': '教官側本機模型缺學徒身分，見 [BE-15]',
 };
 
 /// 從 `abstract class X { ... }` 裡抓出方法名。

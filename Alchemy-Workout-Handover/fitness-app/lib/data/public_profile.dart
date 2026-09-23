@@ -35,6 +35,17 @@ class PublicProfile {
   /// 教官聲望。非教官為空值。
   final int? reputation;
 
+  /// 目前帶幾位學徒。非教官為 0。
+  ///
+  /// **這個數字要對外公開，「帶徒名額已滿」才擋得住。** 少了它，
+  /// 拜師頁只能假設每位教官都還有空位 —— 使用者申請下去才發現滿了，
+  /// 而且是在雲端那一側才擋，畫面上先成功了一次。
+  final int apprentices;
+
+  /// 帶徒名額上限。非教官為 0。由對方的歷史最高聲望推導，
+  /// 所以**必須跟著檔案一起公開**，這一側算不出來。
+  final int apprenticeCap;
+
   /// 教官專長（1–3 項）。非教官為空集合。
   final List<String> specialties;
 
@@ -47,6 +58,8 @@ class PublicProfile {
     this.followers = 0,
     this.isInstructor = false,
     this.reputation,
+    this.apprentices = 0,
+    this.apprenticeCap = 0,
     this.specialties = const [],
   });
 
@@ -65,6 +78,8 @@ class PublicProfile {
     required bool isInstructor,
     int followers = 0,
     int? reputation,
+    int apprentices = 0,
+    int apprenticeCap = 0,
     List<String> specialties = const [],
   }) =>
       PublicProfile(
@@ -78,6 +93,8 @@ class PublicProfile {
         followers: followers,
         isInstructor: isInstructor,
         reputation: isInstructor ? reputation : null,
+        apprentices: isInstructor ? apprentices : 0,
+        apprenticeCap: isInstructor ? apprenticeCap : 0,
         specialties: isInstructor ? specialties : const [],
       );
 
@@ -93,6 +110,8 @@ class PublicProfile {
         'followers': followers,
         'isInstructor': isInstructor,
         if (reputation != null) 'reputation': reputation,
+        if (isInstructor) 'apprentices': apprentices,
+        if (isInstructor) 'apprenticeCap': apprenticeCap,
         if (specialties.isNotEmpty) 'specialties': specialties,
       };
 
@@ -117,6 +136,10 @@ class PublicProfile {
       isInstructor: j['isInstructor'] == true,
       reputation:
           j['reputation'] is num ? (j['reputation'] as num).round() : null,
+      apprentices:
+          j['apprentices'] is num ? (j['apprentices'] as num).round() : 0,
+      apprenticeCap:
+          j['apprenticeCap'] is num ? (j['apprenticeCap'] as num).round() : 0,
       specialties: [
         for (final s in (j['specialties'] as List? ?? const []))
           if (s is String) s,

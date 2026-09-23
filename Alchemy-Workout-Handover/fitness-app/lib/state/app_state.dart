@@ -2030,6 +2030,10 @@ class AppState extends ChangeNotifier {
         isInstructor: isInstructor,
         followers: followerCount,
         reputation: instructorReputation,
+        // **帶徒人數與名額要公開，「名額已滿」才擋得住。** 少了它們，
+        // 別人的拜師頁只能假設我還有空位 —— 他申請下去才發現滿了。
+        apprentices: apprentices.length,
+        apprenticeCap: apprenticeCap,
         specialties: instructorSpecialties.toList(),
       );
 
@@ -2082,8 +2086,50 @@ class AppState extends ChangeNotifier {
       } else {
         socialUsers.add(u);
       }
+
+      _applyInstructor(p);
     }
     notifyListeners();
+  }
+
+  /// 把雲端的教官併進 [instructors]。
+  ///
+  /// **在此之前這份清單對真實帳號永遠是空的**（`demo ? buildInstructors() : []`），
+  /// 而拜師頁就是跑這份清單 —— 於是真實使用者打開拜師頁看到一片空白，
+  /// **連要拜誰為師都看不到**。師徒功能從入口就是斷的，不只是接受之後不上雲。
+  ///
+  /// 教官身分被撤銷時要從清單移除，不是留著 —— 留著的話他會一直出現在
+  /// 拜師頁上，而申請送出去對方那側會被擋下，使用者只看到一次無聲的失敗。
+  void _applyInstructor(PublicProfile p) {
+    final at = instructors.indexWhere((i) => i.name == p.displayName);
+    if (!p.isInstructor) {
+      if (at >= 0) instructors.removeAt(at);
+      return;
+    }
+
+    final i = Instructor(
+      name: p.displayName,
+      uid: p.uid,
+      rank: p.rank,
+      reputation: p.reputation ?? 0,
+      apprentices: p.apprentices,
+      apprenticeCap: p.apprenticeCap,
+      // 教官身分讓兩個可見度開關失效，所以六維一定拿得到；
+      // 真的沒有就給空集合，讓畫面把「沒有資料」畫成沒有資料。
+      ability: p.ability ?? const {},
+      specialties: p.specialties,
+      // **平均星等與評分次數目前一律是 0。** App 沒有在記「我收到的評分」
+      // —— 學徒評分只會去動教官的聲望（見 `rateMentorTask`），沒有累積
+      // 成星等。畫面要把 0 則評分呈現為「尚無評分」，不是 0.0 顆星。
+      // 見 PROGRESS.md 第 5 節。
+      avgRating: 0,
+      ratingCount: 0,
+    );
+    if (at >= 0) {
+      instructors[at] = i;
+    } else {
+      instructors.add(i);
+    }
   }
 
   /// 別人的公開檔案，**依 uid 索引**（[BE-11] 批次 1）。
@@ -3346,9 +3392,52 @@ class AppState extends ChangeNotifier {
           recentWorkouts: const [],
         ));
     }
+    // **把師徒關係寫上雲端。**
+    //
+    // 在此之前這裡只改記憶體 —— `MentorSource.bond()` 寫好了卻沒有人呼叫，
+    // 於是兩邊各自重整之後，這段關係就不存在了。收徒那一側尤其明顯：
+    // 教官看得到學徒、學徒看不到教官，而且誰都不知道為什麼。
+    if (r.kind != InboundKind.teamInvite) _pushBond(r);
+
     inbox.remove(r);
     notifyListeners();
     return true;
+  }
+
+  /// 接受師徒請求時把關係寫上雲端。
+  ///
+  /// **方向由請求的種類決定**：`mentorInvite` 是對方邀我當學徒（他是教官），
+  /// `apprenticeApply` 是對方想拜我為師（我是教官）。搞反的話，雲端那筆
+  /// 關係的師徒位置對調，而下次登入 `applyCloudBonds` 只看
+  /// `apprenticeUid == me`，於是教官會把自己載入成學徒。
+  void _pushBond(InboundRequest r) {
+    final src = mentorSource;
+    final me = myUid;
+    // 對方的 uid 現在跟著請求一起來（`InboundRequest.fromUid`）。
+    // 在此之前只有暱稱，要反查 —— 而反查只認得已載入的那幾位。
+    final peer = r.fromUid ?? uidOf(r.from);
+    if (src == null || me == null || peer == null) return;
+
+    final mentorUid = r.kind == InboundKind.mentorInvite ? peer : me;
+    final apprenticeUid = r.kind == InboundKind.mentorInvite ? me : peer;
+    final mentorName = r.kind == InboundKind.mentorInvite ? r.from : displayName;
+    final apprenticeName =
+        r.kind == InboundKind.mentorInvite ? displayName : r.from;
+
+    src
+        .bond(CloudBond(
+          // 關係 ID 由雙方 uid 組成 —— 與 `_apprenticeBondId` 同一套規則，
+          // 兩邊各自算出來的必須是同一個字串。
+          id: '${mentorUid}_$apprenticeUid',
+          mentorUid: mentorUid,
+          apprenticeUid: apprenticeUid,
+          mentorName: mentorName,
+          apprenticeName: apprenticeName,
+          state: MentorBondState.active,
+          bondedAt: now,
+        ))
+        // 即發即忘，與其餘社群寫入同一套 —— 失敗了下次登入以雲端為準。
+        .catchError((_) {});
   }
 
   /// 使用者已拒絕邀請 / 對方已拒絕申請。
@@ -3756,9 +3845,11 @@ class AppState extends ChangeNotifier {
   /// 補這一段要先讓本機模型帶上學徒身分，見 PROGRESS.md 的 `[BE-15]`。
   String? get _apprenticeBondId {
     final me = myUid;
-    final mentor = myInstructor?.name;
+    final mentor = myInstructor;
     if (me == null || mentor == null) return null;
-    final mentorUid = uidOf(mentor);
+    // **以教官身上那個 uid 為準，反查只是退路。** 反查是拿暱稱去翻
+    // `nameByUid`，而暱稱可以改；教官物件本來就帶著 uid 了。
+    final mentorUid = mentor.uid ?? uidOf(mentor.name);
     if (mentorUid == null) return null;
     return '${mentorUid}_$me';
   }
@@ -4004,8 +4095,20 @@ class AppState extends ChangeNotifier {
     if (text.trim().isEmpty) return;
     // 未確認免責聲明者不得提問。
     if (mentorDisclaimerNeeded) return;
-    questions.add(MentorQuestion(from: displayName, text: text.trim(), at: now));
+    final q = MentorQuestion(from: displayName, text: text.trim(), at: now);
+    questions.add(q);
     weeklyQuestionCount += 1;
+    // **送到教官那邊去。** 在此之前提問只進本機清單 —— 學徒看得到自己
+    // 問了什麼，教官那一側完全收不到，而雙方都不會看到任何錯誤。
+    _pushMentor((src, bond) => src.ask(
+          bond,
+          CloudQuestion(
+            id: newId('q'),
+            fromUid: myUid ?? '',
+            text: q.text,
+            at: q.at,
+          ),
+        ));
     notifyListeners();
   }
 
@@ -4246,6 +4349,11 @@ class AppState extends ChangeNotifier {
     mentorReleasedAt = null;
     mentorReleaseReason = null;
     mentorRestorePending = false;
+    // 雲端那一筆轉回生效中。**同一筆，不新建** —— 既有任務與問答的
+    // 關係 ID 仍指向原筆。在此之前這行不存在，恢復只在本機生效：
+    // 我這邊回到生效中，對方重整之後那段關係還是已解除。
+    final at = now;
+    _pushMentor((src, bond) => src.recover(bond, at));
     notifyListeners();
     return true;
   }
