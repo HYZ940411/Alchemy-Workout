@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_app/data/chat_data.dart';
 import 'package:fitness_app/data/chat_data_firestore.dart';
 import 'package:fitness_app/data/public_profile.dart';
+import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 void main() {
@@ -86,6 +87,50 @@ void main() {
     expect(asA, hasLength(1));
     expect(asA.single.messages.map((m) => m.text),
         containsAll(['晚上要一起練嗎', '好啊，七點健身房見']));
+  });
+
+  group('陌生人傳訊', () {
+    // 不必先關注才收得到。規格把「陌生訊息」列為一種分類，判定依據是
+    // 雙方非互相關注、非師徒、非同隊 —— 陌生人傳訊本來就是預期內的情境。
+
+    test('收訊的一方沒關注也照樣收得到，而且歸在陌生訊息', () async {
+      final asA = FirestoreChats(uid: 'uid-a', firestore: db);
+      final a = AppState(demo: false)
+        ..displayName = '阿甲'
+        ..myUid = 'uid-a'
+        ..chatSource = asA;
+      a.applyPublicProfiles([
+        const PublicProfile(uid: 'uid-b', displayName: '阿乙', rank: 20),
+      ]);
+      expect(a.following.contains('阿乙'), isFalse); // 沒有關注
+
+      a.sendMessage(a.conversationWith('阿乙'), '嗨，想問一下胸推');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final b = await receiver();
+      expect(b.visibleConversations, hasLength(1));
+      expect(b.visibleConversations.single.bucket, MessageCategory.stranger);
+    });
+
+    test('讀過之後仍然是陌生訊息 —— markRead 不該洗掉分類', () async {
+      final asA = FirestoreChats(uid: 'uid-a', firestore: db);
+      final a = AppState(demo: false)
+        ..displayName = '阿甲'
+        ..myUid = 'uid-a'
+        ..chatSource = asA;
+      a.applyPublicProfiles([
+        const PublicProfile(uid: 'uid-b', displayName: '阿乙', rank: 20),
+      ]);
+      a.sendMessage(a.conversationWith('阿乙'), '嗨');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final b = await receiver();
+      // 原本 markRead 只帶 fromMe/text/at，category 掉回預設的 normal ——
+      // 使用者只是讀了一下，那段對話就跳到「一般訊息」分頁去了。
+      b.markRead(b.visibleConversations.single);
+      expect(b.visibleConversations.single.bucket, MessageCategory.stranger);
+      expect(b.visibleConversations.single.unread, 0);
+    });
   });
 
   test('第一則訊息也送得出去 —— 對話本體與訊息同一批寫入', () async {

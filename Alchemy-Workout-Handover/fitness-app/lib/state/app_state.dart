@@ -4454,8 +4454,18 @@ class AppState extends ChangeNotifier {
     } else {
       chatSource!.markRead(id).catchError((_) {});
     }
+    // **其餘欄位要原封不動搬過來。** 原本只帶 fromMe/text/at，
+    // 於是 category 掉回預設的 normal —— 一打開陌生訊息，那段對話
+    // 就跳到「一般訊息」分頁去了，而使用者只是讀了一下而已。
+    // pendingReview 與 deleted 同理，那兩個是檢舉案件的依據。
     final updated = c.messages
-        .map((m) => m.fromMe ? m : ChatMessage(m.fromMe, m.text, m.at, read: true))
+        .map((m) => m.fromMe
+            ? m
+            : ChatMessage(m.fromMe, m.text, m.at,
+                read: true,
+                category: m.category,
+                pendingReview: m.pendingReview,
+                deleted: m.deleted))
         .toList();
     c.messages
       ..clear()

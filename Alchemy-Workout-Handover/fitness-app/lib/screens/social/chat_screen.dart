@@ -5,9 +5,39 @@ import '../../domain/admin.dart';
 import '../../design/skeleton.dart';
 import '../../state/app_state.dart';
 import '../../widgets/load_boundary.dart';
+import 'find_people_screen.dart';
 import 'report_sheet.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
+
+class _Tabs extends StatelessWidget {
+  const _Tabs();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.fromLTRB(16, 4, 0, 8),
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: const TabBar(
+          indicator: BoxDecoration(
+            color: AppColors.accent,
+            borderRadius: BorderRadius.all(Radius.circular(8)),
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          dividerColor: Colors.transparent,
+          labelColor: AppColors.onAccent,
+          unselectedLabelColor: AppColors.textDim,
+          labelStyle: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+          tabs: [
+            Tab(text: '一般訊息'),
+            Tab(text: '陌生訊息'),
+          ],
+        ),
+      );
+}
 
 /// Read Model：對話清單 —— 一般訊息 / 陌生訊息兩個分頁。
 class ConversationsScreen extends StatelessWidget {
@@ -20,31 +50,25 @@ class ConversationsScreen extends StatelessWidget {
       length: 2,
       child: Column(
         children: [
-          Container(
-            margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceAlt,
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: const TabBar(
-              indicator: BoxDecoration(
-                color: AppColors.accent,
-                borderRadius: BorderRadius.all(Radius.circular(8)),
+          Row(
+            children: [
+              const Expanded(child: _Tabs()),
+              // **找人的入口。**
+              //
+              // 在此之前要進到別人的公開檔案（「開始聊天」在那裡）只有
+              // 兩條路：動態牆上點貼文作者，或自己的關注／粉絲清單。
+              // 於是「私訊一個還沒關注、也還沒發過文的人」在 App 裡
+              // 做不到 —— 而「陌生訊息」這個分頁的存在本身就說明
+              // 那是預期內的情境。
+              IconButton(
+                icon: const Icon(Icons.person_search_outlined),
+                tooltip: '找人',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const FindPeopleScreen()),
+                ),
               ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: Colors.transparent,
-              labelColor: AppColors.onAccent,
-              unselectedLabelColor: AppColors.textDim,
-              labelStyle: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-              ),
-              tabs: [
-                Tab(text: '一般訊息'),
-                Tab(text: '陌生訊息'),
-              ],
-            ),
+              const SizedBox(width: 8),
+            ],
           ),
           Expanded(
             child: TabBarView(
