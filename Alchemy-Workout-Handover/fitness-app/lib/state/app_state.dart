@@ -2663,7 +2663,7 @@ class AppState extends ChangeNotifier {
   /// 雲端寫入因為認不出對方是誰而沒送出 —— 記進 [syncReport]，
   /// 讓開發者模式看得到。畫面已經改了、雲端沒動，這是最難查的一種失敗。
   void _cannotIdentify(String what, String name) {
-    reportSync('團隊操作', '「$what」沒有送上雲端：認不出「$name」的身分，'
+    reportSync('雲端寫入', '「$what」沒有送上雲端：認不出「$name」的身分，'
         '重新整理後會打回原形');
   }
 
@@ -4220,10 +4220,12 @@ class AppState extends ChangeNotifier {
 
   /// 這段對話在雲端的 ID。對方不在公開檔案裡（示範用的假使用者就是這種）
   /// 時回傳空值 —— 那段對話只存在本機。
-  String? _cloudConvId(String peerName) {
+  /// 這段對話在雲端的 ID。**優先用對話自己帶著的 uid**，
+  /// 反查只是退路 —— 反查看的是已載入的公開檔案，查不到就整段跳過。
+  String? _cloudConvId(Conversation c) {
     final src = chatSource;
     final me = myUid;
-    final peer = uidOf(peerName);
+    final peer = c.peerUid ?? uidOf(c.peer);
     if (src == null || me == null || peer == null) return null;
     return src.conversationIdOf(me, peer);
   }
@@ -4246,6 +4248,7 @@ class AppState extends ChangeNotifier {
       final conv = Conversation(
         id: c.id,
         peer: peerName,
+        peerUid: peerUid,
         peerRank: c.ranks[peerUid] ?? 1,
         peerIsInstructor: c.instructors[peerUid] ?? false,
         deletedByMe: c.deletedBy.contains(me),
@@ -4297,6 +4300,9 @@ class AppState extends ChangeNotifier {
     final conv = Conversation(
       id: _nextConversationId(),
       peer: name,
+      // 這裡只有暱稱可用，反查是唯一的辦法 —— 但查到就釘在對話上，
+      // 之後送訊息、標記已讀都不必再查一次。
+      peerUid: uidOf(name),
       peerRank: rankOf(name),
       peerIsInstructor: instructors.any((x) => x.name == name),
     );
@@ -4319,7 +4325,7 @@ class AppState extends ChangeNotifier {
   void deleteConversation(Conversation c) {
     if (c.deletedByMe) return;
     c.deletedByMe = true;
-    final id = _cloudConvId(c.peer);
+    final id = _cloudConvId(c);
     if (id != null) chatSource?.deleteForMe(id).catchError((_) {});
     notifyListeners();
   }
@@ -4363,8 +4369,13 @@ class AppState extends ChangeNotifier {
     // 送上雲。與其他社群寫入同一套：樂觀更新、即發即忘、吞掉錯誤。
     // **訊息的 ID 在這裡才產生** —— ChatMessage 本身沒有 ID 欄位
     // （本機以位置辨識就夠），但雲端的每則訊息需要一個文件 ID。
-    final peerUid = uidOf(c.peer);
+    final peerUid = c.peerUid ?? uidOf(c.peer);
     final src = chatSource;
+    if (peerUid == null && src != null) {
+      // 認不出對方是誰 → 訊息只存在我的記憶體裡，對方永遠收不到，
+      // 而畫面上它就躺在那裡，看起來跟送出成功一模一樣。
+      _cannotIdentify('發送私訊', c.peer);
+    }
     if (peerUid != null && src != null) {
       src
           .send(
@@ -4428,8 +4439,13 @@ class AppState extends ChangeNotifier {
   }
 
   void markRead(Conversation c) {
-    final id = _cloudConvId(c.peer);
-    if (id != null) chatSource?.markRead(id).catchError((_) {});
+    final id = _cloudConvId(c);
+    if (id == null) {
+      // 只改記憶體的話，下次登入從雲端讀回來又會是未讀。
+      if (chatSource != null) _cannotIdentify('標記已讀', c.peer);
+    } else {
+      chatSource!.markRead(id).catchError((_) {});
+    }
     final updated = c.messages
         .map((m) => m.fromMe ? m : ChatMessage(m.fromMe, m.text, m.at, read: true))
         .toList();

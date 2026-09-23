@@ -203,6 +203,28 @@ extension AppStateSnapshot on AppState {
               'claimed': m.claimed,
             },
         ],
+        // **通知連同已讀狀態一起存。**
+        //
+        // 在此之前整份通知清單完全不進存檔：每次啟動都是空的，再由
+        // `runStreakCheck()` 之類的重新產生一遍，而新產生的一律是未讀。
+        // 於是「已讀」只活在記憶體裡 —— 使用者一重新整理，讀過的通知
+        // 全部變回未讀，紅點也跟著回來。
+        //
+        // 舊存檔沒有這個鍵，讀進來就是空清單，與現在的行為相同，
+        // 所以不必升 `kSnapshotVersion`。
+        'notifications': [
+          for (final n in notifications)
+            {
+              'id': n.id,
+              'sourceEvent': n.sourceEvent,
+              'title': n.title,
+              'body': n.body,
+              'at': _iso(n.at),
+              'kind': n.kind.name,
+              'priority': ?n.priority?.name,
+              'read': n.read,
+            },
+        ],
         // 每日簽到紀錄：只存已簽到的日子。
         'checkInRecords': [
           for (final e in checkInRecords.entries)
@@ -546,6 +568,30 @@ extension AppStateSnapshot on AppState {
       // 有的話代表讀取端與寫入端的欄位對不上（v1→v2 就是這樣把獎勵清空的），
       // 留著只會讓使用者領到「無」。丟掉比留著一筆領了沒東西的假獎勵好。
       mailbox.removeWhere((m) => m.isEmpty);
+    }
+
+    if (pick<List>('notifications') case final rows?) {
+      notifications
+        ..clear()
+        ..addAll([
+          for (final n in rows.whereType<Map>())
+            if (_date(n['at']) case final at?)
+              AppNotification(
+                id: '${n['id']}',
+                sourceEvent: '${n['sourceEvent']}',
+                title: '${n['title']}',
+                body: '${n['body']}',
+                at: at,
+                kind: NotifyKind.values.firstWhere(
+                  (k) => k.name == n['kind'],
+                  orElse: () => NotifyKind.inApp,
+                ),
+                priority: NotifyPriority.values
+                    .where((x) => x.name == n['priority'])
+                    .firstOrNull,
+                read: n['read'] == true,
+              ),
+        ]);
     }
 
     if (pick<List>('checkInRecords') case final rows?) {

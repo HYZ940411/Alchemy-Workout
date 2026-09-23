@@ -565,6 +565,14 @@ class ChatMessage {
 class Conversation {
   final String id;
   final String peer;
+
+  /// 對方的雲端身分。**示範資料的對話沒有，所以可以是空值。**
+  ///
+  /// 理由同 [TeamMember.uid]：在此之前這裡只有暱稱，要送訊息或標記
+  /// 已讀時再拿暱稱去公開檔案裡反查 uid —— 反查不到就整段跳過，
+  /// 而且是無聲的。同名的兩個人還會反查到同一個。
+  final String? peerUid;
+
   final int peerRank;
   final bool peerIsInstructor;
   final MessageCategory category;
@@ -577,6 +585,7 @@ class Conversation {
     required this.id,
     required this.peer,
     required this.peerRank,
+    this.peerUid,
     this.peerIsInstructor = false,
     this.category = MessageCategory.normal,
     this.deletedByMe = false,
