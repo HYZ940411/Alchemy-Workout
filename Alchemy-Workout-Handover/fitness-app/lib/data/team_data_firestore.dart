@@ -71,7 +71,10 @@ class FirestoreTeams implements TeamSource {
     String? myTeamId,
     List<String>? errors,
   }) async {
-    errors ??= [];
+    // 指派給區域變數再用。`errors ??= []` 只讓這個參數在**這一層**
+    // 是非空的，閉包裡不算數 —— 參數可以被重新指派，型別提升進不去
+    // 閉包。下面兩個 catchError 都是閉包。
+    final log = errors ??= [];
     final out = <TeamRequest>[];
 
     // **兩段各自成敗，不互相牽連。**
@@ -89,7 +92,7 @@ class FirestoreTeams implements TeamSource {
           .get()
           .then<List<TeamRequest>>(_parse)
           .catchError((Object e) {
-        errors.add('邀請：$e');
+        log.add('邀請：$e');
         return <TeamRequest>[];
       }),
       // 別人申請加入我的隊：只有隊長看得到，範圍就在自己那一隊底下。
@@ -101,7 +104,7 @@ class FirestoreTeams implements TeamSource {
             .get()
             .then<List<TeamRequest>>(_parse)
             .catchError((Object e) {
-          errors.add('申請：$e');
+          log.add('申請：$e');
           return <TeamRequest>[];
         }),
     ]);
@@ -220,8 +223,7 @@ class FirestoreTeams implements TeamSource {
   // ===========================================================================
 
   List<TeamRequest> _parse(QuerySnapshot<Map<String, dynamic>> snap) => [
-        for (final d in snap.docs)
-          if (_requestOf(d.data()) case final r?) r,
+        for (final d in snap.docs) ?_requestOf(d.data()),
       ];
 
   Map<String, dynamic> _memberJson(CloudMember m) => {
