@@ -19,6 +19,7 @@ import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/screens/social/feed_screen.dart';
 import 'package:fitness_app/screens/social/post_detail_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
+import 'package:fitness_app/widgets/common.dart';
 
 Future<void> _pump(WidgetTester t, AppState s, Widget home) async {
   t.view.physicalSize = const Size(393 * 3, 852 * 3);
@@ -107,6 +108,78 @@ void main() {
 
       expect(find.text('檢舉這篇貼文'), findsOneWidget);
       expect(find.text('編輯貼文'), findsNothing);
+    });
+  });
+
+  group('選單只列動作，不寫補充說明', () {
+    testWidgets('自己的貼文', (t) async {
+      final s = _me();
+      s.posts.add(_post(author: s.displayName, uid: 'u-me'));
+      await _pump(t, s, const Scaffold(body: FeedScreen()));
+      await _tapFeedMenu(t);
+
+      expect(find.text('編輯貼文'), findsOneWidget);
+      // 使用者要求移除 —— 那幾句在按鈕底下反而讓人猶豫。
+      expect(find.textContaining('編輯前的內容會留在編輯歷史'), findsNothing);
+      expect(find.textContaining('按讚與留言一併隱藏'), findsNothing);
+    });
+
+    testWidgets('別人的貼文', (t) async {
+      final s = _me();
+      s.following.add('阿甲');
+      s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
+      await _pump(t, s, const Scaffold(body: FeedScreen()));
+      await _tapFeedMenu(t);
+
+      expect(find.text('檢舉這篇貼文'), findsOneWidget);
+      expect(find.textContaining('檢舉不會觸發任何自動處置'), findsNothing);
+      expect(find.textContaining('封鎖後對方看不到你的貼文'), findsNothing);
+    });
+  });
+
+  group('封鎖要先確認，不是點一下就生效', () {
+    testWidgets('跳出確認對話框，取消就不封鎖', (t) async {
+      final s = _me();
+      s.following.add('阿甲');
+      s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
+      await _pump(t, s, const Scaffold(body: FeedScreen()));
+      await _tapFeedMenu(t);
+
+      await t.tap(find.text('封鎖這個人'));
+      await t.pumpAndSettle();
+
+      // 封鎖是破壞性的，而且會連帶解除雙方關注與師徒關係，
+      // **解除封鎖不會恢復** —— 按錯一次就回不去了。
+      expect(find.textContaining('封鎖 阿甲？'), findsOneWidget);
+      expect(find.textContaining('雙方的關注會一併解除'), findsOneWidget);
+      expect(find.textContaining('解除封鎖不會把這些恢復'), findsOneWidget);
+      // 對話框不渲染 markdown —— 星號會直接印出來。
+      expect(find.textContaining('**'), findsNothing);
+      expect(s.isBlocked('阿甲'), isFalse, reason: '還沒確認就不該生效');
+
+      // **按「取消」之後也不該封鎖。** 只驗「對話框跳出來了」是不夠的 ——
+      // 把 `if (ok != true) return;` 那行拔掉，對話框照樣會跳，
+      // 封鎖也照樣會發生，而測試不會紅。
+      await t.tap(find.text('取消'));
+      await t.pumpAndSettle();
+      expect(s.isBlocked('阿甲'), isFalse, reason: '取消了就不該封鎖');
+      expect(s.following.contains('阿甲'), isTrue, reason: '關注也不該被解除');
+    });
+
+    testWidgets('確認之後才真的封鎖', (t) async {
+      final s = _me();
+      s.following.add('阿甲');
+      s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
+      await _pump(t, s, const Scaffold(body: FeedScreen()));
+      await _tapFeedMenu(t);
+
+      await t.tap(find.text('封鎖這個人'));
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(AppButton, '封鎖').last);
+      await t.pumpAndSettle();
+
+      expect(s.isBlocked('阿甲'), isTrue);
+      expect(s.following.contains('阿甲'), isFalse, reason: '關注一併解除');
     });
   });
 

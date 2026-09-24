@@ -56,7 +56,6 @@ Future<void> _mineMenu(
         children: [
           ListRow(
             title: '編輯貼文',
-            subtitle: '編輯前的內容會留在編輯歷史，讀者會看到「已編輯」',
             onTap: () async {
               Navigator.of(sheetContext).pop();
               await editTextDialog(
@@ -65,7 +64,6 @@ Future<void> _mineMenu(
           ),
           ListRow(
             title: '刪除貼文',
-            subtitle: '按讚與留言一併隱藏但保留；已發放的獎勵不回收',
             showDivider: false,
             onTap: () async {
               Navigator.of(sheetContext).pop();
@@ -106,12 +104,10 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
       children: [
         ListRow(
           title: '檢舉這篇貼文',
-          subtitle: '檢舉不會觸發任何自動處置',
           onTap: () => Navigator.pop(context, 'report'),
         ),
         ListRow(
           title: s.isBlocked(p.author) ? '解除封鎖' : '封鎖這個人',
-          subtitle: '封鎖後對方看不到你的貼文，也無法傳私訊給你',
           showDivider: false,
           onTap: () => Navigator.pop(context, 'block'),
         ),
@@ -144,8 +140,25 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
     showToast(context, blocked);
     return;
   }
+
+  // **封鎖要先確認。** 它是破壞性的、而且會連帶動到第三方關係：
+  // 雙方的關注一併解除、師徒關係一併解除、未完成的師徒任務作廢。
+  // 解除封鎖**不會**把這些恢復 —— 所以按錯一次就回不去了，
+  // 不能是點一下就生效。
   final wasFollowing = s.following.contains(p.author);
   final wasMentor = s.myInstructor?.name == p.author;
+  final ok = await showAppDialog(
+    context,
+    title: '封鎖 ${p.author}？',
+    message: '對方看不到你的貼文，也無法傳私訊給你。'
+        '${wasFollowing ? '\n\n雙方的關注會一併解除。' : ''}'
+        '${wasMentor ? '\n\n師徒關係會一併解除，未完成的任務作廢。' : ''}'
+        '\n\n解除封鎖不會把這些恢復。',
+    confirmLabel: '封鎖',
+    destructive: true,
+  );
+  if (ok != true || !context.mounted) return;
+
   s.blockUser(p.author);
   showToast(
     context,

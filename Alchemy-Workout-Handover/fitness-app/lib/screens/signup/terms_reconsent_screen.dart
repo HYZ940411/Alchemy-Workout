@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import '../../domain/registration.dart';
 import '../../state/app_state.dart';
+import '../home_shell.dart';
 import '../../widgets/common.dart';
 
 /// 條款改版後，既有使用者於下次登入時重新同意。
@@ -19,6 +20,44 @@ import '../../widgets/common.dart';
 /// 但既有使用者拒絕了要怎麼辦（登出？轉唯讀？保留到期限？）三份文件
 /// 一個字都沒提。這裡只實作規格寫到的部分 —— 跳出來要求同意 ——
 /// 不替規格補一個它沒有的分支。要補的話那是產品與法務的決定。
+/// 條款改版後，既有使用者於下次登入時須重新同意。
+///
+/// **兩個入口共用這一份。** `main.dart` 有分支：沒接 Firebase 走
+/// `FirstRunGate`，接了走 `AuthGate._SignedInHome` —— 2026-09-24 加這道
+/// 閘門時只改了前者，於是真正在線上跑的那條路徑完全沒有它，
+/// 使用者登入後看不到條款頁。**同一個判斷寫在兩處、只有一處做對**，
+/// 正是這一批 bug 的共同形狀，所以收斂成一個 widget。
+///
+/// **排在註冊閘門之後。** 還沒註冊完的人本來就會在註冊流程裡遇到條款頁，
+/// 在這裡再擋一次會變成兩道 —— `termsReconsentNeeded` 也因此帶了
+/// `signUpCompleted` 這個條件。
+///
+/// **同一個閂鎖寫法**（理由見 `FirstRunGate`）：只在第一次 build 決定。
+/// 直接跟著 `termsReconsentNeeded` 走的話，按下同意的那一刻畫面會在
+/// `agreeTerms()` 的 `notifyListeners()` 裡重建，而那時 `onAgreed`
+/// 還沒跑完。
+class TermsGate extends StatefulWidget {
+  const TermsGate({super.key});
+
+  @override
+  State<TermsGate> createState() => _TermsGateState();
+}
+
+class _TermsGateState extends State<TermsGate> {
+  bool? _needsAgree;
+
+  @override
+  Widget build(BuildContext context) {
+    _needsAgree ??= AppScope.of(context).termsReconsentNeeded;
+    if (_needsAgree == true) {
+      return TermsReconsentScreen(
+        onAgreed: () => setState(() => _needsAgree = false),
+      );
+    }
+    return const HomeShell();
+  }
+}
+
 class TermsReconsentScreen extends StatefulWidget {
   /// 同意之後要做什麼。呼叫端負責把畫面換掉。
   final VoidCallback onAgreed;

@@ -334,6 +334,37 @@ void main() {
     });
   });
 
+  group('粉絲數不得為負', () {
+    test('已關注時封鎖對方，粉絲數最低到 0 —— 不會變 −1', () {
+      final s = AppState(demo: false);
+      s.applyPublicProfiles([
+        PublicProfile(
+            uid: 'u-阿甲', displayName: '阿甲', rank: 30, followers: 0),
+      ]);
+      // 「已關注」與「粉絲數 0」同時成立是真實情境：這個計數會被
+      // `applyPublicProfiles` 重設成對方檔案上的值（那份只有他自己
+      // 更新得了），而本機的 `following` 還留著。
+      s.following.add('阿甲');
+      expect(s.followersOf('阿甲', uid: 'u-阿甲'), 0);
+
+      s.blockUser('阿甲');
+
+      expect(s.followersOf('阿甲', uid: 'u-阿甲'), 0,
+          reason: '聲望早就有地板了，粉絲數漏掉');
+    });
+
+    test('正常情況照樣扣 1', () {
+      final s = AppState(demo: false);
+      s.applyPublicProfiles([
+        PublicProfile(
+            uid: 'u-阿乙', displayName: '阿乙', rank: 30, followers: 5),
+      ]);
+      s.following.add('阿乙');
+      s.blockUser('阿乙');
+      expect(s.followersOf('阿乙', uid: 'u-阿乙'), 4);
+    });
+  });
+
   group('自己升階要當場寫回雲端', () {
     test('跨過階級門檻就重寫一次公開檔案', () {
       final src = _FakeProfiles();

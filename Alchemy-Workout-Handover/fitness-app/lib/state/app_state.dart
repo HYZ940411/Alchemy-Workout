@@ -2521,9 +2521,17 @@ class AppState extends ChangeNotifier {
   }
 
   /// 取消關注的帳務處理。粉絲數為儲存欄位，非即時彙總，故得逐處維護。
+  ///
+  /// **不得扣成負數。** 使用者回報：已關注對方時封鎖他，對方的粉絲數
+  /// 變成 −1。成因是這個計數會被 `applyPublicProfiles` 重設成對方檔案上
+  /// 的值（那份只有他自己更新得了），而本機的 `following` 還留著 ——
+  /// 於是「已關注」與「粉絲數 0」同時成立，一扣就變負的。
+  ///
+  /// 聲望早就有地板了（`applyReputation`），粉絲數漏掉。
   void _unfollow(String name) {
     if (!following.remove(name)) return;
-    otherFollowerCounts[name] = (otherFollowerCounts[name] ?? 1) - 1;
+    final now = (otherFollowerCounts[name] ?? 1) - 1;
+    otherFollowerCounts[name] = now < 0 ? 0 : now;
   }
 
   /// 使用者已解除封鎖。

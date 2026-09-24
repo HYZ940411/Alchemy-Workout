@@ -14,6 +14,8 @@
 // **這一組規則擋在所有人的登入路上**，寫錯會讓全部使用者進不去 App，
 // 所以除了「該擋的有擋」，也要釘「不該擋的不能擋」。
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -109,6 +111,25 @@ void main() {
       // 兩個地方各寫一個版本號的話，改條文時只改到一個，
       // 整套「改版要重新同意」就會安靜地不觸發。
       expect(SignUpDraft().termsVersion, kTermsVersion);
+    });
+  });
+
+  group('兩個入口都要有這道閘門', () {
+    test('TermsGate 在兩處都用得到', () {
+      // `main.dart` 有分支：沒接 Firebase 走 `FirstRunGate`，
+      // 接了走 `AuthGate._SignedInHome`。2026-09-24 第一版只改了前者 ——
+      // **於是真正在線上跑的那條路徑完全沒有這道閘門**，使用者登入後
+      // 看不到條款頁。這條測試釘的是「兩邊都指向同一個 widget」。
+      final main = File('lib/main.dart').readAsStringSync();
+      final gate = File('lib/screens/auth_gate.dart').readAsStringSync();
+      expect(main, contains('TermsGate()'),
+          reason: 'FirstRunGate 那條路要經過條款閘門');
+      expect(gate, contains('TermsGate()'),
+          reason: 'AuthGate 那條路也要 —— 那才是線上實際走的');
+      // 兩邊都不該再各自寫一份判斷。
+      expect(main.contains('termsReconsentNeeded'), isFalse,
+          reason: '判斷只該在 TermsGate 裡一份');
+      expect(gate.contains('termsReconsentNeeded'), isFalse);
     });
   });
 

@@ -16,8 +16,8 @@ import '../data/report_data.dart';
 import '../data/store.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
-import 'home_shell.dart';
 import 'signup/signup_screen.dart';
+import 'signup/terms_reconsent_screen.dart';
 import 'train/tasks_screen.dart';
 
 /// 依登入狀態決定要顯示登入流程還是這個帳號的內容。
@@ -485,6 +485,13 @@ class _SignedInHomeState extends State<_SignedInHome> {
         },
       );
     }
-    return const HomeShell();
+    // **條款改版後要重新同意** —— 與 `FirstRunGate` 共用同一道閘門。
+    //
+    // 這裡原本直接回 `HomeShell`。`main.dart` 有兩個入口：沒接 Firebase
+    // 走 `FirstRunGate`，接了走這裡 —— 2026-09-24 加條款閘門時只改了前者，
+    // 於是真正在線上跑的那條路徑完全沒有那道閘門。
+    //
+    // 同一個判斷寫在兩處、只有一處做對，正是這一批 bug 的共同形狀。
+    return const TermsGate();
   }
 }

@@ -50,7 +50,7 @@ Command、Event、Aggregate、不變條件與已定案的決策。程式碼與�
 
 ```bash
 flutter analyze                       # 應該完全乾淨
-flutter test --timeout 90s            # 應為 1,705 passed
+flutter test --timeout 90s            # 應為 1,712 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                       # 應為 17 passed（需要 Chrome）
 ./tools/build_web.sh                  # Web 建置，見第 6 節第 8 條
@@ -562,6 +562,7 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-09 | 27 份課表的階級門檻**全部拿掉** | Beta 期間多數測試者階級低，設門檻等於大半內容收不到回饋；回歸課表更不該鎖 —— 退步的人才需要它 |
 | 2026-09-09 | 課表的每組**目標重量一律為 0** | 資料以 RPE（自覺強度）開處方，不指定公斤數。替一個沒見過的人填具體重量，比留白危險 |
 | 2026-09-09 | 循環式課表**維持現狀**（輪數當組數） | 完整表達需要在課表模型加「區段」概念，成本 2–3 天，暫不做 |
+| 2026-09-24 | **修掉上線後實測回報的四項**：條款閘門在 `AuthGate` 那條路沒接、選單補充說明移除、封鎖加二次確認、粉絲數可被扣成負數 | ①**條款閘門只加在 `FirstRunGate`**，而 `main.dart` 有分支：接了 Firebase 走 `AuthGate._SignedInHome`，那條路直接開 `HomeShell` —— 線上實際走的正是它，所以使用者登入後看不到條款頁。閘門已收斂成共用的 `TermsGate`。②③使用者裁示。④已關注時封鎖對方，粉絲數變 −1：這個計數會被 `applyPublicProfiles` 重設成對方檔案上的值（只有他自己更新得了），而本機 `following` 還留著 —— 聲望早有地板，粉絲數漏掉 |
 | 2026-09-24 | **`[BE-15]` 師徒教官側完成**：學徒清單、任務與問答的讀回、教官回答、星等統計 | 使用者選擇一次做完而非先拿掉假數字。`MentorTask`／`MentorQuestion` 補上 `id` 與 `apprenticeUid`（原本是一份共用清單，分不出是哪位學徒的）；`applyCloudBonds` 兩側都處理；`tasks()`／`questions()` 接上 `loadMentorSideOf()`；`answerQuestion()` 從計數器改成真的寫入。**星等由任務上的評分推導**，不另存會漂移的數字；`ratingCount == 0` 時畫面顯示「尚無評分」 |
 | 2026-09-24 | `data_source_wiring_test` 再擴一次：**方法名撞到欄位名也要具名承認** | `MentorSource.tasks()`／`questions()` 同樣沒有呼叫端，而畫面上有個同名的 `s.questions` 欄位 —— 這是第二種撞名成因，與 `dropRequest` 那次（兩個介面同名）不同。兩次都是真的漏抓 |
 | 2026-09-24 | **收件匣的接受與拒絕回寫雲端**：接受團隊邀請寫進名冊、接受與拒絕都清掉雲端那筆請求 | 使用者回報「團隊發出之後沒上雲，刷新後就不見了」。三個缺口：`_joinPublicTeam()` 一行雲端寫入都沒有（登入時 `myTeam()` 查不到我）；接受後沒刪請求；**拒絕完全沒回寫**（拒絕三次它出現四次）。順序要緊：**先寫名冊再刪請求** —— 安全規則允許自己入隊的條件正是「有一筆給我的待回應請求」。申請被核准那條路徑不走這裡，隊長已經 `putMember` 過了 |
