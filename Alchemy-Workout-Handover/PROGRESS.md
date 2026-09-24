@@ -210,6 +210,26 @@ flutter build macos --release
       私訊、團隊邀請皆通。`firebase.json` 含 Hosting 設定與快取標頭
 - [ ] 【人】`[DEP-03]`（選）Apple Developer US$99／年 → TestFlight
 
+**部署怎麼做**（2026-09-24 補記）
+
+```bash
+cd Alchemy-Workout-Handover/fitness-app
+./tools/build_web.sh            # 不可直接用 flutter build web
+firebase deploy --only hosting
+```
+
+- **這個 repo 沒有 CI／自動部署**（`.github/workflows/` 不存在）。
+  `git push` **不會**讓網站更新 —— Firebase Hosting 吃的是本機建置出來的
+  `build/web/`。2026-09-19 有過一次事故：改動只在本機未 commit，
+  跑去 Codespaces 建置部署，連跑兩次都部署到舊程式碼。
+- Firebase CLI 2026-09-24 以 Homebrew 裝好（`brew install firebase-cli`，
+  連帶裝了 Node）。已登入 **itscharlie105@gmail.com**，
+  `alchemy-workout` 為 current project。
+- 建置後可用**字型子集化的字元數**確認打包內容真的變了
+  （9-23 是 1817 → 1848 → 1850，每次改動都會動）。
+- 部署後用 `curl -I https://alchemy-workout.web.app` 的 `last-modified`
+  確認線上真的換版。
+
 ### C. 檢查與修 bug
 
 - [ ] 【人】`[QA-01]` 自己把 App 從頭用一遍。
@@ -401,6 +421,26 @@ flutter build macos --release
    才跑得完，而目前只有一位使用者（見下方第 2 項）。
    Firestore 安全規則會不會擋下這些新寫入，同樣沒驗過。
    上線前務必以兩個帳號實跑一次師徒與貼文編輯／刪除。
+
+   **待測清單（2026-09-24 全部改動已部署至 https://alchemy-workout.web.app ）**
+
+   一個帳號測得完的：
+   - [ ] 重新整理 → 跳出條款頁要求同意一次；同意後再重整不該再跳
+   - [ ] 「能力值退步狀態」→ 六維皆 0 退步、沒有退步紀錄（新帳號）
+   - [ ] 每日任務一項一項領 → 一天共 **10** 金幣（不是 6）
+   - [ ] 送一則私訊 → **不該**立刻顯示「已讀」
+   - [ ] 貼文「⋯」→ 只有動作名稱、沒有補充說明；封鎖會跳確認框且取消不生效
+   - [ ] 開別人的檔案頁 → 粉絲數正確；關注後重新整理仍正確
+   - [ ] 編輯／刪除自己的貼文 → 重新整理後改動還在
+
+   **要兩個帳號**（最關鍵，安全規則只查證過兩條）：
+   - [ ] A 拜 B 為師 → B 接受 → **雙方重整**，關係要還在
+   - [ ] B 邀 A 進團隊 → A 接受 → **A 重整**，團隊要還在
+   - [ ] A 提問 → B 看得到 → B 回答 → A 看得到
+   - [ ] A 發文／編輯／刪除 → B 重整後看得到
+
+   **症狀對照**：出現「畫面上成功、重新整理就沒了」＝安全規則擋掉了。
+   那正是 `bond()` 那次的形狀（呼叫端即發即忘吞掉錯誤，完全無聲）。
 
 0h. **既有的師徒關係不會被補寫到雲端。**
    2026-09-24 之前建立的關係當初就沒寫上去，這次的修改只影響
