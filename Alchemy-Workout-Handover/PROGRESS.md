@@ -145,7 +145,17 @@ flutter build macos --release
       （記憶體版，不起 emulator），與既有「測試不碰網路」的哲學一致。
       現為 1,232 passed
 - [ ] 【CC】`[BE-06]` FCM 推播。規則（同日總量上限、優先序由低至高捨棄、四個等級）
-      **都已實作並測過**，只差真的送出去 —— 投資報酬最高的一項
+      **都已實作並測過**。
+      **⚠️ 2026-09-24 更正：這一項不是「只差真的送出去」。**
+      原本那句話讓人以為它與 `[BE-10]`（Blaze）無關，據此被排進待辦
+      —— 那是錯的。FCM 的 HTTP v1 送出**必須來自可信環境**
+      （app server 或 Cloud Functions），並以 service account 換 OAuth 2.0
+      access token；**用戶端不得直接送，官方文件明列為不支援**。
+      見 https://firebase.google.com/docs/cloud-messaging/server-environment
+      所以真的送得出去 ⇒ 要 Cloud Functions ⇒ **`[BE-10]` 升級 Blaze 是前置**。
+      可以先做、且不依賴伺服器的半邊：請求權限、取得 FCM token、
+      把 token 存進使用者文件、Web 的 service worker。那半邊無論最後由誰送
+      都要做，但**做完也還是不會有任何一則推播送出**
 - [ ] 【CC】`[BE-07]` 評分邏輯搬上 Cloud Functions。
       **務必保持只有一份實作**（見第 6 節第 3 條）—— 移植成兩份是這個專案最可能踩的坑
 - [x] 【CC】`[BE-08]` 接 Gemini API 取代本地規則引擎。 ✅2026-09-20
@@ -153,7 +163,8 @@ flutter build macos --release
 - [ ] 【人→CC】`[BE-09]` App Check ＋ Secret Manager。
       **若先做手機簡訊驗證，這項要提前** —— 簡訊被刷是真的會付錢
 - [ ] 【人】`[BE-10]` 升級 Blaze 方案並在 GCP Console 設定預算警示。
-      **`BE-07`（Cloud Functions）開工前必須做完**——`BE-03`／`BE-04` 用免費方案（Spark）
+      **`BE-07`（Cloud Functions）開工前必須做完**，
+      **`BE-06`（FCM 推播）同樣以它為前置**（2026-09-24 更正，見該項）——`BE-03`／`BE-04` 用免費方案（Spark）
       即可，暫不需要 Blaze，故意延後以避免提前綁信用卡曝險
 - [x] 【CC】`[BE-11]` 跨使用者資料上雲：貼文／留言／按讚、關注、團隊、師徒、
       私訊、檢舉申訴。collection 結構 `Firestore-Schema設計.md` 第 1 節已設計好。
@@ -536,7 +547,8 @@ firebase deploy --only hosting
 2. **只有一位使用者。** 事件風暴裡約一半的流程需要第二個人（師徒申請、團隊審核、
    檢舉裁決、私訊回覆）。目前靠「我的 → 流程示範 → 模擬對方」控制台代打 ——
    那個控制台不繞過任何 Precondition，只是代替對方按送出。等 `[BE-04]`。
-5. **通知只在 App 內**，沒有真的推播。等 `[BE-06]`。
+5. **通知只在 App 內**，沒有真的推播。等 `[BE-06]` ——
+   而它又以 `[BE-10]`（升級 Blaze）為前置，因為 FCM 不允許用戶端直接送。
 
 ### 資料與文件
 
