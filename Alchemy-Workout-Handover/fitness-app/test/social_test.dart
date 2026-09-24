@@ -276,7 +276,8 @@ void main() {
       // 切到粉絲分頁
       await t.tap(find.textContaining('粉絲 '));
       await t.pumpAndSettle();
-      expect(find.textContaining('粉絲成就'), findsOneWidget);
+      // 那行補充說明 2026-09-24 依使用者裁示移除（在按鈕底下反而讓人猶豫）。
+      expect(find.textContaining('粉絲成就'), findsNothing);
     });
 
     testWidgets('封鎖名單：解除要先確認', (t) async {

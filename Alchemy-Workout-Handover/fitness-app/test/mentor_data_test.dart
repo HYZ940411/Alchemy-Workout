@@ -49,14 +49,34 @@ void main() {
       expect(await as('z').bonds(), isEmpty);
     });
 
-    test('同一學徒同時至多一筆生效中', () async {
-      // 不變條件。呼叫端有好幾條路徑會走到建立關係，
-      // 每一條都記得檢查是不可能的，所以檢查放在實作裡。
+    test('同一學徒同時至多一筆生效中 —— 由學徒那一側把關', () async {
+      await as('m').bond(bond(mentor: 'm', apprentice: 'a'));
+      // 學徒自己接受第二位教官的邀請時，檢查要擋下來。
+      await as('a').bond(bond(mentor: 'm2', apprentice: 'a'));
+
+      final all = await db.collection('mentor_bonds').get();
+      expect(all.docs, hasLength(1), reason: '一位學徒同時只能有一位教官');
+    });
+
+    test('教官那一側驗不了 —— 這是安全規則造成的已知殘留', () async {
       await as('m').bond(bond(mentor: 'm', apprentice: 'a'));
       await as('m2').bond(bond(mentor: 'm2', apprentice: 'a'));
 
+      // **這不是漏寫，是查不動。** 讀取規則要求每筆關係的 mentorUid 或
+      // apprenticeUid 等於我，而 Firestore 不會過濾查詢結果 ——
+      // 它整個拒絕查詢，除非查詢條件本身保證所有結果都通得過。
+      // 教官查的是 `apprenticeUid == 對方`，保證不了 → permission-denied，
+      // 而呼叫端即發即忘吞掉錯誤，於是**接受拜師申請會畫面成功、
+      // 雲端什麼都沒發生**（2026-09-24 上線後對照規則查出來的）。
+      //
+      // 所以檢查只在「我就是那位學徒」時做。學徒那一側的
+      // `mentorApplyBlockedReason()` 本來就擋著（有教官就不能再申請），
+      // 而「一位學徒只能有一位教官」本來也是學徒的不變條件。
+      //
+      // **`fake_cloud_firestore` 不套用安全規則** —— 這正是原本那版
+      // 能通過測試卻在線上失敗的原因，要誠實記著。
       final all = await db.collection('mentor_bonds').get();
-      expect(all.docs, hasLength(1), reason: '第二位教官不該收得到同一個學徒');
+      expect(all.docs, hasLength(2));
     });
 
     test('解除之後同一學徒可以拜新的教官', () async {

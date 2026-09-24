@@ -144,13 +144,27 @@ class AppState extends ChangeNotifier {
   /// 註冊日 —— 六個退步計時器與連續訓練計時器的初始基準，皆不允許空值。
   /// 非 final：真實使用者的註冊日來自帳號，示範與測試需要換一個近期的日子
   /// 才看得到「補不回註冊日之前」這條界線。
-  late DateTime registeredOn =
-      businessDate(DateTime.now()).subtract(const Duration(days: 180));
+  ///
+  /// **非示範帳號取今天。** 寫死 180 天前是示範身分的一部分 ——
+  /// 與 `posts`／`socialUsers` 那些一樣，只是它是純量，2026-09-16 那次
+  /// 假資料清查（`[QA-02a]`–`[QA-02e]`）清的是集合，把它漏掉了。
+  late DateTime registeredOn = demo
+      ? businessDate(DateTime.now()).subtract(const Duration(days: 180))
+      : businessDate(DateTime.now());
 
-  /// 各維最後訓練日刻意錯開，使六個計時器各自落在不同的門檻上：
+  /// 各維最後訓練日。
+  ///
+  /// **示範身分**刻意錯開，使六個計時器各自落在不同的門檻上：
   /// 胸今天、背 2 天、腿 5 天（退步預告）、肩 12 天、手 26 天、核心 46 天。
   /// 退步後的點數不寫死，由 [runDecayCheck] 於建構時推導 ——
   /// 上面 [points] 的六個值即為「本次中斷前點數」。
+  ///
+  /// **非示範帳號一律自註冊日起算**，六個都一樣。在此之前這裡沒有
+  /// `demo` 開關，於是真實使用者一建出來就帶著 7 筆「能力值已退步」
+  /// 的假紀錄（肩累積 14、手 31、核心 37）—— 使用者 2026-09-24 回報。
+  ///
+  /// `resetToNewAccount()` 會修正它們，但那只在完成註冊流程時跑；
+  /// 存檔缺 `decayTimers` 這個鍵時（舊存檔）那份假資料就會留著。
   late final Map<Dim, DimDecay> decayTimers = {
     for (final e in const {
       Dim.chest: 0,
@@ -160,8 +174,9 @@ class AppState extends ChangeNotifier {
       Dim.arms: 26,
       Dim.core: 46,
     }.entries)
-      e.key: _freshTimer(
-          businessDate(DateTime.now()).subtract(Duration(days: e.value))),
+      e.key: _freshTimer(demo
+          ? businessDate(DateTime.now()).subtract(Duration(days: e.value))
+          : registeredOn),
   };
 
   static DimDecay _freshTimer(DateTime lastTrained) =>
@@ -1007,16 +1022,38 @@ class AppState extends ChangeNotifier {
 
     // 自任務池隨機抽取指派。允許與前一日重複，不做跨日去重。
     redrawDailyTasks();
-    // 進度的計數範圍限當日，隨重置清空；全部完成的加碼旗標同樣歸零。
+    // 進度的計數範圍限當日，隨重置清空；全部完成的兩個加碼旗標同樣歸零
+    // —— 分數那個在完成當下給，金幣那個在全部領取之後給。
     _allTasksBonusGiven = false;
+    _allTasksCoinGiven = false;
     notifyListeners();
     return true;
+  }
+
+  /// 全部完成的加碼**金幣**是否已發。
+  ///
+  /// 與上面的 [_allTasksBonusGiven] 不是同一件事 —— 那個管的是**排行榜
+  /// 分數**的加碼，在任務「完成」當下就給；這個管金幣，在三項都**領取**
+  /// 之後才給（獎勵須由使用者主動點擊領取，見〈每日任務流程〉）。
+  ///
+  /// **在此之前那 4 枚金幣只掛在「領取全部」那顆按鈕上**，一項一項點的人
+  /// 永遠拿不到，一天只有 6 金幣而不是規格寫的 10
+  /// （〈02_Aggregate定義〉每日任務 300／月 ＝ 10／日）。
+  bool _allTasksCoinGiven = false;
+
+  /// 三項都領完就給加碼金幣。兩個領取路徑共用這一支，不再各寫一份。
+  void _giveAllTasksCoinIfDue() {
+    if (_allTasksCoinGiven) return;
+    if (!dailyTasks.every((t) => t.claimed)) return;
+    _allTasksCoinGiven = true;
+    coins += kDailyTaskAllDoneCoin;
   }
 
   void claimTask(DailyTask t) {
     if (!t.done || t.claimed) return;
     t.claimed = true;
     coins += kDailyTaskCoin;
+    _giveAllTasksCoinIfDue();
     notifyListeners();
   }
 
@@ -1027,7 +1064,7 @@ class AppState extends ChangeNotifier {
         coins += kDailyTaskCoin;
       }
     }
-    if (allTasksDone) coins += 4; // 全部完成加碼金幣
+    _giveAllTasksCoinIfDue();
     notifyListeners();
   }
 
@@ -4838,7 +4875,11 @@ class AppState extends ChangeNotifier {
               m.fromMeFor(me),
               m.text,
               m.at,
-              read: m.readBy.containsKey(me),
+              // **「已讀」問的是對方讀了沒，不是我讀了沒。**
+              // 畫面只在 `fromMe && read` 時顯示已讀，所以這裡要看
+              // 對方的 uid 在不在 `readBy` 裡。原本寫 `me` ——
+              // 我送的訊息只要我自己開過對話就會標成已讀。
+              read: m.readBy.containsKey(m.fromMeFor(me) ? peerUid : me),
               category: m.category,
               pendingReview: m.pendingReview,
             ),

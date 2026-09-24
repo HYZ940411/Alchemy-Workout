@@ -50,7 +50,7 @@ Command、Event、Aggregate、不變條件與已定案的決策。程式碼與�
 
 ```bash
 flutter analyze                       # 應該完全乾淨
-flutter test --timeout 90s            # 應為 1,712 passed
+flutter test --timeout 90s            # 應為 1,725 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                       # 應為 17 passed（需要 Chrome）
 ./tools/build_web.sh                  # Web 建置，見第 6 節第 8 條
@@ -377,6 +377,17 @@ flutter build macos --release
    **`answer` 於 2026-09-24 隨 `[BE-15]` 一併接上** ——
    `answerQuestion()` 從一個計數器改成真的存下回答、標記時點並寫雲端。
 
+0i. **別人的粉絲數永遠不會因為你的關注而改變。**〔使用者已裁決修法：A〕
+   `follows/` 集合是關係的真相來源，但畫面顯示的是
+   `public_profiles/{uid}.followers` 這個衍生計數 —— **而那份文件只有
+   本人寫得了**（安全規則：只有本人可寫）。所以你關注某人，`follows/`
+   多一筆，對方的 `followers` 欄位不動；一重新整理，`applyPublicProfiles`
+   把本機計數重設成對方檔案上的值，你的 +1 就消失了。
+   使用者 2026-09-24 回報「重新追蹤刷新後顯示還是 0」—— 這是必然，不是偶發。
+   **裁決：改成即時數 `follows` 集合**（Firestore `count()` 聚合查詢），
+   開啟別人檔案頁時查一次。數字永遠是真的，不依賴對方登入。
+   （否決 B「本人登入時重算並發布」—— 那等於把現在這個 bug 正式化成規格。）
+
 0g. **2026-09-24 這批雲端接線只用假物件驗過，沒有真人跑過。**
    師徒（`bond`／`recover`／`ask`）、貼文與留言的編輯／刪除、教官清單，
    全部只由測試裡的假 `Source` 確認過「寫出去的內容是對的」。
@@ -562,6 +573,8 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-09 | 27 份課表的階級門檻**全部拿掉** | Beta 期間多數測試者階級低，設門檻等於大半內容收不到回饋；回歸課表更不該鎖 —— 退步的人才需要它 |
 | 2026-09-09 | 課表的每組**目標重量一律為 0** | 資料以 RPE（自覺強度）開處方，不指定公斤數。替一個沒見過的人填具體重量，比留白危險 |
 | 2026-09-09 | 循環式課表**維持現狀**（輪數當組數） | 完整表達需要在課表模型加「區段」概念，成本 2–3 天，暫不做 |
+| 2026-09-24 | **上線後第二批實測修正**：師徒 `bond()` 被安全規則擋下、新帳號帶著退步假資料、每日任務加碼金幣拿不到、私訊一送出就顯示已讀，＋三處文案移除 | ①`bond()` 建立關係前查「這位學徒是否已有教官」，而 Firestore **不會過濾查詢結果、會整個拒絕查詢** —— 教官那一側查的是 `apprenticeUid == 對方`，規則保證不了 → permission-denied，且呼叫端吞掉錯誤，**接受拜師申請畫面成功、雲端什麼都沒發生**。檢查改為只在「我就是那位學徒」時做。`fake_cloud_firestore` 不套用安全規則，所以原本測得過。②`decayTimers` 與 `registeredOn` **沒有 `demo` 開關**（旁邊的集合類全都有），`AppState(demo: false)` 一建出來就有 7 筆退步假紀錄 —— 2026-09-16 那次假資料清查清的是集合，漏了純量與計時器。③加碼 4 金幣只掛在「領取全部」按鈕上，逐項領取的人一天只拿 6 而非規格的 10。④`ChatMessage.read` 預設 `true`，且雲端路徑寫 `readBy.containsKey(me)` —— 「已讀」問的是**對方**讀了沒 |
+| 2026-09-24 | 每日任務**不給經驗值**（使用者裁決） | `platform_config` 的獎勵參數裡簽到／訓練／新手／回歸／排行榜都有各自的 Exp，唯獨每日任務只有金幣；〈每日任務流程〉也只提排行榜分數。維持現狀，不改經驗值的經濟模型 |
 | 2026-09-24 | **修掉上線後實測回報的四項**：條款閘門在 `AuthGate` 那條路沒接、選單補充說明移除、封鎖加二次確認、粉絲數可被扣成負數 | ①**條款閘門只加在 `FirstRunGate`**，而 `main.dart` 有分支：接了 Firebase 走 `AuthGate._SignedInHome`，那條路直接開 `HomeShell` —— 線上實際走的正是它，所以使用者登入後看不到條款頁。閘門已收斂成共用的 `TermsGate`。②③使用者裁示。④已關注時封鎖對方，粉絲數變 −1：這個計數會被 `applyPublicProfiles` 重設成對方檔案上的值（只有他自己更新得了），而本機 `following` 還留著 —— 聲望早有地板，粉絲數漏掉 |
 | 2026-09-24 | **`[BE-15]` 師徒教官側完成**：學徒清單、任務與問答的讀回、教官回答、星等統計 | 使用者選擇一次做完而非先拿掉假數字。`MentorTask`／`MentorQuestion` 補上 `id` 與 `apprenticeUid`（原本是一份共用清單，分不出是哪位學徒的）；`applyCloudBonds` 兩側都處理；`tasks()`／`questions()` 接上 `loadMentorSideOf()`；`answerQuestion()` 從計數器改成真的寫入。**星等由任務上的評分推導**，不另存會漂移的數字；`ratingCount == 0` 時畫面顯示「尚無評分」 |
 | 2026-09-24 | `data_source_wiring_test` 再擴一次：**方法名撞到欄位名也要具名承認** | `MentorSource.tasks()`／`questions()` 同樣沒有呼叫端，而畫面上有個同名的 `s.questions` 欄位 —— 這是第二種撞名成因，與 `dropRequest` 那次（兩個介面同名）不同。兩次都是真的漏抓 |

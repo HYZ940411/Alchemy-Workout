@@ -50,8 +50,6 @@ class _FollowListScreenState extends State<FollowListScreen> {
               names: s.followers,
               emptyTitle: '還沒有粉絲',
               emptyMessage: '持續發文與互動，會慢慢累積粉絲。',
-              footer: '已解鎖 ${s.followerMilestones} 個粉絲成就。'
-                  '粉絲數下降不會撤銷已解鎖的成就。',
               onChanged: () => setState(() {}),
             ),
           ],
@@ -65,14 +63,12 @@ class _List extends StatelessWidget {
   final List<String> names;
   final String emptyTitle;
   final String emptyMessage;
-  final String? footer;
   final VoidCallback onChanged;
   const _List({
     required this.names,
     required this.emptyTitle,
     required this.emptyMessage,
     required this.onChanged,
-    this.footer,
   });
 
   @override
@@ -93,10 +89,6 @@ class _List extends StatelessWidget {
           for (var i = 0; i < names.length; i++)
             _row(context, s, names[i], i != names.length - 1),
         ]),
-        if (footer != null) ...[
-          const SizedBox(height: S.base),
-          Text(footer!, style: T.caption()),
-        ],
       ],
     );
   }

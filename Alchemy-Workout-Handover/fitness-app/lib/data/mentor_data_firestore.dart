@@ -57,14 +57,27 @@ class FirestoreMentor implements MentorSource {
   @override
   Future<void> bond(CloudBond b) async {
     // 不變條件：**同一學徒同時至多一筆生效中。**
-    // 檢查放在這裡而不是呼叫端 —— 呼叫端有好幾條路徑（接受申請、
-    // 接受邀請、恢復關係），每一條都記得檢查是不可能的。
-    final existing = await _col
-        .where('apprenticeUid', isEqualTo: b.apprenticeUid)
-        .where('state', isEqualTo: MentorBondState.active.name)
-        .limit(1)
-        .get();
-    if (existing.docs.isNotEmpty) return;
+    //
+    // **只有「我就是那位學徒」時查得動。** 安全規則要求每筆關係的
+    // mentorUid 或 apprenticeUid 等於我，而 Firestore 不會過濾查詢結果 ——
+    // 它整個拒絕查詢，除非查詢條件本身保證所有結果都通得過。
+    //
+    // 我是教官時查的是 `apprenticeUid == 對方`，保證不了 → permission-denied，
+    // 而呼叫端是即發即忘吞掉錯誤，所以**接受拜師申請會畫面成功、
+    // 雲端什麼都沒發生**。2026-09-24 上線後對照規則查出來的。
+    //
+    // 已知殘留：教官這一側驗不了對方是不是剛拜了別人為師。學徒那一側
+    // 的 `mentorApplyBlockedReason()` 本來就擋著（有教官就不能再申請），
+    // 而「一位學徒只能有一位教官」本來也是學徒的不變條件 ——
+    // 由他那一側把關比較合理。
+    if (b.apprenticeUid == uid) {
+      final existing = await _col
+          .where('apprenticeUid', isEqualTo: uid)
+          .where('state', isEqualTo: MentorBondState.active.name)
+          .limit(1)
+          .get();
+      if (existing.docs.isNotEmpty) return;
+    }
 
     await _col.doc(b.id).set({
       'mentorUid': b.mentorUid,

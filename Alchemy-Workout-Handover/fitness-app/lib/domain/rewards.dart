@@ -69,6 +69,13 @@ int get kReturnTaskCredit => platformConfig.i('reward', 'returnCredit');
 const int kLeaderboardBase = 100; // 訓練結算基準分
 /// 每日任務單項的金幣獎勵。
 const int kDailyTaskCoin = 2;
+
+/// 三項每日任務全部領取後的加碼金幣。
+///
+/// 2×3 ＋ 4 ＝ **一天 10 金幣**，與〈02_Aggregate定義〉的
+/// 「每日任務 300／月」相符。在此之前這個 4 是寫死在 `claimAllTasks()`
+/// 裡的字面量，而且只掛在「領取全部」那顆按鈕上。
+const int kDailyTaskAllDoneCoin = 4;
 const int kDailyTaskScorePerItem = 10; // 每日任務進度 10 分／項
 const int kDailyTaskAllBonusScore = 20; // 全部完成加碼 20 分
 

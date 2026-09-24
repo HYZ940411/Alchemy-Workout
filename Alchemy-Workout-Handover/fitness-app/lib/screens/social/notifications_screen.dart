@@ -70,7 +70,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             S.scrollBottom,
           ),
           children: [
-            SectionTitle('今日推播', trailing: '上限 $kDailyPushLimit 則／日'),
+            const SectionTitle('今日推播'),
             if (sent.isEmpty)
               AppCard(child: Text('今天沒有推播。', style: T.caption()))
             else
@@ -112,7 +112,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ],
 
-            const SectionTitle('App 內通知', trailing: '不推播，不受上限'),
+            const SectionTitle('App 內通知'),
             if (inApp.isEmpty)
               AppCard(child: Text('沒有 App 內通知。', style: T.caption()))
             else

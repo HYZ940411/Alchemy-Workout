@@ -619,6 +619,11 @@ class ChatMessage {
   final bool fromMe;
   final String text;
   final DateTime at;
+  /// **對「我送出的訊息」而言，這是「對方讀了沒」。**
+  ///
+  /// 畫面只在 `fromMe && read` 時顯示「已讀」（見 `chat_screen`）——
+  /// 所以它從來不是「我讀了沒」。預設曾是 `true`，於是我一送出訊息
+  /// 就立刻標成已讀，使用者 2026-09-24 回報。
   final bool read;
 
   /// 訊息分類。**於發送當下依雙方關係判定並寫入**，其後關係變化
@@ -637,7 +642,7 @@ class ChatMessage {
     this.fromMe,
     this.text,
     this.at, {
-    this.read = true,
+    this.read = false,
     this.category = MessageCategory.normal,
     this.pendingReview = false,
     this.deleted = false,
