@@ -144,6 +144,36 @@ extension AppStateSnapshot on AppState {
         'noviceChecked': noviceChecked,
         'noviceFinished': noviceFinished,
         'noviceRewardClaimed': noviceRewardClaimed,
+
+        // --- 引導收尾：偏好訓練時段與體驗評分 ---
+        //
+        // **這兩個原本不在存檔裡。** 新手任務的最後兩步問了使用者，
+        // 然後在下一次重新整理時把答案丟掉 —— 而重填一次還是會丟。
+        // 偏好時段沒了，訓練提醒就沒有來源（`reminderSource` 會說
+        // 「尚未填寫」）；評分沒了，那一頁又會回頭問一次。
+        //
+        // 收尾這一段是後來才加的，旁邊的 `noviceStarted`／`noviceFinished`
+        // ／`noviceRewardClaimed` 全都有存 —— **只有這兩個漏掉**。
+        //
+        // 七天各自一組區間；`PreferredTimes` 建構時會自己正規化
+        // （排序、合併重疊），所以讀回來不必再處理一次。
+        'preferredTimes': [
+          for (final day in preferredTimes.byDay)
+            [
+              for (final r in day) {'from': r.startMin, 'to': r.endMin},
+            ],
+        ],
+        'experienceRatings': [
+          for (final r in experienceRatings)
+            {
+              'target': r.target.name,
+              'targetId': r.targetId,
+              'rater': r.rater,
+              'stars': r.stars,
+              'feedback': r.feedback,
+              'at': _iso(r.at),
+            },
+        ],
         'socialUnlocked': socialUnlocked,
         'returnTaskAssigned': returnTaskAssigned,
         'returnTaskAssignedAt': _iso(returnTaskAssignedAt),
@@ -485,6 +515,38 @@ extension AppStateSnapshot on AppState {
     noviceChecked = boolOf('noviceChecked', noviceChecked);
     noviceFinished = boolOf('noviceFinished', noviceFinished);
     noviceRewardClaimed = boolOf('noviceRewardClaimed', noviceRewardClaimed);
+
+    // 缺鍵時不動預設值（空的）—— 舊存檔沒有這兩個鍵。
+    if (pick<List>('preferredTimes') case final days?) {
+      preferredTimes = PreferredTimes([
+        for (final day in days)
+          [
+            if (day is List)
+              for (final r in day)
+                if (r is Map)
+                  TimeRange(
+                      (r['from'] as num?)?.toInt() ?? 0,
+                      (r['to'] as num?)?.toInt() ?? 0),
+          ],
+      ]);
+    }
+    if (pick<List>('experienceRatings') case final rows?) {
+      experienceRatings.clear();
+      for (final r in rows) {
+        if (r is! Map) continue;
+        final target = _enumByName(RatingTarget.values, r['target']);
+        final at = _date(r['at']);
+        if (target == null || at == null) continue;
+        experienceRatings.add(ExperienceRating(
+          target: target,
+          targetId: r['targetId'] as String? ?? '',
+          rater: r['rater'] as String? ?? '',
+          stars: (r['stars'] as num?)?.toInt() ?? 0,
+          feedback: r['feedback'] as String?,
+          at: at,
+        ));
+      }
+    }
     socialUnlocked = boolOf('socialUnlocked', socialUnlocked);
     returnTaskAssigned = boolOf('returnTaskAssigned', returnTaskAssigned);
     returnTaskAssignedAt = _date(j['returnTaskAssignedAt']);

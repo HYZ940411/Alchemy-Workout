@@ -8678,6 +8678,11 @@ class AppState extends ChangeNotifier {
     _trainNoticeStage = DecayStage.normal;
     _checkInNoticeStage = CheckInStage.normal;
 
+    // 引導收尾：偏好時段與體驗評分屬於「這個人的回答」，不是平台資料。
+    // 新帳號還沒被問過。
+    preferredTimes = PreferredTimes.empty();
+    experienceRatings.clear();
+
     // 回歸任務：新帳號沒有任何紀錄。
     returnTaskAssigned = false;
     returnTaskDone = false;
