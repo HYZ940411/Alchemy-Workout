@@ -7603,12 +7603,60 @@ class AppState extends ChangeNotifier {
   // ===========================================================================
 
   /// 管理員與使用者為兩個不同的 Aggregate —— 管理員不必是平台使用者。
+  ///
+  /// 示範身分用的是寫死的 `kCurrentAdmin`（三種權限全開），
+  /// 真實帳號則由 [applyAdminClaim] 依 Firebase Auth 的 custom claim 建出來。
   Admin admin = kCurrentAdmin;
   bool adminMode = false;
 
-  late List<ReportCase> reports = buildReports();
-  late List<AppealCase> appeals = buildAppeals();
-  late List<InstructorCase> instructorCases = buildInstructorCases();
+  /// Firebase Auth 的 `admin` custom claim。**這是唯一的判準。**
+  ///
+  /// `firestore.rules` 的 `isAdmin()` 看的就是 `request.auth.token.admin`，
+  /// 所以畫面上的判斷必須與它同源 —— 不然會出現「後台進得去、
+  /// 每個寫入都被規則擋下」那種最難查的狀態。
+  ///
+  /// **在此之前根本沒有這個欄位。** `admin` 是寫死的假管理員，
+  /// `adminMode` 這個開關全 App 沒有任何地方切換它，後台只掛在
+  /// 開發者模式的「流程示範」底下 —— 也就是任何人長按三秒都進得去，
+  /// 而真正的管理員沒有入口。
+  bool adminClaim = false;
+
+  /// 我是不是平台管理員。
+  bool get isPlatformAdmin =>
+      adminClaim && admin.status == AdminStatus.active;
+
+  /// 套用登入時拿到的 custom claim。
+  ///
+  /// [scopes] 為 claim 裡的 `adminScopes`（權限組名稱陣列）。**沒給就是三種全開**
+  /// —— 規則那一側只認得 `admin == true`，分不出權限組；畫面上比規則嚴格
+  /// 是可以的（少給），比規則寬鬆才是問題。
+  void applyAdminClaim(bool isAdmin, {List<String>? scopes}) {
+    adminClaim = isAdmin;
+    if (!isAdmin) {
+      adminMode = false;
+      notifyListeners();
+      return;
+    }
+    final parsed = <AdminScope>{
+      for (final name in scopes ?? const <String>[])
+        ?AdminScope.values.where((v) => v.name == name).firstOrNull,
+    };
+    admin = Admin(
+      id: myUid ?? admin.id,
+      name: displayName,
+      scopes: parsed.isEmpty ? AdminScope.values.toSet() : parsed,
+    );
+    notifyListeners();
+  }
+
+  // 後台的待審佇列與名冊。**`demo ? ... : []`** —— 與 `posts`／`socialUsers`
+  // 同一個開關。在此之前這七份全都沒有開關，於是真管理員會看到一批
+  // 編出來的檢舉、申訴、教官審核案件，並對它們做裁決。
+  // （`ratingSummaries` 是同一個毛病，2026-09-24 一起修。）
+  late List<ReportCase> reports = demo ? buildReports() : [];
+  late List<AppealCase> appeals = demo ? buildAppeals() : [];
+  late List<InstructorCase> instructorCases =
+      demo ? buildInstructorCases() : [];
   // ===========================================================================
   // 自訂訓練 Aggregate —— 使用者端的管理頁與管理員端的待審佇列讀同一份
   // ===========================================================================
@@ -7831,9 +7879,10 @@ class AppState extends ChangeNotifier {
   bool planQuotaLocked(CustomPlan p) => quotaLockedPlanIds.contains(p.id);
 
 
-  late List<PublicPlanCase> publicPlanCases = buildPublicPlanCases();
-  late List<AdminProduct> adminProducts = buildAdminProducts();
-  late List<AdminOrder> adminOrders = buildAdminOrders();
+  late List<PublicPlanCase> publicPlanCases =
+      demo ? buildPublicPlanCases() : [];
+  late List<AdminProduct> adminProducts = demo ? buildAdminProducts() : [];
+  late List<AdminOrder> adminOrders = demo ? buildAdminOrders() : [];
   /// 管理員評分彙總（`04_ReadModel清單.md`）。
   ///
   /// **`demo ? ... : []`** —— 與 `posts`／`socialUsers`／`instructors` 同一個
@@ -8335,7 +8384,7 @@ class AppState extends ChangeNotifier {
 
   // --- 管理員本身的維護（3 個 Command，權限組為平台設定）---
 
-  late List<Admin> admins = buildAdmins();
+  late List<Admin> admins = demo ? buildAdmins() : [];
 
   /// 內容審核組的**另一位**管理員。
   ///

@@ -42,6 +42,27 @@ class AuthService {
   /// `lib/data/` 底下，`ai_suggestion_http.dart` 不必知道它的存在。
   Future<String?> idToken() async => _auth.currentUser?.getIdToken();
 
+  /// 目前使用者的 custom claims。沒登入或讀不到回空的 Map。
+  ///
+  /// 管理員身分靠這個 —— `firestore.rules` 的 `isAdmin()` 看的正是
+  /// `request.auth.token.admin`，畫面上的判斷必須與規則**同源**。
+  /// 各自判斷的話會出現「後台進得去、每個寫入都被規則擋下」，
+  /// 那是最難查的一種：兩邊都覺得自己是對的。
+  ///
+  /// **claim 是烘進 token 的**，所以剛設定完要重新登入（或等 token
+  /// 換新）才生效。[refresh] 為真時強制換一份新的 token。
+  Future<Map<String, dynamic>> claims({bool refresh = false}) async {
+    final user = _auth.currentUser;
+    if (user == null) return const {};
+    try {
+      final r = await user.getIdTokenResult(refresh);
+      return r.claims ?? const {};
+    } catch (_) {
+      // 讀不到 claim 就當作不是管理員 —— 這個方向的失敗是安全的。
+      return const {};
+    }
+  }
+
   /// 用 Google 帳號登入。
   ///
   /// 使用者中途取消時回傳 `false`，不算錯誤 —— 呼叫端不必顯示任何訊息，

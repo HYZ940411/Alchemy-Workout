@@ -147,6 +147,18 @@ class MoreScreen extends StatelessWidget {
           _Item(Icons.settings_outlined, '設定', '器材、隱私、帳號',
               () => const SettingsScreen()),
         ]),
+        // **真正的管理員有自己的入口，不藏在開發者模式底下。**
+        //
+        // 在此之前後台只掛在下面那個「流程示範」區裡 —— 也就是任何人
+        // 長按頁首三秒都進得去，而真正的管理員沒有入口。它進得去只是
+        // 因為裡面全是假資料；接上 custom claim 之後那就不成立了。
+        if (s.isPlatformAdmin) ...[
+          const SectionLabel('管理員'),
+          _Group(items: [
+            _Item(Icons.admin_panel_settings_outlined, '管理員後台',
+                '待審、訂單、商品、評分', () => const AdminHomeScreen()),
+          ]),
+        ],
         // **這一整區只在開發者模式顯示。**
         // 裡面全是示範與除錯用的畫面 —— 註冊流程重跑、模擬對方、
         // 骨架屏樣式集、管理員後台。一般使用者看到只會問「這是什麼」。
@@ -158,6 +170,8 @@ class MoreScreen extends StatelessWidget {
               () => const SignUpScreen()),
           _Item(Icons.auto_awesome_outlined, 'AI 自動優化', '會員權益，不扣點',
               () => const AiAdjustScreen(source: AiSource.autoOptimize)),
+          // 與上面那個真管理員入口是**同一個畫面**。留著是因為示範身分
+          // 的假案件還撐著「這幾頁長什麼樣」；真帳號進來會看到空的。
           _Item(Icons.admin_panel_settings_outlined, '管理員後台',
               '待審、訂單、商品、評分', () => const AdminHomeScreen()),
           _Item(Icons.grid_view_rounded, '骨架屏與錯誤頁', '六種骨架、四種空狀態、兩種錯誤頁',

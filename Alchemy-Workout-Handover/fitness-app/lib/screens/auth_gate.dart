@@ -415,6 +415,24 @@ class _AuthGateState extends State<AuthGate> {
       });
     }
 
+    // 管理員身分。**與 `firestore.rules` 的 `isAdmin()` 同源** ——
+    // 兩邊各自判斷的話會出現「後台進得去、每個寫入都被規則擋下」。
+    //
+    // 自成一塊：讀不到 claim 不該讓前面那幾塊的結果被丟掉，
+    // 而「不是管理員」本來就是絕大多數人的答案。
+    await step('管理員身分', () async {
+      final claims = await widget.auth.claims();
+      final isAdmin = claims['admin'] == true;
+      final scopes = claims['adminScopes'];
+      widget.state.applyAdminClaim(
+        isAdmin,
+        scopes: scopes is List ? [for (final s in scopes) '$s'] : null,
+      );
+      return isAdmin
+          ? '是管理員（${widget.state.admin.scopes.length} 組權限）'
+          : '一般使用者';
+    });
+
     // **排在最後，不是隨便排的。**
     //
     // 團隊那條要監看「別人申請加入我的隊」，而那批請求掛在隊伍底下 ——

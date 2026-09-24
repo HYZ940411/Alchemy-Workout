@@ -231,6 +231,17 @@ void main() {
           reason: '要排在所有同步區塊之後');
     });
 
+    test('登入時讀管理員 claim —— 判準要與 firestore.rules 同源', () {
+      final i = src.indexOf('Future<void> _syncProfile(');
+      final body = src.substring(i, src.indexOf('@override', i));
+      // 規則的 isAdmin() 看 request.auth.token.admin。畫面上若各自判斷，
+      // 會做出「後台進得去、每個寫入都被規則擋下」——
+      // 那是最難查的一種，兩邊都覺得自己是對的，而失敗是靜默的。
+      expect(body, contains('applyAdminClaim'),
+          reason: '不讀 claim 的話，真管理員永遠不是管理員');
+      expect(body, contains("claims['admin']"));
+    });
+
     test('登出時收掉訂閱 —— 不收會讓下一個帳號被上一個的變動叫醒', () {
       // 訂閱綁在建立它的那個 Source 上（帶著當時的 uid），
       // Source 換掉了舊訂閱不會自己停。

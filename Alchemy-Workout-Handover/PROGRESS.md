@@ -50,7 +50,7 @@ Command、Event、Aggregate、不變條件與已定案的決策。程式碼與�
 
 ```bash
 flutter analyze                       # 應該完全乾淨
-flutter test --timeout 90s            # 應為 1,811 passed
+flutter test --timeout 90s            # 應為 1,825 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                       # 應為 17 passed（需要 Chrome）
 ./tools/build_web.sh                  # Web 建置，見第 6 節第 8 條
@@ -486,21 +486,28 @@ firebase deploy --only hosting
    **症狀對照**：出現「畫面上成功、重新整理就沒了」＝安全規則擋掉了。
    那正是 `bond()` 那次的形狀（呼叫端即發即忘吞掉錯誤，完全無聲）。
 
-0j. **管理員後台整個還沒接上 Firebase，而且顯示的是假資料。**
-   2026-09-24 為了回答「管理員看得到使用者的評分嗎」查出來的一整串：
+0j. ~~**管理員後台整個還沒接上 Firebase，而且顯示的是假資料。**~~
+   **程式那一側已修（2026-09-24）；只差有人真的拿到 claim**
 
-   - `AppState.admin = kCurrentAdmin` 是**寫死的假管理員**；
-     `adminMode` 這個欄位**在 `lib/screens/` 底下沒有任何地方切換它**。
-     也就是後台目前沒有入口，也不看 Firebase Auth 的 custom claim。
-   - `firestore.rules` 的 `isAdmin()` 看的是 `request.auth.token.admin`，
-     而**目前沒有任何帳號帶得到那個 claim**（`[BE-13]` 已記）。
-   - 後台那幾份佇列 **沒有 `demo` 開關**：`reports`／`appeals`／
+   已修：
+   - 管理員身分改由 Firebase Auth 的 `admin` custom claim 決定
+     （`AppState.applyAdminClaim`），**與 `firestore.rules` 的 `isAdmin()`
+     同源** —— 各自判斷會做出「後台進得去、每個寫入都被規則擋下」，
+     那是最難查的一種，因為兩邊都覺得自己是對的。
+   - 真管理員在「我的」有自己的入口，不再只掛在開發者模式底下
+     （在此之前**任何人長按頁首三秒都進得去**）。
+   - 後台那七份佇列補上 `demo` 開關：`reports`／`appeals`／
      `instructorCases`／`publicPlanCases`／`adminProducts`／`adminOrders`
-     ／`admins`。真管理員會看到一批編出來的案件並對它們做裁決。
-     （`ratingSummaries` 同一個毛病，已於 2026-09-24 修掉。）
+     ／`admins`（`ratingSummaries` 同批）。
+   - 新增 `tools/set_admin_claim.py`（設定／撤銷／列出）。
 
-   設 custom claim 需要 Admin SDK（service account 私鑰或 ADC），
-   本機**兩者都沒有**，也沒裝 gcloud —— 要做這一項得先解決憑證。
+   **還沒做的，而且卡在憑證**：本機沒有 service account 私鑰、沒有
+   ADC、也沒裝 gcloud，所以**還沒有任何帳號真的拿到 claim**。
+   要授權得先從 Firebase Console 下載一把私鑰
+   （**那個檔案不可進版控**，repo 根目錄的 `.gitignore` 已擋）。
+
+   另外注意：**claim 是烘進 ID token 的**，設定完已登入的裝置要重新登入
+   （或等 token 換新，約一小時）才生效。
 
    平台目錄類的 `buildDailyTasks`／`buildAchievements`／`buildProducts`
    ／`buildTaskPool`／`buildExamBank` 等**沒有開關是對的**：
@@ -700,6 +707,7 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-09 | 課表的每組**目標重量一律為 0** | 資料以 RPE（自覺強度）開處方，不指定公斤數。替一個沒見過的人填具體重量，比留白危險 |
 | 2026-09-09 | 循環式課表**維持現狀**（輪數當組數） | 完整表達需要在課表模型加「區段」概念，成本 2–3 天，暫不做 |
 | 2026-09-24 | **修正：偏好時段的形狀讓 Firestore 整份拒收**，帳號從部署那一刻起什麼都存不起來 | **這是我上一筆改動造成的線上事故。** 形狀寫成「七天各一個陣列」`[[{from,to}], [], ...]` —— 陣列包陣列，Firestore 不收，而且不是丟掉那個欄位，是**整份寫入被拒**。`saveNow()` 靜默吞掉寫入失敗，所以症狀是「這個帳號從此什麼都存不起來」，唯一的跡象是某一頁顯示「未填寫」。測試全綠是因為 `persistence_test` 用 MemoryStore／FileStore（純 JSON，收得下巢狀陣列），而 `store_firestore_test` 那條「不可以有巢狀陣列」**寫死只看訓練歷史的 sets**。改成攤平的 `[{day,from,to}]`；新增 `test/snapshot_firestore_shape_test.dart` —— 拿真的 `toSnapshot()` 走真的 `FirestoreStore.save()`，再走遍寫進去的每一份文件找巢狀陣列；`saveNow()` 記下失敗原因與連續次數，開發者模式看得到 |
+| 2026-09-24 | **管理員身分改由 Firebase Auth 的 custom claim 決定**，後台七份假佇列一併關掉 | 使用者問「我的帳號可以成為管理員嗎」，查下去整個後台是斷的：`admin` 是寫死的假管理員（三種權限全開）、`adminMode` 這個欄位**全 App 沒有任何地方切換它**、後台唯一入口掛在「流程示範」區底下 —— 條件是開發者模式，也就是**任何人長按「我的」頁首三秒都進得去**。它之所以看起來沒問題，只是因為裡面全是假資料。判準改成 `request.auth.token.admin`，**與 `firestore.rules` 的 `isAdmin()` 同源** —— 各自判斷會做出「後台進得去、每個寫入都被規則擋下」，那是最難查的一種：兩邊都覺得自己是對的，而失敗是靜默的。`adminScopes` claim 可細分權限組，不給＝全開（畫面上比規則嚴格可以，比規則寬鬆才是問題）。七份佇列補上 `demo` 開關。新增 `tools/set_admin_claim.py`。`test/admin_identity_test.dart` 13 條，5 個突變全數轉紅 |
 | 2026-09-24 | **`[BE-17]` 動態牆改成兩段式載入** | 使用者回報「貼文載入的有點慢」。`recent()` 原本一趟撈 30 篇，然後**每篇各再兩趟**（留言、我按過讚沒有）—— 61 趟全部回來才回傳，動態牆要等最慢的那一趟才畫得出第一個字。拆成 `recent()`（本體）與 `fillDetails()`（細節），一趟回來就先畫。為了不讓留言與愛心「消失一秒再跳回來」，`applyCloudPosts` 在雲端那份還沒補細節時沿用畫面上已有的，而 `_fillComments` 補之前先 `clear()`，所以真的被刪掉的留言不會留著 |
 | 2026-09-24 | **管理員評分彙總原本顯示編出來的假資料** | 使用者問「確認管理員能看到他們的評分嗎」。答案是**看不到**，而且更糟：`ratingSummaries` **沒有 `demo` 開關**（旁邊的 `posts`／`socialUsers`／`instructors` 全都有），真實管理員看到的是一張編出來的評分表 —— 而這張表的用途正是回答「哪一份訓練計畫該改」。已加上開關，空的時候說清楚為什麼空。真正接上見 `[BE-18]` |
 | 2026-09-24 | **檔案頁的公開貼文改用動態牆同一張卡，不再截斷** | 使用者回報「公開貼文顯示不完整，少了更早發布的文章，只有最新的兩篇。文章可否改為像是動態那樣，有按讚留言檢舉等功能」。在此之前那一段是檔案頁**自己畫的**：兩行純文字、`take(2)`、沒有按讚留言檢舉，也點不進貼文詳情。**修法不是把 `take(2)` 拿掉再補幾顆按鈕** —— 那會做出第二張慢慢長歪的卡片，而這個專案的 bug 有一整排正是「同一個決定寫在兩個地方，只有一處做對」（貼文選單漏分支、條款閘門只加一條路）。動態牆的 `_PostCard` 抽成共用的 `PostCard`，兩邊用同一張，`test/profile_posts_test.dart` 釘「兩邊真的是同一張」（含自己的貼文在檔案頁上也是編輯／刪除而非檢舉 —— 那正是 9/23 修過的分支）。另外 `postsBy()` 補上由新到舊排序：它原本不排，倚賴 `posts` 本身的順序，而 `applyCloudPosts` 會排、本機新發的卻是直接插進去的 —— 順序不對時「最新兩篇」拿到的會是別的兩篇。標題改成寫出總篇數 |
