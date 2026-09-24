@@ -335,6 +335,10 @@ class _AuthGateState extends State<AuthGate> {
       await step('貼文', () async {
         final got = await posts.recent(limit: AppState.kPostFeedLimit);
         widget.state.applyCloudPosts(got);
+        // **不 await 補細節。** 留言與讚是一篇各一趟，30 篇就是 60 趟；
+        // 等它們回來才往下跑，後面的私訊、團隊、師徒全都排在後面。
+        // 貼文本體已經在畫面上了，留言晚幾百毫秒到就好。
+        widget.state.fillPostDetails(got);
         return '${got.length} 則';
       });
     }

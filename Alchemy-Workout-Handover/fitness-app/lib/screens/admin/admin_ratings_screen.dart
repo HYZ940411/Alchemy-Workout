@@ -24,19 +24,37 @@ class AdminRatingsScreen extends StatelessWidget {
         padding:
             const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
         children: [
-          Row(
-            children: [
-              const Icon(Icons.schedule,
-                  size: Sz.iconDense, color: C.textSecondary),
-              const SizedBox(width: S.sm),
-              Expanded(
-                child: Text('延遲更新　·　資料更新於 2 小時前', style: T.caption()),
+          if (rows.isEmpty)
+            // **說實話比留一張空表好。** 使用者的評分目前存在他自己的
+            // `users/{uid}` 底下，而那棵樹依安全規則只有本人讀得到 ——
+            // 不是「還沒有人評分」，是這條路根本還沒接。
+            // 在此之前這裡畫的是一張編出來的假彙總表，而這張表的用途
+            // 正是回答「哪一份訓練計畫該改」。
+            Panel(
+              color: C.statusWarning.withValues(alpha: 0.08),
+              border: C.statusWarning,
+              child: Text(
+                '評分尚未接上後台。\n'
+                '使用者的評分目前存在各自的帳號資料裡，管理端讀不到 ——'
+                '這裡不會有資料，直到評分獨立成自己的集合（BE-18）。',
+                style: T.caption(),
               ),
-            ],
-          ),
-          const SizedBox(height: S.md),
-          // 兩種評分對象類型共用同一張彙總表，新手任務為其中一列
-          for (final r in rows) _SummaryCard(r: r),
+            )
+          else ...[
+            Row(
+              children: [
+                const Icon(Icons.schedule,
+                    size: Sz.iconDense, color: C.textSecondary),
+                const SizedBox(width: S.sm),
+                Expanded(
+                  child: Text('延遲更新　·　資料更新於 2 小時前', style: T.caption()),
+                ),
+              ],
+            ),
+            const SizedBox(height: S.md),
+            // 兩種評分對象類型共用同一張彙總表，新手任務為其中一列
+            for (final r in rows) _SummaryCard(r: r),
+          ],
         ],
       ),
     );

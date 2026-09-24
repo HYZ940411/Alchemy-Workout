@@ -2483,12 +2483,29 @@ class AppState extends ChangeNotifier {
     final src = postSource;
     if (src == null) return false;
     try {
-      applyCloudPosts(await src.recent(limit: kPostFeedLimit));
+      // **兩段。** 先把貼文本體畫出來（一趟查詢），再補留言與讚
+      // （一篇各一趟，30 篇就是 60 趟）。合在一起等的話，動態牆要
+      // 等最慢的那一趟才出現第一個字 —— 使用者回報的「有點慢」。
+      final got = await src.recent(limit: kPostFeedLimit);
+      applyCloudPosts(got);
+      await fillPostDetails(got);
       return true;
     } catch (_) {
       // 讀不到就維持畫面上現有的貼文 —— 下拉失敗不該把動態牆清空。
       return false;
     }
+  }
+
+  /// 補上這幾篇的留言與「我按過讚沒有」，補完重畫。
+  ///
+  /// 失敗只影響這一塊：貼文本體已經在畫面上了，補不到留言不該讓它消失。
+  Future<void> fillPostDetails(List<Post> got) async {
+    final src = postSource;
+    if (src == null) return;
+    try {
+      await src.fillDetails(got);
+      notifyListeners();
+    } catch (_) {/* 留著本體，不清空 */}
   }
 
   /// 登入後每一塊同步的結果。**開發者模式看得到。**
@@ -2638,6 +2655,16 @@ class AppState extends ChangeNotifier {
     for (final p in cloud) {
       final i = posts.indexWhere((x) => x.id == p.id);
       if (i >= 0) {
+        // **留言與讚先沿用畫面上那份。**
+        //
+        // `recent()` 只查貼文本體，留言與「我按過讚沒有」由
+        // `fillDetails()` 隨後補上。中間那幾百毫秒若直接換成空的，
+        // 使用者會看到留言整批消失、愛心變回空心，然後又跳回來。
+        //
+        // 補上之後 `_fillComments` 會先 `clear()`，所以真的被刪掉的
+        // 留言不會因為這裡沿用而留著。
+        if (p.comments.isEmpty) p.comments.addAll(posts[i].comments);
+        p.likedByMe = p.likedByMe || posts[i].likedByMe;
         posts[i] = p;
       } else {
         posts.add(p);
@@ -7807,7 +7834,20 @@ class AppState extends ChangeNotifier {
   late List<PublicPlanCase> publicPlanCases = buildPublicPlanCases();
   late List<AdminProduct> adminProducts = buildAdminProducts();
   late List<AdminOrder> adminOrders = buildAdminOrders();
-  late List<RatingSummary> ratingSummaries = buildRatingSummaries();
+  /// 管理員評分彙總（`04_ReadModel清單.md`）。
+  ///
+  /// **`demo ? ... : []`** —— 與 `posts`／`socialUsers`／`instructors` 同一個
+  /// 開關。在此之前這裡沒有開關，於是**真實的管理員會看到一張編出來的
+  /// 評分表**：幾份訓練計畫、各自的平均星等與則數，全都是假的。
+  ///
+  /// 而這張表的用途正是回答「哪一份訓練計畫該改」。給錯的數字比給空白
+  /// 更糟（守則第 5 條）—— 空白會被看見，錯的不會。
+  ///
+  /// **真實資料還沒接上**：使用者的評分存在 `users/{uid}` 的存檔裡，
+  /// 而那棵樹依 `firestore.rules` 只有本人讀得到。要讓管理員看得到，
+  /// 評分必須獨立成自己的 collection（規格本來就說它是獨立 Aggregate，
+  /// 理由正是「管理員評分彙總需要逐筆下鑽查詢」）。見 `[BE-18]`。
+  late List<RatingSummary> ratingSummaries = demo ? buildRatingSummaries() : [];
 
   void toggleAdminMode() {
     adminMode = !adminMode;

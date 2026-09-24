@@ -23,7 +23,18 @@ abstract class PostSource {
   Future<void> publish(Post p, {required String authorUid});
 
   /// 讀最近的貼文，已填好 `likedByMe`。
+  /// 最近的貼文 —— **只有貼文本體，不含留言與「我按過讚沒有」。**
+  ///
+  /// 那兩樣各是一篇一次查詢：30 篇就是 60 趟往返，而且必須全部回來
+  /// 才畫得出第一個字。使用者回報「貼文載入的有點慢」就是這個。
+  /// 拆開之後，一趟查詢回來就能先把動態牆畫出來。
   Future<List<Post>> recent({int limit});
+
+  /// 補上 [posts] 的留言與「我按過讚沒有」。
+  ///
+  /// **就地改寫傳進來的那幾個物件** —— 呼叫端已經把它們放進畫面了，
+  /// 回傳新的一份就得再比對一次 ID，那又是一個會寫錯的地方。
+  Future<void> fillDetails(List<Post> posts);
 
   /// 按讚 / 取消按讚。
   Future<void> setLike(String postId, {required bool liked});

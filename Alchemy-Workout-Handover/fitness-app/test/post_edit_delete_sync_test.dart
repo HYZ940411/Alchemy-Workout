@@ -57,6 +57,8 @@ class _FakePosts implements PostSource {
       _record('addComment:$postId');
   @override
   Future<List<Post>> recent({int limit = 30}) async => const [];
+  @override
+  Future<void> fillDetails(List<Post> posts) async {}
 }
 
 /// 一個接好雲端的狀態，外加一篇我自己的貼文。

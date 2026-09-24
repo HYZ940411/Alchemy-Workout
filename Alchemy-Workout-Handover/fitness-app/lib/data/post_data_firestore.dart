@@ -129,17 +129,28 @@ class FirestorePosts implements PostSource {
       if (p != null) posts.add(p);
     }
 
-    // 留言與「我按過讚沒有」各自平行查，不要一篇一篇等。
+    // **這裡不補留言與讚了。** 那兩樣各是一篇一次查詢，30 篇就是
+    // 60 趟往返 —— 全部等完才回傳的話，動態牆要等最慢的那一趟。
+    // 改由呼叫端先畫出來，再呼叫 [fillDetails]。
+    return posts;
+  }
+
+  @override
+  Future<void> fillDetails(List<Post> posts) async {
+    // 各自平行查，不要一篇一篇等。
     await Future.wait([
       for (final p in posts) _fillComments(p),
       for (final p in posts) _fillLiked(p),
     ]);
-    return posts;
   }
 
   Future<void> _fillComments(Post p) async {
     final snap =
         await _col.doc(p.id).collection('comments').orderBy('at').get();
+    // **先清空**：這幾個物件可能已經帶著上一輪的留言（見
+    // `AppState.applyCloudPosts` 為了避免閃動而做的沿用）。
+    // 不清的話，重新整理一次留言就多一份。
+    p.comments.clear();
     for (final d in snap.docs) {
       final c = _commentOf(d.id, d.data());
       if (c != null) p.comments.add(c);
