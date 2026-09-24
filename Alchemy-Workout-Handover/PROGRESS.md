@@ -475,6 +475,26 @@ firebase deploy --only hosting
    **症狀對照**：出現「畫面上成功、重新整理就沒了」＝安全規則擋掉了。
    那正是 `bond()` 那次的形狀（呼叫端即發即忘吞掉錯誤，完全無聲）。
 
+0j. **管理員後台整個還沒接上 Firebase，而且顯示的是假資料。**
+   2026-09-24 為了回答「管理員看得到使用者的評分嗎」查出來的一整串：
+
+   - `AppState.admin = kCurrentAdmin` 是**寫死的假管理員**；
+     `adminMode` 這個欄位**在 `lib/screens/` 底下沒有任何地方切換它**。
+     也就是後台目前沒有入口，也不看 Firebase Auth 的 custom claim。
+   - `firestore.rules` 的 `isAdmin()` 看的是 `request.auth.token.admin`，
+     而**目前沒有任何帳號帶得到那個 claim**（`[BE-13]` 已記）。
+   - 後台那幾份佇列 **沒有 `demo` 開關**：`reports`／`appeals`／
+     `instructorCases`／`publicPlanCases`／`adminProducts`／`adminOrders`
+     ／`admins`。真管理員會看到一批編出來的案件並對它們做裁決。
+     （`ratingSummaries` 同一個毛病，已於 2026-09-24 修掉。）
+
+   設 custom claim 需要 Admin SDK（service account 私鑰或 ADC），
+   本機**兩者都沒有**，也沒裝 gcloud —— 要做這一項得先解決憑證。
+
+   平台目錄類的 `buildDailyTasks`／`buildAchievements`／`buildProducts`
+   ／`buildTaskPool`／`buildExamBank` 等**沒有開關是對的**：
+   那些是平台提供給所有人的內容，不是某個帳號的假紀錄。
+
 0h. ~~**既有的師徒關係不會被補寫到雲端。**~~
    **查證後這題的前提是錯的，不必回填（2026-09-24）**
 
