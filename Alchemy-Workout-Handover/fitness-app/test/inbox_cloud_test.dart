@@ -54,6 +54,8 @@ class _FakeTeams implements TeamSource {
       const [];
   @override
   Future<List<CloudTeam>> openTeams({int limit = 30}) async => const [];
+  @override
+  Stream<void> watchTeams({String? myTeamId}) => const Stream.empty();
 }
 
 class _FakeMentor implements MentorSource {
@@ -87,6 +89,8 @@ class _FakeMentor implements MentorSource {
   Future<List<MentorRequest>> requestsFor(String uid) async => const [];
   @override
   Future<void> sendRequest(MentorRequest r) async {}
+  @override
+  Stream<void> watchMentor() => const Stream.empty();
 }
 
 InboundRequest _req(InboundKind kind, String subject,

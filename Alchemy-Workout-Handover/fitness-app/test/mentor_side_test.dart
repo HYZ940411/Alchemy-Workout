@@ -61,6 +61,8 @@ class _FakeMentor implements MentorSource {
   Future<void> sendRequest(MentorRequest r) async {}
   @override
   Future<void> dropRequest(String requestId) async {}
+  @override
+  Stream<void> watchMentor() => const Stream.empty();
 }
 
 CloudBond _bond(String mentor, String apprentice,
@@ -129,6 +131,48 @@ void main() {
       // 學徒那一側的 `_apprenticeBondId` 是 `教官uid_我的uid`，
       // 所以教官算「我_學徒」、學徒算「教官_我」—— 必須一致。
       expect(_bond('u-me', 'u-小明').id, m.s.mentorBondIdFor('u-小明'));
+    });
+  });
+
+  group('學徒側：我的教官', () {
+    /// 學徒那一側 —— 我是 `apprenticeUid`。
+    ({AppState s, _FakeMentor src}) apprentice() {
+      final src = _FakeMentor();
+      final s = AppState(demo: false)
+        ..myUid = 'u-me'
+        ..mentorSource = src;
+      return (s: s, src: src);
+    }
+
+    test('公開檔案還沒載回來，關係也要成立', () {
+      final a = apprentice();
+      expect(a.s.nameByUid['u-師父'], isNull, reason: '前提：查不到這個人的名字');
+
+      a.s.applyCloudBonds([_bond('u-師父', 'u-me')]);
+
+      // 在此之前這裡是 `nameByUid[...]`，查不到就 `continue` —— 整段
+      // 關係被靜靜跳過。而上面教官那一段寫的是 `?? b.apprenticeName`，
+      // 同一個決定寫在兩個地方，只有一處做對。
+      //
+      // 公開檔案是另一塊各自成敗的同步；它慢了或失敗了，使用者看到的
+      // 就是「我的教官不見了」，而雲端好端端的。
+      expect(a.s.myInstructor?.name, '老王');
+      expect(a.s.myInstructor?.uid, 'u-師父');
+    });
+
+    test('公開檔案載回來了就用那個名字 —— 對方改過暱稱', () {
+      final a = apprentice();
+      a.s.nameByUid['u-師父'] = '王教官';
+
+      a.s.applyCloudBonds([_bond('u-師父', 'u-me')]);
+
+      expect(a.s.myInstructor?.name, '王教官');
+    });
+
+    test('我當教官的那一段不會被誤認成我的教官', () {
+      final a = apprentice();
+      a.s.applyCloudBonds([_bond('u-me', 'u-小明')]);
+      expect(a.s.myInstructor, isNull);
     });
   });
 

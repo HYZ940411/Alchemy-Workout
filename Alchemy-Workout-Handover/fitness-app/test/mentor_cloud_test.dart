@@ -59,6 +59,8 @@ class _FakeMentor implements MentorSource {
   Future<void> sendRequest(MentorRequest r) async {}
   @override
   Future<void> dropRequest(String requestId) async {}
+  @override
+  Stream<void> watchMentor() => const Stream.empty();
 }
 
 PublicProfile _instructorProfile(

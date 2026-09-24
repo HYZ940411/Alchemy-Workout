@@ -136,6 +136,18 @@ abstract class MentorSource {
   Future<void> ask(String bondId, CloudQuestion q);
   Future<void> answer(String bondId, String questionId, String text, DateTime at);
 
+
+  /// 有變動時發一次訊號（`[BE-16]`）。**訊號不帶內容。**
+  ///
+  /// 收到的人去跑既有的重讀路徑，不在這裡再解析一次文件 ——
+  /// 理由見 `cloud_watch.dart`。
+  ///
+  /// **查詢條件與上面那支 `bonds()／requestsFor()` 完全一樣。** 這不是巧合，
+  /// 是刻意的：那組條件已經通過線上的安全規則與索引，照抄就不會
+  /// 出現「畫面成功、雲端拒絕」那種無聲的失敗。條件一改就要重新
+  /// 確認規則與 `firestore.indexes.json`。
+  Stream<void> watchMentor();
+
   /// 等我回應的師徒申請。
   Future<List<MentorRequest>> requestsFor(String uid);
   Future<void> sendRequest(MentorRequest r);

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../domain/community.dart';
 import 'team_data.dart';
+import 'cloud_watch.dart';
 
 /// Firestore 上的團隊（[BE-11] 批次 4）。
 ///
@@ -36,6 +37,41 @@ class FirestoreTeams implements TeamSource {
   // ===========================================================================
   // 讀取
   // ===========================================================================
+
+  /// 三條監聽，每一條都照抄一支既有查詢的條件 ——
+  /// 那組條件已通過線上的安全規則與 `firestore.indexes.json`。
+  ///
+  /// 兩條 collection group 監聽刻意**不合併成只查 `uid`**：
+  /// 線上那個索引是 `(uid, isInvite)` 的 COLLECTION_GROUP 複合索引，
+  /// 只查 `uid` 需要另一個「集合群組範圍的單欄位索引」，
+  /// 而那種索引不會自動建立 —— 查詢會直接失敗。
+  ///
+  /// 解散是把 `disbanded` 改成 true，那會讓隊伍**離開**這個結果集，
+  /// 監聽一樣收得到（移除也是變動）。
+  @override
+  Stream<void> watchTeams({String? myTeamId}) => mergeWatches([
+        _col
+            .where('memberUids', arrayContains: uid)
+            .where('disbanded', isEqualTo: false)
+            .snapshots(),
+        _db
+            .collectionGroup('requests')
+            .where('uid', isEqualTo: uid)
+            .where('isInvite', isEqualTo: true)
+            .snapshots(),
+        _db
+            .collectionGroup('requests')
+            .where('uid', isEqualTo: uid)
+            .where('isInvite', isEqualTo: false)
+            .snapshots(),
+        // 別人申請加入我的隊：掛在隊伍底下，不掛在我身上。
+        if (myTeamId != null)
+          _col
+              .doc(myTeamId)
+              .collection('requests')
+              .where('isInvite', isEqualTo: false)
+              .snapshots(),
+      ]);
 
   @override
   Future<CloudTeam?> myTeam() async {

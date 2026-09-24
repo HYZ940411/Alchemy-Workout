@@ -186,6 +186,10 @@ class _AuthGateState extends State<AuthGate> {
       _hydratedFor = null;
       _platformLoaded = false;
       _profileSyncedFor = null;
+      // **訂閱要跟著斷。** 它綁在建立它的那個 Source 上（帶著當時的
+      // uid），Source 換掉了舊訂閱不會自己停 —— 不收的話下一個登入的
+      // 人會被上一個帳號的變動叫醒。
+      widget.state.stopCloudWatch();
     }
     if (mounted) {
       setState(() {
@@ -406,6 +410,15 @@ class _AuthGateState extends State<AuthGate> {
         return '關注 ${a.length}／粉絲 ${b.length}';
       });
     }
+
+    // **排在最後，不是隨便排的。**
+    //
+    // 團隊那條要監看「別人申請加入我的隊」，而那批請求掛在隊伍底下 ——
+    // 要先知道我在哪一隊才訂得到。上面「我的團隊」那一塊剛把它讀回來。
+    //
+    // 也因為一掛上就會先收到一份現況快照（`mergeWatches` 會丟掉），
+    // 排在同步之後才不會跟同步本身搶著寫同一批資料。
+    widget.state.startCloudWatch();
   }
 
   @override

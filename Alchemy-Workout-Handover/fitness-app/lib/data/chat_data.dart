@@ -101,6 +101,18 @@ abstract class ChatSource {
   /// 標記我讀到哪裡。
   Future<void> markRead(String conversationId);
 
+
+  /// 有變動時發一次訊號（`[BE-16]`）。**訊號不帶內容。**
+  ///
+  /// 收到的人去跑既有的重讀路徑，不在這裡再解析一次文件 ——
+  /// 理由見 `cloud_watch.dart`。
+  ///
+  /// **查詢條件與上面那支 `conversations()` 完全一樣。** 這不是巧合，
+  /// 是刻意的：那組條件已經通過線上的安全規則與索引，照抄就不會
+  /// 出現「畫面成功、雲端拒絕」那種無聲的失敗。條件一改就要重新
+  /// 確認規則與 `firestore.indexes.json`。
+  Stream<void> watchConversations();
+
   /// 在我這一側刪除整段對話。**對方仍看得到。**
   Future<void> deleteForMe(String conversationId);
 }

@@ -226,6 +226,39 @@ class SettingsScreen extends StatelessWidget {
                       ],
                     ),
             ),
+            const SizedBox(height: 10),
+            // 即時訂閱（`[BE-16]`）。**「完全沒有變動」與「訂閱根本沒掛上」
+            // 在畫面上長得一模一樣** —— 兩者都是什麼都不動。所以把
+            // 「訂了沒、醒過幾次」攤出來，實測時才分得出是哪一種。
+            Panel(
+              child: s.cloudWatchReport.isEmpty
+                  ? Text(
+                      s.isWatchingCloud
+                          ? '訂閱中。'
+                          : '沒有任何即時訂閱 —— 對方的變動要重新整理才看得到。',
+                      style: const TextStyle(
+                          color: AppColors.textFaint, fontSize: 11.5),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('即時訂閱',
+                            style: TextStyle(
+                                fontSize: 12.5, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 4),
+                        for (final e in s.cloudWatchReport.entries)
+                          Text(
+                            '${e.key}　${e.value}',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: e.value.startsWith('失敗')
+                                  ? C.statusError
+                                  : AppColors.textFaint,
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
           ],
           const SectionLabel('訓練設定'),
           Panel(

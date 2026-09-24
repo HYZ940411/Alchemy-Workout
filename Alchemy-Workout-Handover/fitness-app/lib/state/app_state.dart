@@ -753,6 +753,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _saveTimer?.cancel();
+    stopCloudWatch();
     super.dispose();
   }
 
@@ -2510,10 +2511,103 @@ class AppState extends ChangeNotifier {
     }
     final mentor = mentorSource;
     if (mentor != null) {
+      // **關係本身也要重讀，不只是申請。** B 按下「接受拜師」之後，
+      // A 這一側要看到的是一段新關係 —— 那在 `bonds()` 裡，
+      // 不在 `requestsFor()` 裡（那筆申請反而被刪掉了）。
+      // 少了這一段，即時訂閱會發出訊號卻什麼都沒變。
+      try {
+        applyCloudBonds(await mentor.bonds());
+        await loadMentorSide();
+      } catch (_) {/* 同上 */}
       try {
         applyCloudMentorRequests(await mentor.requestsFor(uid));
       } catch (_) {/* 同上 */}
     }
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // 即時訂閱（`[BE-16]`）
+  // ─────────────────────────────────────────────────────────
+
+  final List<StreamSubscription<void>> _cloudWatches = [];
+  Timer? _cloudWatchDebounce;
+
+  /// 開發者模式看得到：訂了哪幾條、被叫醒過幾次。
+  ///
+  /// **「完全沒有訊號」與「訂閱根本沒掛上」在畫面上長得一模一樣。**
+  /// 這個專案查過三輪的那種 bug 就是這樣 —— 即發即忘、吞掉錯誤、
+  /// 出事時毫無跡象。所以至少把「掛上了沒、醒過幾次」記下來。
+  final Map<String, String> cloudWatchReport = {};
+
+  /// 兩次重讀之間的最短間隔。
+  ///
+  /// 一個動作常常連帶好幾筆文件變動（接受申請＝建關係＋刪申請，
+  /// 兩條監聽各發一次訊號）。沒有這一層，一個動作會觸發兩三趟
+  /// 完整重讀，而每趟都 `notifyListeners()` 讓整個畫面重建。
+  static const _cloudWatchDebounceMs = 400;
+
+  bool get isWatchingCloud => _cloudWatches.isNotEmpty;
+
+  /// 開始監聽雲端變動。登入同步跑完之後呼叫。
+  ///
+  /// **重複呼叫是安全的** —— 會先把舊的收掉。`myTeam` 換了之後
+  /// 要重訂（監看「別人申請加入我的隊」需要知道是哪一隊），
+  /// 所以這支本來就會被叫第二次。
+  void startCloudWatch() {
+    stopCloudWatch();
+    cloudWatchReport.clear();
+
+    void sub(String what, Stream<void>? stream) {
+      if (stream == null) return;
+      var woke = 0;
+      cloudWatchReport[what] = '已訂閱';
+      _cloudWatches.add(stream.listen(
+        (_) {
+          woke++;
+          cloudWatchReport[what] = '已訂閱，叫醒 $woke 次';
+          _onCloudChanged();
+        },
+        onError: (Object e) => cloudWatchReport[what] = '失敗：$e',
+        cancelOnError: false,
+      ));
+    }
+
+    sub('私訊', chatSource?.watchConversations());
+    sub('團隊', teamSource?.watchTeams(myTeamId: myTeam?.id));
+    sub('師徒', mentorSource?.watchMentor());
+
+    // **貼文刻意不訂。** 動態牆已經有下拉重新整理，而按讚會改到
+    // 貼文文件 —— 任何人按一個讚，所有在線的人都得重抓 50 篇貼文
+    // 連同留言。以免費方案每日 5 萬次讀取算，那是會自己燒完的設計。
+    // 關注也不訂：粉絲數在開啟檔案頁時才數一次，沒有「在畫面上等著
+    // 看它變」的情境。
+    notifyListeners();
+  }
+
+  /// 收掉所有監聽。登出、或換帳號時呼叫。
+  ///
+  /// **不收的話訊號會流到上一個帳號的資料上。** 監聽是綁在
+  /// 建立它的那個 Source（帶著當時的 uid）上的，Source 換掉了，
+  /// 舊的訂閱不會自己斷。
+  void stopCloudWatch() {
+    _cloudWatchDebounce?.cancel();
+    _cloudWatchDebounce = null;
+    for (final w in _cloudWatches) {
+      w.cancel();
+    }
+    _cloudWatches.clear();
+  }
+
+  void _onCloudChanged() {
+    _cloudWatchDebounce?.cancel();
+    _cloudWatchDebounce = Timer(
+      const Duration(milliseconds: _cloudWatchDebounceMs),
+      () {
+        _cloudWatchDebounce = null;
+        // 即發即忘：重讀失敗維持畫面現狀，不清空也不擋住使用者。
+        refreshInbound();
+      },
+    );
   }
 
   void applyCloudPosts(List<Post> cloud) {
@@ -4141,8 +4235,16 @@ class AppState extends ChangeNotifier {
     // --- 學徒側：我的教官 ---
     for (final b in bonds) {
       if (b.apprenticeUid != me) continue; // 只處理我當學徒的那一段
-      final name = nameByUid[b.mentorUid];
-      if (name == null) continue;
+      // **在此之前這裡是 `nameByUid[...]`，查不到就 `continue`。**
+      // 上面教官那一段寫的是 `nameByUid[...] ?? b.apprenticeName`——
+      // 同一個決定寫在兩個地方，只有一處做對。
+      //
+      // 後果：`nameByUid` 是從公開檔案來的，而公開檔案是另一塊
+      // 各自成敗的同步。那一塊慢了或失敗了，這裡就靜靜地跳過整段
+      // 關係 —— 使用者看到的是「我的教官不見了」，而雲端好端端的。
+      // 關係文件上本來就帶著 `mentorName`，不必倚賴另一塊同步。
+      final name = nameByUid[b.mentorUid] ?? b.mentorName;
+      if (name.isEmpty) continue;
 
       myInstructor = instructors.where((i) => i.name == name).firstOrNull ??
           Instructor(

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../domain/community.dart';
 import 'mentor_data.dart';
+import 'cloud_watch.dart';
 
 /// Firestore 上的師徒關係（[BE-11] 批次 6）。
 ///
@@ -35,6 +36,19 @@ class FirestoreMentor implements MentorSource {
   // ===========================================================================
   // 關係
   // ===========================================================================
+
+  /// 三條監聽，條件與 [bonds]、[requestsFor] 逐字相同。
+  ///
+  /// 關係要查兩個方向：我可能是教官，也可能是學徒。安全規則允許
+  /// 「mentorUid 是我 **或** apprenticeUid 是我」，而 Firestore
+  /// 不會過濾結果、只會整個拒絕查詢 —— 所以必須拆成兩條各自
+  /// 證明得了自己的查詢，不能合成一條。`bond()` 那次就是栽在這裡。
+  @override
+  Stream<void> watchMentor() => mergeWatches([
+        _col.where('mentorUid', isEqualTo: uid).snapshots(),
+        _col.where('apprenticeUid', isEqualTo: uid).snapshots(),
+        _reqCol.where('toUid', isEqualTo: uid).snapshots(),
+      ]);
 
   @override
   Future<List<CloudBond>> bonds() async {
