@@ -733,6 +733,17 @@ class AppState extends ChangeNotifier {
   }
 
   /// 立即寫入。App 進背景或關閉前呼叫，才不會漏掉最後 300ms 的變動。
+  /// 最近一次存檔失敗的原因。**開發者模式看得到。**
+  ///
+  /// 吞掉錯誤是對的 —— 存檔失敗不該中斷使用者正在做的事。但完全不說
+  /// 就太過頭了：2026-09-24 我把偏好時段寫成陣列包陣列，Firestore
+  /// **整份寫入被拒**，於是那個帳號從那一刻起什麼都存不起來，
+  /// 而畫面上唯一的跡象是「填了、刷新還是未填寫」。
+  ///
+  /// 存的是「為什麼失敗」與「連續失敗幾次」，不是資料本身。
+  String? saveError;
+  int consecutiveSaveFailures = 0;
+
   Future<void> saveNow() async {
     final store = _store;
     if (store == null || !_hydrated) return;
@@ -740,8 +751,15 @@ class AppState extends ChangeNotifier {
     try {
       await store.save(toSnapshot());
       saveCount++;
-    } catch (_) {
-      // 寫不進去就算了 —— 存檔失敗不該中斷使用者正在做的事。
+      if (saveError != null) {
+        saveError = null;
+        consecutiveSaveFailures = 0;
+      }
+    } catch (e) {
+      // 寫不進去不中斷使用者正在做的事，但要留下痕跡。
+      consecutiveSaveFailures++;
+      saveError = '$e';
+      debugPrint('存檔失敗（連續 $consecutiveSaveFailures 次）：$e');
     }
   }
 

@@ -183,6 +183,20 @@ class SettingsScreen extends StatelessWidget {
             // 「申請送得出去、對方看不到」查了三輪都在猜，就是因為
             // 這幾條路徑什麼都不說。
             const SectionLabel('登入同步', trailing: '開發者模式'),
+            // 存檔失敗原本完全無聲。2026-09-24 一個形狀不合的欄位讓
+            // Firestore 整份拒收，帳號從那一刻起什麼都存不起來，而畫面上
+            // 唯一的跡象是某一頁顯示「未填寫」。
+            if (s.saveError != null) ...[
+              Panel(
+                color: C.statusError.withValues(alpha: 0.08),
+                border: C.statusError,
+                child: Text(
+                    '存檔失敗，連續 ${s.consecutiveSaveFailures} 次：\n${s.saveError}',
+                    style: const TextStyle(
+                        fontSize: 11.5, color: C.statusError)),
+              ),
+              const SizedBox(height: 10),
+            ],
             if (s.chatSendError != null) ...[
               Panel(
                 color: C.statusError.withValues(alpha: 0.08),

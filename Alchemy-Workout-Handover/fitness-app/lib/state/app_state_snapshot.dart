@@ -155,13 +155,24 @@ extension AppStateSnapshot on AppState {
         // 收尾這一段是後來才加的，旁邊的 `noviceStarted`／`noviceFinished`
         // ／`noviceRewardClaimed` 全都有存 —— **只有這兩個漏掉**。
         //
-        // 七天各自一組區間；`PreferredTimes` 建構時會自己正規化
-        // （排序、合併重疊），所以讀回來不必再處理一次。
+        // **攤平成一維，不可以是「七天各一個陣列」。**
+        //
+        // Firestore 不收陣列包陣列 —— 而且不是只丟掉那個欄位，是**整份
+        // 寫入被拒**。`AppState.saveNow()` 對寫入失敗是靜默吞掉的，
+        // 所以症狀會是「從今以後什麼都存不起來」，而且毫無徵兆。
+        //
+        // 我第一版就是寫成 `[[{from,to}], [], ...]`，本機測試全綠
+        // （MemoryStore／FileStore 是純 JSON，收得下巢狀陣列），
+        // 上線後使用者回報「填了刷新還是未填寫」—— 真相是那一刻起
+        // 他的**所有**資料都停止存檔了。
+        //
+        // 訓練歷史的 `sets` 早就踩過同一個坑（見 `store_firestore.dart`
+        // 的 `_historyToDoc`），但那邊是在 Store 那一層轉形狀。這裡直接
+        // 存成攤平的樣子 —— 少一層轉換，就少一個會忘記的地方。
         'preferredTimes': [
-          for (final day in preferredTimes.byDay)
-            [
-              for (final r in day) {'from': r.startMin, 'to': r.endMin},
-            ],
+          for (var day = 0; day < preferredTimes.byDay.length; day++)
+            for (final r in preferredTimes.byDay[day])
+              {'day': day, 'from': r.startMin, 'to': r.endMin},
         ],
         'experienceRatings': [
           for (final r in experienceRatings)
@@ -517,18 +528,18 @@ extension AppStateSnapshot on AppState {
     noviceRewardClaimed = boolOf('noviceRewardClaimed', noviceRewardClaimed);
 
     // 缺鍵時不動預設值（空的）—— 舊存檔沒有這兩個鍵。
-    if (pick<List>('preferredTimes') case final days?) {
-      preferredTimes = PreferredTimes([
-        for (final day in days)
-          [
-            if (day is List)
-              for (final r in day)
-                if (r is Map)
-                  TimeRange(
-                      (r['from'] as num?)?.toInt() ?? 0,
-                      (r['to'] as num?)?.toInt() ?? 0),
-          ],
-      ]);
+    if (pick<List>('preferredTimes') case final rows?) {
+      final byDay = List.generate(7, (_) => <TimeRange>[]);
+      for (final r in rows) {
+        if (r is! Map) continue;
+        final day = (r['day'] as num?)?.toInt();
+        final from = (r['from'] as num?)?.toInt();
+        final to = (r['to'] as num?)?.toInt();
+        if (day == null || from == null || to == null) continue;
+        if (day < 0 || day > 6) continue; // 壞資料不要打翻整份
+        byDay[day].add(TimeRange(from, to));
+      }
+      preferredTimes = PreferredTimes(byDay);
     }
     if (pick<List>('experienceRatings') case final rows?) {
       experienceRatings.clear();
