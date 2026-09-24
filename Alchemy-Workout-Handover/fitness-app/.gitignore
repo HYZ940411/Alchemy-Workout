@@ -57,3 +57,11 @@ app.*.map.json
 #
 # 真正的機密是 service account 私鑰，那個由上層 .gitignore 的
 # `*-firebase-adminsdk-*.json` 擋掉。
+
+# Firebase CLI 的除錯記錄。每次 firebase 指令失敗就會產生一份，
+# 裡面是本機路徑與工具版本，不是專案內容。
+firebase-debug.log
+firestore-debug.log
+
+# Xcode 的 Swift Package Manager 快取。由建置產生，換台機器就不同。
+ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
