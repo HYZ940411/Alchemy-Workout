@@ -55,6 +55,14 @@ class FirestoreFollows implements FollowSource {
   }
 
   @override
+  Future<int> followerCountOf(String targetUid) async {
+    // **聚合查詢，不把整批關係抓回來。** 一個人有幾千個粉絲時，
+    // 抓回來只為了數長度是浪費 —— 而且那也不是這裡要的東西。
+    final snap = await _col.where('followeeId', isEqualTo: targetUid).count().get();
+    return snap.count ?? 0;
+  }
+
+  @override
   Future<Set<String>> followers() async {
     final snap = await _col.where('followeeId', isEqualTo: uid).get();
     return {

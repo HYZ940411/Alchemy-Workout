@@ -2227,6 +2227,32 @@ class AppState extends ChangeNotifier {
   bool _isMe(String name, String? uid) =>
       uid != null && myUid != null ? uid == myUid : _mine(name);
 
+  /// 已經去數過的人。避免同一頁重複查 —— 與 [_profilesInFlight] 同理。
+  final Set<String> _followerCountsInFlight = {};
+
+  /// 去數一次「這個人現在有幾個粉絲」，數完寫進 [otherFollowerCounts]。
+  ///
+  /// **`follows` 集合才是真相來源。** 公開檔案上那個 `followers` 只有
+  /// 本人寫得了，所以我關注某人不會讓它變動 —— 一重新整理，本機的 +1
+  /// 就被那個舊值蓋掉。使用者 2026-09-24 回報「重新追蹤刷新後顯示還是 0」。
+  ///
+  /// 呼叫端不必 await：數回來會 [notifyListeners]，畫面自己重畫。
+  /// 數完之後本機的關注／取消關注照樣疊在上面（見 [_unfollow]）——
+  /// 那一刻的樂觀更新比剛數回來的值更新。
+  Future<void> ensureFollowerCount(String name, String? uid) async {
+    final src = followSource;
+    if (src == null || uid == null || uid == myUid) return;
+    if (!_followerCountsInFlight.add(uid)) return;
+    try {
+      otherFollowerCounts[name] = await src.followerCountOf(uid);
+      notifyListeners();
+    } catch (_) {
+      // 數不到就維持現狀 —— 一次網路失敗不該把畫面上的數字洗掉。
+    } finally {
+      _followerCountsInFlight.remove(uid);
+    }
+  }
+
   /// 某人的粉絲數。看自己請用 [followerCount]。
   ///
   /// **以 [otherFollowerCounts] 為先，不是公開檔案上那個數字。** 兩者都是

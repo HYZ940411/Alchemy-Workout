@@ -39,12 +39,35 @@ void openProfile(BuildContext context, String name, {String? uid}) {
   ));
 }
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   final String? viewing; // null 表示看自己
 
   /// 被看的人的雲端身分。空值時退回用暱稱反查（見 [openProfile]）。
   final String? viewingUid;
   const ProfileScreen({super.key, this.viewing, this.viewingUid});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  String? get viewing => widget.viewing;
+  String? get viewingUid => widget.viewingUid;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // **去數一次他現在有幾個粉絲。**
+    //
+    // 公開檔案上那個數字只有他本人寫得了，所以我關注他不會讓它變動 ——
+    // 直接顯示那個值，等於顯示「他上次登入時的粉絲數」。
+    // 不 await：數回來會 notifyListeners，畫面自己重畫。
+    final s = AppScope.of(context);
+    final name = viewing;
+    if (name != null) {
+      s.ensureFollowerCount(name, viewingUid ?? s.uidOf(name));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
