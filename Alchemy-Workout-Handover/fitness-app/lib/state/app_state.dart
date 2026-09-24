@@ -2034,6 +2034,8 @@ class AppState extends ChangeNotifier {
         // 別人的拜師頁只能假設我還有空位 —— 他申請下去才發現滿了。
         apprentices: apprentices.length,
         apprenticeCap: apprenticeCap,
+        avgRating: myRatingStats.avg,
+        ratingCount: myRatingStats.count,
         specialties: instructorSpecialties.toList(),
       );
 
@@ -2118,12 +2120,11 @@ class AppState extends ChangeNotifier {
       // 真的沒有就給空集合，讓畫面把「沒有資料」畫成沒有資料。
       ability: p.ability ?? const {},
       specialties: p.specialties,
-      // **平均星等與評分次數目前一律是 0。** App 沒有在記「我收到的評分」
-      // —— 學徒評分只會去動教官的聲望（見 `rateMentorTask`），沒有累積
-      // 成星等。畫面要把 0 則評分呈現為「尚無評分」，不是 0.0 顆星。
-      // 見 PROGRESS.md 第 5 節。
-      avgRating: 0,
-      ratingCount: 0,
+      // 星等由教官自己統計自己那些師徒任務上的評分後發布（`[BE-15]`）——
+      // 別人算不出來，讀不到那些關係底下的任務。
+      // **`ratingCount` 為 0 時畫面要顯示「尚無評分」，不是 0.0 顆星。**
+      avgRating: p.avgRating,
+      ratingCount: p.ratingCount,
     );
     if (at >= 0) {
       instructors[at] = i;
@@ -3908,25 +3909,21 @@ class AppState extends ChangeNotifier {
     return '${mentorUid}_$me';
   }
 
-  /// 師徒任務在雲端的識別碼。
+  /// 本機的任務轉成雲端那一份。
   ///
-  /// 本機的 [MentorTask] **沒有 ID 欄位** —— 它以標題辨識（同一位教官
-  /// 不會指派兩個同名任務）。這裡沿用同一套，才不會在本機與雲端
-  /// 長出兩套識別方式。標題若真的重複，兩者會落在同一份文件上，
-  /// 這是已知的取捨，補法是讓 MentorTask 帶上 ID（見 `[BE-15]`）。
-  String _taskId(MentorTask t) => t.title;
+  /// **識別碼用 `MentorTask.id`。** 在此之前是拿標題當 ID —— 教官指派
+  /// 兩個同名任務就會落在同一份文件上，互相覆蓋。`[BE-15]` 補上了 ID 欄位。
+  CloudMentorTask _asCloudTask(MentorTask t) => CloudMentorTask(
+        id: t.id,
+        title: t.title,
+        detail: t.detail,
+        state: t.state,
+        rewardCoins: t.rewardCoins,
+        rating: t.rating,
+      );
 
-  void _pushTask(MentorTask t) => _pushMentor((src, bond) => src.putTask(
-        bond,
-        CloudMentorTask(
-          id: _taskId(t),
-          title: t.title,
-          detail: t.detail,
-          state: t.state,
-          rewardCoins: t.rewardCoins,
-          rating: t.rating,
-        ),
-      ));
+  /// 學徒這一側動了任務（完成、領獎、評分）—— 掛在我與教官那段關係下。
+  void _pushTask(MentorTask t) => _pushMentorTask(t);
 
   void _pushMentor(Future<void> Function(MentorSource src, String bondId) job) {
     final src = mentorSource;
@@ -3935,14 +3932,142 @@ class AppState extends ChangeNotifier {
     job(src, bond).catchError((_) {});
   }
 
-  /// 以雲端的師徒關係為準（[BE-14]）。
+  /// 我作為**教官**時，與這位學徒那一段關係在雲端的 ID。
   ///
-  /// 目前只還原**關係本身的狀態**（生效中／已解除與解除時點）——
-  /// 任務與問答要等本機模型帶上學徒身分之後才對應得起來。
+  /// 與 [_apprenticeBondId] 是同一套規則的另一側 ——
+  /// 關係 ID 一律是 `教官uid_學徒uid`，兩邊各自算出來的必須一致。
+  String? mentorBondIdFor(String? apprenticeUid) {
+    final me = myUid;
+    if (me == null || apprenticeUid == null) return null;
+    return '${me}_$apprenticeUid';
+  }
+
+  /// 我帶的那些學徒的關係 ID。星等統計要跑過它們。
+  Iterable<String> get myMentorBondIds =>
+      apprentices.map((a) => mentorBondIdFor(a.uid)).nonNulls;
+
+  /// 我收到的評分總數與平均（`[BE-15]`）。
+  ///
+  /// **在此之前 App 根本沒在記這個。** 學徒評分只會去動教官的聲望
+  /// （見 [rateMentorTask]），沒有累積成星等 —— 於是拜師頁上每位教官
+  /// 都寫著「0.0（0 則）」，而那不是「還沒被評過」，是這個數字從來
+  /// 不存在。
+  ///
+  /// **由任務上的評分推導，不另存一個會漂移的數字。** 每則任務至多
+  /// 一個評分，所以「幾則有評分」就是評分次數。
+  ({double avg, int count}) get myRatingStats {
+    final scored = mentorTasks
+        .where((t) => t.apprenticeUid != null && t.rating != null)
+        .map((t) => t.rating!)
+        .toList();
+    if (scored.isEmpty) return (avg: 0, count: 0);
+    return (
+      avg: scored.reduce((a, b) => a + b) / scored.length,
+      count: scored.length,
+    );
+  }
+
+  /// 把教官側的任務與問答從雲端讀回來（`[BE-15]`）。
+  ///
+  /// **在此之前 `MentorSource.tasks()` 與 `questions()` 一個呼叫端都沒有。**
+  /// 學徒的提問寫進了 Firestore，教官永遠讀不到；學徒給的評分也一樣 ——
+  /// 所以星等才會是 0。
+  ///
+  /// `data_source_wiring_test` 沒抓到這兩支：畫面上有個同名的
+  /// `s.questions` 欄位，方法名撞到欄位名。
+  Future<void> loadMentorSideOf(String apprenticeUid) async {
+    final src = mentorSource;
+    final bond = mentorBondIdFor(apprenticeUid);
+    if (src == null || bond == null) return;
+
+    try {
+      for (final t in await src.tasks(bond)) {
+        final at = mentorTasks.indexWhere((x) => x.id == t.id);
+        final m = MentorTask(
+          id: t.id,
+          title: t.title,
+          detail: t.detail,
+          apprenticeUid: apprenticeUid,
+          state: t.state,
+          rewardCoins: t.rewardCoins,
+          rating: t.rating,
+        );
+        if (at >= 0) {
+          mentorTasks[at] = m;
+        } else {
+          mentorTasks.add(m);
+        }
+      }
+      for (final q in await src.questions(bond)) {
+        final at = questions.indexWhere((x) => x.id == q.id);
+        final m = MentorQuestion(
+          id: q.id,
+          from: nameByUid[q.fromUid] ?? '學徒',
+          apprenticeUid: apprenticeUid,
+          text: q.text,
+          at: q.at,
+          answer: q.answer,
+        );
+        if (at >= 0) {
+          questions[at] = m;
+        } else {
+          questions.add(m);
+        }
+      }
+    } catch (_) {
+      // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的任務清空。
+      return;
+    }
+    notifyListeners();
+
+    // 讀回來之後星等才算得出來，這時要把它發布出去。
+    publishMyProfile();
+  }
+
+  /// 把我帶的每位學徒那一段都讀一次。登入後呼叫。
+  Future<void> loadMentorSide() async {
+    for (final a in apprentices) {
+      final uid = a.uid;
+      if (uid != null) await loadMentorSideOf(uid);
+    }
+  }
+
+  /// 以雲端的師徒關係為準（[BE-14]／[BE-15]）。
+  ///
+  /// **兩側都要處理。** 在此之前只看 `apprenticeUid == me`（我當學徒的
+  /// 那一段）—— 教官側完全接不上，於是真實使用者當了教官之後，
+  /// 學徒清單永遠是空的，而他明明收過徒。
   void applyCloudBonds(List<CloudBond> bonds) {
     final me = myUid;
     if (me == null) return;
 
+    // --- 教官側：我帶的學徒 ---
+    for (final b in bonds) {
+      if (b.mentorUid != me) continue;
+      // 已解除的關係不該讓學徒繼續留在名單上。
+      if (b.state != MentorBondState.active) {
+        apprentices.removeWhere((a) => a.uid == b.apprenticeUid);
+        continue;
+      }
+      final name = nameByUid[b.apprenticeUid] ?? b.apprenticeName;
+      final at = apprentices.indexWhere((a) => a.uid == b.apprenticeUid);
+      final a = Apprentice(
+        name: name,
+        uid: b.apprenticeUid,
+        rank: rankOf(name, uid: b.apprenticeUid),
+        // 六維與近期訓練是對方的資料，這裡拿不到 —— 畫面要把
+        // 「沒有資料」畫成沒有資料，不是拿我自己的頂上。
+        ability: abilityOf(name, uid: b.apprenticeUid) ?? const {},
+        recentWorkouts: const [],
+      );
+      if (at >= 0) {
+        apprentices[at] = a;
+      } else {
+        apprentices.add(a);
+      }
+    }
+
+    // --- 學徒側：我的教官 ---
     for (final b in bonds) {
       if (b.apprenticeUid != me) continue; // 只處理我當學徒的那一段
       final name = nameByUid[b.mentorUid];
@@ -3973,15 +4098,37 @@ class AppState extends ChangeNotifier {
 
   /// 教官已指派師徒任務。
   /// Precondition：該教官的「已確認指導責任聲明版本」為現行版本。
-  void assignMentorTask(String title, String detail) {
+  /// 教官已指派師徒任務。
+  ///
+  /// [apprenticeUid] **指派給哪位學徒**。在此之前沒有這個參數 ——
+  /// 任務進一份共用清單，誰都不知道是給誰的，也就寫不上雲端
+  /// （雲端的任務掛在特定師徒關係下）。
+  void assignMentorTask(String title, String detail, {String? apprenticeUid}) {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return;
     if (instructorDutyNeeded) return;
-    mentorTasks.insert(
-      0,
-      MentorTask(title: title, detail: detail),
+    final t = MentorTask(
+      id: newId('mt'),
+      title: title,
+      detail: detail,
+      apprenticeUid: apprenticeUid,
     );
+    mentorTasks.insert(0, t);
+    _pushMentorTask(t);
     notifyListeners();
+  }
+
+  /// 把一則任務寫上雲端，掛在**它所屬的那段關係**下。
+  ///
+  /// 教官指派的任務掛在「我與這位學徒」那段；學徒自己動的任務
+  /// （完成、領獎、評分）掛在「我與我的教官」那段。
+  void _pushMentorTask(MentorTask t) {
+    final src = mentorSource;
+    final bond = t.apprenticeUid == null
+        ? _apprenticeBondId
+        : mentorBondIdFor(t.apprenticeUid);
+    if (src == null || bond == null) return;
+    src.putTask(bond, _asCloudTask(t)).catchError((_) {});
   }
   late List<MentorQuestion> questions = demo ? buildQuestions() : [];
   late List<Apprentice> apprentices = demo ? buildApprentices() : [];
@@ -4166,9 +4313,25 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void answerQuestion() {
+  /// 教官已回答提問。
+  ///
+  /// **在此之前這個函式只有一個計數器** —— 回答的文字由畫面直接寫進
+  /// `question.answer`，而且沒有任何雲端寫入，所以學徒永遠看不到。
+  /// `MentorSource.answer()` 寫好了卻沒有人呼叫，正是 `[BE-15]`。
+  bool answerQuestion(MentorQuestion q, String text) {
+    final body = text.trim();
+    if (body.isEmpty) return false;
+    q.answer = body;
+    q.answeredAt = now;
     weeklyAnswerCount += 1;
+
+    final src = mentorSource;
+    final bond = mentorBondIdFor(q.apprenticeUid);
+    if (src != null && bond != null) {
+      src.answer(bond, q.id, body, now).catchError((_) {});
+    }
     notifyListeners();
+    return true;
   }
 
   /// 本週已發放的師徒任務獎勵次數。**每週最多 3 次** ——

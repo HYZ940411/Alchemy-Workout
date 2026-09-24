@@ -79,10 +79,11 @@ class _MentorInteractionScreenState extends State<MentorInteractionScreen> {
                 _ApprenticeDetail(a: apprentices[selected]),
 
                 const SectionTitle('待回答的提問'),
-                _Questions(state: s),
+                _Questions(
+                    state: s, apprenticeUid: apprentices[selected].uid),
 
                 const SectionTitle('進行中的任務'),
-                _Tasks(state: s),
+                _Tasks(state: s, apprenticeUid: apprentices[selected].uid),
 
               ],
             ),
@@ -231,12 +232,19 @@ class _DimBar extends StatelessWidget {
 
 class _Questions extends StatelessWidget {
   final AppState state;
-  const _Questions({required this.state});
+
+  /// 目前選中的學徒。**問答要依他過濾** —— 本機這份 `questions` 是
+  /// 所有學徒共用的一份清單，不過濾的話教官會在小明的頁面上看到
+  /// 小華問的問題，答下去也記在小華那段關係上。
+  final String? apprenticeUid;
+  const _Questions({required this.state, this.apprenticeUid});
 
   @override
   Widget build(BuildContext context) {
     // 待回答＝回答內容為空值的師徒問答
-    final pending = state.questions.where((q) => q.answer == null).toList();
+    final pending = state.questions
+        .where((q) => q.answer == null && q.apprenticeUid == apprenticeUid)
+        .toList();
     if (pending.isEmpty) {
       return AppCard(
         child: Row(
@@ -313,9 +321,14 @@ class _AnswerCardState extends State<_AnswerCard> {
               AppButton(
                 label: '回答',
                 onPressed: () {
-                  if (ctrl.text.trim().isEmpty) return;
-                  setState(() => widget.question.answer = ctrl.text.trim());
-                  widget.state.answerQuestion();
+                  // **回答的內容由狀態層寫入並送上雲端。**
+                  // 在此之前是畫面直接改 `question.answer`，而
+                  // `answerQuestion()` 只是個計數器 —— 學徒永遠看不到回答。
+                  if (!widget.state.answerQuestion(
+                      widget.question, ctrl.text)) {
+                    return;
+                  }
+                  setState(() {});
                   showToast(context, '已回答');
                 },
               ),
@@ -327,12 +340,17 @@ class _AnswerCardState extends State<_AnswerCard> {
 
 class _Tasks extends StatelessWidget {
   final AppState state;
-  const _Tasks({required this.state});
+
+  /// 目前選中的學徒。理由同 [_Questions.apprenticeUid]。
+  final String? apprenticeUid;
+  const _Tasks({required this.state, this.apprenticeUid});
 
   @override
   Widget build(BuildContext context) {
     final ongoing = state.mentorTasks
-        .where((t) => t.state != MentorTaskState.claimed)
+        .where((t) =>
+            t.state != MentorTaskState.claimed &&
+            t.apprenticeUid == apprenticeUid)
         .toList();
     return Column(
       children: [
@@ -412,7 +430,10 @@ class _Tasks extends StatelessWidget {
     if (ok != true || !context.mounted) return;
     final t = title.text.trim();
     if (t.isEmpty) return;
-    state.assignMentorTask(t, detail.text.trim());
+    // **指派給哪位學徒要講清楚。** 不帶的話任務進一份共用清單，
+    // 誰都不知道是給誰的，也就寫不到正確的師徒關係下。
+    state.assignMentorTask(t, detail.text.trim(),
+        apprenticeUid: apprenticeUid);
     showToast(context, '已指派「$t」');
   }
 }

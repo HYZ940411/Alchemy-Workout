@@ -20,11 +20,18 @@
 // （呼叫了，但沒有先判斷是不是自己的貼文），這道檢查一個都擋不住。
 // 別把它當護身符。
 //
-// **偽陰性（漏抓）**：比對的是方法名字串，而名字會撞 ——
-// `publish` 同時屬於 `PostSource` 與 `PublicProfileSource`，
-// `remove`、`clear`、`load`、`save` 也都很常見。撞名時，只要有**任何一個**
-// 同名方法被呼叫，另一個沒接線的就會被誤判為已接。
-// 這是這道檢查最主要的限制，要誠實看待。
+// **偽陰性（漏抓）**：比對的是方法名字串，而名字會撞。撞了兩次，
+// 兩次都是真的漏抓：
+//
+//   · **兩個介面同名**：`MentorSource.dropRequest` 一個呼叫端都沒有
+//     （接受與拒絕請求都沒清掉雲端那筆），但 `TeamSource` 也有一支
+//     同名方法而那支有人呼叫。2026-09-24 追查「團隊重整後不見了」才發現。
+//   · **方法名撞到欄位名**：`MentorSource.tasks()`／`questions()` 同樣
+//     沒有呼叫端（教官讀不回學徒的提問與評分，星等因此永遠是 0），
+//     而畫面上有個同名的 `s.questions` 欄位。做 `[BE-15]` 時才發現。
+//
+// 所以現在**兩種撞名都必須具名承認**（寫進 `_ambiguous`）——
+// 用途不是讓測試變綠，是讓「這幾支沒被真正檢查」這件事看得見。
 
 import 'dart:io';
 
@@ -65,6 +72,11 @@ const _ambiguous = <String, String>{
   'TeamSource.sendRequest': '申請加入公開團隊、隊長邀請成員',
   'PostSource.publish': '`publishPost()` 與 `shareWorkout()`',
   'PublicProfileSource.publish': '`publishMyProfile()` 與 `AuthGate._syncProfile`',
+  // 這兩支撞的是**欄位名**（畫面上的 `s.questions`），不是別的介面。
+  'MentorSource.questions': '2026-09-24 接上：`loadMentorSideOf()`',
+  'MentorSource.tasks': '2026-09-24 接上：`loadMentorSideOf()`',
+  'MentorSource.bond': '`_pushBond()`，接受拜師／收徒時建立關係',
+  'TeamSource.myTeam': '`refreshInbound()` 與 `AuthGate._syncProfile` 的「我的團隊」',
 };
 
 /// 從 `abstract class X { ... }` 裡抓出方法名。
@@ -117,10 +129,18 @@ void main() {
     for (final (cls, method) in methods) {
       (byName[method] ??= []).add(cls);
     }
+    // 呼叫端那一側的欄位名。`.questions` 既是 `MentorSource` 的方法，
+    // 也是畫面讀的 `s.questions` —— 那次漏抓就是這樣來的。
+    final fields = RegExp(r'\b(\w+)\s*=\s*')
+        .allMatches(code)
+        .map((m) => m.group(1)!)
+        .toSet();
     final collisions = {
       for (final e in byName.entries)
-        if (e.value.length > 1)
-          for (final cls in e.value) '$cls.${e.key}',
+        if (e.value.length > 1 || fields.contains(e.key))
+          for (final cls in e.value)
+            // 已經列為「還沒接線」的不必再承認一次撞名 —— 那是另一回事。
+            if (!_allowed.containsKey('$cls.${e.key}')) '$cls.${e.key}',
     };
     expect(collisions.difference(_ambiguous.keys.toSet()), isEmpty,
         reason: '這幾支方法與別的介面撞名，這道檢查對它們無效。\n'

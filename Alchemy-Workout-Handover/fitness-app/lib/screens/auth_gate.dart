@@ -381,6 +381,11 @@ class _AuthGateState extends State<AuthGate> {
       await step('師徒', () async {
         final got = await mentor.bonds();
         widget.state.applyCloudBonds(got);
+        // **教官側的任務與問答也要讀回來**（`[BE-15]`）——
+        // 不讀的話學徒的提問教官永遠看不到，學徒給的評分也回不來，
+        // 於是拜師頁上那個星等永遠是 0。要排在 `applyCloudBonds`
+        // 之後：學徒清單是它建出來的。
+        await widget.state.loadMentorSide();
         return '${got.length} 段關係';
       });
       // 待回應的師徒申請。**同樣在此之前沒有任何呼叫端** ——

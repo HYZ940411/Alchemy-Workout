@@ -516,11 +516,38 @@ class Instructor {
 }
 
 class MentorQuestion {
+  /// 問答的識別碼。**教官要回哪一則，靠的是這個。**
+  ///
+  /// 在此之前沒有這個欄位，雲端的問答只能以內容比對辨識 ——
+  /// 同一位學徒問了兩次同樣的話就分不出來。
+  final String id;
+
   final String from;
+
+  /// 提問的學徒是誰。**空值代表這是我自己問的**（我是學徒那一側），
+  /// 或是示範資料。
+  ///
+  /// 教官同時帶多位學徒，而本機這份 `questions` 是一份共用清單 ——
+  /// 沒有這個欄位就分不出「這則是哪位學徒問的」，於是教官側整個
+  /// 接不上雲端（雲端的問答掛在特定師徒關係下）。那正是 `[BE-15]`。
+  final String? apprenticeUid;
+
   final String text;
   final DateTime at;
   String? answer;
-  MentorQuestion({required this.from, required this.text, required this.at, this.answer});
+
+  /// 回答的時點。空值＝尚未回答。
+  DateTime? answeredAt;
+
+  MentorQuestion({
+    required this.from,
+    required this.text,
+    required this.at,
+    String? id,
+    this.apprenticeUid,
+    this.answer,
+    this.answeredAt,
+  }) : id = id ?? 'q${at.microsecondsSinceEpoch}';
 }
 
 /// 師徒任務狀態。**已作廢為終止狀態** —— 師徒關係解除時，
@@ -528,8 +555,19 @@ class MentorQuestion {
 enum MentorTaskState { assigned, done, claimed, voided }
 
 class MentorTask {
+  /// 任務的識別碼。
+  ///
+  /// 在此之前沒有這個欄位，雲端「暫以標題辨識」—— 教官指派兩個同名
+  /// 任務就會互相覆蓋。
+  final String id;
+
   final String title;
   final String detail;
+
+  /// 這則任務指派給哪位學徒。**空值代表這是指派給我的**（我是學徒那一側），
+  /// 或是示範資料。理由同 [MentorQuestion.apprenticeUid]。
+  final String? apprenticeUid;
+
   MentorTaskState state;
   final int rewardCoins;
 
@@ -539,10 +577,12 @@ class MentorTask {
   MentorTask({
     required this.title,
     required this.detail,
+    String? id,
+    this.apprenticeUid,
     this.state = MentorTaskState.assigned,
     this.rewardCoins = kMentorTaskCoin,
     this.rating,
-  });
+  }) : id = id ?? 't${title.hashCode}';
 }
 
 class Apprentice {

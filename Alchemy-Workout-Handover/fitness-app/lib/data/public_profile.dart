@@ -46,6 +46,14 @@ class PublicProfile {
   /// 所以**必須跟著檔案一起公開**，這一側算不出來。
   final int apprenticeCap;
 
+  /// 收到的平均星等。**[ratingCount] 為 0 時這個數字沒有意義** ——
+  /// 畫面要呈現「尚無評分」，不是 0.0 顆星。
+  final double avgRating;
+
+  /// 收到幾則評分。由教官自己統計自己那些師徒任務上的評分後發布 ——
+  /// 別人算不出來（讀不到那些關係底下的任務）。
+  final int ratingCount;
+
   /// 教官專長（1–3 項）。非教官為空集合。
   final List<String> specialties;
 
@@ -60,6 +68,8 @@ class PublicProfile {
     this.reputation,
     this.apprentices = 0,
     this.apprenticeCap = 0,
+    this.avgRating = 0,
+    this.ratingCount = 0,
     this.specialties = const [],
   });
 
@@ -80,6 +90,8 @@ class PublicProfile {
     int? reputation,
     int apprentices = 0,
     int apprenticeCap = 0,
+    double avgRating = 0,
+    int ratingCount = 0,
     List<String> specialties = const [],
   }) =>
       PublicProfile(
@@ -95,6 +107,8 @@ class PublicProfile {
         reputation: isInstructor ? reputation : null,
         apprentices: isInstructor ? apprentices : 0,
         apprenticeCap: isInstructor ? apprenticeCap : 0,
+        avgRating: isInstructor ? avgRating : 0,
+        ratingCount: isInstructor ? ratingCount : 0,
         specialties: isInstructor ? specialties : const [],
       );
 
@@ -112,6 +126,8 @@ class PublicProfile {
         if (reputation != null) 'reputation': reputation,
         if (isInstructor) 'apprentices': apprentices,
         if (isInstructor) 'apprenticeCap': apprenticeCap,
+        if (isInstructor) 'avgRating': avgRating,
+        if (isInstructor) 'ratingCount': ratingCount,
         if (specialties.isNotEmpty) 'specialties': specialties,
       };
 
@@ -140,6 +156,10 @@ class PublicProfile {
           j['apprentices'] is num ? (j['apprentices'] as num).round() : 0,
       apprenticeCap:
           j['apprenticeCap'] is num ? (j['apprenticeCap'] as num).round() : 0,
+      avgRating:
+          j['avgRating'] is num ? (j['avgRating'] as num).toDouble() : 0,
+      ratingCount:
+          j['ratingCount'] is num ? (j['ratingCount'] as num).round() : 0,
       specialties: [
         for (final s in (j['specialties'] as List? ?? const []))
           if (s is String) s,

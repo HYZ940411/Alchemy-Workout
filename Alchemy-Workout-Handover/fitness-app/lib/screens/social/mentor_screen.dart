@@ -157,24 +157,32 @@ class _InstructorCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.star_rounded,
-                            size: 14, color: C.accentDeep),
-                        const SizedBox(width: 3),
-                        Text(instructor.avgRating.toStringAsFixed(1),
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w800)),
-                      ],
-                    ),
-                    Text('${instructor.ratingCount} 則',
-                        style: const TextStyle(
-                            color: AppColors.textFaint, fontSize: 10)),
-                  ],
-                ),
+                // **沒有評分就說沒有評分。** 原本一律畫出星號與
+                // 「0.0（0 則）」—— 那看起來像「被評過、但分數是 0」，
+                // 而拜師就是看這個數字挑人的。
+                if (instructor.ratingCount == 0)
+                  Text('尚無評分',
+                      style: const TextStyle(
+                          color: AppColors.textFaint, fontSize: 11))
+                else
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.star_rounded,
+                              size: 14, color: C.accentDeep),
+                          const SizedBox(width: 3),
+                          Text(instructor.avgRating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w800)),
+                        ],
+                      ),
+                      Text('${instructor.ratingCount} 則',
+                          style: const TextStyle(
+                              color: AppColors.textFaint, fontSize: 10)),
+                    ],
+                  ),
               ],
             ),
             const SizedBox(height: 12),
