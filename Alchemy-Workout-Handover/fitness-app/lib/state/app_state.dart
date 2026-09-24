@@ -4055,7 +4055,31 @@ class AppState extends ChangeNotifier {
   // --- 師徒上雲（[BE-14]）---
 
   /// 雲端的師徒關係。**空值代表不同步** —— 既有測試走這條。
-  MentorSource? mentorSource;
+  MentorSource? _mentorSource;
+  MentorSource? get mentorSource => _mentorSource;
+  set mentorSource(MentorSource? v) {
+    _mentorSource = v;
+    // 換了來源就等於換了一個人 —— 上一個帳號載過的事實不算數。
+    _mentorLoaded = false;
+  }
+
+  /// 師徒關係是否已經從雲端載回來過。
+  bool _mentorLoaded = false;
+
+  /// 「我沒有教官」與「還不知道」分得開嗎。
+  ///
+  /// **`myInstructor == null` 有兩個意思。** 一個是事實（我還沒拜師），
+  /// 一個是我們還沒讀到。在此之前拜師頁把兩者畫成同一張清單 ——
+  /// 也就是在同步失敗時，對著一位有教官的人說「你沒有教官」。
+  ///
+  /// 那正是使用者會回報成「我的教官不見了」的那件事，而它**不會報錯**：
+  /// 師徒那一塊是各自 try、吞掉錯誤的（那是對的，社群讀不到不該擋住訓練），
+  /// 代價就是出問題時完全沒有跡象。
+  ///
+  /// 專案守則第 5 條：**填錯的數字比留白更糟，留白會被看見，錯的不會。**
+  ///
+  /// 沒接雲端時（示範、既有測試）本機就是全部事實，所以直接算「知道」。
+  bool get mentorKnown => _mentorSource == null || _mentorLoaded;
 
   /// 我作為**學徒**的那一段關係在雲端的 ID。
   ///
@@ -4265,6 +4289,9 @@ class AppState extends ChangeNotifier {
       mentorReleaseReason = b.releasedReason;
       break;
     }
+    // **空清單也算載到了。** 「雲端確實沒有關係」是一個答案，
+    // 與「還沒問到」不同 —— 這支只在讀取成功之後才被呼叫。
+    _mentorLoaded = true;
     notifyListeners();
   }
   late List<MentorTask> mentorTasks = demo ? buildMentorTasks() : [];

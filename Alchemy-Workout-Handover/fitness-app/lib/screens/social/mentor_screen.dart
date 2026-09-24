@@ -88,10 +88,55 @@ class MentorScreen extends StatelessWidget {
             ),
           ),
         Expanded(
-          child:
-              s.myInstructor == null ? const _InstructorList() : const _MyMentor(),
+          // **三種狀態，不是兩種。** `myInstructor == null` 既可能是
+          // 「我還沒拜師」，也可能是「師徒那一塊還沒讀回來」——
+          // 在此之前兩者都畫成拜師清單，等於在同步失敗時對著一位
+          // 有教官的人說「你沒有教官」。而那不會報錯：師徒那一塊是
+          // 各自 try、吞掉錯誤的，出問題時完全沒有跡象。
+          child: s.myInstructor != null
+              ? const _MyMentor()
+              : s.mentorKnown
+                  ? const _InstructorList()
+                  : const _MentorUnknown(),
         ),
       ],
+    );
+  }
+}
+
+/// 師徒關係還沒讀回來。
+///
+/// 留白而不是猜一個答案（守則第 5 條：**填錯的數字比留白更糟**）。
+/// 這一頁會退到這裡，代表登入時師徒那一塊失敗了 —— 通常是連線，
+/// 也可能是安全規則。給一顆重試鍵，不必整個重新載入 App。
+class _MentorUnknown extends StatefulWidget {
+  const _MentorUnknown();
+
+  @override
+  State<_MentorUnknown> createState() => _MentorUnknownState();
+}
+
+class _MentorUnknownState extends State<_MentorUnknown> {
+  var _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    return EmptyState(
+      icon: Icons.cloud_off_outlined,
+      title: '師徒資料還沒讀到',
+      message: '這不代表你沒有教官 —— 是這一次沒讀回來。',
+      action: AppButton(
+        label: _busy ? '重新讀取中' : '重新讀取',
+        kind: BtnKind.secondary,
+        onPressed: _busy
+            ? null
+            : () async {
+                setState(() => _busy = true);
+                await s.refreshInbound();
+                if (mounted) setState(() => _busy = false);
+              },
+      ),
     );
   }
 }
