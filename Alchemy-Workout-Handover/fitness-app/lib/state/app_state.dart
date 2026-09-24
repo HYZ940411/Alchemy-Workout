@@ -2341,12 +2341,18 @@ class AppState extends ChangeNotifier {
   ///
   /// **看別人只列公開的**：僅關注者與私人兩種可見範圍是發文者指定的，
   /// 檔案頁不是繞過它的後門。看自己則三種都列 —— 那本來就是我的東西。
+  /// 這個人的貼文，**由新到舊**。
+  ///
+  /// 排序要在這裡做，不能倚賴 `posts` 本身的順序：`applyCloudPosts` 會排，
+  /// 但本機新發的是直接插進去的。在此之前檔案頁只取前兩篇 ——
+  /// 順序不對的話，「最新兩篇」拿到的會是別的兩篇。
   List<Post> postsBy(String name) => posts
       .where((p) =>
           !p.deleted &&
           p.author == name &&
           (_mine(name) || p.visibility == PostVisibility.public))
-      .toList();
+      .toList()
+    ..sort((a, b) => b.at.compareTo(a.at));
 
   /// 暱稱 → uid。[nameByUid] 的反查 —— 畫面上拿得到的是暱稱，
   /// 而雲端要的是 uid。

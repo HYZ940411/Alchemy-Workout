@@ -9,6 +9,7 @@ import '../../theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/radar_chart.dart';
 import '../social/chat_screen.dart';
+import '../social/post_card.dart';
 import '../social/social_lock.dart';
 
 /// Read Model：使用者個人檔案頁
@@ -302,42 +303,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: TextStyle(color: AppColors.textDim, fontSize: 12.5),
               ),
             ),
-          const SectionLabel('公開貼文'),
-          Panel(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Column(
-              children: [
-                // 原本取的是 `s.visiblePosts` —— 那是整個動態牆，
-                // 於是別人的檔案頁列的是不相干的人寫的東西。
-                if (myPosts.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      isSelf ? '你還沒有發過貼文。' : '$name 沒有公開的貼文。',
-                      style: const TextStyle(
-                          color: AppColors.textDim, fontSize: 12.5),
-                    ),
-                  ),
-                for (final p in myPosts.take(2))
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        p.text,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          height: 1.6,
-                          color: AppColors.textDim,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+          // 原本取的是 `s.visiblePosts` —— 那是整個動態牆，
+          // 於是別人的檔案頁列的是不相干的人寫的東西。
+          SectionLabel('公開貼文',
+              trailing: myPosts.isEmpty ? null : '${myPosts.length} 篇'),
+          if (myPosts.isEmpty)
+            Panel(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: Text(
+                isSelf ? '你還沒有發過貼文。' : '$name 沒有公開的貼文。',
+                style: const TextStyle(
+                    color: AppColors.textDim, fontSize: 12.5),
+              ),
             ),
-          ),
+          // **與動態牆同一張卡**（`PostCard`）。
+          //
+          // 在此之前這裡是自己畫的兩行純文字、`take(2)`、沒有按讚留言
+          // 檢舉，也點不進貼文詳情 —— 使用者回報「公開貼文顯示不完整，
+          // 少了更早發布的文章」。
+          //
+          // 不補按鈕、改抽出來共用：補的話就是第二張會慢慢長歪的卡片，
+          // 而這個專案的 bug 有一整排正是「同一個決定寫在兩個地方，
+          // 只有一處做對」。
+          //
+          // 也不再截斷。截斷本身沒有壞處，壞的是**截斷而不說** ——
+          // 使用者以為那就是全部。要截就得有「看更多」，而這一頁
+          // 本來就會捲動，那顆按鈕只是多一次點擊。
+          for (final p in myPosts) PostCard(post: p),
         ],
       ),
     );
