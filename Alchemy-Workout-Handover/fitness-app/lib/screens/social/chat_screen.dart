@@ -293,6 +293,7 @@ class _ChatScreenState extends State<ChatScreen> {
               targetKey: reportKey(ReportTarget.message, c.id),
               content: c.messages.isEmpty ? '（無訊息）' : c.messages.last.text,
               accused: c.peer,
+              accusedUid: c.peerUid,
             ),
             icon: const Icon(Icons.flag_outlined, size: 18),
           ),

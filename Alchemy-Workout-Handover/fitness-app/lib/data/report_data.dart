@@ -34,9 +34,19 @@ class CloudReport {
   final String reason;
   final String? note;
 
-  /// 被檢舉者的暱稱。uid 在客戶端不一定查得到（對方可能不在
-  /// 已載入的公開檔案裡），所以這裡存的是當下看得到的名字。
+  /// 被檢舉者的暱稱。**只給人看的** —— 暱稱會改，也可能撞名。
   final String accused;
+
+  /// 被檢舉者的雲端身分。**判定與記點一律看它，不看暱稱。**
+  ///
+  /// 舊案件沒有這個欄位（2026-09-25 之前送出的），所以可以是空值 ——
+  /// 那些案件仍然審得了，只是**記不了違規次數**，因為記點要寫到
+  /// `violations/{uid}`，而我們不知道是哪個 uid。管理端會標示出來。
+  ///
+  /// 在此之前這裡只有暱稱，註解寫著「uid 在客戶端不一定查得到」。
+  /// 那句話對訊息類成立，但貼文與留言的作者 uid 就在手上
+  /// （`Post.authorUid`／`Conversation.peerUid`）—— 只是沒有傳下來。
+  final String? accusedUid;
 
   final String reporterUid;
   final String reporterName;
@@ -50,6 +60,7 @@ class CloudReport {
     required this.content,
     required this.reason,
     required this.accused,
+    this.accusedUid,
     required this.reporterUid,
     required this.reporterName,
     required this.at,

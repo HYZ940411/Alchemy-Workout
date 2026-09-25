@@ -123,6 +123,7 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
       targetKey: reportKey(ReportTarget.post, p.id),
       content: p.text,
       accused: p.author,
+      accusedUid: p.authorUid,
     );
     return;
   }

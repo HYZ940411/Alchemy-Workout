@@ -11,6 +11,7 @@ import '../domain/clock.dart';
 export '../domain/clock.dart' show businessDate;
 import '../data/ai_suggestion.dart';
 import '../data/report_data.dart';
+import '../data/violation_data.dart';
 import '../domain/ai_adjust.dart';
 import '../domain/decay.dart';
 import '../domain/novice.dart';
@@ -6900,6 +6901,7 @@ class AppState extends ChangeNotifier {
     required String content,
     required String reason,
     required String accused,
+    String? accusedUid,
     String? note,
   }) {
     final src = reportSource;
@@ -6915,6 +6917,7 @@ class AppState extends ChangeNotifier {
           reason: reason,
           note: note,
           accused: accused,
+          accusedUid: accusedUid,
           reporterUid: me,
           reporterName: displayName,
           at: now,
@@ -6933,6 +6936,7 @@ class AppState extends ChangeNotifier {
     required String content,
     required String accused,
     required String reason,
+    String? accusedUid,
     String? note,
   }) {
     final r = Reporter(
@@ -6949,6 +6953,9 @@ class AppState extends ChangeNotifier {
       reason: reason,
       note: note,
       accused: accused,
+      // 暱稱會改、也會撞名 —— 記點一律看 uid。查不到就傳空值，
+      // 案件仍然審得了，只是記不了點（管理端會標示）。
+      accusedUid: accusedUid ?? uidOf(accused),
     );
 
     final existing = reports.where((c) =>
@@ -6974,6 +6981,7 @@ class AppState extends ChangeNotifier {
         reason: reason,
         reporterCount: 1,
         accused: accused,
+        accusedUid: accusedUid ?? uidOf(accused),
         accusedViolations: violationsOf(accused),
         enteredAt: now,
       ),
@@ -6991,6 +6999,49 @@ class AppState extends ChangeNotifier {
 
   int violationsOf(String user) =>
       user == displayName ? myViolations : (_violations[user] ?? 0);
+
+  /// 雲端的累計違規次數。**空值代表不同步** —— 既有測試走這條。
+  ViolationSource? violationSource;
+
+  /// 把自己的累計違規次數讀回來。
+  ///
+  /// **這個數字不在存檔裡，也不該在** —— 存檔是本人寫得動的，
+  /// 而處罰級距靠它決定。登入時向 `violations/{uid}` 問一次。
+  Future<void> loadMyViolations() async {
+    final src = violationSource;
+    final uid = myUid;
+    if (src == null || uid == null) return;
+    try {
+      myViolations = await src.countOf(uid);
+      notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀。**往少的方向錯**比往多的方向錯好：
+      // 這個數字只決定處罰級距，讀不到而少罰，勝過讀不到而多罰。
+    }
+  }
+
+  /// 記一次違規並寫上雲。回傳寫完之後的次數（寫不上去就回本機推算的）。
+  ///
+  /// 在此之前 `_setViolations()` 對別人寫的是本機一個 Map，**哪裡都沒去** ——
+  /// 管理員判了別人違規三次，對方那邊完全不知道，重開 App 還歸零。
+  /// [local] 是呼叫端已經加好並寫進本機的那個數字 —— **這裡不再加一次**。
+  /// （初版在這裡又加了一次，變成一次裁決記兩點。）
+  Future<int> _recordViolation(ReportCase c, int local) async {
+    final src = violationSource;
+    final uid = c.accusedUid;
+    // uid 缺席＝2026-09-25 之前送出的舊案件。審得了，但記不了點 ——
+    // 寫到暱稱底下的話，改名或撞名就記到別人頭上。
+    if (src == null || uid == null) return local;
+    try {
+      final cloud = await src.increment(uid, name: c.accused);
+      _setViolations(c.accused, cloud);
+      if (c.accused == displayName) myViolations = cloud;
+      notifyListeners();
+      return cloud;
+    } catch (_) {
+      return local;
+    }
+  }
 
   void _setViolations(String user, int v) {
     if (user == displayName) {
@@ -7053,6 +7104,7 @@ class AppState extends ChangeNotifier {
         reason: first.reason,
         reporterCount: rows.length,
         accused: first.accused,
+        accusedUid: first.accusedUid,
         accusedViolations: violationsOf(first.accused),
         enteredAt: first.at,
         // 已在審視中的案件不要被重讀打回待審 —— 管理員可能正開著它。
@@ -7100,11 +7152,14 @@ class AppState extends ChangeNotifier {
     // 帳號不是一則內容，沒有可下架的標的。
     if (canTakeDownContent(c.target)) _takeDown(c);
 
+    // 記點。本機先加（畫面立刻反映），雲端寫完再以雲端那份為準 ——
+    // 兩位管理員同時裁決同一個人時，本機推算會少算。
     final after = violationsOf(c.accused) + 1;
     _setViolations(c.accused, after);
     if (c.accused == displayName) _issuePunishment(c, after);
     _pushVerdict(c, upheld: true);
     notifyListeners();
+    _recordViolation(c, after);
   }
 
   /// 管理員已下架違規內容。僅適用貼文 / 留言 / 私訊。

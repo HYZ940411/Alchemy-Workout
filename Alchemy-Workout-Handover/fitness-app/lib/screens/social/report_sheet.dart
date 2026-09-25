@@ -15,6 +15,10 @@ Future<void> showReportSheet(
   required String targetKey,
   required String content,
   required String accused,
+
+  /// 被檢舉者的雲端身分。**記點靠它，不靠暱稱** —— 暱稱會改也會撞名。
+  /// 訊息類的對話若是示範資料就沒有，那種案件審得了但記不了點。
+  String? accusedUid,
 }) async {
   final s = AppScope.of(context);
   final result = await showAppSheet<(String, String)>(
@@ -29,6 +33,7 @@ Future<void> showReportSheet(
     targetKey: targetKey,
     content: content,
     accused: accused,
+    accusedUid: accusedUid,
     reason: result.$1,
     note: result.$2.isEmpty ? null : result.$2,
   );

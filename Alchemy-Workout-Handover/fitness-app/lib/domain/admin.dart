@@ -118,6 +118,11 @@ class ReportCase {
   final String reason;
   int reporterCount; // 多人檢舉同一內容合併為同一案件；併案時累加
   final String accused;
+
+  /// 被檢舉者的雲端身分。**記點看它，不看暱稱** —— 暱稱會改，也會撞名。
+  /// 2026-09-25 之前送出的案件沒有，那些案件審得了但記不了點。
+  final String? accusedUid;
+
   final int accusedViolations; // 處罰級距依累計違規次數而定
   final DateTime enteredAt;
   CaseState state;
@@ -132,6 +137,7 @@ class ReportCase {
     required this.reason,
     required this.reporterCount,
     required this.accused,
+    this.accusedUid,
     required this.accusedViolations,
     required this.enteredAt,
     this.state = CaseState.pending,

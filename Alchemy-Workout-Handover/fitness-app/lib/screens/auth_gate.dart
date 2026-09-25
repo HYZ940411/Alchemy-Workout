@@ -13,6 +13,7 @@ import '../data/chat_data.dart';
 import '../data/team_data.dart';
 import '../data/mentor_data.dart';
 import '../data/report_data.dart';
+import '../data/violation_data.dart';
 import '../data/store.dart';
 import '../domain/admin.dart';
 import '../state/app_state.dart';
@@ -69,6 +70,10 @@ class AuthGate extends StatefulWidget {
   /// **只有寫、沒有讀** —— 檢舉佇列是管理端的東西。
   final ReportSource Function(String uid)? reportsFor;
 
+  /// 累計違規次數。與 uid 無關（一份服務讀所有人的），但與其他來源
+  /// 同一個形狀，保持呼叫端一致。
+  final ViolationSource Function()? violationsFor;
+
   const AuthGate({
     super.key,
     required this.auth,
@@ -84,6 +89,7 @@ class AuthGate extends StatefulWidget {
     this.teamsFor,
     this.mentorFor,
     this.reportsFor,
+    this.violationsFor,
   });
 
   @override
@@ -311,6 +317,7 @@ class _AuthGateState extends State<AuthGate> {
     widget.state.teamSource = widget.teamsFor?.call(uid);
     widget.state.mentorSource = widget.mentorFor?.call(uid);
     widget.state.reportSource = widget.reportsFor?.call(uid);
+    widget.state.violationSource = widget.violationsFor?.call();
     widget.state.followSource = widget.followsFor?.call(uid);
 
     // **公開檔案的來源也要交給狀態層。** 在此之前只有這個畫面握著它，
@@ -433,6 +440,15 @@ class _AuthGateState extends State<AuthGate> {
           ? '是管理員（${widget.state.admin.scopes.length} 組權限）'
           : '一般使用者';
     });
+
+    // 自己的累計違規次數。**不在存檔裡，也不該在** —— 存檔是本人寫得動的，
+    // 而處罰級距靠這個數字決定。
+    if (widget.state.violationSource != null) {
+      await step('違規次數', () async {
+        await widget.state.loadMyViolations();
+        return '${widget.state.myViolations} 次';
+      });
+    }
 
     // 檢舉佇列。**只有管理員讀得動** —— 一般帳號連查都會被規則拒絕，
     // 所以這一塊自己判斷、自己成敗，不要讓它的失敗影響別人。

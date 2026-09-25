@@ -288,6 +288,20 @@ service cloud.firestore {
       }
     }
 
+    // --- 累計違規次數（[BE-13]，2026-09-25）---
+    //
+    // 階梯累犯制的級距由這個數字決定，所以它**必須是當事人自己改不動的**。
+    // 既有的兩個候選位置都不行：`public_profiles/{uid}` 與 `users/{uid}/…`
+    // 的規則都是「本人可寫」—— 他自己就能清掉。所以另開一份。
+    //
+    // 當事人讀得到自己的（處罰畫面要告訴他這是第幾次），
+    // 但讀不到別人的 —— 誰被罰過幾次不是公開資訊。
+    match /violations/{uid} {
+      allow read: if request.auth != null
+                  && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
     // --- 關注關係（[BE-11] 批次 2）---
     //
     // 文件 ID 是 {followerUid}_{followeeUid}，所以「同一組關係只有一筆」
