@@ -4879,10 +4879,24 @@ class AppState extends ChangeNotifier {
     return left.isNegative ? Duration.zero : left;
   }
 
+  /// 抽一份考卷。**題庫不足時回空清單**（訊息見 [examBankWarning]）。
+  ///
+  /// 在此之前作答畫面是一個拉桿，申請人自己拉答對幾題，那個數字直接
+  /// 被當成成績 —— 沒有出題，也沒有判卷。
+  List<ExamQuestion> drawExam() =>
+      drawExamPaper(examBank, platformConfig.i('exam', 'mcCount'));
+
+  /// 判卷。[answers] 是「題目 ID → 選了第幾個選項」，沒作答的算錯。
+  int gradeExam(List<ExamQuestion> paper, Map<String, int> answers) =>
+      gradeExamPaper(paper, answers);
+
   /// 使用者已作答教官測驗。
   ///
   /// 選擇題由系統即時判定，簡答題送管理員人工審核（時限 7 個工作天）——
   /// 故作答後停在「待人工審核」，不是當場放行。
+  ///
+  /// [correctCount] 由 [gradeExam] 算出來 —— **這支不自己判卷**，
+  /// 因為既有測試直接給題數驗「答對 N 題會怎樣」，那一層與判卷無關。
   bool submitExam(int correctCount) {
     if (instructorStage != InstructorStage.screenPassed &&
         instructorStage != InstructorStage.testing) {

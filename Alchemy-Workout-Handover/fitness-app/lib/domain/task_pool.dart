@@ -111,6 +111,43 @@ class ExamQuestion {
   }) : options = options ?? [];
 }
 
+/// 抽一份考卷 —— 自題庫隨機取 [mcCount] 題選擇題。
+///
+/// **題庫不足時回空清單**，呼叫端據此擋住作答（訊息用
+/// [examBankShortage]）。不回「抽得出幾題就幾題」：那會**靜靜地降低
+/// 及格門檻** —— 及格標準是百分比，20 題要對 16 題，4 題只要對 4 題
+/// 卻是同一個 80%，而那張考卷根本不是同一場考試。
+///
+/// [rng] 由呼叫端傳入，測試才驗得到「抽出來的是題庫裡的題目、不重複、
+/// 而且每次不一樣」。
+///
+/// 在此之前**沒有這個函式**：作答畫面是一個拉桿，申請人自己拉答對
+/// 幾題，然後那個數字直接被當成成績。沒有出題，也沒有判卷。
+List<ExamQuestion> drawExamPaper(
+  List<ExamQuestion> bank,
+  int mcCount, {
+  math.Random? rng,
+}) {
+  final mc = bank
+      .where((q) => q.type == ExamQuestionType.multipleChoice)
+      .toList();
+  if (mc.length < mcCount) return const [];
+  mc.shuffle(rng ?? math.Random());
+  return mc.take(mcCount).toList();
+}
+
+/// 判卷 —— [answers] 是「題目 ID → 選了第幾個選項」，回傳答對幾題。
+///
+/// **沒作答的題目算錯**，不是略過：略過的話交白卷會是 0/0，
+/// 而 0/0 在百分比上是未定義的，實作起來很容易變成 100%。
+int gradeExamPaper(List<ExamQuestion> paper, Map<String, int> answers) {
+  var correct = 0;
+  for (final q in paper) {
+    if (answers[q.id] == q.answerIndex) correct++;
+  }
+  return correct;
+}
+
 /// 題庫是否足夠抽出一份考卷。
 ///
 /// 題目**一律自題庫隨機抽取，不固定** —— 固定題目會使題庫答案外流後

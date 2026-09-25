@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/community.dart';
 import '../../domain/platform_config.dart';
+import '../../domain/task_pool.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -326,39 +327,103 @@ class _Condition extends StatelessWidget {
 
 /// 使用者已作答教官測驗。選擇題即時判定，簡答題送人工審核。
 /// 題目每次隨機抽取 —— 固定題目會使題庫外流後測驗淪為背誦，重考也失去意義。
+///
+/// **在此之前這裡是一個拉桿**：申請人自己拉「答對幾題」，那個數字直接
+/// 被當成成績。沒有出題、沒有判卷 —— 也就是任何人都能給自己滿分。
 Future<void> _takeExam(BuildContext context, AppState s) async {
-  final total = platformConfig.i('exam', 'mcCount');
-  var correct = (total * 0.9).round();
-  final ok = await showAppDialog(
+  final paper = s.drawExam();
+  if (paper.isEmpty) {
+    // 題庫不足時擋住，而且說出是哪一種不足。
+    // **不抽「有幾題就幾題」** —— 及格標準是百分比，那會靜靜地
+    // 降低門檻：20 題要對 16 題，4 題只要對 4 題也是同一個 80%。
+    showToast(context, s.examBankWarning ?? '題庫不足，暫時無法作答。');
+    return;
+  }
+
+  final answers = await Navigator.of(context).push<Map<String, int>>(
+      MaterialPageRoute(builder: (_) => _ExamPaperScreen(paper: paper)));
+  if (answers == null || !context.mounted) return;
+
+  final correct = s.gradeExam(paper, answers);
+  s.submitExam(correct);
+  if (!context.mounted) return;
+  showToast(
     context,
-    title: '作答教官測驗',
-    confirmLabel: '交卷',
-    content: StatefulBuilder(
-      builder: (context, setInner) => Column(
-        mainAxisSize: MainAxisSize.min,
+    s.examMcPassed
+        ? '選擇題 $correct/${paper.length} 通過，簡答題送人工審核'
+        : '選擇題 $correct/${paper.length}，未達及格標準',
+  );
+}
+
+/// 作答頁 —— 一題一張卡，全部作答完才能交卷。
+///
+/// 一次列出全部而不是一題一頁：題數由平台設定（目前 20），
+/// 分頁要多一層「上一題」的狀態，而作答本身沒有順序相依。
+class _ExamPaperScreen extends StatefulWidget {
+  final List<ExamQuestion> paper;
+  const _ExamPaperScreen({required this.paper});
+
+  @override
+  State<_ExamPaperScreen> createState() => _ExamPaperScreenState();
+}
+
+class _ExamPaperScreenState extends State<_ExamPaperScreen> {
+  final _answers = <String, int>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final left = widget.paper.length - _answers.length;
+    return Scaffold(
+      backgroundColor: C.bgPage,
+      appBar: AppBar(title: Text('教官測驗　${widget.paper.length} 題')),
+      body: ListView(
+        padding:
+            const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
         children: [
-          Text(
-            '$total 題選擇題 ＋ ${platformConfig.i('exam', 'saCount')} 題簡答。'
-            'Demo 直接拉答對題數：交卷後選擇題即時判定，簡答題等管理員審。',
-            style: T.caption(),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: S.base),
-          Text('答對 \$correct / \$total 題', style: T.numberM()),
-          Slider(
-            value: correct.toDouble(),
-            min: 0,
-            max: total.toDouble(),
-            divisions: total,
-            onChanged: (v) => setInner(() => correct = v.round()),
-          ),
+          for (var i = 0; i < widget.paper.length; i++)
+            _question(i, widget.paper[i]),
         ],
       ),
-    ),
-  );
-  if (ok != true || !context.mounted) return;
-  s.submitExam(correct);
-  showToast(context, '已交卷，簡答題送人工審核');
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(S.base),
+          child: AppButton(
+            label: left == 0 ? '交卷' : '還有 $left 題未作答',
+            // **未作答不給交卷。** 沒作答的題目判卷時算錯，
+            // 讓人一按就交出一張半空的考卷，而且不能重考 14 天。
+            onPressed: left == 0
+                ? () => Navigator.of(context).pop(Map.of(_answers))
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _question(int index, ExamQuestion q) => Padding(
+        padding: const EdgeInsets.only(bottom: S.md),
+        child: AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${index + 1}.　${q.text}',
+                  style: T.body(weight: FontWeight.w700)),
+              const SizedBox(height: S.sm),
+              for (var o = 0; o < q.options.length; o++)
+                RadioListTile<int>(
+                  value: o,
+                  // ignore: deprecated_member_use
+                  groupValue: _answers[q.id],
+                  // ignore: deprecated_member_use
+                  onChanged: (v) => setState(() => _answers[q.id] = v!),
+                  title: Text(q.options[o], style: T.body()),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+            ],
+          ),
+        ),
+      );
 }
 
 class _Info extends StatelessWidget {
