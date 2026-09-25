@@ -14,6 +14,7 @@ import '../data/team_data.dart';
 import '../data/mentor_data.dart';
 import '../data/report_data.dart';
 import '../data/store.dart';
+import '../domain/admin.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
 import 'signup/signup_screen.dart';
@@ -432,6 +433,16 @@ class _AuthGateState extends State<AuthGate> {
           ? '是管理員（${widget.state.admin.scopes.length} 組權限）'
           : '一般使用者';
     });
+
+    // 檢舉佇列。**只有管理員讀得動** —— 一般帳號連查都會被規則拒絕，
+    // 所以這一塊自己判斷、自己成敗，不要讓它的失敗影響別人。
+    if (widget.state.isPlatformAdmin) {
+      await step('檢舉佇列', () async {
+        await widget.state.loadReportQueue();
+        return '${widget.state.reports.length} 案'
+            '（待審 ${widget.state.reports.where((c) => c.state == CaseState.pending).length}）';
+      });
+    }
 
     // **排在最後，不是隨便排的。**
     //

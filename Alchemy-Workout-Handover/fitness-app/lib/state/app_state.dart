@@ -7002,6 +7002,84 @@ class AppState extends ChangeNotifier {
 
   /// 管理員已審視檢舉。待審視 → 審視中，寫入處理中的管理員 ID。
   /// 審視中**不自動退回待審視** —— 未下判定即離開者，案件留在審視中。
+  /// 每個案件對應到雲端的哪幾份文件。**一個標的可能有好幾位檢舉者。**
+  final Map<String, List<String>> _reportDocIds = {};
+
+  /// 把雲端的檢舉佇列讀進來。**只有管理員叫得動。**
+  ///
+  /// 在此之前使用者按的每一筆檢舉都寫進了 Firestore，而**沒有任何人讀它**
+  /// —— `ReportSource` 只有 `file()`，連讀的方法都沒有。後台那一頁列的是
+  /// 編出來的假案件（2026-09-24 已關掉），所以看起來一直都正常。
+  Future<void> loadReportQueue() async {
+    final src = reportSource;
+    if (src == null || !isPlatformAdmin || !canReview) return;
+    try {
+      applyCloudReports(await src.queue(limit: 100));
+    } catch (_) {
+      // 讀不到就維持現狀。**不清空** —— 空佇列與讀取失敗長得一模一樣，
+      // 而後者不該被畫成「沒有待審案件」。
+    }
+  }
+
+  /// 併案：多人檢舉**同一標的**合併為同一案件（`02_Aggregate定義.md`）。
+  ///
+  /// 併案在這裡做而不是在資料層，因為它需要看到所有人的那幾筆 ——
+  /// 而檢舉佇列正是一般使用者不該讀得到的東西。
+  void applyCloudReports(List<CloudReport> cloud) {
+    final byTarget = <String, List<CloudReport>>{};
+    for (final r in cloud) {
+      (byTarget[r.targetKey] ??= []).add(r);
+    }
+
+    for (final entry in byTarget.entries) {
+      final rows = entry.value..sort((a, b) => a.at.compareTo(b.at));
+      final first = rows.first;
+      _reportDocIds[entry.key] = [for (final r in rows) r.id];
+
+      final at = reports.indexWhere((c) => c.targetKey == entry.key);
+      final merged = ReportCase(
+        // 案件 ID 用標的 —— 併案之後「這一案」指的就是這個標的。
+        id: entry.key,
+        targetKey: entry.key,
+        reporters: [
+          for (final r in rows)
+            Reporter(
+                name: r.reporterName, reason: r.reason, note: r.note, at: r.at),
+        ],
+        target: first.target,
+        origin: first.origin,
+        // 內容與事由取**最早那一筆**：後來的檢舉者看到的是同一份內容。
+        content: first.content,
+        reason: first.reason,
+        reporterCount: rows.length,
+        accused: first.accused,
+        accusedViolations: violationsOf(first.accused),
+        enteredAt: first.at,
+        // 已在審視中的案件不要被重讀打回待審 —— 管理員可能正開著它。
+        state: at >= 0 ? reports[at].state : CaseState.pending,
+        handlerName: at >= 0 ? reports[at].handlerName : null,
+      );
+      if (at >= 0) {
+        reports[at] = merged;
+      } else {
+        reports.add(merged);
+      }
+    }
+    // 等最久的排前面。
+    reports.sort((a, b) => a.enteredAt.compareTo(b.enteredAt));
+    notifyListeners();
+  }
+
+  /// 裁決寫回雲端。即發即忘 —— 本機已經改了，寫失敗下次重讀會以雲端為準。
+  void _pushVerdict(ReportCase c, {required bool upheld}) {
+    final src = reportSource;
+    final ids = _reportDocIds[c.targetKey];
+    if (src == null || ids == null || ids.isEmpty) return;
+    src
+        .judge(ids, upheld: upheld, handlerName: admin.name)
+        .catchError((Object _) {});
+  }
+
   void reviewReport(ReportCase c) {
     if (!canReview) return;
     if (c.state != CaseState.pending) return;
@@ -7025,6 +7103,7 @@ class AppState extends ChangeNotifier {
     final after = violationsOf(c.accused) + 1;
     _setViolations(c.accused, after);
     if (c.accused == displayName) _issuePunishment(c, after);
+    _pushVerdict(c, upheld: true);
     notifyListeners();
   }
 
@@ -7099,6 +7178,7 @@ class AppState extends ChangeNotifier {
     if (c.state != CaseState.reviewing) return;
     c.state = CaseState.dismissed;
     c.handlerName = null;
+    _pushVerdict(c, upheld: false);
     notifyListeners();
   }
 
