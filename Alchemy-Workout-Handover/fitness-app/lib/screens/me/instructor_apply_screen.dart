@@ -340,12 +340,25 @@ Future<void> _takeExam(BuildContext context, AppState s) async {
     return;
   }
 
-  final answers = await Navigator.of(context).push<Map<String, int>>(
-      MaterialPageRoute(builder: (_) => _ExamPaperScreen(paper: paper)));
-  if (answers == null || !context.mounted) return;
+  final sa = s.drawShortAnswerQuestions();
+  if (sa.isEmpty) {
+    showToast(context, s.examBankWarning ?? '題庫不足，暫時無法作答。');
+    return;
+  }
 
-  final correct = s.gradeExam(paper, answers);
-  s.submitExam(correct);
+  final done = await Navigator.of(context).push<_ExamResult>(MaterialPageRoute(
+      builder: (_) => _ExamPaperScreen(paper: paper, shortAnswers: sa)));
+  if (done == null || !context.mounted) return;
+
+  final correct = s.gradeExam(paper, done.choices);
+  s.submitExam(
+    correct,
+    // **申請人真正寫的內容。** 在此之前送進待審佇列的是兩題寫死的
+    // 範例答案 —— 管理員據此發教官資格，而那不是他寫的。
+    shortAnswers: [
+      for (final q in sa) (q.text, done.written[q.id] ?? ''),
+    ],
+  );
   if (!context.mounted) return;
   showToast(
     context,
@@ -355,13 +368,24 @@ Future<void> _takeExam(BuildContext context, AppState s) async {
   );
 }
 
+/// 一份交出來的考卷。
+class _ExamResult {
+  /// 選擇題：題目 ID → 選了第幾個選項。
+  final Map<String, int> choices;
+
+  /// 簡答題：題目 ID → 寫了什麼。
+  final Map<String, String> written;
+  const _ExamResult(this.choices, this.written);
+}
+
 /// 作答頁 —— 一題一張卡，全部作答完才能交卷。
 ///
-/// 一次列出全部而不是一題一頁：題數由平台設定（目前 20），
+/// 一次列出全部而不是一題一頁：題數由平台設定（目前 20 ＋ 3），
 /// 分頁要多一層「上一題」的狀態，而作答本身沒有順序相依。
 class _ExamPaperScreen extends StatefulWidget {
   final List<ExamQuestion> paper;
-  const _ExamPaperScreen({required this.paper});
+  final List<ExamQuestion> shortAnswers;
+  const _ExamPaperScreen({required this.paper, required this.shortAnswers});
 
   @override
   State<_ExamPaperScreen> createState() => _ExamPaperScreenState();
@@ -369,19 +393,56 @@ class _ExamPaperScreen extends StatefulWidget {
 
 class _ExamPaperScreenState extends State<_ExamPaperScreen> {
   final _answers = <String, int>{};
+  final _written = <String, TextEditingController>{};
+
+  @override
+  void initState() {
+    super.initState();
+    for (final q in widget.shortAnswers) {
+      _written[q.id] = TextEditingController()..addListener(_onTyped);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _written.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _onTyped() => setState(() {});
+
+  /// 還有幾題沒作答。簡答題**空白或只有空格都算沒作答**。
+  int get _left =>
+      widget.paper.length -
+      _answers.length +
+      _written.values.where((c) => c.text.trim().isEmpty).length;
 
   @override
   Widget build(BuildContext context) {
-    final left = widget.paper.length - _answers.length;
+    final left = _left;
+    final total = widget.paper.length + widget.shortAnswers.length;
     return Scaffold(
       backgroundColor: C.bgPage,
-      appBar: AppBar(title: Text('教官測驗　${widget.paper.length} 題')),
+      appBar: AppBar(title: Text('教官測驗　$total 題')),
       body: ListView(
         padding:
             const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
         children: [
           for (var i = 0; i < widget.paper.length; i++)
             _question(i, widget.paper[i]),
+          if (widget.shortAnswers.isNotEmpty) ...[
+            const SectionTitle('簡答題'),
+            // 這幾題不由系統判 —— 說清楚，免得有人以為交卷就知道結果。
+            Padding(
+              padding: const EdgeInsets.only(bottom: S.md),
+              child: Text('由管理員人工審核，7 個工作天內完成。',
+                  style: T.caption()),
+            ),
+            for (var i = 0; i < widget.shortAnswers.length; i++)
+              _shortAnswer(widget.paper.length + i, widget.shortAnswers[i]),
+          ],
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -389,16 +450,47 @@ class _ExamPaperScreenState extends State<_ExamPaperScreen> {
           padding: const EdgeInsets.all(S.base),
           child: AppButton(
             label: left == 0 ? '交卷' : '還有 $left 題未作答',
-            // **未作答不給交卷。** 沒作答的題目判卷時算錯，
-            // 讓人一按就交出一張半空的考卷，而且不能重考 14 天。
+            // **未作答不給交卷。** 選擇題沒作答判卷時算錯，簡答題空白
+            // 送到管理員手上也只會被退 —— 而交卷之後 14 天不能重考。
             onPressed: left == 0
-                ? () => Navigator.of(context).pop(Map.of(_answers))
+                ? () => Navigator.of(context).pop(_ExamResult(
+                      Map.of(_answers),
+                      {
+                        for (final e in _written.entries)
+                          e.key: e.value.text.trim(),
+                      },
+                    ))
                 : null,
           ),
         ),
       ),
     );
   }
+
+  Widget _shortAnswer(int index, ExamQuestion q) => Padding(
+        padding: const EdgeInsets.only(bottom: S.md),
+        child: AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${index + 1}.　${q.text}',
+                  style: T.body(weight: FontWeight.w700)),
+              const SizedBox(height: S.sm),
+              TextField(
+                controller: _written[q.id],
+                maxLines: 5,
+                minLines: 3,
+                style: T.body(),
+                decoration: const InputDecoration(
+                  hintText: '寫下你的作法與理由…',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 
   Widget _question(int index, ExamQuestion q) => Padding(
         padding: const EdgeInsets.only(bottom: S.md),

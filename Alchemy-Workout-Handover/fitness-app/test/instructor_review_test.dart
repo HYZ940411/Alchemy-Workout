@@ -12,9 +12,24 @@ import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 /// 作答完、停在待人工審核的狀態。
+///
+/// **簡答作答由呼叫端傳入**（2026-09-25）—— 在此之前 `submitExam()` 裡
+/// 寫死兩題兩答，所以這裡什麼都不傳也會有內容可審。那正是問題：
+/// 管理員看到的是申請人從來沒寫過的答案。作答畫面現在真的收簡答，
+/// 這個輔助函式跟著照做。
 AppState submitted() {
   final s = AppState()..instructorStage = InstructorStage.screenPassed;
-  expect(s.submitExam(18), isTrue, reason: '前提：選擇題要真的過');
+  expect(
+      s.submitExam(18, shortAnswers: const [
+        ('請說明你會如何為一位久坐上班族安排第一個月的課表，並說明理由。',
+            '前兩週以動作學習與活動度為主，每週兩次全身…'),
+        ('學徒要求你開立飲食與補劑處方，你會怎麼回應？',
+            '那超出教官的執業範圍，我會轉介營養師。'),
+        ('學徒反覆抱怨同一部位不適，但動作沒有明顯問題。請說明處理步驟。',
+            '先降量並記錄誘發情境，持續不改善就請他就醫。'),
+      ]),
+      isTrue,
+      reason: '前提：選擇題要真的過');
   expect(s.instructorStage, InstructorStage.pendingReview);
   return s;
 }

@@ -116,9 +116,15 @@ void main() {
 
   group('設定教官測驗題庫', () {
     test('題庫抽不出考卷時後台要講', () {
+      // 2026-09-25：示範題庫已補足到規格的 20＋3，所以預設不再缺題。
+      // 改成把題數調高來製造不足 —— 驗的是「不足時會不會講」，
+      // 而題庫夠不夠是另一回事（見 `exam_paper_test` 的「示範題庫符合規格」）。
       final s = AppState();
-      expect(s.examBankWarning, isNotNull,
-          reason: '假資料只有 3 題選擇題，抽不出 20 題');
+      expect(s.examBankWarning, isNull, reason: '前提：預設題庫是夠的');
+
+      platformConfig.group('exam').param('mcCount').value = 999;
+      expect(s.examBankWarning, isNotNull);
+
       platformConfig.group('exam').param('mcCount').value = 2;
       platformConfig.group('exam').param('saCount').value = 2;
       expect(s.examBankWarning, isNull);

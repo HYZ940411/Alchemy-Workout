@@ -4886,6 +4886,10 @@ class AppState extends ChangeNotifier {
   List<ExamQuestion> drawExam() =>
       drawExamPaper(examBank, platformConfig.i('exam', 'mcCount'));
 
+  /// 抽簡答題。**題庫不足時回空清單。**
+  List<ExamQuestion> drawShortAnswerQuestions() =>
+      drawShortAnswers(examBank, platformConfig.i('exam', 'saCount'));
+
   /// 判卷。[answers] 是「題目 ID → 選了第幾個選項」，沒作答的算錯。
   int gradeExam(List<ExamQuestion> paper, Map<String, int> answers) =>
       gradeExamPaper(paper, answers);
@@ -4897,7 +4901,7 @@ class AppState extends ChangeNotifier {
   ///
   /// [correctCount] 由 [gradeExam] 算出來 —— **這支不自己判卷**，
   /// 因為既有測試直接給題數驗「答對 N 題會怎樣」，那一層與判卷無關。
-  bool submitExam(int correctCount) {
+  bool submitExam(int correctCount, {List<(String, String)>? shortAnswers}) {
     if (instructorStage != InstructorStage.screenPassed &&
         instructorStage != InstructorStage.testing) {
       return false;
@@ -4925,17 +4929,16 @@ class AppState extends ChangeNotifier {
       InstructorCase(
         id: newId('IC-'),
         applicant: displayName,
+        // AI 訓練品質評分。**目前仍是寫死的** —— 規格說它由系統依申請人的
+        // 訓練紀錄算出（`02_Aggregate定義.md` 第 1475 行，Actor 為「系統」），
+        // 而那個計算還沒實作。見 PROGRESS.md 第 5 節 0j。
         aiScores: const {'訓練完成率': 78, '訓練規律性': 84, '紀錄合理性': 71},
         weighted: 77.9,
         concerns: const [],
-        answers: const [
-          ('學員深蹲膝蓋內夾，你會怎麼處理？',
-              '先確認是活動度還是肌力不足。降到能全程膝蓋外推的重量，'
-              '加側走彈力帶與腳踝背屈暖身，兩週後再評估。'),
-          ('學員說想一個月瘦 10 公斤，你怎麼回應？',
-              '說明這個速度多半會掉肌肉，改建議每週 0.5–1%，'
-              '並問清楚他的期限從哪裡來。'),
-        ],
+        // **簡答作答由呼叫端傳進來。** 在此之前這裡是兩題兩答的寫死內容 ——
+        // 管理員看到的是申請人從來沒寫過的答案，然後據此發教官資格。
+        // 空值＝沒有作答紀錄（既有測試直接叫 `submitExam(18)` 走這條）。
+        answers: shortAnswers ?? const [],
         enteredAt: now,
       ),
     );

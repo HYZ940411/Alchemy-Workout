@@ -748,36 +748,273 @@ List<TaskPoolItem> buildTaskPool() => [
 
 /// 教官測驗題庫。題目一律隨機抽取，不固定 ——
 /// 固定題目會使題庫外流後測驗淪為背誦，重考也失去意義。
+///
+/// **2026-09-25 補足到規格要求的題數**（選擇題 20、簡答 3，見
+/// `教官申請流程.md`）。在此之前只有 3 題選擇題 ＋ 2 題簡答 ——
+/// 而作答畫面是一個拉桿，根本沒去抽題，所以從來沒人發現不夠。
+///
+/// **這批題目由 Claude 起草，使用者授權直接採用（2026-09-25）。**
+/// 方向刻意集中在**安全、轉介時機與執業範圍** —— 那是教官做錯會傷到
+/// 學徒的地方，也是不需要專業體適能認證就判斷得出對錯的地方。
+/// 訓練處方的細節（組數次數的最適配置等）刻意不出題：那有學派差異，
+/// 出成單選題只會考出「背過我們這套」而不是「懂不懂」。
+///
+/// ⚠️ **上線前建議由具備體適能專業的人覆核一次。** 這份題庫決定誰能
+/// 帶別人訓練，而我不是那個專業。
 List<ExamQuestion> buildExamBank() => [
       ExamQuestion(
-        id: 'q1',
+        id: 'mc01',
         type: ExamQuestionType.multipleChoice,
         text: '學徒反映深蹲時膝蓋內夾，最先該處理什麼？',
-        options: ['加重量', '檢查足踝活動度與臀中肌啟動', '改練腿推', '增加組數'],
+        options: [
+          '加重量讓他更專心',
+          '檢查足踝活動度與臀中肌啟動',
+          '改練腿推避開問題',
+          '增加組數練到會為止',
+        ],
         answerIndex: 1,
       ),
       ExamQuestion(
-        id: 'q2',
+        id: 'mc02',
         type: ExamQuestionType.multipleChoice,
         text: '學徒說訓練後兩天腰仍在痛，你應該？',
-        options: ['請他熱身久一點再練', '請他就醫，暫停該部位訓練', '換成硬舉', '加強核心'],
+        options: [
+          '請他熱身久一點再練',
+          '請他就醫，該部位暫停訓練',
+          '換成硬舉練強一點',
+          '加強核心把腰撐住',
+        ],
         answerIndex: 1,
       ),
       ExamQuestion(
-        id: 'q3',
+        id: 'mc03',
         type: ExamQuestionType.multipleChoice,
         text: '新手第一週的合理訓練頻率為何？',
-        options: ['每天兩練', '每週 2–3 次', '每週 6 次', '看心情'],
+        options: [
+          '每天兩練趁有熱情',
+          '每週 2–3 次',
+          '每週 6 次快速見效',
+          '看心情，想練才練',
+        ],
         answerIndex: 1,
       ),
       ExamQuestion(
-        id: 'q4',
+        id: 'mc04',
+        type: ExamQuestionType.multipleChoice,
+        text: '學徒說「我想一個月瘦 10 公斤」，最適當的回應是？',
+        options: [
+          '幫他排每天兩次有氧',
+          '說明合理速率約每週體重的 0.5–1%，並問清楚期限從哪來',
+          '叫他先斷食一週',
+          '答應他，先做再說',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc05',
+        type: ExamQuestionType.multipleChoice,
+        text: '漸進超負荷最合理的做法是？',
+        options: [
+          '每次訓練都加重',
+          '在動作品質維持的前提下，逐步增加重量、次數或組數',
+          '每週把重量加倍',
+          '只增加組數，重量永遠不變',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc06',
+        type: ExamQuestionType.multipleChoice,
+        text: '學徒臥推時手腕會痛，第一步該檢查什麼？',
+        options: [
+          '直接換成啞鈴',
+          '握法與手腕角度，以及槓是否壓在掌根',
+          '叫他戴護腕就好',
+          '減少到只做一組',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc07',
+        type: ExamQuestionType.multipleChoice,
+        text: '關於訓練前的熱身，下列何者最適當？',
+        options: [
+          '靜態伸展拉到極限',
+          '以低強度有氧與該動作的漸進輕重量組暖身',
+          '直接上工作重量',
+          '熱身會浪費力氣，可略過',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc08',
+        type: ExamQuestionType.multipleChoice,
+        text: '學徒本週睡眠嚴重不足且精神不濟，你會？',
+        options: [
+          '照原課表練完',
+          '降低強度或改為輕度活動，並了解原因',
+          '加咖啡因硬上',
+          '取消他的會員資格',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc09',
+        type: ExamQuestionType.multipleChoice,
+        text: '對於「局部瘦身」的說法，正確的是？',
+        options: [
+          '練腹肌就能瘦肚子',
+          '脂肪減少的分布由全身能量赤字與個體差異決定，無法指定部位',
+          '每天做 500 下捲腹最有效',
+          '用束腹帶包住就會瘦該處',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc10',
+        type: ExamQuestionType.multipleChoice,
+        text: '學徒想在訓練中「練到力竭」每一組，最適當的建議是？',
+        options: [
+          '每組都力竭效果最好',
+          '保留一定的預備次數，僅在少數組別接近力竭，以控制疲勞與風險',
+          '力竭與否無所謂',
+          '只有新手需要保留',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc11',
+        type: ExamQuestionType.multipleChoice,
+        text: '硬舉時學徒背部明顯圓弓，你應該？',
+        options: [
+          '請他撐住再多做幾下',
+          '立即停止該組，降重量並重建脊椎中立的動作模式',
+          '改成更重的重量逼他繃緊',
+          '叫他繫腰帶就能解決',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc12',
+        type: ExamQuestionType.multipleChoice,
+        text: '關於休息時間，下列敘述何者較合理？',
+        options: [
+          '所有動作都休息 30 秒',
+          '大重量多關節動作通常需要較長休息，孤立動作可較短',
+          '休息越短效果越好',
+          '休息時間不影響訓練品質',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc13',
+        type: ExamQuestionType.multipleChoice,
+        text: '學徒是高血壓患者並正在服藥，你應該？',
+        options: [
+          '照一般課表安排即可',
+          '建議他先諮詢醫師，並避開憋氣用力等會使血壓驟升的方式',
+          '讓他只做有氧就好',
+          '拒絕指導所有慢性病患者',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc14',
+        type: ExamQuestionType.multipleChoice,
+        text: '對於延遲性肌肉痠痛（DOMS），正確的是？',
+        options: [
+          '沒有痠痛代表沒效',
+          '痠痛程度不等於訓練成效，不該用它當作課表是否有效的指標',
+          '越痛越有效',
+          '痠痛時應該練更重',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc15',
+        type: ExamQuestionType.multipleChoice,
+        text: '學徒的訓練紀錄顯示每組都恰好 10 下、重量從不改變，你會？',
+        options: [
+          '稱讚他很穩定',
+          '了解實際執行狀況，確認是否真的完成或只是照抄預帶值',
+          '直接幫他加重',
+          '忽略，紀錄不重要',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc16',
+        type: ExamQuestionType.multipleChoice,
+        text: '指導未成年學徒時，最適當的做法是？',
+        options: [
+          '與成人採用完全相同的課表',
+          '以動作學習與安全為主，並取得監護人知情同意',
+          '完全不能做任何重量訓練',
+          '只做徒手訓練即可，不需其他考量',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc17',
+        type: ExamQuestionType.multipleChoice,
+        text: '學徒在訓練中感到頭暈、冒冷汗，你應該？',
+        options: [
+          '請他休息一下再繼續',
+          '立即停止訓練，讓他坐下補充水分，必要時尋求醫療協助',
+          '給他一顆糖繼續練',
+          '請他自行決定',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc18',
+        type: ExamQuestionType.multipleChoice,
+        text: '關於伸展的時機，較適當的是？',
+        options: [
+          '訓練前做長時間靜態伸展',
+          '訓練前以動態伸展為主，長時間靜態伸展安排在訓練後或獨立時段',
+          '伸展完全沒有必要',
+          '只在受傷後才需要伸展',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc19',
+        type: ExamQuestionType.multipleChoice,
+        text: '學徒連續四週都無法完成課表的目標次數，你應該？',
+        options: [
+          '要求他更努力',
+          '檢視課表強度是否過高，並調整訓練量或恢復安排',
+          '換一個更難的課表',
+          '告訴他不適合健身',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'mc20',
+        type: ExamQuestionType.multipleChoice,
+        text: '作為教官，下列何者超出你的執業範圍？',
+        options: [
+          '示範動作與修正姿勢',
+          '診斷傷病並開立治療處方',
+          '安排訓練課表',
+          '說明訓練原則',
+        ],
+        answerIndex: 1,
+      ),
+      ExamQuestion(
+        id: 'sa01',
         type: ExamQuestionType.shortAnswer,
         text: '請說明你會如何為一位久坐上班族安排第一個月的課表，並說明理由。',
       ),
       ExamQuestion(
-        id: 'q5',
+        id: 'sa02',
         type: ExamQuestionType.shortAnswer,
         text: '學徒要求你開立飲食與補劑處方，你會怎麼回應？',
+      ),
+      ExamQuestion(
+        id: 'sa03',
+        type: ExamQuestionType.shortAnswer,
+        text: '學徒在你指導期間反覆抱怨同一部位不適，但檢查動作沒有明顯問題。請說明你接下來的處理步驟。',
       ),
     ];

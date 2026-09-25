@@ -136,6 +136,23 @@ List<ExamQuestion> drawExamPaper(
   return mc.take(mcCount).toList();
 }
 
+/// 抽簡答題 —— 自題庫隨機取 [saCount] 題。
+///
+/// 與 [drawExamPaper] 分開兩支，因為兩者**送去的地方不同**：
+/// 選擇題由系統即時判定，簡答題送管理員人工審核（規格明訂的雙門檻）。
+/// 合成一支回傳混在一起的清單，呼叫端還是得再分一次。
+List<ExamQuestion> drawShortAnswers(
+  List<ExamQuestion> bank,
+  int saCount, {
+  math.Random? rng,
+}) {
+  final sa =
+      bank.where((q) => q.type == ExamQuestionType.shortAnswer).toList();
+  if (sa.length < saCount) return const [];
+  sa.shuffle(rng ?? math.Random());
+  return sa.take(saCount).toList();
+}
+
 /// 判卷 —— [answers] 是「題目 ID → 選了第幾個選項」，回傳答對幾題。
 ///
 /// **沒作答的題目算錯**，不是略過：略過的話交白卷會是 0/0，
