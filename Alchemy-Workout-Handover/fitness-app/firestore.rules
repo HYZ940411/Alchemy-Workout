@@ -302,6 +302,27 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // --- 處罰狀態（[BE-13]，2026-09-25）---
+    //
+    // 與違規次數同一個形狀：管理員可寫、當事人唯讀。存在本人寫得動的
+    // 地方（存檔、public_profiles）的話，被罰的人自己就能解除。
+    //
+    // **唯一的例外是申訴** —— 那是當事人發起的，所以他改得動
+    // `appealed` 與 `appealState` 這兩個欄位，但**只有這兩個**。
+    // 用 affectedKeys 限住，與貼文 likeCount 同一個手法：
+    // 少了這層，他就能把自己的處罰種類改成「警告」。
+    match /punishments/{uid} {
+      allow read: if request.auth != null
+                  && (request.auth.uid == uid || isAdmin());
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+                    || (request.auth != null
+                        && request.auth.uid == uid
+                        && request.resource.data.diff(resource.data)
+                             .affectedKeys()
+                             .hasOnly(['appealed', 'appealState']));
+    }
+
     // --- 關注關係（[BE-11] 批次 2）---
     //
     // 文件 ID 是 {followerUid}_{followeeUid}，所以「同一組關係只有一筆」

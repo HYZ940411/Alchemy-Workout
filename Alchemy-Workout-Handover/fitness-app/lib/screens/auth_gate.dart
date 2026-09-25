@@ -13,7 +13,9 @@ import '../data/chat_data.dart';
 import '../data/team_data.dart';
 import '../data/mentor_data.dart';
 import '../data/report_data.dart';
+import '../data/punishment_data.dart';
 import '../data/violation_data.dart';
+import '../domain/commerce.dart';
 import '../data/store.dart';
 import '../domain/admin.dart';
 import '../state/app_state.dart';
@@ -73,6 +75,7 @@ class AuthGate extends StatefulWidget {
   /// 累計違規次數。與 uid 無關（一份服務讀所有人的），但與其他來源
   /// 同一個形狀，保持呼叫端一致。
   final ViolationSource Function()? violationsFor;
+  final PunishmentSource Function()? punishmentsFor;
 
   const AuthGate({
     super.key,
@@ -90,6 +93,7 @@ class AuthGate extends StatefulWidget {
     this.mentorFor,
     this.reportsFor,
     this.violationsFor,
+    this.punishmentsFor,
   });
 
   @override
@@ -318,6 +322,7 @@ class _AuthGateState extends State<AuthGate> {
     widget.state.mentorSource = widget.mentorFor?.call(uid);
     widget.state.reportSource = widget.reportsFor?.call(uid);
     widget.state.violationSource = widget.violationsFor?.call();
+    widget.state.punishmentSource = widget.punishmentsFor?.call();
     widget.state.followSource = widget.followsFor?.call(uid);
 
     // **公開檔案的來源也要交給狀態層。** 在此之前只有這個畫面握著它，
@@ -447,6 +452,16 @@ class _AuthGateState extends State<AuthGate> {
       await step('違規次數', () async {
         await widget.state.loadMyViolations();
         return '${widget.state.myViolations} 次';
+      });
+    }
+
+    // 處罰狀態。**同樣不在存檔裡** —— 存檔是本人寫得動的，
+    // 被罰的人自己就能解除。
+    if (widget.state.punishmentSource != null) {
+      await step('處罰狀態', () async {
+        await widget.state.loadMyPunishment();
+        final p = widget.state.punishment;
+        return p == null ? '無' : punishmentKindNames[p.kind]!;
       });
     }
 

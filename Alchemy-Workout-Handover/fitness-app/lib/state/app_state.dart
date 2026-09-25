@@ -11,6 +11,7 @@ import '../domain/clock.dart';
 export '../domain/clock.dart' show businessDate;
 import '../data/ai_suggestion.dart';
 import '../data/report_data.dart';
+import '../data/punishment_data.dart';
 import '../data/violation_data.dart';
 import '../domain/ai_adjust.dart';
 import '../domain/decay.dart';
@@ -6869,6 +6870,13 @@ class AppState extends ChangeNotifier {
     if (p == null || !p.canAppealAt(at)) return;
     p.appealed = true;
     p.appealState = AppealState.pending;
+    // 寫回雲端 —— 不寫的話重新整理就變回「還沒申訴」，可以一直申訴。
+    // 規則只讓當事人動這兩個欄位（`affectedKeys`）。
+    if (punishmentSource case final src?) {
+      if (myUid case final uid?) {
+        src.markAppealed(uid, AppealState.pending).catchError((Object _) {});
+      }
+    }
     // 申訴為獨立 Aggregate，且進管理員的待審佇列。
     appeals.add(AppealCase(
       id: newId('AP-'),
@@ -7156,7 +7164,7 @@ class AppState extends ChangeNotifier {
     // 兩位管理員同時裁決同一個人時，本機推算會少算。
     final after = violationsOf(c.accused) + 1;
     _setViolations(c.accused, after);
-    if (c.accused == displayName) _issuePunishment(c, after);
+    _issuePunishment(c, after);
     _pushVerdict(c, upheld: true);
     notifyListeners();
     _recordViolation(c, after);
@@ -7210,9 +7218,35 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 雲端的處罰狀態。**空值代表不同步** —— 既有測試走這條。
+  PunishmentSource? punishmentSource;
+
+  /// 把自己的處罰讀回來。
+  ///
+  /// **不在存檔裡，也不該在** —— 存檔是本人寫得動的，
+  /// 被罰的人自己就能解除。登入時向 `punishments/{uid}` 問一次。
+  Future<void> loadMyPunishment() async {
+    final src = punishmentSource;
+    final uid = myUid;
+    if (src == null || uid == null) return;
+    try {
+      punishment = await src.of(uid);
+      notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀。**往「沒罰」的方向錯** ——
+      // 一次讀取失敗不該把人鎖在門外。
+    }
+  }
+
+  /// 開出一個處罰。
+  ///
+  /// **在此之前這支只在「被罰的是我自己」時才被呼叫** ——
+  /// 也就是管理員只罰得到自己，判別人成立對方那邊什麼都沒發生。
+  /// 現在對任何人都成立：本機那一份只在罰到自己時才動，
+  /// 罰別人一律走雲端。
   void _issuePunishment(ReportCase c, int after) {
     final tier = tierForViolations(after);
-    punishment = Punishment(
+    final p = Punishment(
       kind: _kindOf(tier),
       reason: c.reason,
       evidence: c.content,
@@ -7224,14 +7258,28 @@ class AppState extends ChangeNotifier {
           ? null
           : now.add(Duration(days: tier.days!)),
     );
+
+    // 寫上雲。uid 缺席＝舊案件（2026-09-25 之前送出的），罰不了 ——
+    // 理由同記點：寫到暱稱底下的話，撞名就罰到別人頭上。
+    final src = punishmentSource;
+    final uid = c.accusedUid;
+    if (src != null && uid != null) {
+      src.issue(uid, p, name: c.accused).catchError((Object _) {});
+    }
+
+    // 以下三件事只在**罰到自己**時才成立 —— 別人的信箱、別人的教官
+    // 資格都不在這台裝置上。那幾件事要等對方登入時由雲端那份觸發。
+    if (c.accused != displayName) return;
+
+    punishment = p;
     // 已填電子郵件者，另以電子郵件通知處罰內容與 **30 天申訴期限**。
     _email('你的帳號已受處罰',
-        '處罰：${punishmentKindNames[punishment!.kind]}\n'
+        '處罰：${punishmentKindNames[p.kind]}\n'
         '事由：${c.reason}\n'
         '你可於收到本通知起 30 天內提出申訴，同一處罰限申訴一次。');
     // 受處罰者具教官身分且處罰為**停權以上**者，教官資格一併撤銷；
     // 警告不撤銷 —— 讓剛被判定違規者繼續帶徒，處罰就沒有效果。
-    if (isInstructor && isSuspension(punishment!.kind)) {
+    if (isInstructor && isSuspension(p.kind)) {
       revokeInstructor(byAdmin: false);
     }
   }
