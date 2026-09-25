@@ -212,6 +212,9 @@ flutter build macos --release
       要做：`experience_ratings/{raterUid}_{target}_{targetId}` ＋
       規則（本人可寫、管理員可讀）＋ `RatingSource` ＋ 後台讀取。
       **與 `[BE-13]` 同一個前提**：要先有帳號帶得到 admin custom claim
+- [ ] 【人】**教官測驗題庫需由具備體適能專業的人覆核**（2026-09-25 使用者裁決 B：
+      上線前一定要有人看過）。目前 20 題選擇 ＋ 3 題簡答由 Claude 起草，
+      方向為安全、轉介時機與執業範圍。**這份題庫決定誰能帶別人訓練。**
 - [ ] 【人→CC】`[BE-13]` 檢舉／申訴上雲 ＋ 管理端帳號。
       自 `[BE-11]` 移出：檢舉是管理端功能，而**目前沒有任何帳號帶得到
       admin custom claim**，案件搬上雲也沒有人處理得了。
