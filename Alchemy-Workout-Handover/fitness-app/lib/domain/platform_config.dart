@@ -412,6 +412,17 @@ class PlatformConfig {
         unit: '分',
         hint: '該單項低於此值即駁回，不論加權平均為何。',
       ),
+      // 三維權重（規格明訂為平台級可調參數，但沒給初始值）。
+      //
+      // **合理性壓重，是因為評分改由 Gemini 產出**（使用者裁決 2026-09-25）。
+      // 模型看到「數字漂亮」的紀錄很容易把完成率與規律性給高，
+      // 而合理性抓的是造假 —— 那是唯一「做錯會讓不該當教官的人當上」的維度。
+      SettingParam(
+          key: 'wCompletion', label: '權重：訓練完成率', value: 25, unit: '%'),
+      SettingParam(
+          key: 'wConsistency', label: '權重：訓練規律性', value: 25, unit: '%'),
+      SettingParam(
+          key: 'wSanity', label: '權重：紀錄合理性', value: 50, unit: '%'),
     ],
     invariant: (v) {
       if (v['discounted']! > v['workouts']!) {
@@ -421,6 +432,11 @@ class PlatformConfig {
         return '品質分折抵門檻須高於品質分通過門檻。';
       }
       if (v['rank']! < 1) return '需求階級至少為 1。';
+      // 權重全為 0 的話加權平均永遠是 0，每個人都會被品質分門檻擋下 ——
+      // 那不是「調參數」，是把整條路關掉，而且沒有人看得出為什麼。
+      if (v['wCompletion']! + v['wConsistency']! + v['wSanity']! <= 0) {
+        return '三維權重不得全為 0。';
+      }
       return null;
     },
   );

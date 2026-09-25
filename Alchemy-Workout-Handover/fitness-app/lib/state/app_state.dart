@@ -19,6 +19,7 @@ import '../domain/decay.dart';
 import '../domain/novice.dart';
 import '../domain/novice_wrapup.dart';
 import '../domain/task_pool.dart';
+import '../domain/training_quality.dart';
 import '../domain/models.dart';
 import '../domain/registration.dart';
 import '../domain/social.dart';
@@ -4422,11 +4423,40 @@ class AppState extends ChangeNotifier {
   bool isInstructor = false;
   InstructorStage instructorStage = InstructorStage.notApplied;
 
-  /// AI 訓練品質評分的加權平均，與其中的「紀錄合理性」單項。
-  /// 兩者皆為初審讀取的值 —— 加權平均比對通過／折抵門檻，
-  /// 單項另受一票否決門檻檢核，兩者並存。
-  int qualityScore = 72;
-  int sanityScore = 68;
+  /// AI 訓練品質評分。**空值＝還沒評過。**
+  ///
+  /// 在此之前這裡是寫死的 `qualityScore = 72`／`sanityScore = 68` ——
+  /// 每一位申請人拿到的都是同一組數字，而那兩個數字決定他能不能申請。
+  QualityScore? quality;
+
+  /// 依訓練紀錄重算一次品質評分。**申請教官時呼叫。**
+  ///
+  /// 規格：重新申請時產生新的一筆教官申請並**重新評分**，不沿用舊的 ——
+  /// 14 天只是最低重試間隔，數月後再申請時訓練紀錄已完全不同。
+  QualityScore rescoreTrainingQuality() {
+    final scored = scoreTrainingQuality([
+      for (final h in history)
+        SessionSummary(
+          date: h.date,
+          totalSets: h.totalSets,
+          minutes: h.minutes,
+          sets: [
+            for (final e in h.exercises)
+              for (final t in e.sets) t,
+          ],
+        ),
+    ]);
+    quality = scored;
+    notifyListeners();
+    return scored;
+  }
+
+  /// 加權平均。沒評過時為 0 —— **不給一個看起來合理的預設值**，
+  /// 那會讓「還沒評分」與「評了 72 分」在畫面上長得一樣。
+  int get qualityScore => quality?.weighted ?? 0;
+
+  /// 「紀錄合理性」單項。受一票否決門檻檢核，與加權平均並存。
+  int get sanityScore => quality?.sanity ?? 0;
 
   /// 教官資格初審的判定。門檻取自〈教官初審設定〉，管理員調整後即時反映。
   InstructorGate get instructorGate => evaluateInstructorGate(
@@ -4957,6 +4987,10 @@ class AppState extends ChangeNotifier {
     instructorStage = InstructorStage.screening;
     instructorRejectStage = null;
     examMcScore = null;
+    // **重新評分，不沿用舊的**（規格：任何重試皆重跑 AI 訓練品質評分）。
+    // 14 天只是最低重試間隔，數月後再申請時訓練紀錄已完全不同，
+    // 沿用舊評分等於用過期資料判定。
+    rescoreTrainingQuality();
     notifyListeners();
     return true;
   }
@@ -5020,6 +5054,9 @@ class AppState extends ChangeNotifier {
     if (i < 0 || i >= order.length - 1) return;
     final next = order[i + 1];
     if (next == InstructorStage.approved) return;
+
+    // 進「初審中」就評分 —— 那個狀態的定義就是「等 AI 產出訓練品質評分」。
+    if (next == InstructorStage.screening) rescoreTrainingQuality();
 
     if (next == InstructorStage.pendingReview) {
       // 走 [submitExam]，不是直接改狀態 —— 待人工審核只該有一條路進得去，
