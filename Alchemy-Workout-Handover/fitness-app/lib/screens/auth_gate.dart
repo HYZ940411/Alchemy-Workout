@@ -15,6 +15,7 @@ import '../data/mentor_data.dart';
 import '../data/report_data.dart';
 import '../data/appeal_data.dart';
 import '../data/punishment_data.dart';
+import '../data/quality_score_data.dart';
 import '../data/violation_data.dart';
 import '../domain/commerce.dart';
 import '../data/store.dart';
@@ -53,6 +54,7 @@ class AuthGate extends StatefulWidget {
 
   /// 外部的 AI 建議來源（[BE-08]）。空值代表走端內規則。
   final AiSuggestionSource? aiSource;
+  final QualityScoreSource? qualitySource;
 
   /// 關注關係的來源（[BE-11] 批次 2）。空值代表不同步。
   final FollowSource Function(String uid)? followsFor;
@@ -88,6 +90,7 @@ class AuthGate extends StatefulWidget {
     this.platformData,
     this.profileFor,
     this.aiSource,
+    this.qualitySource,
     this.followsFor,
     this.postsFor,
     this.chatsFor,
@@ -151,6 +154,7 @@ class _AuthGateState extends State<AuthGate> {
     // 它不需要 uid，也不需要載入任何東西 —— token 是按下調整那一刻
     // 才抓的。沒有理由讓它依賴六個不相干的網路呼叫。
     widget.state.aiSource = widget.aiSource;
+    widget.state.qualitySource = widget.qualitySource;
 
     // 讀裝置層的記事本。**不 await** —— 讀不到只是文案退回「開始吧」，
     // 不該擋住登入頁畫出來。

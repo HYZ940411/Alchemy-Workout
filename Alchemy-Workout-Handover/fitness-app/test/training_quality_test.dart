@@ -17,6 +17,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fitness_app/data/quality_score_data.dart';
+import 'package:fitness_app/data/quality_score_http.dart';
 import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/domain/training_quality.dart';
@@ -258,4 +260,161 @@ void main() {
       expect(s.quality!.completion, isNot(1));
     });
   });
+
+  _geminiLayer();
+}
+
+/// Gemini 那一層（2026-09-25）。
+///
+/// ## 退路在前端，不在 Worker
+///
+/// `workers/src/adjust.ts` 的退路是在 Worker 裡**再寫一份規則**
+/// （`ruleFallback()`），而 Dart 那邊已經有一份 —— `PROGRESS.md` 記著
+/// 那是違反「同一個決定只寫一個地方」的已知問題，兩份要一起改。
+///
+/// 這次刻意不重蹈覆轍：Worker 失敗就回非 200，由 `AppState` 退回
+/// `scoreTrainingQuality()`。規則只有一份，而且有測試釘著。
+void _geminiLayer() {
+  group('Gemini 評分', () {
+    test('沒接來源就走規則，行為與以前一樣', () async {
+      final s = AppState();
+      final q = await s.rescoreTrainingQualityAsync();
+      expect(q.source, 'rules');
+      expect(s.qualityScoreError, isNull);
+    });
+
+    test('模型回得來就用模型的', () async {
+      final s = AppState()
+        ..qualitySource = _FakeQuality(const QualityScore(
+          completion: 90,
+          consistency: 85,
+          sanity: 95,
+          concerns: ['某某'],
+          source: 'gemini',
+        ));
+
+      final q = await s.rescoreTrainingQualityAsync();
+
+      expect(q.source, 'gemini');
+      expect(s.quality!.completion, 90);
+      expect(s.qualityScoreError, isNull);
+    });
+
+    test('模型失敗就退回規則 —— 規格不允許因平台故障而駁回申請者', () async {
+      final s = AppState()..qualitySource = _FakeQuality.failing();
+
+      final q = await s.rescoreTrainingQualityAsync();
+
+      expect(q.source, 'rules');
+      expect(s.quality, isNotNull, reason: '照樣要有分數');
+    });
+
+    test('失敗要留下痕跡 —— 退回之後畫面上看起來一模一樣', () async {
+      final s = AppState()..qualitySource = _FakeQuality.failing();
+      await s.rescoreTrainingQualityAsync();
+      expect(s.qualityScoreError, contains('壞了'));
+    });
+
+    test('後來成功就把痕跡清掉', () async {
+      final s = AppState()..qualitySource = _FakeQuality.failing();
+      await s.rescoreTrainingQualityAsync();
+      expect(s.qualityScoreError, isNotNull);
+
+      s.qualitySource = _FakeQuality(
+          const QualityScore(completion: 1, consistency: 1, sanity: 1));
+      await s.rescoreTrainingQualityAsync();
+
+      expect(s.qualityScoreError, isNull);
+    });
+  });
+
+  group('不信模型輸出', () {
+    QualityScore? decode(Map<String, dynamic> j) => decodeQualityScore(j);
+
+    test('三維齊全且在範圍內才收', () {
+      final q = decode({
+        'completion': 80,
+        'consistency': 70,
+        'sanity': 90,
+        'concerns': ['只有一則'],
+      });
+      expect(q, isNotNull);
+      expect(q!.source, 'gemini', reason: '管理員要看得出是誰算的');
+    });
+
+    test('缺一維就整份丟棄 —— 不「盡量用」', () {
+      expect(decode({'completion': 80, 'consistency': 70}), isNull);
+    });
+
+    test('分數超出 0–100 就整份丟棄', () {
+      expect(
+          decode({'completion': 120, 'consistency': 70, 'sanity': 90}), isNull);
+      expect(
+          decode({'completion': -5, 'consistency': 70, 'sanity': 90}), isNull);
+    });
+
+    test('分數不是數字就整份丟棄', () {
+      expect(
+          decode({'completion': '八十', 'consistency': 70, 'sanity': 90}),
+          isNull);
+    });
+
+    test('疑慮標記限長 —— 一則塞爆整頁的不收', () {
+      final q = decode({
+        'completion': 80,
+        'consistency': 70,
+        'sanity': 90,
+        'concerns': ['很長' * 200],
+      });
+      expect(q!.concerns.single.length, 60);
+    });
+
+    test('空白的疑慮標記略過', () {
+      final q = decode({
+        'completion': 80,
+        'consistency': 70,
+        'sanity': 90,
+        'concerns': ['', '   ', '真的有一則'],
+      });
+      expect(q!.concerns, ['真的有一則']);
+    });
+
+    test('沒有疑慮標記欄位也收 —— 那代表沒有疑慮', () {
+      final q = decode({'completion': 80, 'consistency': 70, 'sanity': 90});
+      expect(q, isNotNull);
+      expect(q!.concerns, isEmpty);
+    });
+  });
+
+  group('送出去的東西不含身分', () {
+    test('只有日期、組數、時長與每組的重量次數', () {
+      final s = AppState()..displayName = '阿健';
+      final encoded = encodeSessions([
+        SessionSummary(
+          date: DateTime(2026, 9, 1),
+          totalSets: 12,
+          minutes: 60,
+          sets: const [(60.0, 8)],
+        ),
+      ]);
+
+      final json = encoded.toString();
+      // 承 `AdjustContext` 的既有裁決：暱稱、uid、電子郵件一概不出這台裝置。
+      expect(json, isNot(contains(s.displayName)));
+      expect(encoded.single.keys.toSet(), {'date', 'sets', 'minutes', 'reps'});
+    });
+  });
+}
+
+class _FakeQuality implements QualityScoreSource {
+  final QualityScore? result;
+  const _FakeQuality(this.result);
+  const _FakeQuality.failing() : result = null;
+
+  @override
+  Future<QualityScore> score(List<SessionSummary> sessions) async {
+    final r = result;
+    if (r == null) throw StateError('評分服務壞了');
+    return r;
+  }
 }

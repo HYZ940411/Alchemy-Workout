@@ -18,6 +18,8 @@ import 'data/report_data_firestore.dart';
 import 'data/appeal_data.dart';
 import 'data/appeal_data_firestore.dart';
 import 'data/punishment_data.dart';
+import 'data/quality_score_data.dart';
+import 'data/quality_score_http.dart';
 import 'data/punishment_data_firestore.dart';
 import 'data/violation_data.dart';
 import 'data/violation_data_firestore.dart';
@@ -60,6 +62,10 @@ FirebaseOptions _firebaseOptions() => kIsWeb
     ? DefaultFirebaseOptions.web.copyWith(authDomain: _kWebHost)
     : DefaultFirebaseOptions.currentPlatform;
 
+/// 我們自己的 Gemini 代理。金鑰在 Cloudflare 的 secret 裡，前端看不到。
+const kAiWorker =
+    'https://alchemy-workout-ai.alchemy-workout-ntub.workers.dev';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -97,7 +103,14 @@ Future<void> main() async {
     // 的 secret 裡，前端看不到它。Worker 失敗或模型輸出不合格時，
     // 伺服器會退回與 App 內同一組規則，使用者照樣拿得到建議。
     aiSource: HttpAiSuggestionSource(
-      endpoint: Uri.parse('https://alchemy-workout-ai.alchemy-workout-ntub.workers.dev'),
+      endpoint: Uri.parse(kAiWorker),
+      idToken: auth.idToken,
+    ),
+    // 教官申請的訓練品質評分。**同一個 Worker**（靠請求裡有沒有
+    // `sessions` 分流）—— 驗身分與 CORS 完全一樣，分兩條就是同一個
+    // 決定寫在兩個地方。失敗時 `AppState` 退回 App 內的規則計算。
+    qualitySource: HttpQualityScoreSource(
+      endpoint: Uri.parse(kAiWorker),
       idToken: auth.idToken,
     ),
   ));
@@ -149,6 +162,7 @@ class FitnessApp extends StatefulWidget {
   final ReportSource Function(String uid)? reportsFor;
   final ViolationSource Function()? violationsFor;
   final PunishmentSource Function()? punishmentsFor;
+  final QualityScoreSource? qualitySource;
   final AppealSource Function()? appealsFor;
 
   const FitnessApp({
@@ -167,6 +181,7 @@ class FitnessApp extends StatefulWidget {
     this.reportsFor,
     this.violationsFor,
     this.punishmentsFor,
+    this.qualitySource,
     this.appealsFor,
   });
   @override
@@ -235,6 +250,7 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                 platformData: widget.platformData,
                 profileFor: widget.profileFor,
                 aiSource: widget.aiSource,
+                qualitySource: widget.qualitySource,
                 followsFor: widget.followsFor,
                 postsFor: widget.postsFor,
                 chatsFor: widget.chatsFor,

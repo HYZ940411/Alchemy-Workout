@@ -256,6 +256,11 @@ let resolved: string | null = null;
  * 「AI 怎麼變笨了」。這裡改為向 API 問一次有哪些模型可用，
  * 挑一個支援 generateContent 的 flash 系列。
  */
+/** 目前挑中的模型。`screen.ts` 也用同一個，不重複探測一次。 */
+export function currentModel(apiKey: string): Promise<string> {
+  return pickModel(apiKey);
+}
+
 async function pickModel(apiKey: string): Promise<string> {
   if (resolved) return resolved;
 

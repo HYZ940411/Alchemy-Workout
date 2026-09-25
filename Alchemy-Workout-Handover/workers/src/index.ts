@@ -14,9 +14,10 @@
 
 import {verifyIdToken} from "./auth";
 import {
-  askGemini, isIntent, ruleFallback,
+  askGemini, currentModel, isIntent, ruleFallback,
   type AdjustContext, type PlanExercise,
 } from "./adjust";
+import {askQuality, isSessions} from "./screen";
 
 interface Env {
   GEMINI_API_KEY: string;
@@ -59,12 +60,40 @@ export default {
 
     let body: {
       intent?: unknown; exercises?: unknown;
-      note?: unknown; context?: unknown;
+      note?: unknown; context?: unknown; sessions?: unknown;
     };
     try {
       body = await req.json();
     } catch {
       return fail(400, "請求不是合法的 JSON。", origin);
+    }
+
+    // --- 教官申請的訓練品質評分（`[BE-13]` 周邊）---
+    //
+    // 用同一個端點、看有沒有 `sessions` 分流，而不是另開一條路徑：
+    // 驗身分、CORS、錯誤格式三件事完全一樣，分兩條就是同一個決定
+    // 寫在兩個地方。
+    //
+    // **這一段沒有規則退路。** 失敗就回非 200，由 App 退回它自己那份
+    // `scoreTrainingQuality()` —— 規則只有一份，在 Dart 裡。
+    // （`adjust.ts` 的 `ruleFallback()` 是第二份，`PROGRESS.md` 記著
+    // 那是已知的重複實作，不重蹈覆轍。）
+    if (body.sessions !== undefined) {
+      if (!isSessions(body.sessions)) {
+        return fail(400, "訓練紀錄的格式不合法，或筆數超過上限。", origin);
+      }
+      try {
+        const model = await currentModel(env.GEMINI_API_KEY);
+        const q = await askQuality(body.sessions, env.GEMINI_API_KEY, model);
+        return new Response(JSON.stringify(q), {
+          headers: {"Content-Type": "application/json", ...cors(origin)},
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("品質評分失敗：", msg);
+        // 502 而不是 500：失敗的是上游的模型，不是這個 Worker。
+        return fail(502, `評分失敗：${msg}`, origin);
+      }
     }
 
     const intent = body.intent;

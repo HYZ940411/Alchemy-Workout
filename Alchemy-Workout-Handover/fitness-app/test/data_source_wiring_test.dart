@@ -96,6 +96,9 @@ const _ambiguous = <String, String>{
   'AppealSource.queue': '`loadAppealQueue()`',
   'ReportSource.judge': '`_pushVerdict()`，檢舉裁決回寫',
   'AppealSource.judge': '`_pushAppealVerdict()`，申訴裁決回寫',
+  // 撞的是**欄位名**：畫面上有 `rankScore = ` 之類的賦值，
+  // 而這道檢查抓呼叫端那一側的欄位名是用 `\b(\w+)\s*=\s*`。
+  'QualityScoreSource.score': '2026-09-25 接上：`rescoreTrainingQualityAsync()`',
 };
 
 /// 從 `abstract class X { ... }` 裡抓出方法名。

@@ -13,6 +13,7 @@ import '../data/ai_suggestion.dart';
 import '../data/report_data.dart';
 import '../data/appeal_data.dart';
 import '../data/punishment_data.dart';
+import '../data/quality_score_data.dart';
 import '../data/violation_data.dart';
 import '../domain/ai_adjust.dart';
 import '../domain/decay.dart';
@@ -4434,21 +4435,55 @@ class AppState extends ChangeNotifier {
   /// 規格：重新申請時產生新的一筆教官申請並**重新評分**，不沿用舊的 ——
   /// 14 天只是最低重試間隔，數月後再申請時訓練紀錄已完全不同。
   QualityScore rescoreTrainingQuality() {
-    final scored = scoreTrainingQuality([
-      for (final h in history)
-        SessionSummary(
-          date: h.date,
-          totalSets: h.totalSets,
-          minutes: h.minutes,
-          sets: [
-            for (final e in h.exercises)
-              for (final t in e.sets) t,
-          ],
-        ),
-    ]);
+    final scored = scoreTrainingQuality(_sessionSummaries());
     quality = scored;
     notifyListeners();
     return scored;
+  }
+
+  List<SessionSummary> _sessionSummaries() => [
+        for (final h in history)
+          SessionSummary(
+            date: h.date,
+            totalSets: h.totalSets,
+            minutes: h.minutes,
+            sets: [
+              for (final e in h.exercises)
+                for (final t in e.sets) t,
+            ],
+          ),
+      ];
+
+  /// 雲端的品質評分來源（Gemini）。**空值＝只走規則計算**，
+  /// 與 `aiSource` 同一個形狀，既有測試零改動。
+  QualityScoreSource? qualitySource;
+
+  /// 評分失敗的原因。**開發者模式看得到。**
+  ///
+  /// 規格明訂 AI 中斷時「不直接駁回」——申請者本身無過失。所以失敗要
+  /// 靜靜地退回規則，但**不能完全不說**：退回之後畫面上看到的分數
+  /// 與模型算的長得一模一樣，出問題時毫無跡象。
+  String? qualityScoreError;
+
+  /// 向 Gemini 要一次評分，失敗就退回規則計算。
+  ///
+  /// **規則那一份是退路，不是備胎** —— 無論模型通不通，它都必須存在，
+  /// 因為規格不允許因為平台的 AI 故障而駁回申請者。
+  Future<QualityScore> rescoreTrainingQualityAsync() async {
+    final src = qualitySource;
+    if (src == null) return rescoreTrainingQuality();
+
+    try {
+      final q = await src.score(_sessionSummaries());
+      qualityScoreError = null;
+      quality = q;
+      notifyListeners();
+      return q;
+    } catch (e) {
+      qualityScoreError = '$e';
+      debugPrint('品質評分改用規則計算：$e');
+      return rescoreTrainingQuality();
+    }
   }
 
   /// 加權平均。沒評過時為 0 —— **不給一個看起來合理的預設值**，
@@ -4990,7 +5025,8 @@ class AppState extends ChangeNotifier {
     // **重新評分，不沿用舊的**（規格：任何重試皆重跑 AI 訓練品質評分）。
     // 14 天只是最低重試間隔，數月後再申請時訓練紀錄已完全不同，
     // 沿用舊評分等於用過期資料判定。
-    rescoreTrainingQuality();
+    // 即發即忘：規格明訂本路徑**使用者不在場**（按完申請即離開）。
+    rescoreTrainingQualityAsync();
     notifyListeners();
     return true;
   }
@@ -5056,7 +5092,7 @@ class AppState extends ChangeNotifier {
     if (next == InstructorStage.approved) return;
 
     // 進「初審中」就評分 —— 那個狀態的定義就是「等 AI 產出訓練品質評分」。
-    if (next == InstructorStage.screening) rescoreTrainingQuality();
+    if (next == InstructorStage.screening) rescoreTrainingQualityAsync();
 
     if (next == InstructorStage.pendingReview) {
       // 走 [submitExam]，不是直接改狀態 —— 待人工審核只該有一條路進得去，
