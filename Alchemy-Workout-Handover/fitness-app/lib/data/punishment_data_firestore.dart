@@ -70,6 +70,9 @@ class FirestorePunishments implements PunishmentSource {
   }
 
   @override
+  Future<void> revoke(String uid) async => _doc(uid).delete();
+
+  @override
   Future<void> markAppealed(String uid, AppealState state) async {
     // **只動這兩個欄位。** 安全規則用 affectedKeys 限住，
     // 多寫一個就整份被拒 —— 那正是要的：當事人不能改自己的處罰種類。

@@ -11,6 +11,7 @@ import '../domain/clock.dart';
 export '../domain/clock.dart' show businessDate;
 import '../data/ai_suggestion.dart';
 import '../data/report_data.dart';
+import '../data/appeal_data.dart';
 import '../data/punishment_data.dart';
 import '../data/violation_data.dart';
 import '../domain/ai_adjust.dart';
@@ -6878,15 +6879,88 @@ class AppState extends ChangeNotifier {
       }
     }
     // 申訴為獨立 Aggregate，且進管理員的待審佇列。
-    appeals.add(AppealCase(
-      id: newId('AP-'),
+    //
+    // **案件 ID 帶著處罰的時戳。** 同一筆處罰只能申訴一次（規格），
+    // 靠這個主鍵保證 —— 不是靠「送出前先查有沒有申訴過」，
+    // 那在連按兩下時仍會寫出兩筆。一個人一生可能被罰好幾次，
+    // 每一次各有一次申訴機會，所以不能只用 uid。
+    final uid = myUid;
+    final id = uid == null
+        ? newId('AP-')
+        : '${uid}__${p.issuedAt.millisecondsSinceEpoch}';
+    final c = AppealCase(
+      id: id,
       appellant: displayName,
+      appellantUid: uid,
       target: AppealTarget.punishment,
       subject: punishmentKindNames[p.kind]!,
       reason: reason,
       filedAt: at,
       daysSinceIncident: at.difference(p.issuedAt).inDays,
-    ));
+    );
+    appeals.add(c);
+
+    // **在此之前這裡沒有任何雲端寫入。** 使用者寫了理由、按下送出、
+    // 看到「已送出」，然後重新整理就沒了 —— 而且從頭到尾沒有任何
+    // 管理員看得到。檢舉至少寫進了 Firestore（只是沒人讀），
+    // 申訴連寫都沒寫。
+    if (appealSource case final src?) {
+      if (uid != null) {
+        src
+            .file(CloudAppeal(
+              id: id,
+              appellantUid: uid,
+              appellantName: displayName,
+              target: AppealTarget.punishment,
+              subject: punishmentKindNames[p.kind]!,
+              reason: reason,
+              filedAt: at,
+              daysSinceIncident: at.difference(p.issuedAt).inDays,
+            ))
+            .catchError((Object e) => reportSync('申訴', '送不出去：$e'));
+      }
+    }
+    notifyListeners();
+  }
+
+  /// 雲端的申訴佇列。**空值代表不同步** —— 既有測試走這條。
+  AppealSource? appealSource;
+
+  /// 把雲端的申訴佇列讀進來。**只有管理員叫得動。**
+  Future<void> loadAppealQueue() async {
+    final src = appealSource;
+    if (src == null || !isPlatformAdmin || !canReview) return;
+    try {
+      applyCloudAppeals(await src.queue(limit: 100));
+    } catch (_) {
+      // 讀不到就維持現狀。**不清空** —— 空佇列與讀取失敗長得一模一樣。
+    }
+  }
+
+  void applyCloudAppeals(List<CloudAppeal> cloud) {
+    for (final a in cloud) {
+      final at = appeals.indexWhere((c) => c.id == a.id);
+      final merged = AppealCase(
+        id: a.id,
+        appellant: a.appellantName,
+        appellantUid: a.appellantUid,
+        target: a.target,
+        subject: a.subject,
+        reason: a.reason,
+        filedAt: a.filedAt,
+        daysSinceIncident: a.daysSinceIncident,
+        // 已在審視中的不要被重讀打回待審 —— 管理員可能正開著它。
+        state: at >= 0 ? appeals[at].state : a.state,
+        handlerName: at >= 0 ? appeals[at].handlerName : a.handlerName,
+      );
+      if (at >= 0) {
+        appeals[at] = merged;
+      } else {
+        appeals.add(merged);
+      }
+    }
+    // 等最久的排前面。
+    appeals.sort((a, b) => a.filedAt.compareTo(b.filedAt));
     notifyListeners();
   }
 
@@ -7317,6 +7391,16 @@ class AppState extends ChangeNotifier {
     if (c.state != CaseState.reviewing) return;
     c.state = CaseState.upheld;
     c.handlerName = null;
+    _pushAppealVerdict(c, upheld: true);
+
+    // **後果要傳到當事人。** 撤銷處罰與退回違規次數都是改別人的文件，
+    // 而那兩份都是管理員可寫、當事人唯讀 —— 在此之前這整段只在
+    // `c.appellant == displayName` 時跑，也就是只撤銷得了自己的處罰。
+    if (c.appellantUid case final uid?) {
+      punishmentSource?.revoke(uid).catchError((Object _) {});
+      violationSource?.decrement(uid).catchError((Object _) => 0);
+    }
+
     if (c.appellant == displayName) {
       final wasFrozen = clocksFrozen;
       punishment = null;
@@ -7370,11 +7454,21 @@ class AppState extends ChangeNotifier {
     if (c.state != CaseState.reviewing) return;
     c.state = CaseState.dismissed;
     c.handlerName = null;
+    _pushAppealVerdict(c, upheld: false);
     if (c.appellant == displayName) {
       punishment?.appealState = AppealState.dismissed;
       _email('申訴已駁回', '你的申訴經審視不成立，原處罰維持不變。');
     }
     notifyListeners();
+  }
+
+  /// 申訴裁決寫回雲端。即發即忘 —— 本機已經改了，寫失敗下次重讀以雲端為準。
+  void _pushAppealVerdict(AppealCase c, {required bool upheld}) {
+    final src = appealSource;
+    if (src == null || c.appellantUid == null) return;
+    src
+        .judge(c.id, upheld: upheld, handlerName: admin.name)
+        .catchError((Object _) {});
   }
 
   /// 申訴的判定入口，供既有畫面沿用。

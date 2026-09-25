@@ -35,6 +35,14 @@ class _FakeViolations implements ViolationSource {
     return counts[uid] ?? 0;
   }
 
+  final List<String> decremented = [];
+  @override
+  Future<int> decrement(String uid) async {
+    decremented.add(uid);
+    final now = counts[uid] ?? 0;
+    return counts[uid] = now > 0 ? now - 1 : 0;
+  }
+
   @override
   Future<int> increment(String uid, {required String name}) async {
     if (throwOnWrite) throw StateError('permission-denied');

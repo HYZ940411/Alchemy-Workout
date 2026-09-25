@@ -13,6 +13,7 @@ import '../data/chat_data.dart';
 import '../data/team_data.dart';
 import '../data/mentor_data.dart';
 import '../data/report_data.dart';
+import '../data/appeal_data.dart';
 import '../data/punishment_data.dart';
 import '../data/violation_data.dart';
 import '../domain/commerce.dart';
@@ -76,6 +77,7 @@ class AuthGate extends StatefulWidget {
   /// 同一個形狀，保持呼叫端一致。
   final ViolationSource Function()? violationsFor;
   final PunishmentSource Function()? punishmentsFor;
+  final AppealSource Function()? appealsFor;
 
   const AuthGate({
     super.key,
@@ -94,6 +96,7 @@ class AuthGate extends StatefulWidget {
     this.reportsFor,
     this.violationsFor,
     this.punishmentsFor,
+    this.appealsFor,
   });
 
   @override
@@ -323,6 +326,7 @@ class _AuthGateState extends State<AuthGate> {
     widget.state.reportSource = widget.reportsFor?.call(uid);
     widget.state.violationSource = widget.violationsFor?.call();
     widget.state.punishmentSource = widget.punishmentsFor?.call();
+    widget.state.appealSource = widget.appealsFor?.call();
     widget.state.followSource = widget.followsFor?.call(uid);
 
     // **公開檔案的來源也要交給狀態層。** 在此之前只有這個畫面握著它，
@@ -472,6 +476,11 @@ class _AuthGateState extends State<AuthGate> {
         await widget.state.loadReportQueue();
         return '${widget.state.reports.length} 案'
             '（待審 ${widget.state.reports.where((c) => c.state == CaseState.pending).length}）';
+      });
+      // 另外一塊 —— 檢舉讀不到不該連申訴也看不到。
+      await step('申訴佇列', () async {
+        await widget.state.loadAppealQueue();
+        return '${widget.state.appeals.length} 案';
       });
     }
 

@@ -43,6 +43,13 @@ class _FakePunishments implements PunishmentSource {
   @override
   Future<void> markAppealed(String uid, AppealState state) async =>
       appeals.add((uid, state));
+
+  final List<String> revoked = [];
+  @override
+  Future<void> revoke(String uid) async {
+    revoked.add(uid);
+    issued.remove(uid);
+  }
 }
 
 ({AppState s, _FakePunishments src}) _admin() {

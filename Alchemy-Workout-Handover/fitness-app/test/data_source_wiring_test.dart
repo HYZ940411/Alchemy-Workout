@@ -77,15 +77,52 @@ const _ambiguous = <String, String>{
   'MentorSource.tasks': '2026-09-24 接上：`loadMentorSideOf()`',
   'MentorSource.bond': '`_pushBond()`，接受拜師／收徒時建立關係',
   'TeamSource.myTeam': '`refreshInbound()` 與 `AuthGate._syncProfile` 的「我的團隊」',
+
+  // ── 2026-09-25 把正則的巢狀泛型漏洞修掉之後，這 14 支才第一次
+  //    進入檢查範圍。全部逐一人工確認過（下面各自註明行號來源）。
+  //    在那之前它們**從頭到尾沒有被檢查過**。
+  'PlatformDataSource.load': '`AuthGate._loadPlatformData()` → `applyPlatformData`',
+  'Store.load': '`AppState.hydrate()`',
+  'TeamSource.requestsFor': '`refreshInbound()` 與 `AuthGate` 的「團隊請求」',
+  'MentorSource.requestsFor': '`refreshInbound()` 與 `AuthGate` 的「師徒申請」',
+  'FollowSource.following': '`AuthGate` 的「關注」那一塊',
+  'FollowSource.followers': '同上，緊接著那一行',
+  'ChatSource.conversations': '`refreshInbound()` 與 `AuthGate` 的「私訊」',
+  'PublicProfileSource.others': '`AuthGate._syncProfile` 撈最近活躍的人',
+  // 檢舉與申訴各有一組同名的三支。兩組都在 2026-09-25 接上。
+  'ReportSource.file': '`_pushReport()`，使用者按下檢舉',
+  'AppealSource.file': '`fileAppeal()`',
+  'ReportSource.queue': '`loadReportQueue()`',
+  'AppealSource.queue': '`loadAppealQueue()`',
+  'ReportSource.judge': '`_pushVerdict()`，檢舉裁決回寫',
+  'AppealSource.judge': '`_pushAppealVerdict()`，申訴裁決回寫',
 };
 
 /// 從 `abstract class X { ... }` 裡抓出方法名。
 List<(String cls, String method)> _interfaceMethods(String src) {
   final out = <(String, String)>[];
   final classes = RegExp(r'abstract class (\w+)\s*\{(.*?)\n\}', dotAll: true);
-  // 回傳型別可能是 Future<...>、void、bool、int、String、Stream<...>
+  // 回傳型別可能是 Future<...>、Stream<...>、void、bool、int、String。
+  //
+  // **`[^>]*` 是錯的，而且錯得很安靜。** 它在第一個 `>` 就停住，
+  // 所以 `Future<List<CloudReport>>` 這種巢狀泛型**一支都比對不到** ——
+  // 而那正是資料層所有「讀」的方法的長相。
+  //
+  // 2026-09-25 修掉時，這道檢查從 51 支變成 66 支：漏掉的 15 支是
+  // `recent`／`bonds`／`conversations`／`following`／`followers`／`tasks`／
+  // `questions`／`requestsFor`／`openTeams`／`others`／`byUids`／`load`／
+  // `queue`×2。**整個讀取側。**
+  //
+  // 而這道檢查存在的理由，正是 2026-09-24 那批「介面寫好了沒人呼叫」的
+  // bug —— 其中 `MentorSource.tasks()`／`questions()` 零呼叫端害教官讀不回
+  // 學徒的提問與評分。它們當時被人工發現、寫進了 `_ambiguous`，
+  // 而這道檢查**從頭到尾沒有真的檢查過它們**。
+  //
+  // 這就是本專案守則第 2 條的意思：驗證工具本身要先被驗證。
+  // 下面那條 `greaterThan` 的門檻也一併提高 —— 它本來是 20，
+  // 51 支的時候通過得太輕鬆，看不出漏了 15 支。
   final sig = RegExp(
-    r'^  (?:Future<[^>]*>|Stream<[^>]*>|void|bool|int|String)\??\s+(\w+)\s*\(',
+    r'^  (?:(?:Future|Stream)<.*?>|void|bool|int|String)\??\s+(\w+)\s*\(',
     multiLine: true,
   );
   for (final m in classes.allMatches(src)) {
@@ -106,7 +143,9 @@ void main() {
 
     // 抓不到任何方法＝正則失效了，那比漏接更糟 —— 它會讓這道檢查
     // 永遠是綠的，而沒有人會發現。
-    expect(methods.length, greaterThan(20),
+    // 2026-09-25：實際 66 支。門檻設在 60 —— 刻意貼近，
+    // 少了幾支就會紅。設 20 的時候漏掉 15 支也照樣是綠的。
+    expect(methods.length, greaterThan(60),
         reason: '介面的寫法變了，這條測試的正則要跟著更新');
 
     // 呼叫端：狀態層與畫面層。`lib/data/` 自己不算 —— 實作呼叫自己的

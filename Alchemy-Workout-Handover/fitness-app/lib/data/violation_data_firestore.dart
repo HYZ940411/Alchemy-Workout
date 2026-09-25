@@ -27,6 +27,22 @@ class FirestoreViolations implements ViolationSource {
   }
 
   @override
+  Future<int> decrement(String uid) async {
+    return _db.runTransaction<int>((tx) async {
+      final snap = await tx.get(_doc(uid));
+      final now = (snap.data()?['count'] as num?)?.toInt() ?? 0;
+      // **不會低於 0。** 退一次而不是歸零 —— 他之前可能還有別的違規。
+      final next = now > 0 ? now - 1 : 0;
+      tx.set(
+        _doc(uid),
+        {'count': next, 'updatedAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
+      return next;
+    });
+  }
+
+  @override
   Future<int> increment(String uid, {required String name}) async {
     // **交易，不是先讀再寫。** 兩位管理員同時裁決同一個人的兩個案件時，
     // 先讀再寫會讓其中一次消失 —— 而這個數字決定處罰級距。

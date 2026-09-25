@@ -302,6 +302,25 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // --- 申訴（[BE-13]，2026-09-25）---
+    //
+    // 文件 ID 是 `{申訴人 uid}__{處罰開出的毫秒時戳}`，所以
+    // **同一筆處罰只能申訴一次**由主鍵保證，不是靠客戶端先查再寫。
+    //
+    // 申訴人讀得到自己那幾筆（要看審視進度），讀不到別人的。
+    // 裁決只有管理員寫得動 —— 不然他自己就能把申訴改成「已成立」。
+    match /appeals/{appealId} {
+      allow read: if request.auth != null
+                  && (resource.data.appellantUid == request.auth.uid
+                      || isAdmin());
+      allow create: if request.auth != null
+                    && request.resource.data.appellantUid == request.auth.uid
+                    && request.resource.data.state == 'pending';
+      allow update: if isAdmin();
+      // **申訴不硬刪** —— 它是處罰是否公正的紀錄，兩造都不該刪得掉。
+      allow delete: if false;
+    }
+
     // --- 處罰狀態（[BE-13]，2026-09-25）---
     //
     // 與違規次數同一個形狀：管理員可寫、當事人唯讀。存在本人寫得動的

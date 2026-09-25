@@ -23,4 +23,10 @@ abstract class ViolationSource {
   ///
   /// [name] 只是給管理端看的，判定不靠它。
   Future<int> increment(String uid, {required String name});
+
+  /// 退回一次違規（申訴成立）。回傳退完之後的次數，**不會低於 0**。
+  ///
+  /// 規格：申訴成立時「該次違規視為不成立」—— 所以是退一次，
+  /// 不是歸零。他之前可能還有別的違規。
+  Future<int> decrement(String uid);
 }

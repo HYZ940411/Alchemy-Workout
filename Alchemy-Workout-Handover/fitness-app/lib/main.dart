@@ -15,6 +15,8 @@ import 'data/mentor_data.dart';
 import 'data/mentor_data_firestore.dart';
 import 'data/report_data.dart';
 import 'data/report_data_firestore.dart';
+import 'data/appeal_data.dart';
+import 'data/appeal_data_firestore.dart';
 import 'data/punishment_data.dart';
 import 'data/punishment_data_firestore.dart';
 import 'data/violation_data.dart';
@@ -89,6 +91,7 @@ Future<void> main() async {
     reportsFor: (uid) => FirestoreReports(uid: uid),
     violationsFor: FirestoreViolations.new,
     punishmentsFor: FirestorePunishments.new,
+    appealsFor: FirestoreAppeals.new,
     // [BE-08]：訓練調整建議交給 Gemini 產生。
     // **呼叫的是我們自己的 Worker，不是 Gemini** —— 金鑰在 Cloudflare
     // 的 secret 裡，前端看不到它。Worker 失敗或模型輸出不合格時，
@@ -146,6 +149,7 @@ class FitnessApp extends StatefulWidget {
   final ReportSource Function(String uid)? reportsFor;
   final ViolationSource Function()? violationsFor;
   final PunishmentSource Function()? punishmentsFor;
+  final AppealSource Function()? appealsFor;
 
   const FitnessApp({
     super.key,
@@ -163,6 +167,7 @@ class FitnessApp extends StatefulWidget {
     this.reportsFor,
     this.violationsFor,
     this.punishmentsFor,
+    this.appealsFor,
   });
   @override
   State<FitnessApp> createState() => _FitnessAppState();
@@ -238,6 +243,7 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                 reportsFor: widget.reportsFor,
                 violationsFor: widget.violationsFor,
                 punishmentsFor: widget.punishmentsFor,
+                appealsFor: widget.appealsFor,
               ),
       ),
     );

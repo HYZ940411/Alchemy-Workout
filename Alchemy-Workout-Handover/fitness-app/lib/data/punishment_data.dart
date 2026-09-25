@@ -25,4 +25,11 @@ abstract class PunishmentSource {
 
   /// 標記已申訴。**當事人自己叫的** —— 只動得了申訴那兩個欄位。
   Future<void> markAppealed(String uid, AppealState state);
+
+  /// 撤銷處罰（申訴成立）。**只有管理員叫得動。**
+  ///
+  /// 直接刪掉那份文件 —— 「沒有處罰」的樣子就是文件不存在，
+  /// 與會員權益的「從未訂閱過」同一個處理（見 `store_firestore.dart`）。
+  /// 留一個 `kind: none` 的話，之後每個讀的地方都要多認一種值。
+  Future<void> revoke(String uid);
 }

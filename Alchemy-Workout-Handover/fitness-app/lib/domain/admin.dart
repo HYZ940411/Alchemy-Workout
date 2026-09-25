@@ -166,6 +166,10 @@ const appealTargetNames = <AppealTarget, String>{
 class AppealCase {
   final String id;
   final String appellant;
+
+  /// 申訴人的雲端身分。**撤銷處罰、退回違規次數都看它，不看暱稱。**
+  /// 示範資料的假案件沒有，所以可以是空值。
+  final String? appellantUid;
   final AppealTarget target;
   final String subject;
   final String reason;
@@ -176,6 +180,7 @@ class AppealCase {
   AppealCase({
     required this.id,
     required this.appellant,
+    this.appellantUid,
     required this.target,
     required this.subject,
     required this.reason,
