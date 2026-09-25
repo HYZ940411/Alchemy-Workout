@@ -7111,6 +7111,12 @@ class AppState extends ChangeNotifier {
   ///
   /// 一律為**軟刪除**，資料保留 —— 內容本身是案件的證據，
   /// 硬刪除會使其後的申訴無從調閱當時被判違規的是什麼。
+  /// 下架違規內容。
+  ///
+  /// **本機與雲端都要動。** 在此之前這裡只設了記憶體裡的 `deleted`：
+  /// 管理員按下「成立」，自己畫面上那則消失了，雲端一個位元都沒動 ——
+  /// **其他人照樣看得到**。而安全規則那一側也不允許管理員改別人的貼文，
+  /// 所以就算接了寫入也會被拒絕。兩邊 2026-09-25 一起補。
   void _takeDown(ReportCase c) {
     final id = reportedId(c.targetKey);
     switch (c.target) {
@@ -7118,11 +7124,22 @@ class AppState extends ChangeNotifier {
         for (final p in posts) {
           if (p.id == id) p.deleted = true;
         }
+        _pushSocial((src, _) => src.markPostDeleted(id));
       case ReportTarget.comment:
+        String? postId;
         for (final p in posts) {
           for (final m in p.comments) {
-            if (m.id == id) m.deleted = true;
+            if (m.id == id) {
+              m.deleted = true;
+              postId = p.id;
+            }
           }
+        }
+        // 留言是貼文底下的子文件，要知道父層才寫得回去。
+        // 找不到父層代表那則貼文不在本機這批裡 —— 只好留著本機的標記，
+        // 下次重讀佇列還會看到這一案。
+        if (postId case final pid?) {
+          _pushSocial((src, _) => src.markCommentDeleted(pid, id));
         }
       case ReportTarget.message:
         // 檢舉入口在對話層級，鍵為對話 ID；下架的是**被檢舉的那一則**，

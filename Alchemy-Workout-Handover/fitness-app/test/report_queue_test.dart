@@ -22,7 +22,9 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fitness_app/data/post_data.dart';
 import 'package:fitness_app/data/report_data.dart';
+import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/admin.dart';
 import 'package:fitness_app/state/app_state.dart';
 
@@ -256,6 +258,137 @@ void main() {
       a.s.upholdReport(c);
 
       expect(a.src.verdicts, isEmpty);
+    });
+  });
+
+  _takeDownReachesTheCloud();
+}
+
+/// 檢舉成立時，違規內容要真的從雲端下架（2026-09-25）。
+///
+/// 在此之前 `_takeDown()` 只設了記憶體裡的 `deleted`：管理員按下「成立」，
+/// **自己畫面上那則消失了，雲端一個位元都沒動** —— 其他人照樣看得到。
+///
+/// 而且就算接了寫入也會被拒絕：`firestore.rules` 的 posts update 規則
+/// 只允許作者本人或「只動 likeCount」，管理員改不了別人的貼文。
+/// 那正是這個專案反覆出現的那種失敗 —— 畫面成功、雲端無聲拒絕。
+/// 規則與程式 2026-09-25 一起補。
+class _FakePosts implements PostSource {
+  final List<String> deletedPosts = [];
+  final List<(String postId, String commentId)> deletedComments = [];
+
+  @override
+  Future<void> markPostDeleted(String postId) async =>
+      deletedPosts.add(postId);
+  @override
+  Future<void> markCommentDeleted(String postId, String commentId) async =>
+      deletedComments.add((postId, commentId));
+
+  @override
+  Future<List<Post>> recent({int limit = 30}) async => const [];
+  @override
+  Future<void> fillDetails(List<Post> posts) async {}
+  @override
+  Future<void> publish(Post p, {required String authorUid}) async {}
+  @override
+  Future<void> setLike(String postId, {required bool liked}) async {}
+  @override
+  Future<void> addComment(String postId, Comment c,
+      {required String authorUid}) async {}
+  @override
+  Future<void> updatePostText(String postId, Post p) async {}
+  @override
+  Future<void> updateCommentText(String postId, Comment c) async {}
+}
+
+void _takeDownReachesTheCloud() {
+  ({AppState s, _FakeReports reports, _FakePosts posts}) admin() {
+    final reports = _FakeReports();
+    final posts = _FakePosts();
+    final s = AppState(demo: false)
+      ..myUid = 'u-me'
+      ..displayName = '阿健'
+      ..reportSource = reports
+      ..postSource = posts;
+    s.applyAdminClaim(true);
+    return (s: s, reports: reports, posts: posts);
+  }
+
+  Post post(String id) => Post(
+        id: id,
+        author: '阿昶',
+        authorRank: 1,
+        text: '違規內容',
+        at: DateTime(2026, 9, 24),
+      );
+
+  Future<ReportCase> fileAgainst(
+      ({AppState s, _FakeReports reports, _FakePosts posts}) a,
+      String targetKey,
+      ReportTarget target) async {
+    a.reports.cloud = [
+      CloudReport(
+        id: 'r1',
+        targetKey: targetKey,
+        target: target,
+        origin: CaseOrigin.userReport,
+        content: '違規內容',
+        reason: '不實內容',
+        accused: '阿昶',
+        reporterUid: 'u-小美',
+        reporterName: '小美',
+        at: DateTime(2026, 9, 23),
+      ),
+    ];
+    await a.s.loadReportQueue();
+    final c = a.s.reports.single;
+    a.s.reviewReport(c);
+    return c;
+  }
+
+  group('檢舉成立 → 內容真的從雲端下架', () {
+    test('貼文', () async {
+      final a = admin();
+      a.s.posts.add(post('p1'));
+
+      a.s.upholdReport(await fileAgainst(a, 'post:p1', ReportTarget.post));
+
+      expect(a.s.posts.single.deleted, isTrue, reason: '本機');
+      expect(a.posts.deletedPosts, ['p1'], reason: '雲端 —— 少了它別人照樣看得到');
+    });
+
+    test('留言，而且寫得回它所屬的那篇貼文底下', () async {
+      final a = admin();
+      final p = post('p1')
+        ..comments.add(Comment('阿昶', '違規留言', DateTime(2026, 9, 24), id: 'c9'));
+      a.s.posts.add(p);
+
+      a.s.upholdReport(
+          await fileAgainst(a, 'comment:c9', ReportTarget.comment));
+
+      expect(p.comments.single.deleted, isTrue);
+      // 留言是貼文底下的子文件 —— 父層 ID 錯了就寫到別的地方去。
+      expect(a.posts.deletedComments, [('p1', 'c9')]);
+    });
+
+    test('駁回不下架任何東西', () async {
+      final a = admin();
+      a.s.posts.add(post('p1'));
+
+      a.s.dismissReport(await fileAgainst(a, 'post:p1', ReportTarget.post));
+
+      expect(a.s.posts.single.deleted, isFalse);
+      expect(a.posts.deletedPosts, isEmpty);
+    });
+
+    test('帳號類不走下架路徑 —— 帳號不是一則內容', () async {
+      final a = admin();
+      a.s.posts.add(post('p1'));
+
+      a.s.upholdReport(
+          await fileAgainst(a, 'account:阿昶', ReportTarget.account));
+
+      expect(a.posts.deletedPosts, isEmpty);
     });
   });
 }

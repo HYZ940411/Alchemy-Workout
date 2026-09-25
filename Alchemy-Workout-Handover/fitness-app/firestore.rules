@@ -252,21 +252,29 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null
                     && request.resource.data.authorUid == request.auth.uid;
+      //
+      // **管理員也要能改** —— 檢舉成立時要下架違規內容，而那是改**別人的**
+      // 貼文。少了這一條，管理員在後台按下「成立」，畫面上內容消失了，
+      // 雲端那份一個位元都沒動，其他人照樣看得到。
+      // 那正是這個專案反覆出現的那種失敗：畫面成功、雲端無聲拒絕。
       allow update: if request.auth != null && (
                       resource.data.authorUid == request.auth.uid
+                      || isAdmin()
                       || request.resource.data.diff(resource.data)
                            .affectedKeys().hasOnly(['likeCount'])
                     );
       // **貼文一律軟刪除**（deleted 欄位），不給硬刪 ——
-      // 貼文可被檢舉，硬刪會讓案件失去證據。
+      // 貼文可被檢舉，硬刪會讓案件失去證據。管理員同樣只能軟刪。
       allow delete: if false;
 
       match /comments/{commentId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null
                       && request.resource.data.authorUid == request.auth.uid;
+        // 同上：檢舉成立時管理員要下架別人的留言。
         allow update: if request.auth != null
-                      && resource.data.authorUid == request.auth.uid;
+                      && (resource.data.authorUid == request.auth.uid
+                          || isAdmin());
         allow delete: if false; // 同樣軟刪除
       }
 
