@@ -2335,7 +2335,7 @@ class AppState extends ChangeNotifier {
 
   /// 這是不是我自己。有 uid 就以 uid 為準 —— 暱稱可能跟別人撞名。
   bool _isMe(String name, String? uid) =>
-      uid != null && myUid != null ? uid == myUid : _mine(name);
+      uid != null && myUid != null ? uid == myUid : _mineByName(name);
 
   /// 已經去數過的人。避免同一頁重複查 —— 與 [_profilesInFlight] 同理。
   final Set<String> _followerCountsInFlight = {};
@@ -3039,7 +3039,7 @@ class AppState extends ChangeNotifier {
     if (p.likedByMe) {
       _bumpTasks('使用者已按讚', 1);
       // **自己的貼文不計**：對自身貼文的按讚與留言不發放任何獎勵。
-      if (!_mine(p.author)) _grantInteraction('Like', requestId: p.id);
+      if (!isMyPost(p)) _grantInteraction('Like', requestId: p.id);
     }
     final liked = p.likedByMe;
     _pushSocial((src, _) => src.setLike(p.id, liked: liked));
@@ -3051,10 +3051,12 @@ class AppState extends ChangeNotifier {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return 0;
     if (text.trim().isEmpty) return 0;
-    final c = Comment(displayName, text.trim(), now);
+    // **帶上 uid。** 雲端那一側本來就在存它，本機這一份漏了 ——
+    // 於是離線建立的留言讀回來之前都認不出是誰的。
+    final c = Comment(displayName, text.trim(), now, authorUid: myUid);
     p.comments.add(c);
     _pushSocial((src, uid) => src.addComment(p.id, c, authorUid: uid));
-    final exp = _mine(p.author) ? 0 : _grantInteraction('Comment');
+    final exp = isMyPost(p) ? 0 : _grantInteraction('Comment');
     _syncAchievements();
     notifyListeners();
     return exp;
@@ -3088,7 +3090,15 @@ class AppState extends ChangeNotifier {
     return (post: post, exp: exp);
   }
 
-  bool _mine(String author) => author == displayName;
+  /// **只比暱稱。** 這是 [_isMe] 在沒有 uid 可比時的退路，
+  /// 不該被直接呼叫 —— 暱稱會撞名，開放改名之後還會讓自己的舊貼文
+  /// 與舊留言變成別人的。
+  ///
+  /// 2026-09-26 之前有五處直接呼叫它（按讚與留言的獎勵判定、
+  /// 編輯貼文、編輯留言、刪除留言），而旁邊的 `isMyPost` 已經改用
+  /// [_isMe] 了 —— 於是「⋯」選單開得出「編輯」，按下去 `editPost`
+  /// 卻回傳假。同一個問題兩種答案。
+  bool _mineByName(String author) => author == displayName;
 
   /// 這篇貼文是不是我發的。
   ///
@@ -3100,10 +3110,14 @@ class AppState extends ChangeNotifier {
   /// 而動態牆那一處根本沒寫 —— 見 `showPostMenu`。
   bool isMyPost(Post p) => _isMe(p.author, p.authorUid);
 
+  /// 這則留言是不是我留的。與 [isMyPost] 同一套判準 ——
+  /// 編輯與刪除留言、以及「對自己的貼文互動不發獎勵」都讀它。
+  bool isMyComment(Comment c) => _isMe(c.author, c.authorUid);
+
   /// 貼文已編輯。編輯前的內容與時戳寫入編輯歷史，**保留完整歷史版本**；
   /// 已編輯旗標設為真，讀者看得到「已編輯」。
   bool editPost(Post p, String text) {
-    if (!_mine(p.author) || p.deleted || text.trim().isEmpty) return false;
+    if (!isMyPost(p) || p.deleted || text.trim().isEmpty) return false;
     if (text.trim() == p.text) return false;
     p.edits.add((p.text, now));
     p.text = text.trim();
@@ -3148,7 +3162,7 @@ class AppState extends ChangeNotifier {
 
   /// 留言已編輯。規則比照貼文，不另定義。
   bool editComment(Comment c, String text) {
-    if (!_mine(c.author) || c.deleted || text.trim().isEmpty) return false;
+    if (!isMyComment(c) || c.deleted || text.trim().isEmpty) return false;
     if (text.trim() == c.text) return false;
     c.edits.add((c.text, now));
     c.text = text.trim();
@@ -3161,7 +3175,7 @@ class AppState extends ChangeNotifier {
   /// 刪除後重新留言是新的留言 ID，屬新的一次互動。
   /// 回傳要顯示給使用者的訊息；空值代表成功。理由同 [deletePost]。
   Future<String?> deleteComment(Comment c) async {
-    if (!_mine(c.author) || c.deleted) return null;
+    if (!isMyComment(c) || c.deleted) return null;
     final postId = _postIdOf(c);
     c.deleted = true;
     notifyListeners();

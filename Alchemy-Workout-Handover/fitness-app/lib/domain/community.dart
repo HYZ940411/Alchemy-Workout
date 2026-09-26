@@ -32,6 +32,16 @@ class Comment {
   /// 以作者＋內容比對會在同一人重複留同一句話時一次刪掉兩則。
   final String id;
   final String author;
+
+  /// 作者的雲端身分。示範資料的假作者沒有 uid，所以可以是空值 ——
+  /// 與 [Post.authorUid] 同一個約定。
+  ///
+  /// **雲端本來就在存它了**（`post_data_firestore.dart` 的 `addComment`
+  /// 寫入 `authorUid`），只是讀回來的時候沒有欄位可以放，於是丟掉。
+  /// 「這則留言是不是我的」因此只剩暱稱可比 —— 而暱稱會撞名，
+  /// 開放改名之後還會讓自己的舊留言變成別人的。
+  final String? authorUid;
+
   String text;
   final DateTime at;
 
@@ -43,7 +53,10 @@ class Comment {
   final List<(String, DateTime)> edits;
 
   Comment(this.author, this.text, this.at,
-      {String? id, this.deleted = false, List<(String, DateTime)>? edits})
+      {String? id,
+      this.authorUid,
+      this.deleted = false,
+      List<(String, DateTime)>? edits})
       : id = id ?? 'c${at.microsecondsSinceEpoch}',
         edits = edits ?? [];
 

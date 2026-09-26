@@ -212,6 +212,9 @@ class FirestorePosts implements PostSource {
       j['text'] is String ? j['text'] as String : '',
       at.toDate(),
       id: id,
+      // **這一行原本沒有。** 寫入時存了 `authorUid`，讀回來卻丟掉 ——
+      // 於是「這則留言是不是我的」只剩暱稱可比。
+      authorUid: j['authorUid'] is String ? j['authorUid'] as String : null,
       deleted: j['deleted'] == true,
       edits: _editsOf(j['edits']),
     );
