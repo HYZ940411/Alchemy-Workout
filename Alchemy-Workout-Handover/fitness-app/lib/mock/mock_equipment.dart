@@ -33,3 +33,28 @@ Set<String> requiredEquipment(String display) {
   if (head.isEmpty || head == '不限') return const {};
   return head.split(' · ').map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
 }
+
+/// 這個動作是否通得過「名稱關鍵字 ＋ 器材」兩道篩選。
+///
+/// **動作庫與「加入動作至本次訓練」共用這一份。**
+/// 原本它是 `exercise_library_screen.dart` 裡的私有方法，於是
+/// 訓練中的動作選擇抽屜沒有篩選可用 —— 使用者回報想要。
+/// 抽出來而不是在抽屜裡再寫一次：這個專案的 bug 有一整排正是
+/// 「同一個決定寫在兩個地方，只有一處做對」。
+///
+/// [owned] 為空集合代表**不篩器材**（未設定持有器材明細者）。
+///
+/// 動作要做得起來，其**所需器材必須全部**在 [owned] 內 ——
+/// 與〈可練場所的推導〉同一判準：需要多項器材時，要同時具備全部。
+/// 所需器材為空值者不參與器材比對，於器材篩選時不出現於任何分類。
+bool exerciseMatchesFilter(
+  ({String name, String equipment}) e, {
+  required Set<String> owned,
+  required String query,
+}) {
+  if (query.isNotEmpty && !e.name.contains(query)) return false;
+  if (owned.isEmpty) return true;
+  final need = requiredEquipment(e.equipment);
+  if (need.isEmpty) return false;
+  return need.every(owned.contains);
+}
