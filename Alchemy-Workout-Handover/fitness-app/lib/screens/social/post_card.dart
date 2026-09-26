@@ -99,8 +99,7 @@ class PostCard extends StatelessWidget {
                                         // `post.authorRank` 只在查不到作者的
                                         // 公開檔案時墊底（見 `Post.authorRank`）。
                                         '${s.rankOf(post.author, uid: post.authorUid, fallback: post.authorRank)} 階　·　'
-                                        '${_ago(post.at)}　·　'
-                                        '${postVisibilityNames[post.visibility]}',
+                                        '${_ago(post.at)}',
                                         style: T.caption(),
                                         overflow: TextOverflow.ellipsis,
                                       ),

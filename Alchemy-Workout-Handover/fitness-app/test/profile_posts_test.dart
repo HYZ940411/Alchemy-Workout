@@ -67,17 +67,23 @@ void main() {
       expect(s.postsBy('小明').first.text, '最新的');
     });
 
-    test('別人的不公開貼文不列', () {
+    // **可見範圍已移除，貼文一律公開**（使用者裁決 2026-09-26）。
+    //
+    // 這條原本驗「別人的不公開貼文不列」。拿掉那個過濾不是放寬隱私 ——
+    // 那些貼文**本來就在所有人的動態牆上**（動態牆從來沒有依可見範圍
+    // 過濾過），而 `firestore.rules` 是 `allow read: if request.auth != null`，
+    // 任何登入者都讀得到每一篇。前端濾掉只是讓自己看不到。
+    test('舊貼文不論當初標什麼，都列出來', () {
       final s = _withPosts();
       s.posts.add(Post(
-        id: 'secret',
+        id: 'old-private',
         author: '小明',
         authorRank: 1,
-        text: '只給自己看',
+        text: '當初標私人的',
         at: DateTime(2026, 9, 24),
         visibility: PostVisibility.private,
       ));
-      expect(s.postsBy('小明').map((p) => p.text), isNot(contains('只給自己看')));
+      expect(s.postsBy('小明').map((p) => p.text), contains('當初標私人的'));
     });
   });
 

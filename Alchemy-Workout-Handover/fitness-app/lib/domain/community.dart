@@ -2,6 +2,19 @@ import 'ability.dart';
 
 // --- 社群動態牆 ---
 
+/// 貼文的可見範圍。
+///
+/// **2026-09-26 起一律為 `public`，選擇器已從發文頁移除**（使用者裁決）。
+///
+/// 這個列舉**留著不刪**，因為雲端既有的貼文文件上有這個欄位，
+/// 刪掉的話舊文件解不出來。新發的貼文一律寫 `public`。
+///
+/// 為什麼移除而不是修好：它從來沒有生效過。動態牆只濾掉已刪除的，
+/// 而 `firestore.rules` 的貼文讀取是 `allow read: if request.auth != null`
+/// —— 任何登入者都讀得到每一篇，包括標「私人」的。
+/// 要真的做對，「僅關注者」得讓安全規則判斷「讀的人有沒有關注作者」，
+/// 而那在查詢裡做不到，得把可見名單反正規化到每一篇貼文上 ——
+/// 關注一個人就要回頭改他所有的貼文。
 enum PostVisibility { public, followersOnly, private }
 
 const postVisibilityNames = <PostVisibility, String>{

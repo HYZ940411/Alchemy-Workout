@@ -98,8 +98,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 Text(
                                   // 作者現在的階級，不是發文當下那個。
                                   '${s.rankOf(p.author, uid: p.authorUid, fallback: p.authorRank)} 階　·　'
-                                  '${_ago(p.at)}　·　'
-                                  '${postVisibilityNames[p.visibility]}',
+                                  '${_ago(p.at)}',
                                   style: T.caption(),
                                 ),
                               ],

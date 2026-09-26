@@ -66,23 +66,23 @@ class FeedScreen extends StatelessWidget {
             child: TabBarView(
               children: [
                 // 關注：已關注帳號的貼文 ＋ 自己的貼文
+                //
+                // **不再依可見範圍過濾**（使用者裁決 2026-09-26，
+                // 貼文一律公開）。過濾掉了也沒有用 —— 安全規則那一側是
+                // `allow read: if request.auth != null`，任何登入者本來就
+                // 讀得到每一篇。前端濾掉只是讓自己看不到，不是讓別人看不到。
                 _PostList(
                   posts: s.visiblePosts
-                      .where(
-                        (p) =>
-                            p.author == s.displayName ||
-                            (s.following.contains(p.author) &&
-                                p.visibility != PostVisibility.private),
-                      )
+                      .where((p) =>
+                          p.author == s.displayName ||
+                          s.following.contains(p.author))
                       .toList(),
                   empty: '你關注的人還沒有新貼文。',
                 ),
-                // 探索：全平台**公開**貼文
+                // 探索：全平台貼文
                 _PostList(
-                  posts: s.visiblePosts
-                      .where((p) => p.visibility == PostVisibility.public)
-                      .toList(),
-                  empty: '目前沒有公開貼文。',
+                  posts: s.visiblePosts,
+                  empty: '目前沒有貼文。',
                 ),
               ],
             ),

@@ -20,7 +20,21 @@ class ComposePostScreen extends StatefulWidget {
 
 class _ComposePostScreenState extends State<ComposePostScreen> {
   final ctrl = TextEditingController();
-  PostVisibility visibility = PostVisibility.public;
+  /// **貼文一律公開**（使用者裁決 2026-09-26）。
+  ///
+  /// 可見範圍的選擇器已移除。理由不是「不想做」，是**它從來沒有生效過**：
+  /// 動態牆只濾掉已刪除的，而 `firestore.rules` 的貼文讀取是
+  /// `allow read: if request.auth != null` —— **任何登入者都讀得到每一篇**，
+  /// 包括標「私人」的。也就是那個選項一直在對使用者說一件不是真的事。
+  ///
+  /// 要真的做對，「僅關注者」得讓安全規則判斷「讀的人有沒有關注作者」，
+  /// 而那在查詢裡做不到（Firestore 要求查詢條件本身就證明得了權限），
+  /// 得把可見名單反正規化到每一篇貼文上 —— 關注一個人就要回頭改他
+  /// 所有的貼文。成本與效益不成比例。
+  ///
+  /// 使用者裁決：**移除選項，一律公開**。停止假裝有保護，比留著一個
+  /// 擋不住任何人的開關誠實。
+  final PostVisibility visibility = PostVisibility.public;
   String? errorText;
 
   /// 貼文的圖片集合。文字為空但有圖時仍不可發布 ——
@@ -128,20 +142,6 @@ class _ComposePostScreenState extends State<ComposePostScreen> {
                   },
                 ),
 
-                const SectionTitle('可見範圍'),
-                for (final v in PostVisibility.values) ...[
-                  OptionCard(
-                    title: postVisibilityNames[v]!,
-                    subtitle: switch (v) {
-                      PostVisibility.public => '全平台可見，會出現在探索',
-                      PostVisibility.followersOnly => '只有關注你的人看得到',
-                      PostVisibility.private => '只有你自己看得到',
-                    },
-                    selected: visibility == v,
-                    onTap: () => setState(() => visibility = v),
-                  ),
-                  const SizedBox(height: S.md),
-                ],
 
               ],
             ),

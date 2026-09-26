@@ -2389,11 +2389,16 @@ class AppState extends ChangeNotifier {
   /// 排序要在這裡做，不能倚賴 `posts` 本身的順序：`applyCloudPosts` 會排，
   /// 但本機新發的是直接插進去的。在此之前檔案頁只取前兩篇 ——
   /// 順序不對的話，「最新兩篇」拿到的會是別的兩篇。
+  /// **不再依可見範圍過濾**（使用者裁決 2026-09-26，貼文一律公開）。
+  ///
+  /// 過濾掉也沒有用：安全規則那一側是 `allow read: if request.auth != null`，
+  /// 任何登入者本來就讀得到每一篇。前端濾掉只是讓自己看不到。
+  ///
+  /// 2026-09-26 之前標為「私人」「僅關注者」的舊貼文因此會出現在
+  /// 檔案頁上 —— 但它們**本來就在所有人的動態牆上**（動態牆從來沒有
+  /// 依可見範圍過濾過），所以這不是新的曝光，是把不一致修掉。
   List<Post> postsBy(String name) => posts
-      .where((p) =>
-          !p.deleted &&
-          p.author == name &&
-          (_mine(name) || p.visibility == PostVisibility.public))
+      .where((p) => !p.deleted && p.author == name)
       .toList()
     ..sort((a, b) => b.at.compareTo(a.at));
 

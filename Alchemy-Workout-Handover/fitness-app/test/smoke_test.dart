@@ -149,16 +149,19 @@ void main() {
     expect(t.takeException(), isNull);
   });
 
-  testWidgets('發文：可見範圍、字數、違規攔截', (t) async {
+  testWidgets('發文：違規攔截、發布成功', (t) async {
     await _boot(t);
     await t.tap(find.text('社群').last);
     await t.pumpAndSettle();
     await t.tap(find.widgetWithText(AppButton, '發文'));
     await t.pumpAndSettle();
 
-    // 空內容時發布鍵停用
-    expect(find.text('可見範圍'), findsOneWidget);
-    expect(find.text('僅關注者'), findsOneWidget);
+    // **可見範圍的選擇器已移除**（使用者裁決 2026-09-26，貼文一律公開）。
+    // 理由見 `PostVisibility` 的註解：它從來沒有生效過 ——
+    // 安全規則是 `allow read: if request.auth != null`，
+    // 任何登入者都讀得到每一篇，包括標「私人」的。
+    expect(find.text('可見範圍'), findsNothing);
+    expect(find.text('僅關注者'), findsNothing);
 
     // 明顯違規 → 當場攔截，不發布
     await t.enterText(find.byType(TextField).first, '加賴看更多');
@@ -175,7 +178,7 @@ void main() {
     await t.tap(find.widgetWithText(AppButton, '發布'));
     await t.pumpAndSettle();
     expect(find.text('今天腿日，深蹲破紀錄'), findsWidgets);
-    // 預設可見範圍為公開，故探索分頁也看得到
+    // 一律公開，故探索分頁也看得到
     await t.tap(find.text('探索').last);
     await t.pumpAndSettle();
     expect(find.text('今天腿日，深蹲破紀錄'), findsWidgets);

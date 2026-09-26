@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../domain/ability.dart';
 import '../../domain/community.dart';
 import '../../state/app_state.dart';
+import '../me/instructor_apply_screen.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
 import 'mentor_chat_screen.dart';
@@ -151,6 +152,21 @@ class _InstructorList extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 50),
       children: [
+        // **自己也能當教官** —— 入口原本只在「我的」→ 更多底下，
+        // 而會想當教官的人正是在這一頁看別人的教官檔案的人
+        //（使用者裁決 2026-09-26）。
+        //
+        // 已經是教官的不顯示：那一頁對他只剩「你已通過」一句話。
+        if (!s.isInstructor) ...[
+          AppButton(
+            label: '我要成為教官',
+            kind: BtnKind.secondary,
+            icon: Icons.school_outlined,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const InstructorApplyScreen())),
+          ),
+          const SizedBox(height: S.base),
+        ],
         for (final i in s.instructors) _InstructorCard(instructor: i),
       ],
     );

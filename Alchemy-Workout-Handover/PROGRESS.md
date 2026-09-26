@@ -50,7 +50,7 @@ Command、Event、Aggregate、不變條件與已定案的決策。程式碼與�
 
 ```bash
 flutter analyze                       # 應該完全乾淨
-flutter test --timeout 90s            # 應為 1,970 passed
+flutter test --timeout 90s            # 應為 1,978 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                       # 應為 17 passed（需要 Chrome）
 ./tools/build_web.sh                  # Web 建置，見第 6 節第 8 條
@@ -557,11 +557,24 @@ firebase deploy --only hosting
    幾點練…」與「沒填的那天不發提醒」。
 
    **⑥ 發文要能真的上傳照片**，目前是假圖庫。
+   **使用者裁決走 Cloudflare R2**（2026-09-26，選項 B）——
+   Firebase Storage 自 2026-02-03 起**需要 Blaze 方案**（Spark 完全沒有
+   bucket，API 回 402／403，見 `firebase.google.com/docs/storage/
+   faqs-storage-changes-announced-sept-2024`）。而 R2 免費層不用綁卡，
+   且這個專案已經有一個跑得好好的 Cloudflare Worker。**尚未實作。**
 
-   **⑦ 貼文可見範圍（公開／關注者／私人）改為三個並排**，不要直式清單；
-   並確認可見範圍**真的生效**，不是只存了一個沒人讀的欄位。
+   **⑦ 貼文可見範圍：使用者裁決「移除，一律公開」** ✅已修（2026-09-26）。
+   查證後**它從來沒有生效過**：動態牆的 `visiblePosts` 只濾掉已刪除的，
+   而 `firestore.rules` 是 `allow read: if request.auth != null` ——
+   **任何登入者都讀得到每一篇，包括標「私人」的**。只有檔案頁的
+   `postsBy()` 有濾，而那只是讓「我自己」看不到別人的私人貼文。
+   要真的做對，「僅關注者」得讓安全規則判斷「讀的人有沒有關注作者」，
+   而那在查詢裡做不到 —— 得把可見名單反正規化到每一篇貼文上，
+   關注一個人就要回頭改他所有貼文。使用者裁決移除選項。
+   **移除沒有放寬任何東西**：那些貼文本來就在所有人的動態牆上。
+   `PostVisibility` 列舉留著不刪 —— 雲端既有文件有這個欄位。
 
-   **⑧ 社群 → 師徒頁也要有「申請成為教官」的入口**（目前只在「我的」底下）。
+   **⑧ 社群 → 師徒頁的教官申請入口** ✅已修（2026-09-26）。已是教官者不顯示。
 
 0j. ~~**管理員後台整個還沒接上 Firebase，而且顯示的是假資料。**~~
    **程式那一側已修（2026-09-24）；只差有人真的拿到 claim**
