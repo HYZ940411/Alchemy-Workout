@@ -111,12 +111,37 @@ class SettlementRewards {
     required this.completion,
   });
 
+  /// 什麼都不發。
+  ///
+  /// **一組都沒完成、或不到 [kMinRewardedWorkout] 的訓練走這條**
+  /// （使用者裁決 2026-09-26）。按下開始、放著、按結束，不該換到
+  /// 經驗值與金幣 —— 那是「打開 App」的獎勵，不是訓練的獎勵。
+  ///
+  /// `completion` 為 0 而不是保留原值：它會被寫進當日最高完成度，
+  /// 而這一場**沒有完成任何東西**。
+  const SettlementRewards.none()
+      : exp = 0,
+        coins = 0,
+        coinsEntitled = 0,
+        coinsBeforeBonus = 0,
+        bonusRate = 0,
+        leaderboardScore = null,
+        leaderboardScoreEntitled = null,
+        completion = 0;
+
   /// 本場應得但因當日上限而未全額發放（含完全沒發的情形）。
   bool get coinsCapped => coins < coinsEntitled;
 
   bool get scoreCapped =>
       leaderboardScoreEntitled != null && leaderboardScore! < leaderboardScoreEntitled!;
 }
+
+/// 發得出獎勵的最短訓練時長。
+///
+/// 使用者裁決（2026-09-26）：不到這個時間的訓練不發任何獎勵。
+/// 與「至少完成一組」兩者**缺一不可** —— 只看組數的話，隨手勾一組
+/// 再結束也能領；只看時長的話，開著不動十分鐘也能領。
+const kMinRewardedWorkout = Duration(minutes: 5);
 
 /// 訓練結算的三個數值指標，各自的規則不同：
 /// 能力值不受終止方式影響、經驗值固定 30、金幣與排行榜分數受完成度影響。

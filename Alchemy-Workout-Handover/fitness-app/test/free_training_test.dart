@@ -110,6 +110,7 @@ void main() {
       s.startWorkout(blankPlan);
       s.addExerciseToSession(ex('squat'), const [PlannedSet(80, 5)]);
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       final r = s.finishWorkout(EndKind.completed);
       expect(r.rewards.completion, 1.0);
       expect(r.rewards.leaderboardScore, isNull);

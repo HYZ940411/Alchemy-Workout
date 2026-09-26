@@ -19,6 +19,9 @@ AppState _outsideRegroup() {
 void _train(AppState s) {
   s.startWorkout(s.platformPlans.firstWhere((p) => p.id == 'p_push'));
   s.completeCurrentSet();
+  // 獎勵有「不到 5 分鐘不發」的門檻（使用者裁決 2026-09-26）——
+  // 測試是開始之後立刻結束的，不往前挪的話每一場都算太短。
+  s.backdateSession(const Duration(minutes: 10));
   s.finishWorkout(EndKind.completed);
 }
 

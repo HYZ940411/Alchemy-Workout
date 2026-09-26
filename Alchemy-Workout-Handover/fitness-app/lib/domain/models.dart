@@ -167,7 +167,13 @@ class WorkoutSession {
   /// 來源課表。快照產生後即與它脫鉤 —— 來源課表事後被修改或下架，
   /// 進行中的訓練不受影響。
   final WorkoutPlan plan;
-  final DateTime startedAt;
+  /// 本次訓練開始的時點。
+  ///
+  /// **不是 final，只為了測試**（`@visibleForTesting` 的
+  /// `AppState.backdateSession`）。獎勵有「不到 5 分鐘不發」的門檻，
+  /// 而測試是開始之後立刻結束的 —— 真實時間幾乎沒走，每一場都會被
+  /// 判成太短。正式流程從頭到尾不會改它。
+  DateTime startedAt;
 
   /// **本次訓練課表快照**。加入動作只改這裡，不改來源課表，
   /// 亦不改任何自訂訓練 Aggregate。

@@ -57,6 +57,14 @@ List<PlannedSet> _sets(int n, double w, int reps) =>
     List.generate(n, (_) => PlannedSet(w, reps));
 
 /// 〈Read Model：課表選擇頁〉涵蓋的四類入口。
+///
+/// **「上次訓練」與「上次完成度」不寫在這裡。**
+/// 那兩個是「**我**上次練這份課表是什麼時候」—— 每個使用者各自不同，
+/// 而這份清單是平台提供給所有人的目錄。寫在這裡的後果是：一個從來
+/// 沒練過「拉日」的人，打開課表選擇頁看到「上次訓練 5 天前　完成度 70%」。
+/// 使用者 2026-09-26 實測回報的正是這個。
+///
+/// 改由 `AppState.lastTrainedOf()` 依訓練歷史推導（見 PROGRESS 第 5 節 0k）。
 final kPlans = <WorkoutPlan>[
   WorkoutPlan(
     id: 'p_push',
@@ -65,8 +73,6 @@ final kPlans = <WorkoutPlan>[
     suitableGoals: const {'增肌', '提升體能'},
     source: PlanSource.official,
     equipmentTier: '健身房',
-    lastTrainedAt: DateTime.now().subtract(const Duration(days: 3)),
-    lastCompletion: 1.0,
     exercises: [
       // 課表指定值蓋過動作預設（150 秒）—— 取值優先序的第一順位。
       PlanExercise(
@@ -91,8 +97,6 @@ final kPlans = <WorkoutPlan>[
     suitableGoals: const {'增肌', '提升體能'},
     source: PlanSource.official,
     equipmentTier: '健身房',
-    lastTrainedAt: DateTime.now().subtract(const Duration(days: 5)),
-    lastCompletion: 0.7,
     exercises: [
       PlanExercise(exercise: ex('row'), planned: _sets(4, 50, 8)),
       PlanExercise(exercise: ex('latpull'), planned: _sets(3, 45, 10)),
@@ -139,8 +143,6 @@ final kPlans = <WorkoutPlan>[
     source: PlanSource.privateCustom,
     equipmentTier: '徒手',
     hasOptimizationSuggestion: true,
-    lastTrainedAt: DateTime.now().subtract(const Duration(days: 9)),
-    lastCompletion: 0.5,
     exercises: [
       PlanExercise(exercise: ex('plank'), planned: _sets(3, 0, 60)),
       PlanExercise(exercise: ex('crunch'), planned: _sets(4, 8, 15)),

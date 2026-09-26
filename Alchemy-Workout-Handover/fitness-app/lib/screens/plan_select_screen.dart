@@ -124,7 +124,8 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 三種解鎖方式為 OR 關係 —— 只看階級會讓已付金幣解鎖的計畫仍顯示為鎖住。
-    final locked = !AppScope.of(context).planUnlocked(plan);
+    final s = AppScope.of(context);
+    final locked = !s.planUnlocked(plan);
     final sets = plan.totalSets;
     final srcFactor = planSourceFactor(plan.source);
 
@@ -205,10 +206,13 @@ class _PlanCard extends StatelessWidget {
                       const SizedBox(height: 10),
                       Text(plan.disclaimer!, style: T.caption()),
                     ],
-                    if (plan.lastTrainedAt != null) ...[
+                    // **依訓練歷史推導，不讀課表上的欄位。**
+                    // 官方課表是平台目錄，「我上次練它是什麼時候」
+                    // 是每個人各自不同的東西。
+                    if (s.lastTrainedOf(plan) case final at?) ...[
                       const SizedBox(height: 10),
                       Text(
-                        '上次訓練 ${_ago(plan.lastTrainedAt!)}'
+                        '上次訓練 ${_ago(at)}'
                         '${plan.lastCompletion != null ? '　完成度 ${(plan.lastCompletion! * 100).round()}%' : ''}',
                         style: T.caption(color: C.textDisabled),
                       ),

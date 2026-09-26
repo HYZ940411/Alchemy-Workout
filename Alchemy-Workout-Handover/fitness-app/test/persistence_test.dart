@@ -156,6 +156,7 @@ void main() {
       s.startWorkout(plan);
       s.session!.records[0][0].weight = 57.5;
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       s.finishWorkout(EndKind.endedEarly);
 
       final back = await _roundTrip(s, store);
@@ -217,6 +218,7 @@ void main() {
       final s = await _connected(store);
       s.startWorkout(s.platformPlans.first);
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       final first = s.finishWorkout(EndKind.completed);
       expect(first.rewards.coins, greaterThan(0));
 
@@ -224,6 +226,7 @@ void main() {
       final coins = back.coins;
       back.startWorkout(back.platformPlans.first);
       back.completeCurrentSet();
+      back.backdateSession(const Duration(minutes: 10));
       final second = back.finishWorkout(EndKind.completed);
       expect(second.rewards.coins, 0, reason: '重開 App 不是新的一天');
       expect(back.coins, coins);

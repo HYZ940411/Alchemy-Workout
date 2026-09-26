@@ -98,6 +98,7 @@ void main() {
       final s = AppState();
       s.startWorkout(s.platformPlans.first);
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       final first = s.finishWorkout(EndKind.completed);
       final workouts = s.totalWorkouts;
       final days = s.totalWorkoutDays;
@@ -107,6 +108,7 @@ void main() {
 
       s.startWorkout(s.platformPlans.first);
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       final second = s.finishWorkout(EndKind.completed);
 
       expect(second.rewards.coins, 0);
@@ -126,6 +128,7 @@ void main() {
       final s = AppState();
       s.startWorkout(s.platformPlans.first);
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       s.finishWorkout(EndKind.completed);
       expect(s.maxCompletionToday, 1.0);
 
@@ -135,6 +138,7 @@ void main() {
       final coins = s.coins;
       s.startWorkout(s.platformPlans.first);
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       final r = s.finishWorkout(EndKind.completed);
       expect(r.rewards.coins, greaterThan(0));
       expect(s.coins, greaterThan(coins));

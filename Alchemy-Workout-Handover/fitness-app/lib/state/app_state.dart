@@ -1628,17 +1628,34 @@ class AppState extends ChangeNotifier {
     }
 
     // --- 獎勵 ---
+    //
+    // **一組都沒完成、或不到 5 分鐘的訓練一律不發獎勵**（使用者裁決
+    // 2026-09-26）。按下開始、放著、按結束，不該換到經驗值與金幣 ——
+    // 那是「打開 App」的獎勵，不是訓練的獎勵。
+    //
+    // 判準取「**完成的組數**」與「**實際時長**」兩者，缺一不可：
+    //   · 只看組數：做一組再結束也能領，而那組可能是隨手勾的
+    //   · 只看時長：開著不動十分鐘也能領
+    //
+    // 排行榜分數、每日任務的「完成訓練」計數一併不給 —— 那些同樣是
+    // 獎勵。訓練紀錄本來就有「一組都沒完成不寫入」的判斷，不重複。
+    final duration = now.difference(s.startedAt);
+    final tooShort = duration < kMinRewardedWorkout;
+    final rewardable = s.doneSets > 0 && !tooShort;
+
     _rollRewardCounters(today);
-    final rewards = computeSettlement(
-      kind: kind,
-      source: s.plan.source,
-      doneSets: s.doneSets,
-      plannedSets: s.plannedSets,
-      streakDays: trainingStreakDays,
-      expAlreadyGrantedToday: _expGrantedOn == today,
-      coinsGrantedToday: _coinsGrantedToday,
-      scoreGrantedToday: _scoreGrantedToday,
-    );
+    final rewards = rewardable
+        ? computeSettlement(
+            kind: kind,
+            source: s.plan.source,
+            doneSets: s.doneSets,
+            plannedSets: s.plannedSets,
+            streakDays: trainingStreakDays,
+            expAlreadyGrantedToday: _expGrantedOn == today,
+            coinsGrantedToday: _coinsGrantedToday,
+            scoreGrantedToday: _scoreGrantedToday,
+          )
+        : const SettlementRewards.none();
     if (rewards.exp > 0) _expGrantedOn = today;
     totalExp += rewards.exp;
     coins += rewards.coins;
@@ -1654,10 +1671,10 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    _bumpTasks('使用者已完成訓練', 1);
+    // 每日任務的「完成訓練」同樣不給 —— 見上方獎勵那一段的理由。
+    if (rewardable) _bumpTasks('使用者已完成訓練', 1);
     final newly = _syncAchievements();
 
-    final duration = now.difference(s.startedAt);
     final result = SettlementResult(
       plan: s.plan,
       kind: kind,
@@ -1712,6 +1729,9 @@ class AppState extends ChangeNotifier {
           logged,
         ),
       );
+      // **訓練紀錄變了，品質評分就過期了。** 設成空值，下次有人讀
+      // 就重算 —— 不當場算，因為結算這條路上沒有人要看那個分數。
+      quality = null;
     }
 
     // 自訂訓練的「上次訓練日期／上次完成度」——
@@ -4434,12 +4454,64 @@ class AppState extends ChangeNotifier {
   ///
   /// 規格：重新申請時產生新的一筆教官申請並**重新評分**，不沿用舊的 ——
   /// 14 天只是最低重試間隔，數月後再申請時訓練紀錄已完全不同。
+  /// 把本次訓練的開始時點往前挪 —— **只給測試用**。
+  ///
+  /// 獎勵有「不到 5 分鐘不發」的門檻（使用者裁決 2026-09-26），
+  /// 而測試是 `startWorkout()` 之後立刻結束的，真實時間幾乎沒走。
+  /// 不挪的話每一場都會被判成太短，而那不是這些測試要驗的東西。
+  ///
+  /// 用這個而不是 `advanceDemoClock()`：後者會動到 `now`，
+  /// 在換日時點（04:00）附近會把日期一起推過去，連帶影響連續天數。
+  @visibleForTesting
+  void backdateSession(Duration by) {
+    final w = session;
+    if (w == null) return;
+    w.startedAt = w.startedAt.subtract(by);
+  }
+
+  /// 我上次練這份課表是什麼時候。**依訓練歷史推導，不存欄位。**
+  ///
+  /// 在此之前官方課表的 `lastTrainedAt`／`lastCompletion` 是**寫死在
+  /// `kPlans` 裡的**，而那份清單是平台給所有人的目錄 —— 於是一個從來
+  /// 沒練過「拉日」的人會看到「上次訓練 5 天前　完成度 70%」。
+  /// 使用者 2026-09-26 實測回報的正是這個。
+  ///
+  /// 自訂訓練那一側本來就是對的（結算時寫回 `customPlans`），
+  /// 只有官方課表這一側拿了假資料頂著。
+  ///
+  /// 依**課表名稱**比對，因為 `HistoryEntry` 存的是名稱不是 ID。
+  DateTime? lastTrainedOf(WorkoutPlan plan) {
+    if (plan.lastTrainedAt != null) return plan.lastTrainedAt; // 自訂訓練
+    for (final h in history) {
+      if (h.planName == plan.name) return h.date;
+    }
+    return null;
+  }
+
   QualityScore rescoreTrainingQuality() {
     final scored = scoreTrainingQuality(_sessionSummaries());
     quality = scored;
     notifyListeners();
     return scored;
   }
+
+  /// 目前的評分。**沒算過就當場算一次（規則，不連網）。**
+  ///
+  /// 在此之前 `qualityScore` 是 `quality?.weighted ?? 0`，而 `quality`
+  /// 只在按下申請時才被填 —— 所以**光是打開教官申請頁永遠看到 0**，
+  /// 不管練了幾次。使用者實測練了 7 次仍全 0。
+  ///
+  /// 教官申請頁是個 Read Model：它要在「還沒申請」的時候就告訴你
+  /// 門檻過了沒。那就必須有分數可讀。
+  ///
+  /// **這裡只用規則算，不呼叫 Gemini** —— 模型那一趟要花錢也要時間，
+  /// 而規格把「AI 已產出訓練品質評分」綁在**一筆申請**上
+  /// （請求識別碼＝使用者 ID ＋ 教官申請 ID，同一筆申請只評分一次）。
+  /// 預覽用規則、真的申請時才問模型，兩者都對。
+  ///
+  /// 不在這裡 `notifyListeners()`：它會在 build 當中被讀到。
+  QualityScore get _qualityOrCompute =>
+      quality ??= scoreTrainingQuality(_sessionSummaries());
 
   List<SessionSummary> _sessionSummaries() => [
         for (final h in history)
@@ -4486,12 +4558,11 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// 加權平均。沒評過時為 0 —— **不給一個看起來合理的預設值**，
-  /// 那會讓「還沒評分」與「評了 72 分」在畫面上長得一樣。
-  int get qualityScore => quality?.weighted ?? 0;
+  /// 加權平均。**沒算過就當場算** —— 見 [_qualityOrCompute]。
+  int get qualityScore => _qualityOrCompute.weighted;
 
   /// 「紀錄合理性」單項。受一票否決門檻檢核，與加權平均並存。
-  int get sanityScore => quality?.sanity ?? 0;
+  int get sanityScore => _qualityOrCompute.sanity;
 
   /// 教官資格初審的判定。門檻取自〈教官初審設定〉，管理員調整後即時反映。
   InstructorGate get instructorGate => evaluateInstructorGate(
@@ -6170,6 +6241,20 @@ class AppState extends ChangeNotifier {
     // 猜錯方向讓人照著練才是問題。
     // 換動作要排在最前面 —— 「換掉臥推」含「換」，而不含其他方向的詞，
     // 但先比對強度類的話，未來加詞容易誤判。
+    //
+    // **器材缺席要認得出來。** 使用者實測打「今天沒有啞鈴可以用」，
+    // 而原本的條件只有 `沒有器材` 與 `器材不` —— 沒有人會說
+    // 「我沒有器材」，他會說沒有**哪一樣**器材。系統回「我看不出你想
+    // 往哪個方向調」，但那句話講得再清楚不過了。
+    //
+    // 器材名稱直接取自值域（`kEquipmentItems`），不自己再列一份 ——
+    // 管理員在後台加了品項，這裡要跟著認得。
+    final missing = a.contains('沒有') || a.contains('沒') ||
+        a.contains('壞') || a.contains('不能用') || a.contains('被占') ||
+        a.contains('用不到') || a.contains('沒帶');
+    if (missing && kEquipmentItems.any((e) => a.contains(e))) {
+      return AdjustIntent.swap;
+    }
     if (a.contains('換') || a.contains('替代') || a.contains('做不了') ||
         a.contains('沒有器材') || a.contains('器材不')) {
       return AdjustIntent.swap;

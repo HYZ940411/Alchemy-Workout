@@ -66,7 +66,8 @@ class PlanDetailScreen extends StatelessWidget {
                 const Pill('不計入排行榜', color: AppColors.textFaint),
             ],
           ),
-          if (plan.lastTrainedAt != null) ...[
+          // 同上：依訓練歷史推導。
+          if (s.lastTrainedOf(plan) case final at?) ...[
             const SizedBox(height: S.md),
             AppCard(
               child: Row(
@@ -74,9 +75,14 @@ class PlanDetailScreen extends StatelessWidget {
                   Expanded(
                     child: StatField(
                       label: '上次訓練',
-                      value: _ago(plan.lastTrainedAt!),
+                      value: _ago(at),
                     ),
                   ),
+                  // **完成度只有自訂訓練存得出來。** 官方課表這一格
+                  // 原本靠 `kPlans` 裡寫死的值頂著；拿掉之後顯示「—」，
+                  // 那是誠實的 —— 訓練歷史沒有存「這場做了計畫的幾成」。
+                  // 要真的算得出來得讓 `session_plans` 落地（見
+                  // `Firestore-Schema設計.md` §2.3）。
                   Expanded(
                     child: StatField(
                       label: '上次完成度',
