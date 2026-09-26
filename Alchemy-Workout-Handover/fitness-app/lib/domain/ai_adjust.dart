@@ -97,6 +97,8 @@ class AdjustChange {
   /// 畫面上這一筆的完整文字：一行數字，有理由就再一行。
   ///
   /// **理由縮排一格**，讀起來才分得出「改什麼」與「為什麼」。
+  /// 筆與筆之間的空行由呼叫端加（見 `AppState` 組訊息那兩處）——
+  /// 這裡只負責一筆。
   String get detail => reason == null ? summary : '$summary\n　　$reason';
 }
 

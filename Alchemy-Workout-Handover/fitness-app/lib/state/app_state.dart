@@ -1727,6 +1727,10 @@ class AppState extends ChangeNotifier {
           math.max(1, duration.inMinutes),
           result.calories,
           logged,
+          // 課表卡片的「上次完成度」要讀得到它。空白課表沒有計畫組數。
+          completion: result.plannedSets == 0
+              ? null
+              : result.doneSets / result.plannedSets,
         ),
       );
       // **訓練紀錄變了，品質評分就過期了。** 設成空值，下次有人讀
@@ -4485,10 +4489,20 @@ class AppState extends ChangeNotifier {
   /// 只有官方課表這一側拿了假資料頂著。
   ///
   /// 依**課表名稱**比對，因為 `HistoryEntry` 存的是名稱不是 ID。
-  DateTime? lastTrainedOf(WorkoutPlan plan) {
-    if (plan.lastTrainedAt != null) return plan.lastTrainedAt; // 自訂訓練
+  DateTime? lastTrainedOf(WorkoutPlan plan) =>
+      _lastEntryOf(plan)?.date ?? plan.lastTrainedAt;
+
+  /// 我上次練這份課表做了幾成。**沒有紀錄回空值**，畫面顯示「—」。
+  ///
+  /// 2026-09-26 之前結算的場次沒有存這個數字，所以舊紀錄仍然是空值 ——
+  /// 那是誠實的：那幾場的完成度我們真的不知道。
+  double? lastCompletionOf(WorkoutPlan plan) =>
+      _lastEntryOf(plan)?.completion ?? plan.lastCompletion;
+
+  /// 這份課表最近的一場。依**名稱**比對，因為訓練歷史存的是名稱不是 ID。
+  HistoryEntry? _lastEntryOf(WorkoutPlan plan) {
     for (final h in history) {
-      if (h.planName == plan.name) return h.date;
+      if (h.planName == plan.name) return h;
     }
     return null;
   }
@@ -4500,23 +4514,24 @@ class AppState extends ChangeNotifier {
     return scored;
   }
 
-  /// 目前的評分。**沒算過就當場算一次（規則，不連網）。**
+  /// 還沒評過分。**畫面要據此顯示「尚未評分」，不是 0。**
   ///
-  /// 在此之前 `qualityScore` 是 `quality?.weighted ?? 0`，而 `quality`
-  /// 只在按下申請時才被填 —— 所以**光是打開教官申請頁永遠看到 0**，
-  /// 不管練了幾次。使用者實測練了 7 次仍全 0。
+  /// ## 為什麼不在打開頁面時先算一份
   ///
-  /// 教官申請頁是個 Read Model：它要在「還沒申請」的時候就告訴你
-  /// 門檻過了沒。那就必須有分數可讀。
+  /// 2026-09-26 我一度改成「讀到就算」，理由是使用者回報「練了 7 次
+  /// 分數還是 0」。**那個修法違反規格的時序**，使用者當場指出來：
   ///
-  /// **這裡只用規則算，不呼叫 Gemini** —— 模型那一趟要花錢也要時間，
-  /// 而規格把「AI 已產出訓練品質評分」綁在**一筆申請**上
-  /// （請求識別碼＝使用者 ID ＋ 教官申請 ID，同一筆申請只評分一次）。
-  /// 預覽用規則、真的申請時才問模型，兩者都對。
+  /// `教官申請流程.md` 的順序是「使用者已申請教官權限」→ 系統初審
+  /// （階級與累積訓練次數兩條門檻）→ 系統「分析歷史訓練品質」。
+  /// 而且「本 Event 的請求識別碼 ＝ 使用者 ID ＋ **教官申請 ID**，
+  /// 同一筆申請只評分一次」、「評分結果寫入教官申請 Aggregate，永久保存」。
   ///
-  /// 不在這裡 `notifyListeners()`：它會在 build 當中被讀到。
-  QualityScore get _qualityOrCompute =>
-      quality ??= scoreTrainingQuality(_sessionSummaries());
+  /// 也就是**評分屬於一筆申請，不屬於這個人**。沒有申請就沒有評分，
+  /// 不是「評了但還沒看」。
+  ///
+  /// 原本的問題其實不是「沒算」，是**把「沒有分數」畫成了 0** ——
+  /// 而 0 看起來像一個很低的分數。修法是把它畫成「尚未評分」。
+  bool get qualityScored => quality != null;
 
   List<SessionSummary> _sessionSummaries() => [
         for (final h in history)
@@ -4563,11 +4578,12 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// 加權平均。**沒算過就當場算** —— 見 [_qualityOrCompute]。
-  int get qualityScore => _qualityOrCompute.weighted;
+  /// 加權平均。**沒評過是 0** —— 畫面要先看 [qualityScored]，
+  /// 把「沒有分數」畫成「尚未評分」而不是 0 分。
+  int get qualityScore => quality?.weighted ?? 0;
 
   /// 「紀錄合理性」單項。受一票否決門檻檢核，與加權平均並存。
-  int get sanityScore => _qualityOrCompute.sanity;
+  int get sanityScore => quality?.sanity ?? 0;
 
   /// 教官資格初審的判定。門檻取自〈教官初審設定〉，管理員調整後即時反映。
   InstructorGate get instructorGate => evaluateInstructorGate(
@@ -6495,8 +6511,11 @@ class AppState extends ChangeNotifier {
     // 折衷：標題有沒有「AI」兩個字就是答案。不佔版面，也分得出來。
     final byModel = got.origin == SuggestionOrigin.gemini;
     _say(src, AiTurnRole.ai,
-        '${byModel ? 'AI ' : ''}建議如下（${adjustIntentNames[intent]}）：\n'
-        '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n')}\n'
+        // **每一筆之間空一行。** 逐筆有理由之後，全部擠在一起
+        // 會變成一大塊字 —— 使用者回報「排版有點難閱讀」。
+        // 空行讓「改什麼」與「為什麼」成為一個看得出邊界的段落。
+        '${byModel ? 'AI ' : ''}建議如下（${adjustIntentNames[intent]}）：\n\n'
+        '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
         '${aiSuggestion[src]!.rationale == null ? '' : '\n${aiSuggestion[src]!.rationale}\n'}'
         '\n作用範圍：${aiSourceScope[src]}');
     // **退回規則引擎時要說出來。** 不說的話，使用者看到的是一份
@@ -6547,8 +6566,8 @@ class AppState extends ChangeNotifier {
     }
     aiSuggestion[src] = suggestion;
     _say(src, AiTurnRole.ai,
-        '建議如下（${adjustIntentNames[intent]}）：\n'
-        '${suggestion.changes.map((c) => '· ${c.detail}').join('\n')}\n'
+        '建議如下（${adjustIntentNames[intent]}）：\n\n'
+        '${suggestion.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
         '${suggestion.rationale == null ? '' : '\n${suggestion.rationale}\n'}'
         '\n作用範圍：${aiSourceScope[src]}');
     aiStage[src] = AiStage.proposed;

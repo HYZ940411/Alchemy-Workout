@@ -58,18 +58,30 @@ class InstructorApplyScreen extends StatelessWidget {
                   ok: g.workoutsOk,
                 ),
                 const Divider(height: 22, color: AppColors.line),
+                // **沒評過就寫「尚未評分」，不寫 0。**
+                //
+                // 規格的時序是：申請 → 初審（階級與次數）→ 分析訓練品質。
+                // 評分屬於**一筆申請**（請求識別碼含教官申請 ID），
+                // 不屬於這個人 —— 沒有申請就沒有評分。
+                //
+                // 而 0 看起來像「很低的分數」。使用者回報「練了 7 次還是 0」
+                // 時，問題不是沒算，是把「沒有分數」畫成了 0。
                 _Condition(
                   label: '訓練品質評分 / 通過門檻',
-                  value: '${s.qualityScore} / '
-                      '${platformConfig.i('instructorGate', 'qualityPass')}',
+                  value: s.qualityScored
+                      ? '${s.qualityScore} / '
+                          '${platformConfig.i('instructorGate', 'qualityPass')}'
+                      : '尚未評分',
                   ok: g.qualityOk,
                 ),
                 const Divider(height: 22, color: AppColors.line),
                 _Condition(
                   // 一票否決獨立於加權平均：該單項低於門檻即駁回。
                   label: '紀錄合理性 / 一票否決門檻',
-                  value: '${s.sanityScore} / '
-                      '${platformConfig.i('instructorGate', 'veto')}',
+                  value: s.qualityScored
+                      ? '${s.sanityScore} / '
+                          '${platformConfig.i('instructorGate', 'veto')}'
+                      : '尚未評分',
                   ok: !g.vetoed,
                 ),
               ],

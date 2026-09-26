@@ -219,6 +219,9 @@ extension AppStateSnapshot on AppState {
               'volume': h.volume,
               'minutes': h.minutes,
               'calories': h.calories,
+              // 2026-09-26 新增。舊存檔沒有這個鍵，讀回來是空值 ——
+              // 那是誠實的：那幾場的完成度我們真的不知道。
+              if (h.completion != null) 'completion': h.completion,
               'exercises': [
                 for (final e in h.exercises)
                   {
@@ -622,6 +625,8 @@ extension AppStateSnapshot on AppState {
                       isTimed: e['isTimed'] == true,
                     ),
               ],
+              // 舊存檔沒有這個鍵 → 空值 → 畫面顯示「—」。
+              completion: (h['completion'] as num?)?.toDouble(),
             ),
       ];
     }

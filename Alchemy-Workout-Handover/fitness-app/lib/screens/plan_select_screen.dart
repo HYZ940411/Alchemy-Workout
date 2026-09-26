@@ -211,11 +211,14 @@ class _PlanCard extends StatelessWidget {
                     // 是每個人各自不同的東西。
                     if (s.lastTrainedOf(plan) case final at?) ...[
                       const SizedBox(height: 10),
-                      Text(
-                        '上次訓練 ${_ago(at)}'
-                        '${plan.lastCompletion != null ? '　完成度 ${(plan.lastCompletion! * 100).round()}%' : ''}',
-                        style: T.caption(color: C.textDisabled),
-                      ),
+                      Builder(builder: (_) {
+                        final c = s.lastCompletionOf(plan);
+                        return Text(
+                          '上次訓練 ${_ago(at)}'
+                          '${c == null ? '' : '　完成度 ${(c * 100).round()}%'}',
+                          style: T.caption(color: C.textDisabled),
+                        );
+                      }),
                     ],
                     if (locked) ...[
                       const SizedBox(height: 10),

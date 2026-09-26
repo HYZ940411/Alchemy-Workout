@@ -551,8 +551,16 @@ class HistoryEntry {
   final int minutes;
   final int calories;
   final List<HistoryExercise> exercises;
+
+  /// 這一場做了計畫的幾成（0–1）。空白課表沒有計畫組數，故可為空值。
+  ///
+  /// **2026-09-26 新增。** 課表卡片上的「上次完成度」原本靠 `kPlans` 裡
+  /// **寫死的假值**頂著；拿掉之後那一格變成「—」，因為訓練歷史從來沒有
+  /// 存過這個數字 —— 只存了做了哪幾組，沒存「計畫有幾組」。
+  final double? completion;
+
   const HistoryEntry(this.date, this.planName, this.volume, this.minutes,
-      this.calories, this.exercises);
+      this.calories, this.exercises, {this.completion});
 
   int get totalSets => exercises.fold(0, (a, e) => a + e.sets.length);
 }
