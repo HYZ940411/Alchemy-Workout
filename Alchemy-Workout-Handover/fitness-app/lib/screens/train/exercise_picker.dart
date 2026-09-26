@@ -144,16 +144,28 @@ class _ExercisePickerState extends State<_ExercisePicker> {
           onClear: owned.isEmpty ? null : () => setState(owned.clear),
         ),
         const SizedBox(height: S.sm),
-        // 一鍵帶入自己的器材。預設不篩（見 [_equipment]），但「只看我做得到
+        // 一鍵帶入可用器材。預設不篩（見 [_equipment]），但「只看我做得到
         // 的」是最常見的那一次篩選 —— 逐顆點八個品項才做得到，太貴。
         //
         // **整列寬，不是靠左。** 原本包在 `Align(centerLeft)` 裡，
         // 而這個 Column 是 `crossAxisAlignment: stretch`：旁邊每一個元件
         // 都是整列寬，只有它縮在左邊 —— 使用者回報「看起來歪歪的」。
+        //
+        // **不放圖示。** 圖示與文字一起居中，文字就會落在按鈕中線的右邊 ——
+        // 使用者回報「還是會偏右」。這顆按鈕只有一行字，不需要圖示。
+        //
+        // **標籤必須說真話。** 原本一律寫「只看我的器材做得到的」，
+        // 而它帶入的是 `equipmentForFiltering` —— 本次訓練已解鎖器材時
+        // 那是**全部 8 項**，不是他設定的持有器材。使用者回報
+        // 「點下去會全選，不是我設定的持有器材」。
+        //
+        // 帶全部是對的（解鎖期間他真的做得到），錯的是標籤。
+        // 依狀態分成兩句話，並帶上會選幾項。
         AppButton(
-          label: '只看我的器材做得到的',
+          label: s.sessionEquipmentUnlocked
+              ? '本次已解鎖全部器材（${s.equipmentForFiltering.length} 項）'
+              : '只看我的持有器材做得到的（${s.equipmentForFiltering.length} 項）',
           kind: BtnKind.secondary,
-          icon: Icons.check_circle_outline_rounded,
           onPressed: () => setState(() {
             owned
               ..clear()
@@ -164,7 +176,6 @@ class _ExercisePickerState extends State<_ExercisePicker> {
         _PartFilter(
           parts: all.keys.toList(),
           picked: _part,
-          countOf: (k) => all[k]!.length,
           onPick: (v) => setState(() => _part = v),
         ),
         const SizedBox(height: S.base),
@@ -217,23 +228,22 @@ class _ExercisePickerState extends State<_ExercisePicker> {
 /// 部位篩選 —— 單選，空值＝全部。
 ///
 /// 值域就是分組的鍵（六維 ＋ 有氧 ＋ 我的動作），與動作庫的八個分頁一致。
-/// 帶上每一區的筆數：選下去之前就看得出那一區有沒有東西，
-/// 不必點進去才發現是空的。
+///
+/// **不顯示每一區的筆數**（2026-09-27 使用者裁決）。第一版帶著筆數，
+/// 理由是「選下去之前就看得出那一區有沒有東西」—— 但那讓每一顆鍵變長、
+/// 一排變兩排，而且動作庫的分頁也沒有筆數。
 class _PartFilter extends StatelessWidget {
   final List<String> parts;
   final String? picked;
-  final int Function(String) countOf;
   final ValueChanged<String?> onPick;
   const _PartFilter({
     required this.parts,
     required this.picked,
-    required this.countOf,
     required this.onPick,
   });
 
   @override
   Widget build(BuildContext context) {
-    final total = parts.fold(0, (a, k) => a + countOf(k));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -250,13 +260,12 @@ class _PartFilter extends StatelessWidget {
           spacing: S.sm,
           runSpacing: S.sm,
           children: [
-            // key 是測試接縫：鍵面文字（例「腿 190」）在動作名稱裡也找得到
-            // （「俯臥屈腿 · 啞鈴」），用文字定位會一次命中十幾個。
-            _chip('全部 $total', picked == null, () => onPick(null),
+            // key 是測試接縫：鍵面文字在動作名稱裡也找得到
+            // （「腿」對上「俯臥屈腿 · 啞鈴」），用文字定位會一次命中十幾個。
+            _chip('全部', picked == null, () => onPick(null),
                 key: const ValueKey('part-all')),
             for (final k in parts)
-              _chip('$k ${countOf(k)}', picked == k, () => onPick(k),
-                  key: ValueKey('part-$k')),
+              _chip(k, picked == k, () => onPick(k), key: ValueKey('part-$k')),
           ],
         ),
       ],

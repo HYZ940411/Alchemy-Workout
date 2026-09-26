@@ -130,17 +130,22 @@ void main() {
       expect(find.text('划船機'), findsWidgets);
     });
 
-    testWidgets('「只看我的器材做得到的」一鍵帶入可用器材', (t) async {
+    // 標籤必須說真話。原本一律寫「只看我的器材做得到的」，而它帶入的是
+    // `equipmentForFiltering` —— 本次訓練已解鎖器材時那是**全部 8 項**，
+    // 不是他設定的持有器材。使用者回報「點下去會全選，不是我設定的持有器材」。
+    // 帶全部是對的（解鎖期間他真的做得到），錯的是標籤。
+    testWidgets('沒解鎖時：標籤說「持有器材」，帶入的就是持有器材', (t) async {
       final s = AppState();
+      final label = '只看我的持有器材做得到的（${s.equipmentForFiltering.length} 項）';
       await open(t, s);
-      await t.ensureVisible(find.text('只看我的器材做得到的'));
-      await t.tap(find.text('只看我的器材做得到的'));
+      await t.ensureVisible(find.text(label));
+      await t.tap(find.text(label));
       await t.pumpAndSettle();
       expect(find.textContaining('器材篩選：${s.equipmentForFiltering.length} 項'),
           findsOneWidget);
     });
 
-    testWidgets('有部位篩選，且帶著每一區的筆數', (t) async {
+    testWidgets('有部位篩選，八顆鍵與動作庫的八個分頁一致', (t) async {
       // 使用者回報「沒看到部位篩選」。動作庫是八個分頁承擔這件事，
       // 抽屜裡塞不下分頁，改成一排單選鍵。
       await open(t, AppState());
@@ -160,8 +165,13 @@ void main() {
       await t.tap(find.byKey(ValueKey('part-$legs')));
       await t.pumpAndSettle();
       expect(find.text('部位：$legs'), findsOneWidget);
-      // 其他分區的標題不該還在。
-      expect(find.text('有氧'), findsNothing);
+      // 其他分區的**動作**不該還在。
+      //
+      // 不能驗「找不到『有氧』這四個字」—— 它同時是篩選鍵的鍵面文字，
+      // 永遠都在。第一版測試就是這樣紅的：斷言其實在驗篩選鍵自己。
+      // 有氧動作的 `tabs` 是空集合（所屬肌群為空值），不會混進任何肌群分區。
+      final cardio = s.cardioExercises.first.name;
+      expect(find.text(cardio), findsNothing);
     });
 
     // **分組依 `tabs`（訓練部位），不是 `dim`（能力值歸屬）。**
@@ -183,15 +193,27 @@ void main() {
       }
     });
 
-    testWidgets('本次訓練已解鎖器材時，那顆按鈕帶入的是全部品項', (t) async {
-      // 解鎖了卻在加入動作時還被自己的設定擋住，等於沒解鎖。
+    testWidgets('已解鎖時：標籤改口說「本次已解鎖全部器材」，不再假稱是持有器材', (t) async {
+      // 解鎖了卻在加入動作時還被自己的設定擋住，等於沒解鎖 ——
+      // 所以帶入全部是對的。但標籤不可以還寫「我的持有器材」。
       final s = AppState()..sessionEquipmentUnlocked = true;
       await open(t, s);
-      await t.ensureVisible(find.text('只看我的器材做得到的'));
-      await t.tap(find.text('只看我的器材做得到的'));
+      expect(find.textContaining('只看我的持有器材'), findsNothing,
+          reason: '解鎖狀態下這句話是假的');
+      final label = '本次已解鎖全部器材（${kEquipmentItems.length} 項）';
+      await t.ensureVisible(find.text(label));
+      await t.tap(find.text(label));
       await t.pumpAndSettle();
       expect(find.textContaining('器材篩選：${kEquipmentItems.length} 項'),
           findsOneWidget);
+    });
+
+    testWidgets('部位篩選鍵不顯示筆數', (t) async {
+      // 2026-09-27 使用者裁決：不用顯示。帶著筆數會讓一排變兩排，
+      // 而動作庫的分頁也沒有筆數。
+      await open(t, AppState());
+      expect(find.text('全部'), findsOneWidget);
+      expect(find.textContaining('全部 '), findsNothing);
     });
   });
 }
