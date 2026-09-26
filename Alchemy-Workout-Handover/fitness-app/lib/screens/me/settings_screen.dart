@@ -311,6 +311,49 @@ class SettingsScreen extends StatelessWidget {
             // （社群讀不到不該擋住訓練），代價是出問題時完全沒有跡象。
             // 「申請送得出去、對方看不到」查了三輪都在猜，就是因為
             // 這幾條路徑什麼都不說。
+            // 累積訓練次數與訓練歷史筆數的對帳。
+            //
+            // 這兩個數字曾經漂開很久都沒被發現（次數無條件 +1、歷史要求
+            // 「有完成的組」），使用者是在教官申請頁看到 11 而訓練清單只有
+            // 1 才回報的。**沒有任何地方把它們並排過。**
+            //
+            // 現在兩者讀同一個旗標（見 `finishWorkout` 的 `recorded`），
+            // 不該再漂 —— 但雲端寫入失敗一樣會讓歷史少掉幾筆，
+            // 而那條路已經出事過一次。並排一次，下次一眼就看得出來。
+            const SectionLabel('訓練次數對帳', trailing: '開發者模式'),
+            Panel(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Column(
+                children: [
+                  _Row(
+                      label: '累積訓練次數',
+                      value: '${s.totalWorkouts}',
+                      readOnly: true),
+                  _Row(
+                      label: '訓練歷史筆數',
+                      value: '${s.history.length}',
+                      readOnly: true),
+                  _Row(
+                    label: '差異',
+                    value: s.totalWorkouts == s.history.length
+                        ? '0（相符）'
+                        : '${s.totalWorkouts - s.history.length}（歷史少了）',
+                    readOnly: true,
+                  ),
+                ],
+              ),
+            ),
+            if (s.totalWorkouts != s.history.length)
+              Padding(
+                padding: const EdgeInsets.only(top: S.sm),
+                child: Text(
+                  '差異不為 0 代表歷史曾經遺失過（雲端寫入失敗，或 2026-09-26 '
+                  '之前「開場即關閉」也算一次訓練的舊行為）。'
+                  '遺失的場次救不回來，但從此不會再拉開。',
+                  style: T.caption(),
+                ),
+              ),
+            const SizedBox(height: S.base),
             const SectionLabel('登入同步', trailing: '開發者模式'),
             // 存檔失敗原本完全無聲。2026-09-24 一個形狀不合的欄位讓
             // Firestore 整份拒收，帳號從那一刻起什麼都存不起來，而畫面上

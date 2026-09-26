@@ -267,7 +267,8 @@ void main() {
     });
   });
 
-  // 2026-09-26 使用者裁決：等長支撐不以「下」計量。
+  // 2026-09-26 使用者裁決（第二次，範圍擴大到側棒式）：
+  // 等長支撐不以「下」計量。
   //
   // 使用者回報「棒式在一份課表裡被開成 2 組 × 12 下」。前棒式是純等長支撐，
   // 沒有「一下」這回事 —— 而課表卡與詳情頁會照著顯示「12 下」，
@@ -277,27 +278,56 @@ void main() {
   // 換算取自同一份資料裡作者自己寫的等式：課表 14（同為戰士級）
   // 「每個動作 12–15 下（或 45 秒）」。
   //
-  // **側棒式不在此列**：側棒式抬臀（hip dips）是真的可以數下的動作，
-  // 課表 11／16／17 的「6–8 次」「10–12 次/組」可能正是那個變化式 ——
-  // 改它等於替使用者決定訓練處方。已列為待覆核。
+  // 側棒式那三列一開始沒動，理由是側棒式抬臀（hip dips）是真的可以數下的
+  // 動作。2026-09-26 使用者確認那三份課表的原意不是抬臀，一併改成秒。
+  //
+  // 換算一律取自**同一份資料裡作者自己寫的等式**，不是我估的：
+  // 課表 13（學員級）「每個動作 10–12 下（或 30 秒）」、
+  // 課表 14（戰士級）「每個動作 12–15 下（或 45 秒）」。
   group('等長支撐以秒計量', () {
-    test('前棒式不得以「下」計量', () {
+    /// 純等長支撐的動作 ID。這幾個動作沒有「一下」這回事。
+    const isometric = {'plank', 'p194', 'p248'};
+
+    test('沒有任何一份課表以「下」開等長支撐', () {
       final bad = [
         for (final p in kPlatformPlans)
           for (final it in p.items)
-            if (it.exerciseId == 'plank' && it.unit == PlanUnit.reps)
-              '${p.id} ${p.name}',
+            if (isometric.contains(it.exerciseId) && it.unit == PlanUnit.reps)
+              '${p.id} ${p.name} ${it.exerciseId}',
       ];
-      expect(bad, isEmpty, reason: '前棒式是純等長支撐，沒有「一下」這回事');
+      expect(bad, isEmpty);
     });
 
-    test('那一列真的變成 45 秒，而不是被刪掉', () {
-      final plan = kPlatformPlans.firstWhere((p) => p.id == 'csv09');
-      final plank = plan.items.firstWhere((it) => it.exerciseId == 'plank');
-      expect(plank.unit, PlanUnit.seconds);
-      expect(plank.amount, 45);
-      expect(plank.sets, 2, reason: '組數不動 —— 只改計量單位');
-      expect(plank.restSeconds, 60, reason: '休息不動');
+    // 逐列釘住換算結果。只驗「不是 reps」的話，把秒數改錯也測不出來。
+    test('四列的秒數各自正確，且組數與休息不動', () {
+      final cases = [
+        // 課表, 動作, 組數, 秒數, 休息, 換算依據
+        ('csv09', 'plank', 2, 45, 60, '戰士級 12–15 下 ≡ 45 秒'),
+        ('csv11', 'p194', 2, 20, 60, '學員級 3 秒／下 × 6 下 ≈ 20 秒'),
+        ('csv16', 'p248', 3, 30, 45, '學員級 10–12 下 ≡ 30 秒'),
+        ('csv17', 'p248', 3, 45, 60, '戰士級 12–15 下 ≡ 45 秒'),
+      ];
+      for (final (planId, exId, sets, secs, rest, why) in cases) {
+        final plan = kPlatformPlans.firstWhere((p) => p.id == planId);
+        final it = plan.items.firstWhere((i) => i.exerciseId == exId);
+        expect(it.unit, PlanUnit.seconds, reason: '$planId $exId');
+        expect(it.amount, secs, reason: '$planId $exId：$why');
+        expect(it.sets, sets, reason: '$planId $exId：組數不動');
+        expect(it.restSeconds, rest, reason: '$planId $exId：休息不動');
+      }
+    });
+
+    // 作者自己寫過等式的那兩列不該被動到 —— 它們本來就有秒數。
+    test('本來就有秒數的那幾列不受影響', () {
+      for (final (planId, exId, secs) in [
+        ('csv13', 'plank', 30),
+        ('csv14', 'p248', 45),
+      ]) {
+        final plan = kPlatformPlans.firstWhere((p) => p.id == planId);
+        final it = plan.items.firstWhere((i) => i.exerciseId == exId);
+        expect(it.unit, PlanUnit.seconds);
+        expect(it.amount, secs);
+      }
     });
   });
 }

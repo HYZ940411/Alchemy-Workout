@@ -90,20 +90,48 @@ void main() {
     });
   });
 
-  group('不受影響的東西', () {
-    test('累積訓練次數照算 —— 那是紀錄，不是獎勵', () {
+  group('不受影響的東西 —— 做了組但太短，仍然是一次訓練', () {
+    test('累積訓練次數照算', () {
+      // 判準是「有沒有完成組」，不是「夠不夠 5 分鐘」。
+      // 練了兩分鐘但做了三組，他確實練了 —— 只是不發獎勵。
       final before = AppState(demo: false).totalWorkouts;
-      expect(_workout(done: 0, minutes: 1).s.totalWorkouts, before + 1);
+      expect(_workout(done: 3, minutes: 2).s.totalWorkouts, before + 1);
     });
 
     test('能力值照算', () {
-      // 一組都沒完成本來就不會有能力值，這裡驗的是「做了組但太短」。
       final w = _workout(done: 3, minutes: 2);
       expect(w.r.gains, isNotEmpty, reason: '練了就是練了，只是不發獎勵');
     });
 
-    test('一組都沒完成仍然不寫進訓練歷史 —— 那是另一條既有規則', () {
+    test('照樣寫進訓練歷史', () {
+      expect(_workout(done: 3, minutes: 2).s.history, isNotEmpty);
+    });
+  });
+
+  // 2026-09-26 使用者裁決（第二次，推翻前一次）：
+  // 「一組都沒完成的訓練不僅不要寫進訓練清單，也不要在任何地方被記錄下來」。
+  //
+  // 前一次的裁決只講獎勵，所以這裡原本有一條
+  // 「累積訓練次數照算 —— 那是紀錄，不是獎勵」。後來使用者回報
+  // 「教官申請的累計訓練次數跟訓練清單的不一樣」—— 正是那條造成的：
+  // 次數 +1 而歷史沒有那一筆，每開關一次就再拉開一格。
+  //
+  // 完整的不變條件見 `test/workout_count_invariant_test.dart`。
+  group('一組都沒完成 —— 任何地方都不留紀錄', () {
+    test('累積訓練次數不加', () {
+      final before = AppState(demo: false).totalWorkouts;
+      expect(_workout(done: 0, minutes: 30).s.totalWorkouts, before);
+    });
+
+    test('不寫進訓練歷史', () {
       expect(_workout(done: 0, minutes: 30).s.history, isEmpty);
+    });
+
+    test('累積訓練天數與連續訓練天數都不動', () {
+      final base = AppState(demo: false);
+      final s = _workout(done: 0, minutes: 30).s;
+      expect(s.totalWorkoutDays, base.totalWorkoutDays);
+      expect(s.trainingStreakDays, base.trainingStreakDays);
     });
   });
 }

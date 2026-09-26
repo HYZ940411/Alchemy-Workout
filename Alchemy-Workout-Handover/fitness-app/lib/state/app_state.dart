@@ -1675,18 +1675,50 @@ class AppState extends ChangeNotifier {
       returnTaskLog.add((assignedAt: today, overdue: false));
     }
 
+    // --- 這一場算不算「一次訓練」---
+    //
+    // **一組都沒完成的訓練不在任何地方留下紀錄**（2026-09-26 使用者裁決）。
+    // 按下開始、放著、按結束，不是一次訓練。
+    //
+    // 這個旗標是**唯一**的判準，下面每一處都讀它 —— 累積訓練次數、
+    // 累積訓練天數、連續訓練天數、訓練歷史、AI 自動優化計數。
+    // 在此之前它們各自寫一份條件，結果是「累積訓練次數 +1 但訓練歷史
+    // 沒有那一筆」：使用者回報「教官申請的累計訓練次數跟訓練清單的不一樣」，
+    // 而那個落差**每開關一次就再拉開一格**。
+    //
+    // **與 [rewardable] 分開**（見下方獎勵那一段）：不到 5 分鐘但做了組的
+    // 訓練**算**一次訓練，只是不發獎勵 —— 他確實練了。
+    //
+    // ### 與規格的關係
+    //
+    // 〈訓練結算流程〉寫「累積訓練次數 +1；三種終止狀態皆計入」。
+    // 這裡的判準不是終止狀態而是「有沒有完成任何一組」，兩者正交：
+    // 三種終止狀態在有完成組的前提下**仍然全部計入**。
+    //
+    // 「不變條件：單調遞增，任何情況下不減少」**沒有被違反** ——
+    // 不增加不等於減少。
+    //
+    // 規格自己也有這條原則：〈AI 自動優化訓練流程〉「已完成組數為 0 的
+    // 訓練不計入 —— 一組都沒完成者不構成歷史訓練資料」，理由是
+    // 「其無任何實績資料可供分析，且開場即關閉可用來強迫 AI 重新優化課表，
+    // 為一條刷新路徑」。同一條刷新路徑對教官初審門檻（累積訓練次數 ≥50）
+    // 一樣成立 —— 開關五十次就過門檻。
+    final recorded = s.doneSets > 0;
+
     // --- 連續訓練天數 ---
     // 次數每場都加；天數與連續天數只在該日第一場加。
-    totalWorkouts += 1;
-    if (lastTrainedDate != today) {
-      // 距上次訓練日的日界未超過 36 小時者續計 —— 與 [runStreakCheck]
-      // 的中斷判定共用同一條規則，兩邊各寫一份就會對不起來。
-      trainingStreakDays =
-          streakContinues(lastTrainedDate, now) ? trainingStreakDays + 1 : 1;
-      // 訓練恢復 —— 預告階段歸零，下一次中斷才會重新發。
-      _trainNoticeStage = DecayStage.normal;
-      lastTrainedDate = today;
-      totalWorkoutDays += 1;
+    if (recorded) {
+      totalWorkouts += 1;
+      if (lastTrainedDate != today) {
+        // 距上次訓練日的日界未超過 36 小時者續計 —— 與 [runStreakCheck]
+        // 的中斷判定共用同一條規則，兩邊各寫一份就會對不起來。
+        trainingStreakDays =
+            streakContinues(lastTrainedDate, now) ? trainingStreakDays + 1 : 1;
+        // 訓練恢復 —— 預告階段歸零，下一次中斷才會重新發。
+        _trainNoticeStage = DecayStage.normal;
+        lastTrainedDate = today;
+        totalWorkoutDays += 1;
+      }
     }
 
     // --- 獎勵 ---
@@ -1703,7 +1735,8 @@ class AppState extends ChangeNotifier {
     // 獎勵。訓練紀錄本來就有「一組都沒完成不寫入」的判斷，不重複。
     final duration = now.difference(s.startedAt);
     final tooShort = duration < kMinRewardedWorkout;
-    final rewardable = s.doneSets > 0 && !tooShort;
+    // 發獎勵比「算一次訓練」更嚴：還要滿 5 分鐘。
+    final rewardable = recorded && !tooShort;
 
     _rollRewardCounters(today);
     final rewards = rewardable
@@ -1759,8 +1792,8 @@ class AppState extends ChangeNotifier {
     );
 
     // AI 自動優化的每 3 次計數。三種終止方式皆計入；
-    // 一組都沒完成的訓練不構成歷史訓練資料，故不計。
-    _bumpAutoOptimize(anySetDone: s.doneSets > 0);
+    // 一組都沒完成的訓練不構成歷史訓練資料，故不計（讀同一個旗標）。
+    _bumpAutoOptimize(anySetDone: recorded);
 
     // 訓練紀錄於結算時凍結，寫入訓練歷史。
     // **只收已完成的組** —— 未完成的組不產生實績，也不得成為下次的帶入來源。
@@ -1779,7 +1812,12 @@ class AppState extends ChangeNotifier {
         isTimed: pe.exercise.isBodyweight,
       ));
     }
-    if (logged.isNotEmpty) {
+    // `logged.isNotEmpty` 與 [recorded] 邏輯上等價（有完成的組 ⟺ 有東西可記），
+    // 但**寫成同一個條件**，兩者才不會日後各自漂移 ——
+    // 「累積訓練次數 +1 卻沒有那一筆歷史」正是它們曾經漂開的後果。
+    // 不變條件由 `test/workout_count_invariant_test.dart` 釘住。
+    if (recorded) {
+      assert(logged.isNotEmpty, '有完成的組，就一定有東西可以寫進歷史');
       history.insert(
         0,
         HistoryEntry(

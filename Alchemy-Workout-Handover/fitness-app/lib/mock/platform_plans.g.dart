@@ -325,7 +325,7 @@ const kPlatformPlans = <PlatformPlanSpec>[
       PlanItemSpec('p432', 2, 6, PlanUnit.reps, 60),
       PlanItemSpec('p433', 2, 6, PlanUnit.reps, 60),
       PlanItemSpec('p198', 2, 6, PlanUnit.reps, 60),
-      PlanItemSpec('p194', 2, 6, PlanUnit.reps, 60),
+      PlanItemSpec('p194', 2, 20, PlanUnit.seconds, 60),
       PlanItemSpec('p122', 2, 6, PlanUnit.reps, 60),
       PlanItemSpec('p434', 2, 6, PlanUnit.reps, 60),
     ],
@@ -437,7 +437,7 @@ const kPlatformPlans = <PlatformPlanSpec>[
     reference: 'Michael Boyle《功能性訓練聖經》：強調「側向穩定」是下肢關節防禦機制的核心，需先透過側向支撐建立基礎肌肉剛性。',
     items: [
       PlanItemSpec('p249', 3, 10, PlanUnit.reps, 45),
-      PlanItemSpec('p248', 3, 10, PlanUnit.reps, 45),
+      PlanItemSpec('p248', 3, 30, PlanUnit.seconds, 45),
       PlanItemSpec('p198', 3, 10, PlanUnit.reps, 45),
     ],
   ),
@@ -460,7 +460,7 @@ const kPlatformPlans = <PlatformPlanSpec>[
       PlanItemSpec('p483', 3, 12, PlanUnit.reps, 60),
       PlanItemSpec('p240', 3, 12, PlanUnit.reps, 60),
       PlanItemSpec('p222', 3, 12, PlanUnit.reps, 60),
-      PlanItemSpec('p248', 3, 12, PlanUnit.reps, 60),
+      PlanItemSpec('p248', 3, 45, PlanUnit.seconds, 60),
     ],
   ),
   PlatformPlanSpec(
