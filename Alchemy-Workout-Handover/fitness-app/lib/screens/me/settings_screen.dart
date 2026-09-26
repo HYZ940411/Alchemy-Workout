@@ -343,16 +343,29 @@ class SettingsScreen extends StatelessWidget {
                 ],
               ),
             ),
-            if (s.totalWorkouts != s.history.length)
-              Padding(
-                padding: const EdgeInsets.only(top: S.sm),
-                child: Text(
-                  '差異不為 0 代表歷史曾經遺失過（雲端寫入失敗，或 2026-09-26 '
-                  '之前「開場即關閉」也算一次訓練的舊行為）。'
-                  '遺失的場次救不回來，但從此不會再拉開。',
-                  style: T.caption(),
+            if (s.totalWorkouts != s.history.length) ...[
+              const SizedBox(height: S.sm),
+              Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '差異不為 0 代表次數曾經多算過。兩個來源，而它們**無法事後'
+                      '區分**：一是 2026-09-26 之前「開場即關閉」也算一次訓練的'
+                      '舊行為（依現在的規則本來就不該算），二是雲端寫入失敗吃掉的'
+                      '真實場次（那是真的練過）。',
+                      style: T.caption(),
+                    ),
+                    const SizedBox(height: S.md),
+                    AppButton(
+                      label: '校正為訓練歷史的筆數',
+                      kind: BtnKind.secondary,
+                      onPressed: () => _reconcile(context, s),
+                    ),
+                  ],
                 ),
               ),
+            ],
             const SizedBox(height: S.base),
             const SectionLabel('登入同步', trailing: '開發者模式'),
             // 存檔失敗原本完全無聲。2026-09-24 一個形狀不合的欄位讓
@@ -642,6 +655,31 @@ class SettingsScreen extends StatelessWidget {
 }
 
 /// 使用者已填入電子郵件。空白即清空。
+/// 把累積訓練次數校正成訓練歷史的筆數。
+///
+/// **這會讓數字變小，而規格明訂累積訓練次數單調遞增**（見
+/// `AppState.reconcileWorkoutCount`）。所以按下去之前要把代價說清楚 ——
+/// 被吃掉的真實場次會一起被抹掉，而教官初審的門檻是累積訓練次數 ≥50。
+Future<void> _reconcile(BuildContext context, AppState s) async {
+  final gap = s.totalWorkouts - s.history.length;
+  final ok = await showAppDialog(
+    context,
+    title: '校正累積訓練次數？',
+    message: '累積訓練次數會從 ${s.totalWorkouts} 降為 ${s.history.length}'
+        '（少 $gap 次），累積訓練天數一併依訓練歷史重算。\n\n'
+        '那 $gap 次裡有一部分是真的練過、只是紀錄被吃掉了 —— '
+        '校正會把它們一起抹掉。教官初審的門檻是累積訓練次數 ≥ 50 次，'
+        '進度會跟著往後退。\n\n'
+        '這個動作無法復原。',
+    confirmLabel: '確認校正',
+    cancelLabel: '取消',
+    destructive: true,
+  );
+  if (ok != true || !context.mounted) return;
+  final removed = s.reconcileWorkoutCount();
+  showToast(context, removed > 0 ? '已校正，扣掉 $removed 次' : '本來就相符');
+}
+
 /// 補填生日。只在原本沒有時走得到這裡（見設定頁那一列）。
 Future<void> _fillBirthday(BuildContext context, AppState s) async {
   final today = DateTime.now();

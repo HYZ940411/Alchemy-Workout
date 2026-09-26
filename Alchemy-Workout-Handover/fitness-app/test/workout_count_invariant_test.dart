@@ -111,6 +111,53 @@ void main() {
     });
   });
 
+  // 使用者的帳號上，累積訓練次數比訓練歷史多 12 筆 —— 一部分是舊行為的
+  // 空場次（本來就不該算），一部分是寫入缺陷吃掉的真實場次（真的練過）。
+  // **兩者無法事後區分。**
+  //
+  // 校正是取捨不是修好：換到「兩個數字相符」，付出「真實練過的場次不再計入」。
+  // 所以它只在開發者模式、要確認，且**不自動發生** —— 對一般使用者而言，
+  // 歷史遺失不該連帶沒收他的教官進度，而那正是「單調遞增」存在的理由。
+  group('校正累積訓練次數（開發者模式的一次性動作）', () {
+    test('降為訓練歷史的筆數，並回傳扣掉幾次', () {
+      final s = AppState();
+      s.totalWorkouts = s.history.length + 12;
+      expect(s.reconcileWorkoutCount(), 12);
+      expect(s.totalWorkouts, s.history.length);
+    });
+
+    test('累積訓練天數一併依歷史重算 —— 它被同一個原因撐高', () {
+      final s = AppState();
+      s.totalWorkouts = s.history.length + 5;
+      s.totalWorkoutDays = 999;
+      s.reconcileWorkoutCount();
+      final days = {for (final h in s.history) businessDate(h.date)}.length;
+      expect(s.totalWorkoutDays, days);
+    });
+
+    test('本來就相符時什麼都不做 —— 不會把數字弄小', () {
+      final s = AppState();
+      s.totalWorkouts = s.history.length;
+      expect(s.reconcileWorkoutCount(), 0);
+      expect(s.totalWorkouts, s.history.length);
+    });
+
+    test('次數比歷史少的時候不動它 —— 那是另一種壞，不是這個動作管的', () {
+      final s = AppState();
+      s.totalWorkouts = s.history.length - 1;
+      expect(s.reconcileWorkoutCount(), 0);
+      expect(s.totalWorkouts, s.history.length - 1);
+    });
+
+    test('校正之後再練一場，兩邊仍然同步', () {
+      final s = AppState();
+      s.totalWorkouts = s.history.length + 12;
+      s.reconcileWorkoutCount();
+      expect(run(s, sets: 2), (1, 1));
+      expect(s.totalWorkouts, s.history.length);
+    });
+  });
+
   group('教官初審門檻不可用「開關」刷出來', () {
     // 累積訓練次數 ≥50 是教官初審門檻。開場即關閉原本是一條刷新路徑 ——
     // 規格在 AI 自動優化那裡已經明文堵過同一條路。
