@@ -63,8 +63,12 @@ FirebaseOptions _firebaseOptions() => kIsWeb
     : DefaultFirebaseOptions.currentPlatform;
 
 /// 我們自己的 Gemini 代理。金鑰在 Cloudflare 的 secret 裡，前端看不到。
-const kAiWorker =
-    'https://alchemy-workout-ai.alchemy-workout-ntub.workers.dev';
+///
+/// **2026-09-26 換帳號**：原本在 `...ntub.workers.dev`，但那個 Cloudflare
+/// 帳號的登入方式已不可考（Cloudflare 回「Your account uses a different
+/// login provider」）。改部署到 `a94041198` 這個帳號。
+/// 舊的那個仍然活著但沒有人打它了 —— 進得去舊帳號時可以刪掉。
+const kAiWorker = 'https://alchemy-workout-ai.a94041198.workers.dev';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
