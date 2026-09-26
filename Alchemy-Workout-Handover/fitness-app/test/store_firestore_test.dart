@@ -491,6 +491,67 @@ void main() {
       );
     });
 
+    // =======================================================================
+    // 2026-09-26（第三個缺陷）：剔重保留的是「壞順序裡的第一筆」
+    // =======================================================================
+    //
+    // 使用者在上一版之後回報「訓練清單還是日期舊的排前面」。
+    //
+    // 他的雲端當時長這樣：000000＝舊那場、000001＝新那場、
+    // 000002–000006＝舊那場的殘留副本（seq 2–6）。
+    // 依 `seq` 反轉之後是 [dup6, dup5, …, 新, 舊]，
+    // 而剔重保留的是**先遇到的那一筆** —— 也就是 seq 最大的那份副本。
+    // 於是舊那場排到了新那場前面。
+    //
+    // **根因不是刪除沒跑，是我把「文件順序」當成了可信的。**
+    // 那個順序正是壞掉的東西本身。順序的唯一權威是**日期**。
+    test('文件順序壞掉時，讀回來仍照日期排（新的在前）', () async {
+      Map<String, dynamic> doc(String name, String date, int seq) => {
+            'date': date,
+            'planName': name,
+            'volume': 500.0,
+            'minutes': 40,
+            'calories': 210,
+            'seq': seq,
+            'exercises': const <Map<String, dynamic>>[],
+          };
+
+      final h = db.collection('users').doc(_uid).collection('history');
+      await h.doc('000000').set(doc('舊那場', '2026-09-24T10:00:00.000', 0));
+      await h.doc('000001').set(doc('新那場', '2026-09-26T10:00:00.000', 1));
+      // 殘留的副本，seq 比新那場大。
+      for (var i = 2; i <= 6; i++) {
+        await h
+            .doc(i.toString().padLeft(6, '0'))
+            .set(doc('舊那場', '2026-09-24T10:00:00.000', i));
+      }
+      await db.collection('users').doc(_uid).set(snapshot());
+
+      final store2 = FirestoreStore(uid: _uid, firestore: db);
+      final back = (await store2.load())!;
+      expect(
+        [for (final e in back['history']) e['planName']],
+        ['新那場', '舊那場'],
+        reason: '順序的權威是日期，不是文件的 seq —— seq 正是壞掉的那個東西',
+      );
+
+      // 存回去之後要自己痊癒：只剩兩份，且時間順序正確。
+      await store2.save(snapshot({'history': back['history']}));
+      final docs = await h.orderBy('seq').get();
+      expect(docs.docs.length, 2, reason: '殘留的 5 份要刪掉');
+      expect(
+        [for (final d in docs.docs) d.data()['planName']],
+        ['舊那場', '新那場'],
+        reason: '000000 永遠是時間上最早的那一場',
+      );
+
+      // 再讀一次還是對的 —— 不可以每存一次就翻一面。
+      expect(
+        [for (final e in (await reload())!['history']) e['planName']],
+        ['新那場', '舊那場'],
+      );
+    });
+
     test('同一天但內容不同的兩場都留著', () async {
       // 去重只認「完全一樣」。同一天早晚各練一場是正常的。
       await store.save(snapshot({

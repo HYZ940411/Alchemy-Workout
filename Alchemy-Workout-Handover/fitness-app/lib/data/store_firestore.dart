@@ -106,10 +106,19 @@ class FirestoreStore implements Store {
     _merge(out, docs[5]); // wallet/ai_credits
     _mergeMembership(out, docs[6]);
 
-    // 落地是舊的在前（`seq` 即時間順序），快照要的是新的在前。
-    out['history'] = _dedupeHistory([
-      for (final d in history.docs.reversed) _historyFromDoc(d.data()),
-    ]);
+    // 落地是舊的在前，快照要的是新的在前 —— 但**排序的權威是日期，
+    // 不是 `seq`**。
+    //
+    // 原本這裡是 `history.docs.reversed`，也就是信任 `seq`。
+    // 而 `seq` 正是壞掉的那個東西：寫錯格的那段時間留下了一批殘留副本，
+    // 它們的 `seq` 比真正的新場次大，反轉之後就排到新場次前面 ——
+    // 使用者回報「訓練清單還是日期舊的排前面」，就是這個。
+    //
+    // 剔重保留「先遇到的那一筆」，所以順序壞掉時連保留哪一份都會選錯。
+    // 先照日期排好，剔重與後續的一切才站得住。
+    out['history'] = _dedupeHistory(_byDateDesc([
+      for (final d in history.docs) _historyFromDoc(d.data()),
+    ]));
 
     // **記下雲端現在有幾份歷史文件**，[save] 才知道要刪掉多出來的幾份。
     //
@@ -344,6 +353,19 @@ class FirestoreStore implements Store {
             },
         ],
       };
+
+  /// 照日期排，新的在前。
+  ///
+  /// 解析不出日期的擺到最後 —— 那是壞資料，但不該讓它把好資料擠亂。
+  List<Map<String, dynamic>> _byDateDesc(List<Map<String, dynamic>> all) {
+    DateTime keyOf(Map<String, dynamic> h) {
+      final raw = h['date'];
+      return (raw is String ? DateTime.tryParse(raw) : null) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    return all.toList()..sort((a, b) => keyOf(b).compareTo(keyOf(a)));
+  }
 
   /// 剔除**內容完全相同**的場次。
   ///

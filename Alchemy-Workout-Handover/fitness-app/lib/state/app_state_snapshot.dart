@@ -633,6 +633,17 @@ extension AppStateSnapshot on AppState {
               completion: (h['completion'] as num?)?.toDouble(),
             ),
       ];
+      // **訓練歷史一律新的在前。**
+      //
+      // 這是 `AppState.history` 的不變條件（`finishWorkout` 是
+      // `insert(0, …)`），而在此之前它只是「存檔裡剛好是那個順序」。
+      // 2026-09-26 Firestore 那一側的文件順序真的壞過一次，讀回來變成
+      // 舊的在前 —— 而首頁、訓練歷史頁、課表卡的「上次訓練」全都
+      // 假設了這個順序。
+      //
+      // 各個 Store 各自保證一次，就是同一個決定寫在三個地方。
+      // 在這裡排一次，任何來源進來都成立。
+      history.sort((a, b) => b.date.compareTo(a.date));
     }
 
     final mails = pick<List>('mailbox');
