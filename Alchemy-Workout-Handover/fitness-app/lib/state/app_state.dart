@@ -854,6 +854,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 更新動機類健身目標（選填，可清空）。
+  ///
+  /// **不重新推薦訓練計畫** —— 動機類不是比對維度，改了它而換掉使用者的
+  /// 當前計畫，是拿一個與課表內容無關的欄位去動他正在練的東西。
+  void updateMotiveGoal(String? goal) {
+    motiveGoal = goal;
+    notifyListeners();
+  }
+
   /// 使用者已填入身高。
   ///
   /// 身高不像體重會週週變動，所以沒有週期詢問 —— 但設定頁那一列本來
@@ -4520,11 +4529,23 @@ class AppState extends ChangeNotifier {
       _lastEntryOf(plan)?.completion ?? plan.lastCompletion;
 
   /// 這份課表最近的一場。依**名稱**比對，因為訓練歷史存的是名稱不是 ID。
+  ///
+  /// **取日期最晚的那一場，不是清單裡的第一筆。**
+  /// 原本是 `for (…) if (名稱相符) return h` —— 那依賴「訓練歷史一定是
+  /// 新的在前」。2026-09-26 雲端的歷史順序真的反過來了一次
+  /// （見 `store_firestore.dart` 的 `_lastHistoryLength`），
+  /// 結果課表卡上的「上次訓練」顯示的是幾天前那一場、
+  /// 「上次完成度」顯示「—」（舊場次沒存完成度）。
+  ///
+  /// 順序那個缺陷已經修了，但「最近的一場」本來就該由日期決定 ——
+  /// 讓它依賴另一個地方的排序，是同一個決定寫在兩個地方。
   HistoryEntry? _lastEntryOf(WorkoutPlan plan) {
+    HistoryEntry? best;
     for (final h in history) {
-      if (h.planName == plan.name) return h;
+      if (h.planName != plan.name) continue;
+      if (best == null || h.date.isAfter(best.date)) best = h;
     }
-    return null;
+    return best;
   }
 
   QualityScore rescoreTrainingQuality() {
@@ -9209,6 +9230,17 @@ class AppState extends ChangeNotifier {
   /// 註冊填入的 3 級器材。持有器材明細為空值時的比對基準。
   String equipmentTier = '健身房（全器材）';
 
+  /// 動機類健身目標（選填，最多 1 項）。值域見 [kMotiveGoals]。
+  ///
+  /// **註冊問卷問了，但在此之前沒有任何地方存它** —— 與生日同一個毛病。
+  /// `completeSignUp` 把草稿的其他欄位一項項落地，就是漏了這一個。
+  ///
+  /// 空值代表沒填 —— 它本來就是選填的。
+  ///
+  /// **不參與訓練計畫推薦**：規格明訂比對維度為器材、經驗、常見目標三項，
+  /// 「動機類與課表內容無對應關係，參與比對只會製造雜訊」（〈註冊流程〉）。
+  String? motiveGoal;
+
   /// 生日。
   ///
   /// **註冊問卷問了，但在此之前沒有任何地方存它。** 設定頁那一列寫的是
@@ -9470,6 +9502,8 @@ class AppState extends ChangeNotifier {
     if (signUpDraft.gender != null) isMale = signUpDraft.gender == '男';
     // 生日在此之前是問了就丟 —— 註冊問卷第 4 題收了，沒有任何地方存。
     if (signUpDraft.birthday != null) birthday = signUpDraft.birthday;
+    // 動機類目標同上。選填，所以沒填就是沒填，不給預設值。
+    if (signUpDraft.motiveGoal != null) motiveGoal = signUpDraft.motiveGoal;
     // 草稿落地為使用者屬性；其後由〈簽到畫面的週期更新〉維護。
     if (signUpDraft.daysPerWeek != null) daysPerWeek = signUpDraft.daysPerWeek!;
     if (signUpDraft.duration != null) duration = signUpDraft.duration!;

@@ -111,6 +111,18 @@ class FirestoreStore implements Store {
       for (final d in history.docs.reversed) _historyFromDoc(d.data()),
     ]);
 
+    // **記下雲端現在有幾份歷史文件**，[save] 才知道要刪掉多出來的幾份。
+    //
+    // 少了這一行，`_lastHistoryLength` 留在 -1，於是 [save] 裡那個
+    // 「把多出來的舊文件刪掉」的迴圈跑的是 `for (i = 現在筆數; i < -1)`
+    // —— 一次都不跑。剛剛被 [_dedupeHistory] 剔掉的重複文件會留在雲端，
+    // 而它們的 `seq` 比之後的新場次大，反轉之後就排到新場次前面：
+    // 使用者看到的是「訓練歷史變成舊到新排序」，而且課表卡上的
+    // 「上次訓練」讀到的是那筆舊的。
+    //
+    // 取**文件數**而不是剔重後的筆數 —— 要刪的正是兩者的差。
+    _lastHistoryLength = history.docs.length;
+
     return out;
   }
 

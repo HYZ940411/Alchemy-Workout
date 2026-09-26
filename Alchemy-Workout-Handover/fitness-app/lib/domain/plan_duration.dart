@@ -71,12 +71,32 @@ Duration? estimatePlanDuration(
   return Duration(seconds: total);
 }
 
+/// 取到 5 分鐘的倍數 —— 這是估的，不是量的。說「37 分鐘」會讓人
+/// 以為那個 7 有意義。不足 5 分鐘的課表算 5 分鐘，不是 0。
+int planDurationMinutes(Duration d) {
+  final rounded = (d.inSeconds / 60 / 5).round() * 5;
+  return rounded < 5 ? 5 : rounded;
+}
+
 /// 給畫面的文字。
+String planDurationLabel(Duration d) => '約 ${planDurationMinutes(d)} 分鐘';
+
+/// 這份課表落在註冊問卷「每次想練多久？」的哪一個級距。
 ///
-/// 取到 5 分鐘的倍數 —— 這是估的，不是量的。寫「約 37 分鐘」會讓人
-/// 以為那個 7 有意義。不足 5 分鐘的課表顯示「約 5 分鐘」而不是 0。
-String planDurationLabel(Duration d) {
-  final m = d.inSeconds / 60;
-  final rounded = (m / 5).round() * 5;
-  return '約 ${rounded < 5 ? 5 : rounded} 分鐘';
+/// 使用者回報預估時長「應該要跟註冊時詢問的健身時長有關」——
+/// 他在註冊時回答的是四個級距之一，所以挑課表時要能用同一套說法去篩：
+/// 「我今天只有 30 分鐘」對應得到哪幾份。
+///
+/// **算的是 [planDurationMinutes]，不是原始秒數。** 卡片上寫「約 60 分鐘」
+/// 而級距卻歸到「60–90 分鐘」（因為實際估出來是 61 分）的話，
+/// 兩個數字當著使用者的面互相矛盾。
+///
+/// 邊界值歸**較短**的那一級：60 分鐘算「30–60 分鐘」。
+/// 說「我只有 60 分鐘」的人，一份剛好 60 分鐘的課表他做得完。
+String planDurationBucket(Duration d, List<String> buckets) {
+  final m = planDurationMinutes(d);
+  if (m < 30) return buckets[0];
+  if (m <= 60) return buckets[1];
+  if (m <= 90) return buckets[2];
+  return buckets[3];
 }

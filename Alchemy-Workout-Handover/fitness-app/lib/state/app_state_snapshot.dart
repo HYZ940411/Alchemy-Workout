@@ -50,6 +50,7 @@ extension AppStateSnapshot on AppState {
         'experience': experience,
         'equipmentTier': equipmentTier,
         'birthday': _iso(birthday),
+        'motiveGoal': motiveGoal,
         'weightUpdatedAt': _iso(weightUpdatedAt),
         'surveyUpdatedAt': _iso(surveyUpdatedAt),
         'weightAskSkippedAt': _iso(_weightAskSkippedAt),
@@ -364,6 +365,7 @@ extension AppStateSnapshot on AppState {
     experience = pick<String>('experience') ?? experience;
     equipmentTier = pick<String>('equipmentTier') ?? equipmentTier;
     birthday = _date(pick<String>('birthday')) ?? birthday;
+    motiveGoal = pick<String>('motiveGoal') ?? motiveGoal;
     weightUpdatedAt = _date(j['weightUpdatedAt']);
     surveyUpdatedAt = _date(j['surveyUpdatedAt']);
     _weightAskSkippedAt = _date(j['weightAskSkippedAt']);

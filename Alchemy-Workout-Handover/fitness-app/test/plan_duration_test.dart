@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/domain/plan_duration.dart';
+import 'package:fitness_app/domain/registration.dart';
 import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/mock/mock_data.dart';
 import 'package:fitness_app/mock/platform_plans.g.dart';
@@ -145,6 +146,46 @@ void main() {
 
     test('登山者式 6 組 × 30 秒、休息 30 秒 → CSV 寫「約 6 分鐘」', () {
       expect(estimate(6, 30, PlanUnit.seconds, 30), 6);
+    });
+  });
+
+  // 使用者要求預估時長「應該要跟註冊時詢問的健身時長有關：
+  // 30分鐘內、30~60、60~90、90以上那四個選項」。
+  group('時長級距與註冊問卷同一套說法', () {
+    String bucket(int minutes) =>
+        planDurationBucket(Duration(minutes: minutes), kDurations);
+
+    test('四個級距各自對得上', () {
+      expect(bucket(20), '30 分鐘以下');
+      expect(bucket(45), '30–60 分鐘');
+      expect(bucket(75), '60–90 分鐘');
+      expect(bucket(120), '90 分鐘以上');
+    });
+
+    test('邊界值歸較短的那一級', () {
+      // 說「我只有 60 分鐘」的人，一份剛好 60 分鐘的課表他做得完。
+      expect(bucket(30), '30–60 分鐘');
+      expect(bucket(60), '30–60 分鐘');
+      expect(bucket(90), '60–90 分鐘');
+      // 91 分**顯示成「約 90 分鐘」**，所以也歸 60–90 —— 那正是下一條
+      // 要釘的一致性。真的超出去要到 93 分（進位成 95）。
+      expect(bucket(91), '60–90 分鐘');
+      expect(bucket(93), '90 分鐘以上');
+    });
+
+    // 卡片上寫「約 60 分鐘」而級距歸到「60–90 分鐘」的話，
+    // 兩個數字當著使用者的面互相矛盾。
+    test('級距算的是顯示出來的那個數字，不是原始秒數', () {
+      const d = Duration(seconds: 61 * 60); // 61 分 → 顯示「約 60 分鐘」
+      expect(planDurationLabel(d), '約 60 分鐘');
+      expect(planDurationBucket(d, kDurations), '30–60 分鐘');
+    });
+
+    test('值域就是註冊問卷那一份，不是另抄一份', () {
+      expect(kDurations.length, 4);
+      for (final m in [10, 45, 75, 200]) {
+        expect(kDurations, contains(bucket(m)));
+      }
     });
   });
 

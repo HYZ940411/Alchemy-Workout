@@ -122,6 +122,21 @@ class SettingsScreen extends StatelessWidget {
                     onPick: (v) => s.updateSurvey(experience: v),
                   ),
                 ),
+                // 動機類目標。**註冊問卷問了，在此之前沒有任何地方存它**，
+                // 也就從來沒有出現在這一頁 —— 與生日同一個毛病。
+                // 選填，所以「未填寫」是合法狀態，也給得清空。
+                _Row(
+                  label: '健身動機',
+                  value: s.motiveGoal ?? '未填寫（選填）',
+                  onTap: () => _pickOne(
+                    context,
+                    title: '健身動機',
+                    options: kMotiveGoals,
+                    current: s.motiveGoal ?? '',
+                    allowNone: '不設定',
+                    onPick: (v) => s.updateMotiveGoal(v.isEmpty ? null : v),
+                  ),
+                ),
                 // 器材也是註冊問卷問的，而且是推薦的**第一順位**比對維度
                 // （硬約束：器材不符即完全無法執行）。原本這一頁根本沒有它，
                 // 於是換了健身房、或退掉會員回家徒手練的人無從更新。
@@ -178,8 +193,21 @@ class SettingsScreen extends StatelessWidget {
                   label: '生日',
                   value: s.birthday == null ? '未填寫' : _ymd(s.birthday!),
                   readOnly: true,
+                  // **鎖著要說得出理由。** 原本只有一把鎖頭圖示，
+                  // 使用者回報「生日鎖定不能修改」—— 他看不出那是刻意的
+                  // 還是壞了。唯讀是規格的裁決（〈設定頁 Read Model〉）：
+                  // 生日決定年齡係數、性別決定 DOTS 係數，改動會使既有點數
+                  // 失去計算基準；如需更正屬客服範疇。
+                  onTap: () => showToast(
+                      context, '生日決定年齡係數，改動會讓既有能力值失去基準。如需更正請聯繫客服。'),
                 ),
-                _Row(label: '性別', value: s.isMale ? '男' : '女', readOnly: true),
+                _Row(
+                  label: '性別',
+                  value: s.isMale ? '男' : '女',
+                  readOnly: true,
+                  onTap: () => showToast(
+                      context, '性別決定 DOTS 係數，改動會讓既有能力值失去基準。如需更正請聯繫客服。'),
+                ),
                 // 選填。填了才收得到出貨、處罰與申訴結果、帳號刪除排程
                 // 三類電子郵件通知；不填一樣由推播與 App 內通知承擔。
                 _Row(
@@ -579,21 +607,24 @@ Future<void> _pickOne(
   required String current,
   required ValueChanged<String> onPick,
   String Function(String)? labelOf,
+  /// 選填欄位的「清空」選項的鍵面文字。空值代表這一項是必填，沒有清空。
+  String? allowNone,
 }) async {
+  final all = [if (allowNone != null) '', ...options];
   final picked = await showAppSheet<String>(
     context,
     title: title,
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final o in options)
+        for (final o in all)
           ListRow(
-            title: labelOf == null ? o : labelOf(o),
+            title: o.isEmpty ? allowNone! : (labelOf == null ? o : labelOf(o)),
             trailing: o == current
                 ? const Icon(Icons.check_rounded,
                     size: Sz.iconDefault, color: C.accentDeep)
                 : null,
-            showDivider: o != options.last,
+            showDivider: o != all.last,
             onTap: () => Navigator.of(context).pop(o),
           ),
       ],

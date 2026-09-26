@@ -404,6 +404,93 @@ void main() {
           reason: '同一個時間戳不可能有兩場訓練，完全相同就是壞資料');
     });
 
+    // =======================================================================
+    // 2026-09-26（同日，第二個缺陷）：壞資料的文件沒被刪掉，於是順序反了
+    // =======================================================================
+    //
+    // 使用者回報「訓練清單刷新後是舊到新排序，應該新的排前面」。
+    //
+    // `load()` 沒有記下「雲端現在有幾份歷史文件」，所以 `save()` 裡那個
+    // 「把多出來的舊文件刪掉」的迴圈跑的是 `for (i = 現在筆數; i < -1)`
+    // —— 一次都不跑。於是讀回來剔掉的重複文件仍然留在雲端，
+    // 而它們的 `seq` 比新場次大，反轉之後就排到了新場次前面。
+    test('讀回來剔掉的重複文件，下一次存檔要真的刪掉', () async {
+      final dup = {
+        'date': '2026-09-24T10:00:00.000',
+        'planName': '第一場',
+        'volume': 500.0,
+        'minutes': 40,
+        'calories': 210,
+        'exercises': [
+          {
+            'id': 'e1',
+            'name': '臥推',
+            'isTimed': false,
+            'sets': [
+              {'w': 60, 'r': 8},
+            ],
+          },
+        ],
+      };
+      for (var i = 0; i < 7; i++) {
+        await db
+            .collection('users')
+            .doc(_uid)
+            .collection('history')
+            .doc(i.toString().padLeft(6, '0'))
+            .set({...dup, 'seq': i});
+      }
+      await db.collection('users').doc(_uid).set(snapshot());
+
+      // 讀回來（剔重後只剩 1 筆），原樣存回去。
+      final store2 = FirestoreStore(uid: _uid, firestore: db);
+      final back = (await store2.load())!;
+      expect(back['history'].length, 1);
+      await store2.save(snapshot({'history': back['history']}));
+
+      final docs =
+          await db.collection('users').doc(_uid).collection('history').get();
+      expect(docs.docs.length, 1, reason: '多出來的 6 份要刪掉，否則下次又讀到');
+    });
+
+    test('壞資料清掉之後，新的一場排在最前面', () async {
+      final dup = {
+        'date': '2026-09-24T10:00:00.000',
+        'planName': '第一場',
+        'volume': 500.0,
+        'minutes': 40,
+        'calories': 210,
+        'exercises': const <Map<String, dynamic>>[],
+      };
+      for (var i = 0; i < 7; i++) {
+        await db
+            .collection('users')
+            .doc(_uid)
+            .collection('history')
+            .doc(i.toString().padLeft(6, '0'))
+            .set({...dup, 'seq': i});
+      }
+      await db.collection('users').doc(_uid).set(snapshot());
+
+      final store2 = FirestoreStore(uid: _uid, firestore: db);
+      final first = (await store2.load())!['history'] as List;
+      // 練一場新的：AppState 會 insert 到 index 0。
+      final after = [
+        workout('新的一場', [
+          [70, 5]
+        ], date: '2026-09-26T10:00:00.000'),
+        ...first,
+      ];
+      await store2.save(snapshot({'history': after}));
+
+      final back = (await reload())!;
+      expect(
+        [for (final h in back['history']) h['planName']],
+        ['新的一場', '第一場'],
+        reason: '新的要在前面 —— 殘留的舊文件 seq 比它大，會把它擠到後面',
+      );
+    });
+
     test('同一天但內容不同的兩場都留著', () async {
       // 去重只認「完全一樣」。同一天早晚各練一場是正常的。
       await store.save(snapshot({

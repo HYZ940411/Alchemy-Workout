@@ -30,6 +30,13 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
   String? equipment;
   String? experience;
 
+  /// 每次能練多久。值域與註冊問卷第 9 題同一份（[kDurations]）——
+  /// 使用者在註冊時就是用這四個級距回答的，挑課表時要能用同一套說法篩。
+  ///
+  /// **這只是篩選，不參與訓練計畫推薦。** 規格明訂推薦的比對維度是
+  /// 器材、經驗、常見目標三項（〈註冊流程〉），時長不在其中。
+  String? sessionLength;
+
   /// 器材是**硬約束**：選健身房看得到全部，選居家看得到居家與徒手，
   /// 選徒手只看得到徒手。這個定義來自 `runnablePlanTiers`，
   /// 與訓練計畫推薦共用同一份 —— 不在這裡再寫一次。
@@ -42,6 +49,13 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
         !p.suitableExperience.contains(experience)) {
       return false;
     }
+    if (sessionLength != null) {
+      final d = AppScope.of(context).estimatedDurationOf(p);
+      // 估不出時長的（空白課表）不因為時長被篩掉 —— 它多久由使用者決定。
+      if (d != null && planDurationBucket(d, kDurations) != sessionLength) {
+        return false;
+      }
+    }
     return true;
   }
 
@@ -53,7 +67,8 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
     // 選了「徒手」還是會看到一整排要器械的自訂課表。
     final customs =
         s.selectableCustomPlans.where((c) => _matches(c.toWorkoutPlan())).toList();
-    final filtered = equipment != null || experience != null;
+    final filtered =
+        equipment != null || experience != null || sessionLength != null;
 
     // B 卡片列表型骨架：首屏約兩張課表卡。
     return LoadBoundary(
@@ -67,8 +82,10 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
           _Filters(
             equipment: equipment,
             experience: experience,
+            sessionLength: sessionLength,
             onEquipment: (v) => setState(() => equipment = v),
             onExperience: (v) => setState(() => experience = v),
+            onSessionLength: (v) => setState(() => sessionLength = v),
           ),
           SectionLabel('選擇今天的課表',
               trailing: filtered
@@ -88,6 +105,7 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
                   onPressed: () => setState(() {
                     equipment = null;
                     experience = null;
+                    sessionLength = null;
                   }),
                 ),
               ),
@@ -117,13 +135,17 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
 class _Filters extends StatelessWidget {
   final String? equipment;
   final String? experience;
+  final String? sessionLength;
   final ValueChanged<String?> onEquipment;
   final ValueChanged<String?> onExperience;
+  final ValueChanged<String?> onSessionLength;
   const _Filters({
     required this.equipment,
     required this.experience,
+    required this.sessionLength,
     required this.onEquipment,
     required this.onExperience,
+    required this.onSessionLength,
   });
 
   /// 鍵面短標 → 註冊問卷的值域字串。
@@ -133,6 +155,10 @@ class _Filters extends StatelessWidget {
   static final _experienceShort = {
     for (final v in kExperience) v.split('（').first: v,
   };
+
+  /// 時長的四個級距就是註冊問卷的原文，不縮寫 ——
+  /// 「30 分鐘以下」本來就短，縮成「30」反而看不懂是以上還是以下。
+  static final _lengthOptions = {for (final v in kDurations) v: v};
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -145,6 +171,8 @@ class _Filters extends StatelessWidget {
               _row('器材', _equipmentShort, equipment, onEquipment),
               const SizedBox(height: S.md),
               _row('經驗', _experienceShort, experience, onExperience),
+              const SizedBox(height: S.md),
+              _row('時長', _lengthOptions, sessionLength, onSessionLength),
             ],
           ),
         ),
