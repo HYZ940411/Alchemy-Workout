@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fitness_app/domain/ability.dart';
 import 'package:fitness_app/mock/mock_equipment.dart';
 import 'package:fitness_app/screens/train/exercise_picker.dart';
 import 'package:fitness_app/state/app_state.dart';
@@ -137,6 +138,49 @@ void main() {
       await t.pumpAndSettle();
       expect(find.textContaining('器材篩選：${s.equipmentForFiltering.length} 項'),
           findsOneWidget);
+    });
+
+    testWidgets('有部位篩選，且帶著每一區的筆數', (t) async {
+      // 使用者回報「沒看到部位篩選」。動作庫是八個分頁承擔這件事，
+      // 抽屜裡塞不下分頁，改成一排單選鍵。
+      await open(t, AppState());
+      expect(find.text('部位：全部'), findsOneWidget);
+      expect(find.byKey(const ValueKey('part-all')), findsOneWidget);
+      // 六維 ＋ 有氧 ＋ 我的動作，與動作庫的八個分頁一致。
+      for (final k in [...Dim.values.map((d) => dimNames[d]), '有氧', '我的動作']) {
+        expect(find.byKey(ValueKey('part-$k')), findsOneWidget,
+            reason: '$k 應該有一顆鍵');
+      }
+    });
+
+    testWidgets('選一個部位就只剩那一區', (t) async {
+      final s = AppState();
+      await open(t, s);
+      final legs = dimNames[Dim.legs]!;
+      await t.tap(find.byKey(ValueKey('part-$legs')));
+      await t.pumpAndSettle();
+      expect(find.text('部位：$legs'), findsOneWidget);
+      // 其他分區的標題不該還在。
+      expect(find.text('有氧'), findsNothing);
+    });
+
+    // **分組依 `tabs`（訓練部位），不是 `dim`（能力值歸屬）。**
+    // 原本抽屜用 dim、動作庫用 tabs —— 同一個決定兩個答案。
+    // 一個練到胸與肩的動作，在動作庫的兩個分頁都找得到，
+    // 在抽屜裡卻只出現在它的能力值維度底下。
+    test('抽屜與動作庫的分組依同一個欄位', () {
+      final s = AppState();
+      final multi = s.platformExercises.where((e) => e.tabs.length > 1);
+      expect(multi, isNotEmpty,
+          reason: '前提：資料裡有練到多個部位的動作，否則這條測不到東西');
+      for (final e in multi.take(3)) {
+        // 它的每一個訓練部位都該找得到它 —— 用 dim 分組的話只有一個。
+        for (final d in e.tabs) {
+          final inGroup =
+              s.platformExercises.where((x) => x.tabs.contains(d)).toList();
+          expect(inGroup, contains(e), reason: '${e.name} 應出現在 ${dimNames[d]}');
+        }
+      }
     });
 
     testWidgets('本次訓練已解鎖器材時，那顆按鈕帶入的是全部品項', (t) async {
