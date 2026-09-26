@@ -26,6 +26,7 @@ import '../domain/registration.dart';
 import '../domain/social.dart';
 import '../domain/leaderboard.dart';
 import '../domain/rank.dart';
+import '../domain/plan_duration.dart';
 import '../domain/rewards.dart';
 import '../domain/admin.dart';
 import '../domain/platform_config.dart';
@@ -853,6 +854,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 使用者已填入身高。
+  ///
+  /// 身高不像體重會週週變動，所以沒有週期詢問 —— 但設定頁那一列本來
+  /// **點下去什麼都不會發生**（右邊還畫著可點的箭頭）。
+  /// 填錯一次就沒有任何地方改得回來。
+  void updateHeight(double cm) {
+    heightCm = cm;
+    notifyListeners();
+  }
+
   /// 跳過體重：沿用上次的值，該次詢問週期內不再詢問。
   ///
   /// **不得阻擋簽到** —— 跳過即無法簽到會使連續簽到天數中斷，
@@ -871,11 +882,15 @@ class AppState extends ChangeNotifier {
     String? duration,
     String? commonGoal,
     String? experience,
+    String? equipmentTier,
   }) {
     if (daysPerWeek != null) this.daysPerWeek = daysPerWeek;
     if (duration != null) this.duration = duration;
     if (commonGoal != null) this.commonGoal = commonGoal;
     if (experience != null) this.experience = experience;
+    // 器材是推薦的第一順位比對維度（硬約束），改了不重新推薦的話，
+    // 使用者會拿著一份他的器材做不到的當前計畫。
+    if (equipmentTier != null) this.equipmentTier = equipmentTier;
     surveyUpdatedAt = now;
     // 任一欄位更新即重新推薦並自動替換當前計畫。推薦為單向指派，無拒絕分支。
     currentPlan = recommendCurrentPlan() ?? currentPlan;
@@ -1336,6 +1351,11 @@ class AppState extends ChangeNotifier {
       pe.restSeconds ??
       exerciseById(pe.exercise.id).defaultRestSeconds ??
       kDefaultRestSeconds;
+
+  /// 預估訓練時長（見 `domain/plan_duration.dart`）。
+  /// 休息秒數由 [restSecondsFor] 供給 —— 那三層取值優先序只有一份。
+  Duration? estimatedDurationOf(WorkoutPlan plan) =>
+      estimatePlanDuration(plan, restSecondsOf: restSecondsFor);
 
   int get restRemaining {
     if (restEndsAt == null) return 0;
@@ -9188,6 +9208,16 @@ class AppState extends ChangeNotifier {
 
   /// 註冊填入的 3 級器材。持有器材明細為空值時的比對基準。
   String equipmentTier = '健身房（全器材）';
+
+  /// 生日。
+  ///
+  /// **註冊問卷問了，但在此之前沒有任何地方存它。** 設定頁那一列寫的是
+  /// 一個寫死的日期 `1996 / 03 / 12` —— 每一位使用者看到的都是它。
+  /// 使用者回報「生日也是假資料，不是我當初註冊填的」。
+  ///
+  /// 空值代表沒有 —— 示範身分沒有生日，就顯示「未填寫」。
+  /// 不預設一個日期：一個假的生日比沒有生日糟，因為它看起來是真的。
+  DateTime? birthday;
   /// 是否已完成註冊。
   ///
   /// 預設 true 是**示範用身分**的一部分：直接 `AppState()` 建出來的是
@@ -9438,6 +9468,8 @@ class AppState extends ChangeNotifier {
     if (signUpDraft.weightKg != null) bodyweightKg = signUpDraft.weightKg!;
     if (signUpDraft.heightCm != null) heightCm = signUpDraft.heightCm!;
     if (signUpDraft.gender != null) isMale = signUpDraft.gender == '男';
+    // 生日在此之前是問了就丟 —— 註冊問卷第 4 題收了，沒有任何地方存。
+    if (signUpDraft.birthday != null) birthday = signUpDraft.birthday;
     // 草稿落地為使用者屬性；其後由〈簽到畫面的週期更新〉維護。
     if (signUpDraft.daysPerWeek != null) daysPerWeek = signUpDraft.daysPerWeek!;
     if (signUpDraft.duration != null) duration = signUpDraft.duration!;
@@ -9530,12 +9562,27 @@ class AppState extends ChangeNotifier {
   /// 體重的顯示值與單位。
   (String, String) weightDisplay(double kg) => metricUnits
       ? (kg.toStringAsFixed(1), 'kg')
-      : ((kg * 2.20462).toStringAsFixed(1), 'lb');
+      : ((kg * kLbPerKg).toStringAsFixed(1), 'lb');
 
   /// 身高的顯示值與單位。
   (String, String) heightDisplay(double cm) => metricUnits
       ? (cm.round().toString(), 'cm')
-      : ((cm / 2.54).toStringAsFixed(1), 'in');
+      : ((cm / kCmPerInch).toStringAsFixed(1), 'in');
+
+  /// 換算係數。**存的一律是公制**，英制只是顯示 ——
+  /// 所以進出兩個方向都得經過同一組係數，不可以在畫面那邊各乘一次。
+  static const kLbPerKg = 2.20462;
+  static const kCmPerInch = 2.54;
+
+  /// 公制 → 顯示單位。[height] 為真時是身高（cm／in），否則體重（kg／lb）。
+  double toDisplayUnit(double metric, bool height) => metricUnits
+      ? metric
+      : (height ? metric / kCmPerInch : metric * kLbPerKg);
+
+  /// 顯示單位 → 公制。[toDisplayUnit] 的反向。
+  double toMetric(double shown, bool height) => metricUnits
+      ? shown
+      : (height ? shown * kCmPerInch : shown / kLbPerKg);
 
   /// 訓練重量的顯示值與單位。0 為徒手，不帶單位。
   (String, String) loadDisplay(double kg) {

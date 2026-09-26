@@ -251,6 +251,21 @@ const _covers = <String, Set<String>>{
   '徒手': {'徒手'},
 };
 
+/// 帶著某個器材條件的人能執行哪些課表級別 —— 空值代表不限（全部）。
+///
+/// 課表篩選與訓練計畫推薦必須是同一套語意：選「居家器材」的人要看到
+/// 居家**與徒手**兩種課表，不是只有標著「居家」的那幾份。器材是硬約束，
+/// 而硬約束的定義只能有一份 —— [recommendPlan] 也走這一支。
+///
+/// [equipment] 取註冊問卷的值域（[kEquipmentTiers]）；課表上的
+/// `equipmentTier` 是短標（健身房／居家／徒手），兩者不同字串，
+/// 靠 [_tierOf] 對上。
+Set<String>? runnablePlanTiers(String? equipment) {
+  if (equipment == null) return null;
+  final tier = _tierOf[equipment];
+  return tier == null ? null : _covers[tier];
+}
+
 /// 一份計畫對某位使用者的比對結果。
 ///
 /// 比對維度三項：器材、經驗、常見目標；**動機類不參與比對**
@@ -288,8 +303,7 @@ T? recommendPlan<T>(
   required Set<String> Function(T) goalsOf,
 }) {
   if (plans.isEmpty) return null;
-  final myTier = equipment == null ? null : _tierOf[equipment];
-  final runnable = myTier == null ? null : _covers[myTier];
+  final runnable = runnablePlanTiers(equipment);
 
   T? best;
   var bestScore = -1;

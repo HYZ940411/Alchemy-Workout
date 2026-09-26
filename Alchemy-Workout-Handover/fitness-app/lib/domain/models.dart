@@ -57,6 +57,20 @@ class Exercise {
   });
 }
 
+/// 一組的計量單位 —— 次數或秒數。
+///
+/// **這個值原本只活在 `PlatformPlanSpec.PlanItemSpec` 裡，轉成
+/// [WorkoutPlan] 時就被丟掉了。** 於是畫面只能靠「目標重量是 0」來猜
+/// 那個數字是次數還是秒數 —— 而平台課表的目標重量**一律是 0**
+/// （以 RPE 開處方，不指定公斤數），徒手動作也是。
+/// 結果是「引體向上 3 組 × 8 下」被顯示成「8 秒」。
+///
+/// 猜不出來的東西就不要猜：把單位一路帶著走。
+///
+/// 值域是 per-plan-item 而非 per-exercise —— 資料來源的 27 份課表裡
+/// 有 21 個動作同時以兩種單位出現（棒式既有「40 秒」也有「12 下」）。
+enum PlanUnit { reps, seconds }
+
 /// 本次訓練課表快照中的一組目標。
 class PlannedSet {
   final double targetWeight;
@@ -105,13 +119,19 @@ class PlanExercise {
   /// 課表指定的組間休息秒數 —— 取值優先序的第一順位，空值則退回動作層級預設。
   final int? restSeconds;
 
+  /// 這個動作的組以什麼計量。預設次數 —— 絕大多數動作是。
+  final PlanUnit unit;
+
   const PlanExercise({
     required this.exercise,
     required this.planned,
     this.replacedFrom,
     this.replacedPlanned,
     this.restSeconds,
+    this.unit = PlanUnit.reps,
   });
+
+  bool get isTimed => unit == PlanUnit.seconds;
 }
 
 class WorkoutPlan {
@@ -225,6 +245,7 @@ class WorkoutSession {
             planned: planned[i],
             replacedFrom: plan.exercises[i].replacedFrom,
             restSeconds: plan.exercises[i].restSeconds,
+            unit: plan.exercises[i].unit,
           ),
       ],
       records: [

@@ -11,12 +11,12 @@
 /// 而每一次訓練都要拖著它們走。
 library;
 
-/// 一組的計量單位。
-///
-/// 時間型動作（棒式、登山者式、開合跳）以秒計，不是次數。
-/// App 的既有慣例是把秒數放在 `PlannedSet.targetReps` —— 見加入動作時的
-/// `PlannedSet(0, _seconds)`。這個列舉讓「那個數字是什麼」不必用猜的。
-enum PlanUnit { reps, seconds }
+import 'models.dart';
+
+/// [PlanUnit] 定義在 `models.dart` —— 它是「一組怎麼計量」，
+/// 訓練流程與畫面都要用，不只是 CSV 的事。從這裡轉出去，
+/// 既有的 import 不必跟著改。
+export 'models.dart' show PlanUnit;
 
 /// 課表裡的一個動作。
 class PlanItemSpec {

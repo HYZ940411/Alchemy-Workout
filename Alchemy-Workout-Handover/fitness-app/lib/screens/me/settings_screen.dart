@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/auth.dart';
+import '../../domain/registration.dart';
 import '../../mock/mock_equipment.dart';
 import '../../state/app_state.dart';
 import '../train/preferred_times_screen.dart';
@@ -62,15 +63,79 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 50),
         children: [
+          // **這四列原本是寫死的字串**（`4 天`、`60–90 分`、`增肌`、`中階`），
+          // 每一位使用者看到的都一樣，而且點下去什麼都不會發生 ——
+          // 儘管右邊畫著一個看起來可點的箭頭，標題上還寫著
+          // 「更新後立即重新推薦」。
+          //
+          // 值本來就在 [AppState] 裡（註冊時由 `completeSignUp` 落地、
+          // 存檔也有存），只是這一頁沒有去讀。改成讀真值並可編輯，
+          // 更新走 `updateSurvey` —— 與簽到頁的 90 天週期詢問同一支，
+          // 那句「立即重新推薦」由它兌現。
           const SectionLabel('訓練問卷', trailing: '更新後立即重新推薦'),
           Panel(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Column(
-              children: const [
-                _Row(label: '每週健身天數', value: '4 天'),
-                _Row(label: '每次健身時長', value: '60–90 分'),
-                _Row(label: '健身目標', value: '增肌'),
-                _Row(label: '健身經驗', value: '中階'),
+              children: [
+                _Row(
+                  label: '每週健身天數',
+                  value: '${s.daysPerWeek} 天',
+                  onTap: () => _pickOne(
+                    context,
+                    title: '每週健身天數',
+                    options: const ['1', '2', '3', '4', '5', '6', '7'],
+                    labelOf: (v) => '$v 天',
+                    current: '${s.daysPerWeek}',
+                    onPick: (v) => s.updateSurvey(daysPerWeek: int.parse(v)),
+                  ),
+                ),
+                _Row(
+                  label: '每次健身時長',
+                  value: s.duration,
+                  onTap: () => _pickOne(
+                    context,
+                    title: '每次健身時長',
+                    options: kDurations,
+                    current: s.duration,
+                    onPick: (v) => s.updateSurvey(duration: v),
+                  ),
+                ),
+                _Row(
+                  label: '健身目標',
+                  value: s.commonGoal,
+                  onTap: () => _pickOne(
+                    context,
+                    title: '健身目標',
+                    options: kCommonGoals,
+                    current: s.commonGoal,
+                    onPick: (v) => s.updateSurvey(commonGoal: v),
+                  ),
+                ),
+                _Row(
+                  label: '健身經驗',
+                  value: s.experience,
+                  onTap: () => _pickOne(
+                    context,
+                    title: '健身經驗',
+                    options: kExperience,
+                    current: s.experience,
+                    onPick: (v) => s.updateSurvey(experience: v),
+                  ),
+                ),
+                // 器材也是註冊問卷問的，而且是推薦的**第一順位**比對維度
+                // （硬約束：器材不符即完全無法執行）。原本這一頁根本沒有它，
+                // 於是換了健身房、或退掉會員回家徒手練的人無從更新。
+                _Row(
+                  label: '可用器材',
+                  value: s.equipmentTier,
+                  onTap: () => _pickOne(
+                    context,
+                    title: '可用器材',
+                    options: kEquipmentTiers,
+                    current: s.equipmentTier,
+                    onPick: (v) => s.updateSurvey(equipmentTier: v),
+                  ),
+                ),
               ],
             ),
           ),
@@ -79,11 +144,39 @@ class SettingsScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Column(
               children: [
-                _Row(label: '身高', value: s.heightText(s.heightCm)),
-                _Row(label: '體重', value: s.weightText(s.bodyweightKg)),
-                const _Row(
+                _Row(
+                  label: '身高',
+                  value: s.heightText(s.heightCm),
+                  onTap: () => _editNumber(
+                    context,
+                    title: '身高',
+                    unit: s.metricUnits ? 'cm' : 'in',
+                    current: s.heightCm,
+                    min: 100,
+                    max: 250,
+                    onSave: s.updateHeight,
+                  ),
+                ),
+                _Row(
+                  label: '體重',
+                  value: s.weightText(s.bodyweightKg),
+                  onTap: () => _editNumber(
+                    context,
+                    title: '體重',
+                    unit: s.metricUnits ? 'kg' : 'lb',
+                    current: s.bodyweightKg,
+                    min: 25,
+                    max: 300,
+                    onSave: s.updateWeight,
+                  ),
+                ),
+                // **原本寫死成 `1996 / 03 / 12`**，每個人都一樣。
+                // 註冊問卷第 4 題問了生日，但在此之前沒有任何地方存它 ——
+                // 問了就丟。現在存了（`AppState.birthday`），
+                // 沒有的就說沒有，不擺一個看起來很真的假日期。
+                _Row(
                   label: '生日',
-                  value: '1996 / 03 / 12',
+                  value: s.birthday == null ? '未填寫' : _ymd(s.birthday!),
                   readOnly: true,
                 ),
                 _Row(label: '性別', value: s.isMale ? '男' : '女', readOnly: true),
@@ -470,6 +563,124 @@ class SettingsScreen extends StatelessWidget {
 }
 
 /// 使用者已填入電子郵件。空白即清空。
+String _ymd(DateTime d) => '${d.year} / '
+    '${d.month.toString().padLeft(2, '0')} / '
+    '${d.day.toString().padLeft(2, '0')}';
+
+/// 從值域裡挑一個。
+///
+/// 值域清單一律取 `domain/registration.dart` 的那幾個常數 ——
+/// 註冊問卷、簽到頁的週期詢問、這一頁三處問的是同一件事，
+/// 選項若各寫一份，遲早有一處漏掉新增的值。
+Future<void> _pickOne(
+  BuildContext context, {
+  required String title,
+  required List<String> options,
+  required String current,
+  required ValueChanged<String> onPick,
+  String Function(String)? labelOf,
+}) async {
+  final picked = await showAppSheet<String>(
+    context,
+    title: title,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final o in options)
+          ListRow(
+            title: labelOf == null ? o : labelOf(o),
+            trailing: o == current
+                ? const Icon(Icons.check_rounded,
+                    size: Sz.iconDefault, color: C.accentDeep)
+                : null,
+            showDivider: o != options.last,
+            onTap: () => Navigator.of(context).pop(o),
+          ),
+      ],
+    ),
+  );
+  if (picked == null || picked == current || !context.mounted) return;
+  onPick(picked);
+  showToast(context, '已更新$title');
+}
+
+/// 改一個數字（身高、體重）。
+///
+/// 超出範圍就不給存 —— 身高 17 公分不是一個需要被尊重的輸入，
+/// 而它會讓 BMI 與相對強度的計算全部失真。
+Future<void> _editNumber(
+  BuildContext context, {
+  required String title,
+  required String unit,
+  required double current,
+  required double min,
+  required double max,
+  required ValueChanged<double> onSave,
+}) async {
+  final s = AppScope.of(context);
+  // 顯示單位可能是英制，而存的一律是公制 —— 進出都走同一組換算，
+  // 不在這裡自己乘一次。
+  final shown = s.metricUnits ? current : s.toDisplayUnit(current, title == '身高');
+  final ctrl = TextEditingController(
+      text: shown == shown.roundToDouble()
+          ? shown.round().toString()
+          : shown.toStringAsFixed(1));
+  final ok = await showAppSheet<bool>(
+    context,
+    title: title,
+    child: StatefulBuilder(
+      builder: (context, setSheetState) {
+        final v = double.tryParse(ctrl.text.trim());
+        final metric =
+            v == null ? null : (s.metricUnits ? v : s.toMetric(v, title == '身高'));
+        final error = v == null
+            ? '請輸入數字。'
+            : (metric! < min || metric > max
+                ? '$title須介於 ${min.round()}–${max.round()} '
+                    '${title == '身高' ? 'cm' : 'kg'}。'
+                : null);
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: T.body(),
+              onChanged: (_) => setSheetState(() {}),
+              decoration: InputDecoration(
+                isDense: true,
+                suffixText: unit,
+                errorText: error,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: S.base, vertical: S.md),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(R.control),
+                ),
+              ),
+            ),
+            const SizedBox(height: S.md),
+            SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                label: '儲存',
+                onPressed: error == null
+                    ? () => Navigator.of(context).pop(true)
+                    : null,
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+  final v = double.parse(ctrl.text.trim());
+  onSave(s.metricUnits ? v : s.toMetric(v, title == '身高'));
+  showToast(context, '已更新$title');
+}
+
 Future<void> _editEmail(BuildContext context, AppState s) async {
   final ctrl = TextEditingController(text: s.email ?? '');
   final ok = await showAppSheet<bool>(

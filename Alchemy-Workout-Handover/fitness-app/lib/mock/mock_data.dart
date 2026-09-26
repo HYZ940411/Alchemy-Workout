@@ -144,7 +144,10 @@ final kPlans = <WorkoutPlan>[
     equipmentTier: '徒手',
     hasOptimizationSuggestion: true,
     exercises: [
-      PlanExercise(exercise: ex('plank'), planned: _sets(3, 0, 60)),
+      PlanExercise(
+          exercise: ex('plank'),
+          planned: _sets(3, 0, 60),
+          unit: PlanUnit.seconds),
       PlanExercise(exercise: ex('crunch'), planned: _sets(4, 8, 15)),
     ],
   ),
@@ -309,6 +312,9 @@ List<WorkoutPlan> buildCsvPlansFrom(
                 planned: List.generate(
                     it.sets, (_) => PlannedSet(0, it.amount)),
                 restSeconds: it.restSeconds,
+                // **單位要一路帶著走。** 丟在這裡的話，下游只剩「重量是 0」
+                // 可以猜 —— 而這 27 份課表的重量全部是 0。
+                unit: it.unit,
               ),
           ],
         ),

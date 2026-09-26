@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../domain/models.dart';
 import '../../domain/commerce.dart';
 import '../../domain/community.dart';
+import '../../domain/plan_duration.dart';
 import '../../domain/rewards.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
@@ -189,7 +190,12 @@ class PlanDetailScreen extends StatelessWidget {
                   const SizedBox(height: S.sm),
                   Text(spec.reference, style: T.caption()),
                   const SizedBox(height: S.xs),
-                  Text('預估時長：${spec.duration}', style: T.caption()),
+                  // 原本顯示 CSV 那一欄的原文，格式各寫各的，還有三筆
+                  // 在產生時被引號截斷（`30 min (含熱身5'`）。
+                  // 改用算出來的，與課表清單上那顆標籤同一個來源。
+                  if (s.estimatedDurationOf(plan) case final d?)
+                    Text('預估時長：${planDurationLabel(d)}（不含暖身與收操）',
+                        style: T.caption()),
                 ],
               ),
             ),
@@ -499,7 +505,7 @@ class _PlanExerciseCard extends StatelessWidget {
                   runSpacing: S.sm,
                   children: [
                     for (final (i, set) in pe.planned.indexed)
-                      _SetChip(index: i + 1, set: set),
+                      _SetChip(index: i + 1, set: set, timed: pe.isTimed),
                   ],
                 ),
               ],
@@ -514,7 +520,15 @@ class _PlanExerciseCard extends StatelessWidget {
 class _SetChip extends StatelessWidget {
   final int index;
   final PlannedSet set;
-  const _SetChip({required this.index, required this.set});
+
+  /// 這一組以秒計還是以次計。
+  ///
+  /// **原本是看「目標重量是 0」來猜的** —— 而平台課表的目標重量一律是 0
+  /// （以 RPE 開處方），徒手動作也是 0。於是「引體向上 3 組 × 8 下」
+  /// 被顯示成「8 秒」、「棒式 40 秒」與「深蹲 12 下」長得一模一樣。
+  /// 單位現在由 `PlanExercise.unit` 一路帶進來，不用猜。
+  final bool timed;
+  const _SetChip({required this.index, required this.set, required this.timed});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -523,13 +537,16 @@ class _SetChip extends StatelessWidget {
       color: C.bgPage,
       borderRadius: BorderRadius.circular(R.child),
     ),
-    child: Text(
-      set.targetWeight == 0
-          ? '第 $index 組　${set.targetReps} 秒'
-          : '第 $index 組　${_kg(set.targetWeight)} kg × ${set.targetReps}',
-      style: T.caption(color: C.textPrimary),
-    ),
+    child: Text(_label(), style: T.caption(color: C.textPrimary)),
   );
+
+  String _label() {
+    if (timed) return '第 $index 組　${set.targetReps} 秒';
+    // 目標重量 0 的意思是「不指定公斤數」，不是「零公斤」——
+    // 寫成「0 kg × 12」會讓人以為那是個要照做的數字。
+    if (set.targetWeight == 0) return '第 $index 組　${set.targetReps} 下';
+    return '第 $index 組　${_kg(set.targetWeight)} kg × ${set.targetReps}';
+  }
 
   static String _kg(double v) =>
       v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(1);
