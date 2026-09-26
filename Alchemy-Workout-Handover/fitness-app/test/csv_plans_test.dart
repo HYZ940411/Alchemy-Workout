@@ -266,4 +266,38 @@ void main() {
       }
     });
   });
+
+  // 2026-09-26 使用者裁決：等長支撐不以「下」計量。
+  //
+  // 使用者回報「棒式在一份課表裡被開成 2 組 × 12 下」。前棒式是純等長支撐，
+  // 沒有「一下」這回事 —— 而課表卡與詳情頁會照著顯示「12 下」，
+  // 預估時長也會把它當成 12 次 × 5 秒來算。
+  //
+  // 改的是來源 CSV（`健身計劃-組數次數.csv` 課表 9 動作序 8）不是生成檔，
+  // 換算取自同一份資料裡作者自己寫的等式：課表 14（同為戰士級）
+  // 「每個動作 12–15 下（或 45 秒）」。
+  //
+  // **側棒式不在此列**：側棒式抬臀（hip dips）是真的可以數下的動作，
+  // 課表 11／16／17 的「6–8 次」「10–12 次/組」可能正是那個變化式 ——
+  // 改它等於替使用者決定訓練處方。已列為待覆核。
+  group('等長支撐以秒計量', () {
+    test('前棒式不得以「下」計量', () {
+      final bad = [
+        for (final p in kPlatformPlans)
+          for (final it in p.items)
+            if (it.exerciseId == 'plank' && it.unit == PlanUnit.reps)
+              '${p.id} ${p.name}',
+      ];
+      expect(bad, isEmpty, reason: '前棒式是純等長支撐，沒有「一下」這回事');
+    });
+
+    test('那一列真的變成 45 秒，而不是被刪掉', () {
+      final plan = kPlatformPlans.firstWhere((p) => p.id == 'csv09');
+      final plank = plan.items.firstWhere((it) => it.exerciseId == 'plank');
+      expect(plank.unit, PlanUnit.seconds);
+      expect(plank.amount, 45);
+      expect(plank.sets, 2, reason: '組數不動 —— 只改計量單位');
+      expect(plank.restSeconds, 60, reason: '休息不動');
+    });
+  });
 }

@@ -91,7 +91,10 @@ void main() {
       final s = AppState();
       s.birthday = null;
       await pump(t, s);
-      expect(find.text('未填寫'), findsOneWidget);
+      // 2026-09-26 使用者裁決 B：沒填的可以補填，所以這一列說得出「可補填」，
+      // 而不是只掛一把看不出是刻意還是壞了的鎖頭。
+      // 補填的規則見 `test/birthday_fill_once_test.dart`。
+      expect(find.text('未填寫（可補填）'), findsOneWidget);
       // 這個日期原本是寫死在畫面上的，每一位使用者看到的都是它。
       expect(find.text('1996 / 03 / 12'), findsNothing);
     });

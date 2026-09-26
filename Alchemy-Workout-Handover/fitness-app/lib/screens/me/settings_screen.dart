@@ -189,17 +189,25 @@ class SettingsScreen extends StatelessWidget {
                 // 註冊問卷第 4 題問了生日，但在此之前沒有任何地方存它 ——
                 // 問了就丟。現在存了（`AppState.birthday`），
                 // 沒有的就說沒有，不擺一個看起來很真的假日期。
+                // 生日：**沒填的可以補，填了就鎖住**（2026-09-26 使用者裁決 B）。
+                //
+                // 唯讀是規格的裁決（〈設定頁 Read Model〉）：生日決定年齡係數，
+                // 改動會使既有點數失去計算基準，如需更正屬客服範疇。
+                // 但規格沒設想到「從來沒存過」這種狀況 —— 2026-09-26 之前
+                // 註冊問卷問了生日卻沒地方存，那些帳號永遠填不進去。
+                // 補一個從來沒有的值不會讓任何點數失去基準，因為在它之前
+                // 根本沒有基準。
+                //
+                // **鎖著也要說得出理由。** 原本只有一把鎖頭圖示，
+                // 使用者看不出那是刻意的還是壞了。
                 _Row(
                   label: '生日',
-                  value: s.birthday == null ? '未填寫' : _ymd(s.birthday!),
-                  readOnly: true,
-                  // **鎖著要說得出理由。** 原本只有一把鎖頭圖示，
-                  // 使用者回報「生日鎖定不能修改」—— 他看不出那是刻意的
-                  // 還是壞了。唯讀是規格的裁決（〈設定頁 Read Model〉）：
-                  // 生日決定年齡係數、性別決定 DOTS 係數，改動會使既有點數
-                  // 失去計算基準；如需更正屬客服範疇。
-                  onTap: () => showToast(
-                      context, '生日決定年齡係數，改動會讓既有能力值失去基準。如需更正請聯繫客服。'),
+                  value: s.birthday == null ? '未填寫（可補填）' : _ymd(s.birthday!),
+                  readOnly: s.birthday != null,
+                  onTap: s.birthday != null
+                      ? () => showToast(context,
+                          '生日決定年齡係數，填寫後不可修改。如需更正請聯繫客服。')
+                      : () => _fillBirthday(context, s),
                 ),
                 _Row(
                   label: '性別',
@@ -591,6 +599,38 @@ class SettingsScreen extends StatelessWidget {
 }
 
 /// 使用者已填入電子郵件。空白即清空。
+/// 補填生日。只在原本沒有時走得到這裡（見設定頁那一列）。
+Future<void> _fillBirthday(BuildContext context, AppState s) async {
+  final today = DateTime.now();
+  final picked = await showDatePicker(
+    context: context,
+    // 預設落在一個合理的成年年份，而不是今天 —— 今天必然不合格，
+    // 使用者一打開就看到一個會被擋掉的值。
+    initialDate: DateTime(today.year - 25, today.month, today.day),
+    firstDate: DateTime(today.year - 120),
+    // 未滿 13 歲不得使用本服務，所以日期選擇器的上界就是 13 歲生日 ——
+    // 讓他選得到一個必然被擋掉的日期再報錯，是多繞一圈。
+    lastDate: DateTime(today.year - kMinAge, today.month, today.day),
+    helpText: '選擇生日',
+  );
+  if (picked == null || !context.mounted) return;
+
+  final ok = await showAppDialog(
+    context,
+    title: '確認生日',
+    // 一次性的東西要說清楚是一次性的，在按下去之前。
+    message: '${_ymd(picked)}\n\n'
+        '生日決定年齡係數，**填寫後不可自行修改**（如需更正需聯繫客服）。'
+        '確認無誤再送出。',
+    confirmLabel: '確認送出',
+    cancelLabel: '再看看',
+  );
+  if (ok != true || !context.mounted) return;
+
+  final err = s.fillBirthday(picked);
+  showToast(context, err ?? '已填入生日');
+}
+
 String _ymd(DateTime d) => '${d.year} / '
     '${d.month.toString().padLeft(2, '0')} / '
     '${d.day.toString().padLeft(2, '0')}';

@@ -272,7 +272,7 @@ const kPlatformPlans = <PlatformPlanSpec>[
       PlanItemSpec('p260', 2, 12, PlanUnit.reps, 60),
       PlanItemSpec('p117', 2, 12, PlanUnit.reps, 60),
       PlanItemSpec('p113', 2, 12, PlanUnit.reps, 60),
-      PlanItemSpec('plank', 2, 12, PlanUnit.reps, 60),
+      PlanItemSpec('plank', 2, 45, PlanUnit.seconds, 60),
     ],
   ),
   PlatformPlanSpec(

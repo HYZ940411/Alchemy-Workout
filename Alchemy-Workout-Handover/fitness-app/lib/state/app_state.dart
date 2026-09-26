@@ -863,6 +863,39 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 補填生日。**只在原本沒有時可用，填了就鎖住。**
+  ///
+  /// 〈設定頁 Read Model〉明訂生日唯讀，理由是它決定年齡係數，
+  /// 「可任意改動將使既有點數失去計算基準⋯⋯如需更正，屬客服範疇」。
+  ///
+  /// 但規格沒設想到一種狀況：2026-09-26 之前註冊問卷問了生日卻沒有任何
+  /// 地方存它（見 [birthday]），那些帳號的生日是空的 —— 唯讀意味著
+  /// **永遠填不進去**。
+  ///
+  /// **「補一個從來沒有的值」與「改一個已有的值」不是同一件事**
+  /// （2026-09-26 使用者裁決 B）：前者不會讓任何既有點數失去基準，
+  /// 因為在它之前根本沒有基準。後者仍然鎖著。
+  ///
+  /// 回傳錯誤訊息，成功回空值。
+  String? fillBirthday(DateTime date) {
+    if (birthday != null) {
+      return '生日已填寫，不可修改。如需更正請聯繫客服。';
+    }
+    final today = DateTime(now.year, now.month, now.day);
+    if (date.isAfter(today)) return '生日不能是未來的日期。';
+    var age = today.year - date.year;
+    if (today.month < date.month ||
+        (today.month == date.month && today.day < date.day)) {
+      age--;
+    }
+    // 與註冊流程同一道年齡門檻，不另立一套。
+    if (age < kMinAge) return '須滿 $kMinAge 歲才能使用本服務。';
+    if (age > 120) return '請確認生日是否正確。';
+    birthday = DateTime(date.year, date.month, date.day);
+    notifyListeners();
+    return null;
+  }
+
   /// 使用者已填入身高。
   ///
   /// 身高不像體重會週週變動，所以沒有週期詢問 —— 但設定頁那一列本來
