@@ -6746,6 +6746,9 @@ class AppState extends ChangeNotifier {
   /// **保守的原則沒有變**：模型也被要求「只在明確指向唯一方向時才回答，
   /// 否則回 null」。交給模型是為了聽懂更多說法，
   /// 不是為了「無論如何給個答案」。
+  /// 正在請 AI 判讀方向。畫面靠它顯示「判讀中」。
+  final Map<AiSource, bool> aiClassifying = {};
+
   Future<void> aiConfirmDemand(AiSource src, String answer) async {
     if (aiStage[src] != AiStage.clarifying) return;
     _say(src, AiTurnRole.user, answer);
@@ -6757,12 +6760,22 @@ class AppState extends ChangeNotifier {
     } else {
       final ai = aiSource;
       if (ai != null) {
+        // **先把畫面更新出來再去等網路。**
+        //
+        // 在此之前整段跑完才 `notifyListeners()` —— 於是使用者按下送出
+        // 之後，連**他自己打的那句話**都不會出現，畫面完全靜止
+        // 一秒多（AI 失敗時是二十秒）。他回報的「分析時間非常久，
+        // 得不到答案」有一半是這個：不是真的那麼久，是完全沒有跡象。
+        aiClassifying[src] = true;
+        notifyListeners();
         try {
           intent = (await ai.classify(answer)).intent;
           intentDecidedBy = intent == null ? 'AI（判不出來）' : 'AI';
         } catch (e) {
           // **退回端內規則，而且要講出來**（只給開發者模式）。
           intentDecidedBy = '端內規則（AI 失敗：$e）';
+        } finally {
+          aiClassifying[src] = false;
         }
       }
       // AI 沒接、或剛剛失敗 —— 用端內的關鍵字比對。

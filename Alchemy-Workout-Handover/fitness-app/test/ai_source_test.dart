@@ -1,3 +1,4 @@
+import 'dart:async';
 // 外部 AI 的邊界（`[BE-08]`）。
 //
 // 規格把 LLM 放在軟體邊界**之外**，只規範呼叫時點、扣點、失敗退點與
@@ -283,6 +284,43 @@ void main() {
       final s = await ask(null, '今天太重了');
       expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.easier);
       expect(s.intentDecidedBy, '端內規則');
+    });
+
+    // 使用者回報「分析時間也非常久，得不到答案」。有一半不是真的那麼久，
+    // 是**完全沒有跡象**：整段跑完才 notifyListeners()，於是按下送出之後
+    // 連他自己打的那句話都不會出現，畫面靜止一秒多（失敗時二十秒）。
+    test('請 AI 判讀期間畫面有跡象，而且使用者那句話先出現', () async {
+      final gate = Completer<RemoteIntent>();
+      final fake = _SlowSource(gate.future);
+      final s = AppState()..aiSource = fake;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+
+      var notified = 0;
+      s.addListener(() => notified++);
+
+      final done = s.aiConfirmDemand(AiSource.beforeTraining, '我要趕去接小孩');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(s.aiClassifying[AiSource.beforeTraining], isTrue,
+          reason: '判讀中要標記起來，畫面才顯示得出「判讀你的需求…」');
+      expect(notified, greaterThan(0), reason: '等網路之前就要先更新畫面');
+      expect(
+        s.aiConversations[AiSource.beforeTraining]!.last.text,
+        '我要趕去接小孩',
+        reason: '使用者那句話要先出現，不是等 AI 回來才一起冒出來',
+      );
+
+      gate.complete(const RemoteIntent(AdjustIntent.trim));
+      await done;
+      expect(s.aiClassifying[AiSource.beforeTraining], isFalse);
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
+    });
+
+    test('AI 失敗時也要把判讀中的標記收掉 —— 不能卡在轉圈', () async {
+      final fake = _FakeSource(classifyThrows: true);
+      final s = await ask(fake, '今天太重了');
+      expect(s.aiClassifying[AiSource.beforeTraining], isFalse);
     });
 
     test('直接點四顆方向鍵不問模型 —— 那已經是答案了', () async {
@@ -755,4 +793,25 @@ void main() {
       expect(got.suggestion.changes.single.exerciseName, '槓鈴臥推');
     });
   });
+}
+
+
+/// 卡在呼叫端給的那個 Future 上 —— 用來觀察「等待期間」的狀態。
+class _SlowSource implements AiSuggestionSource {
+  final Future<RemoteIntent> gate;
+  _SlowSource(this.gate);
+
+  @override
+  Future<RemoteIntent> classify(String say) => gate;
+
+  @override
+  Future<RemoteSuggestion> suggest({
+    required List<PlanExercise> exercises,
+    required AdjustIntent intent,
+    int onlyFrom = 0,
+    String? note,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) =>
+      throw UnimplementedError();
 }

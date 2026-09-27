@@ -99,9 +99,21 @@ class _AiAdjustScreenState extends State<AiAdjustScreen> {
                     controller: scroll,
                     padding: const EdgeInsets.fromLTRB(
                         S.base, S.base, S.base, S.base),
-                    itemCount: turns.length + (stage == AiStage.analyzing ? 1 : 0),
+                    // 「判讀方向」與「產生建議」是兩段等待，兩段都要有跡象。
+                    // 在此之前只有後者有 —— 前者那一秒多（失敗時二十秒）
+                    // 畫面完全靜止，連使用者自己打的那句話都還沒出現。
+                    itemCount: turns.length +
+                        (stage == AiStage.analyzing ||
+                                (s.aiClassifying[src] ?? false)
+                            ? 1
+                            : 0),
                     itemBuilder: (context, i) {
-                      if (i >= turns.length) return const _Analyzing();
+                      if (i >= turns.length) {
+                        return _Analyzing(
+                            label: (s.aiClassifying[src] ?? false)
+                                ? '判讀你的需求…'
+                                : '分析中…');
+                      }
                       return _Turn(turn: turns[i]);
                     },
                   ),
@@ -224,7 +236,8 @@ class _Turn extends StatelessWidget {
 }
 
 class _Analyzing extends StatelessWidget {
-  const _Analyzing();
+  final String label;
+  const _Analyzing({this.label = '分析中…'});
   @override
   Widget build(BuildContext context) => Align(
         alignment: Alignment.centerLeft,
@@ -246,7 +259,7 @@ class _Analyzing extends StatelessWidget {
                     strokeWidth: 2, color: C.textSecondary),
               ),
               const SizedBox(width: S.md),
-              Text('分析中…', style: T.body(color: C.textSecondary)),
+              Text(label, style: T.body(color: C.textSecondary)),
             ],
           ),
         ),
