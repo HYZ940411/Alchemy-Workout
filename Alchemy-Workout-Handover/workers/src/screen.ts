@@ -16,7 +16,8 @@
  * `scoreTrainingQuality()`。規則只有一份，在 Dart 裡，有測試釘著。
  */
 
-const API = "https://generativelanguage.googleapis.com/v1beta";
+import {callGemini} from "./gemini";
+
 
 /** 一場訓練的摘要。與 Dart 的 `SessionSummary` 對應。 */
 export interface Session {
@@ -113,38 +114,16 @@ function buildPrompt(sessions: Session[]): string {
 export async function askQuality(
   sessions: Session[],
   apiKey: string,
-  model: string,
 ): Promise<Quality> {
-  const res = await fetch(
-    `${API}/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "x-goog-api-key": apiKey},
-      body: JSON.stringify({
-        contents: [{parts: [{text: buildPrompt(sessions)}]}],
-        generationConfig: {
-          // 這個分數決定誰能當教官 —— 溫度壓到最低，同一份紀錄
-          // 每次跑出來的結果要盡量一致。
-          temperature: 0,
-          responseMimeType: "application/json",
-        },
-      }),
-      // 使用者按完申請就離開了（規格：本路徑使用者不在場），
-      // 可以等久一點，但不能永遠等。
-      signal: AbortSignal.timeout(25000),
-    },
-  );
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`gemini ${model} ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const data = await res.json() as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  };
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  // **走共用的 `callGemini`** —— 挑模型與 404 重試只有一份（`gemini.ts`）。
+  //
+  // 逾時 25 秒：使用者按完申請就離開了（規格：本路徑使用者不在場），
+  // 可以等久一點，但不能永遠等。
+  const text = await callGemini(buildPrompt(sessions), apiKey,
+      {timeoutMs: 25000});
+  // **模型回什麼都不信。** 驗不過就是失敗，由 App 退回它自己那份
+  // `scoreTrainingQuality()` —— 規則只有一份，在 Dart 裡。
   const q = clampQuality(JSON.parse(text));
-  if (!q) throw new Error("模型回傳的評分沒有通過驗證");
+  if (q == null) throw new Error("模型的評分沒有通過驗證");
   return q;
 }

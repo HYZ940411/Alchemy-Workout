@@ -51,9 +51,16 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
           },
           body: jsonEncode({'say': say}),
         )
-        // **比 suggest 短得多。** 這一步夾在使用者打完字與看到建議之間，
-        // 等 25 秒等於把整條流程拖垮。逾時就退回端內規則，那是即時的。
-        .timeout(const Duration(seconds: 10));
+        // **比 suggest 短，但要放得下 Worker 那一側的一次重試。**
+        //
+        // 第一版設 10 秒，而 Worker 冷啟動時要先打一趟 `listModels`
+        // （逾時 10 秒）再打 generateContent —— 加起來就超過了。
+        // 使用者回報「分析時間非常久，得不到答案」。
+        //
+        // Worker 已改成不在熱路徑上探測模型（`gemini.ts`），
+        // 正常一趟約 1–3 秒；這裡留 20 秒是給「模型退役那一天」
+        // 的那一次額外重試，不是給常態。
+        .timeout(const Duration(seconds: 20));
 
     if (res.statusCode != 200) {
       throw http.ClientException('AI 服務回應 ${res.statusCode}', endpoint);

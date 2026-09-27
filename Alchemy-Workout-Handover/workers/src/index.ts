@@ -14,7 +14,7 @@
 
 import {verifyIdToken} from "./auth";
 import {
-  askGemini, currentModel, isIntent, ruleFallback,
+  askGemini, isIntent, ruleFallback,
   type AdjustContext, type PlanExercise,
 } from "./adjust";
 import {askQuality, isSessions} from "./screen";
@@ -81,8 +81,10 @@ export default {
         return fail(400, "say 必須是 1–200 字的字串。", origin);
       }
       try {
-        const model = await currentModel(env.GEMINI_API_KEY);
-        const intent = await askIntent(body.say, env.GEMINI_API_KEY, model);
+        // 不先探測模型 —— `callGemini` 直接用偏好的那個，
+        // 只有它 404 時才去問清單。原本每次都多一趟 `listModels`，
+        // 冷啟動時會超過前端等待的上限（使用者回報「分析時間非常久」）。
+        const intent = await askIntent(body.say, env.GEMINI_API_KEY);
         // `intent: null` 是**合法結果**，不是錯誤 ——
         // 模型判不出來時就該這樣回，由 App 再問一次。
         return new Response(JSON.stringify({intent, source: "gemini"}), {
@@ -110,8 +112,7 @@ export default {
         return fail(400, "訓練紀錄的格式不合法，或筆數超過上限。", origin);
       }
       try {
-        const model = await currentModel(env.GEMINI_API_KEY);
-        const q = await askQuality(body.sessions, env.GEMINI_API_KEY, model);
+        const q = await askQuality(body.sessions, env.GEMINI_API_KEY);
         return new Response(JSON.stringify(q), {
           headers: {"Content-Type": "application/json", ...cors(origin)},
         });

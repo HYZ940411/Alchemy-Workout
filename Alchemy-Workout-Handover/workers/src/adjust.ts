@@ -11,6 +11,8 @@
  * **使用者永遠拿得到一份可用的建議**，差別只在它來自模型還是規則。
  */
 
+import {callGemini} from "./gemini";
+
 export type Intent = "easier" | "harder" | "trim" | "swap";
 
 export interface PlannedSet { weight: number; reps: number }
@@ -240,85 +242,6 @@ export function buildPrompt(
   ].join("\n");
 }
 
-const API = "https://generativelanguage.googleapis.com/v1beta";
-
-/** 第一順位的模型。挑不到時由 [pickModel] 改問 API 有哪些可用。 */
-const PREFERRED = "gemini-3.6-flash";
-
-/** 這個 isolate 內已經確認可用的模型名稱。 */
-let resolved: string | null = null;
-
-/**
- * 決定要用哪個模型。
- *
- * **不要把模型名稱寫死後就不管。** 型號會退役，而退役那天的症狀是
- * 每次呼叫都 404、伺服器安靜地退回規則引擎，使用者只會覺得
- * 「AI 怎麼變笨了」。這裡改為向 API 問一次有哪些模型可用，
- * 挑一個支援 generateContent 的 flash 系列。
- */
-/** 目前挑中的模型。`screen.ts` 也用同一個，不重複探測一次。 */
-export function currentModel(apiKey: string): Promise<string> {
-  return pickModel(apiKey);
-}
-
-async function pickModel(apiKey: string): Promise<string> {
-  if (resolved) return resolved;
-
-  const res = await fetch(`${API}/models`, {
-    headers: {"x-goog-api-key": apiKey},
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`listModels ${res.status}: ${body.slice(0, 200)}`);
-  }
-  const data = await res.json() as {
-    models?: { name?: string; supportedGenerationMethods?: string[] }[];
-  };
-  const all = (data.models ?? [])
-    .filter((m) =>
-      (m.supportedGenerationMethods ?? []).includes("generateContent"))
-    .map((m) => (m.name ?? "").replace(/^models\//, ""))
-    .filter((n) => n.length > 0);
-
-  // **先濾掉不能拿來做這件事的。** 清單裡混著 TTS、圖像、實驗版與
-  // 其他家族（gemma）—— 挑到 `gemini-2.5-flash-preview-tts` 的話
-  // 每次呼叫都會失敗，而症狀跟「金鑰壞了」一模一樣。
-  const usable = all.filter((n) =>
-    n.startsWith("gemini-") &&
-    !n.includes("tts") &&
-    !n.includes("image") &&
-    !n.includes("audio") &&
-    !n.includes("vision") &&
-    !n.includes("embedding") &&
-    !n.includes("preview") &&
-    !n.includes("exp"));
-
-  // 偏好：指定的那個 → 任何 flash（快又便宜）→ 隨便一個能用的。
-  const pick = usable.find((n) => n === PREFERRED) ??
-    usable.find((n) => n.includes("flash")) ??
-    usable[0] ??
-    all[0];
-  if (!pick) throw new Error("listModels: 沒有任何支援 generateContent 的模型");
-
-  resolved = pick;
-  return pick;
-}
-
-/**
- * Google 在 404 訊息裡會直接說該改用哪一個：
- *   「This model models/X is no longer available to new users.
- *     Please update your code to use models/Y」
- *
- * **把 Y 挖出來直接重試。** `listModels` 回報的可用清單與這把金鑰
- * 實際能呼叫的並不一致（清單有 2.5-flash，呼叫卻說新使用者不能用），
- * 所以光靠挑清單不夠 —— 真正權威的答案在錯誤訊息裡。
- */
-function suggestedModel(body: string): string | null {
-  const m = body.match(/use\s+models\/([\w.-]+)/);
-  return m ? m[1] : null;
-}
-
 export async function askGemini(
   exercises: PlanExercise[],
   intent: Intent,
@@ -326,58 +249,14 @@ export async function askGemini(
   note?: string,
   ctx?: AdjustContext,
 ): Promise<Change[]> {
-  try {
-    return await _ask(exercises, intent, apiKey, note, ctx);
-  } catch (e) {
-    // 只對「換一個模型就能好」的情況重試一次，其餘照常往上丟。
-    const msg = e instanceof Error ? e.message : String(e);
-    const next = msg.includes("404") ? suggestedModel(msg) : null;
-    if (next == null || next === resolved) rethrow(e);
-    resolved = next;
-    return _ask(exercises, intent, apiKey, note, ctx);
-  }
-}
-
-function rethrow(e: unknown): never {
-  throw e;
-}
-
-async function _ask(
-  exercises: PlanExercise[],
-  intent: Intent,
-  apiKey: string,
-  note?: string,
-  ctx?: AdjustContext,
-): Promise<Change[]> {
-  const model = await pickModel(apiKey);
-  const res = await fetch(
-    `${API}/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "x-goog-api-key": apiKey},
-      body: JSON.stringify({
-        contents: [{parts: [{text: buildPrompt(exercises, intent, note, ctx)}]}],
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: "application/json",
-        },
-      }),
-      // 使用者在等。超過這個時間不如讓它走既有的「失敗退點」流程。
-      signal: AbortSignal.timeout(20000),
-    },
+  // **走共用的 `callGemini`** —— 挑模型、404 重試、錯誤訊息的形狀
+  // 全部只有一份（`gemini.ts`）。這裡只負責 prompt 與驗證。
+  //
+  // 逾時 20 秒：使用者在等，但這一步本來就比意圖分類重。
+  const text = await callGemini(
+    buildPrompt(exercises, intent, note, ctx),
+    apiKey,
+    {temperature: 0.2, timeoutMs: 20000},
   );
-  if (!res.ok) {
-    // **把回應內容一起丟出去。** 只給狀態碼的話看到的是「gemini 404」——
-    // 那可能是模型名稱過期、金鑰沒權限、或配額用盡，三者的處置完全不同。
-    const body = await res.text().catch(() => "");
-    // 這個模型不能用了，下次重新挑。
-    resolved = null;
-    throw new Error(`gemini ${model} ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const data = await res.json() as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  };
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   return clamp(exercises, JSON.parse(text), ctx?.candidates);
 }

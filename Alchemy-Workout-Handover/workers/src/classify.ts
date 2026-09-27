@@ -18,7 +18,7 @@
  * 不是為了「無論如何給個答案」。
  */
 
-const API = "https://generativelanguage.googleapis.com/v1beta";
+import {callGemini} from "./gemini";
 
 export type Intent = "easier" | "harder" | "trim" | "swap";
 
@@ -62,36 +62,17 @@ export function parseIntent(raw: unknown): Intent | null {
 export async function askIntent(
   say: string,
   apiKey: string,
-  model: string,
 ): Promise<Intent | null> {
-  const res = await fetch(
-    `${API}/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "x-goog-api-key": apiKey},
-      body: JSON.stringify({
-        contents: [{parts: [{text: buildPrompt(say)}]}],
-        generationConfig: {
-          // 同一句話每次都要分到同一個方向。
-          temperature: 0,
-          responseMimeType: "application/json",
-        },
-      }),
-      // **使用者在場等著**，不能像品質評分那樣等 25 秒。
-      // 逾時就讓 App 退回端內規則，那比讓他盯著轉圈好。
-      signal: AbortSignal.timeout(8000),
-    },
-  );
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`gemini ${model} ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const data = await res.json() as {
-    candidates?: {content?: {parts?: {text?: string}[]}}[];
-  };
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  // **走共用的 `callGemini`。**
+  //
+  // 第一版這裡自己 fetch，於是少了 `adjust.ts` 那個「404 時照錯誤訊息
+  // 改模型重試」的機制 —— 而那是前一輪花了一整個下午才查出來的
+  // （模型退役，症狀與金鑰壞掉一模一樣）。同一個決定寫在三個地方，
+  // 只有一處是對的。
+  //
+  // **逾時 12 秒**：使用者在場等著。前端等 20 秒，留 8 秒給
+  // Worker 自己的往返與可能的一次重試。
+  const text = await callGemini(buildPrompt(say), apiKey, {timeoutMs: 12000});
   try {
     return parseIntent(JSON.parse(text));
   } catch {
