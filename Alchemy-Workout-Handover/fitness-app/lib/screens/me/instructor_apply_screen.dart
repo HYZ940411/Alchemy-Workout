@@ -26,7 +26,10 @@ class InstructorApplyScreen extends StatelessWidget {
     final s = AppScope.of(context);
     // 門檻數值取自平台級可調參數，管理員調整後本 Read Model 即時反映。
     final g = s.instructorGate;
-    final qualified = g.passed;
+    // **按得下申請鍵的條件是 `canApply`（階級與次數），不是 `passed`。**
+    // `passed` 還包含品質評分，而評分發生在申請**之後** ——
+    // 讀它的話，門檻達標的人也永遠按不下去。
+    final qualified = g.canApply;
 
     return Scaffold(
       backgroundColor: AppColors.bg,

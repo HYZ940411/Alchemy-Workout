@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../build_stamp.dart';
 import '../../data/auth.dart';
 import '../../domain/registration.dart';
 import '../../mock/mock_equipment.dart';
@@ -324,6 +325,19 @@ class SettingsScreen extends StatelessWidget {
             //
             // 使用者要測 T1／T3（師徒關係），兩者都要求其中一方是教官，
             // 而初審門檻是階級 ≥20 且累積訓練次數 ≥50 —— 測試帳號到不了。
+            // 建置戳記。使用者回報「某功能沒生效」時，第一個要排除的是
+            // 「他在舊版上測」—— 在此之前沒有任何辦法分辨那兩件事，
+            // 而它們的下一步完全相反。
+            const SectionLabel('版本', trailing: '開發者模式'),
+            Panel(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: _Row(
+                label: '建置',
+                value: kBuildStamp.isEmpty ? '（本機執行）' : kBuildStamp,
+                readOnly: true,
+              ),
+            ),
+            const SizedBox(height: S.base),
             const SectionLabel('教官門檻', trailing: '開發者模式'),
             Panel(
               child: Column(

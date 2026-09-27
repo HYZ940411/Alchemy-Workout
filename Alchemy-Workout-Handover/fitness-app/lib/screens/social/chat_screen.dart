@@ -75,12 +75,12 @@ class ConversationsScreen extends StatelessWidget {
               children: [
                 _List(
                   items: s.visibleConversations
-                      .where((c) => c.bucket == MessageCategory.normal)
+                      .where((c) => s.bucketOf(c) == MessageCategory.normal)
                       .toList(),
                 ),
                 _List(
                   items: s.visibleConversations
-                      .where((c) => c.bucket == MessageCategory.stranger)
+                      .where((c) => s.bucketOf(c) == MessageCategory.stranger)
                       .toList(),
                 ),
               ],
@@ -267,14 +267,18 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_asked) return;
     _asked = true;
     // 已經追蹤了就沒事；不是陌生訊息也沒事。
-    if (widget.conversation.bucket != MessageCategory.stranger) return;
+    if (s.bucketOf(widget.conversation) != MessageCategory.stranger) return;
     if (s.following.contains(widget.conversation.peer)) return;
 
     final ok = await showAppDialog(
       context,
       title: '要追蹤 ${widget.conversation.peer} 嗎？',
-      message: '他不在你的關注名單裡，所以這則訊息被分到「陌生訊息」。'
-          '追蹤之後，他的訊息會進一般訊息，你也會在動態牆看到他的貼文。',
+      // **不要承諾「追蹤之後就會進一般訊息」** —— 那是假的。
+      // 規格：一般訊息要的是**互相關注**（或師徒、同隊），
+      // 我單方追蹤不夠。承諾了而它沒發生，使用者只會以為功能壞了。
+      message: '他不在你的關注名單裡，所以這段對話在「陌生訊息」。\n\n'
+          '追蹤之後你會在動態牆看到他的貼文；'
+          '**等他也追蹤你**（或你們成為師徒、隊友），這段對話才會移到一般訊息。',
       confirmLabel: '追蹤',
       cancelLabel: '先不要',
     );

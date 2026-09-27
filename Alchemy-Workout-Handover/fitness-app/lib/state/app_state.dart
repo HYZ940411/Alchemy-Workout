@@ -5592,12 +5592,7 @@ class AppState extends ChangeNotifier {
 
     if (myInstructor?.name == c.peer) _messagedInstructorThisWeek = true;
 
-    final category = classifyMessage(
-      mutualFollow: following.contains(c.peer) && followers.contains(c.peer),
-      mentorBond: myInstructor?.name == c.peer ||
-          apprentices.any((a) => a.name == c.peer),
-      sameTeam: myTeam?.members.any((m) => m.name == c.peer) ?? false,
-    );
+    final category = currentCategoryWith(c.peer);
 
     c.messages.add(ChatMessage(
       true,
@@ -6549,6 +6544,33 @@ class AppState extends ChangeNotifier {
     }
     return null;
   }
+
+  /// **此刻**與某人的關係算一般訊息還是陌生訊息。
+  ///
+  /// 三種關係的定義只有這一份（`classifyMessage`），發送時與分區時共用。
+  /// **「一般訊息」要的是互相關注**，不是我單方追蹤 ——
+  /// 規格：「可直接發送私訊的對象：互相關注者、具師徒關係者、同團隊成員」。
+  MessageCategory currentCategoryWith(String peer) => classifyMessage(
+        mutualFollow: following.contains(peer) && followers.contains(peer),
+        mentorBond: myInstructor?.name == peer ||
+            apprentices.any((a) => a.name == peer),
+        sameTeam: myTeam?.members.any((m) => m.name == peer) ?? false,
+      );
+
+  /// 這段對話在清單裡歸哪一區。
+  ///
+  /// **訊息的分類於發送當下固定，規格明訂不回溯改寫**（〈聊天私訊流程〉）。
+  /// 但「對話歸哪一區」是 Read Model 的事 —— 使用者回報
+  /// 「追蹤後沒有從陌生訊息更新到一般訊息」，而在那之前 `bucket` 讀的是
+  /// **最後一則訊息**的分類，所以關係轉正之後要等對方再傳一則才會移動。
+  ///
+  /// 改成「此刻的關係算一般 **或** 最後一則本來就是一般」——
+  /// **只升不降**：曾經是隊友、後來退隊，那段對話不該被丟回陌生訊息區。
+  MessageCategory bucketOf(Conversation c) =>
+      currentCategoryWith(c.peer) == MessageCategory.normal ||
+              c.bucket == MessageCategory.normal
+          ? MessageCategory.normal
+          : MessageCategory.stranger;
 
   /// 本次調整的意圖與建議，逐來源各一份。
   final Map<AiSource, AdjustIntent> aiIntent = {};

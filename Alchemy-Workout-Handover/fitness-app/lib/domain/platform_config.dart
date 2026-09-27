@@ -731,7 +731,22 @@ class InstructorGate {
     required this.vetoed,
   });
 
-  bool get passed => rankOk && workoutsOk && qualityOk && !vetoed;
+  /// **按得下「申請教官資格」的條件** —— 只看階級與累積訓練次數。
+  ///
+  /// 品質評分**不在這裡**。規格的順序是
+  /// 「使用者已申請教官權限」→ 系統初審 → 系統「分析歷史訓練品質」
+  /// （〈教官申請流程〉，2026-09-26 使用者糾正過一次）——
+  /// 評分發生在申請**之後**，而且屬於那一筆申請
+  /// （請求識別碼 ＝ 使用者 ID ＋ 教官申請 ID）。
+  ///
+  /// 在此之前申請鍵讀的是 [passed]，那包含 `qualityOk` 與 `vetoed`。
+  /// 還沒申請的人 `quality` 是空值 → 分數當 0 → `qualityOk` 為假、
+  /// 一票否決成立 —— **於是門檻達標了也永遠按不下申請鍵**。
+  /// 使用者回報「階級次數有達標，但是無法申請」。
+  bool get canApply => rankOk && workoutsOk;
+
+  /// 完整的初審結果。**申請之後**才判得出來（要有品質評分）。
+  bool get passed => canApply && qualityOk && !vetoed;
 }
 
 InstructorGate evaluateInstructorGate({
