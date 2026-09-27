@@ -138,13 +138,29 @@ async function once(
  * 那是 Google 那側的忙線，不是設定錯。而在此之前 [callGemini] **只對
  * 404 重試** —— 一次 503 就整個放棄，使用者看到的是「被擋」。
  *
- * 429（配額）也放進來：免費層的每分鐘上限撞到時等一下就過。
+ * **429 不在這裡面**，見 [isQuota]。
  * 4xx 的其餘（400 參數錯、401/403 金鑰問題）重試一百次也一樣，不收。
  */
-const TRANSIENT = [429, 500, 502, 503, 504];
+const TRANSIENT = [500, 502, 503, 504];
 
 const isTransient = (msg: string) =>
   TRANSIENT.some((code) => msg.includes(` ${code}:`));
+
+/**
+ * 額度用完 —— **重試只是再燒一次額度**。
+ *
+ * 第一版把 429 當成暫時性失敗，退避 400ms／1200ms 各試一次。
+ * 那個假設只對「每分鐘上限」成立，而免費層還有**每日上限**；
+ * 更重要的是，使用者實測拿到的訊息是
+ * 「You exceeded your current quota, please check your plan and
+ *   billing details」—— 那不是等一秒就會過的東西。
+ *
+ * 處置：**換一個模型試一次**（免費層的額度多半是逐模型計的），
+ * 不成就放棄，並讓錯誤訊息說得出是額度問題 ——
+ * 它與「忙線」對使用者的意義完全不同：忙線等一下再試就好，
+ * 額度用完是今天不必再試了。
+ */
+const isQuota = (msg: string) => msg.includes(" 429:");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -166,6 +182,8 @@ export async function callGemini(
   // 退避：第一次等 400ms，第二次 1200ms。忙線多半是短暫的尖峰，
   // 但使用者在等 —— 不能等太久。
   const backoff = [400, 1200];
+  // 額度用完時只換一次模型 —— 一路換下去會把每個模型的額度都燒掉。
+  let switchedForQuota = false;
   let last: unknown;
 
   for (let attempt = 0; attempt <= backoff.length; attempt++) {
@@ -187,13 +205,22 @@ export async function callGemini(
         continue;
       }
 
-      // 二、暫時性的 —— 等一下再試同一個模型。
+      // 二、額度用完 —— 換一個模型試一次，不退避（等一秒不會變出額度）。
+      if (isQuota(msg) && !switchedForQuota) {
+        switchedForQuota = true;
+        const next = await discoverModel(apiKey).catch(() => model);
+        if (next === model) throw e;
+        model = next;
+        continue;
+      }
+
+      // 三、暫時性的 —— 等一下再試同一個模型。
       if (isTransient(msg) && attempt < backoff.length) {
         await sleep(backoff[attempt]);
         continue;
       }
 
-      // 三、其餘（參數錯、金鑰問題）重試一百次也一樣。
+      // 四、其餘（參數錯、金鑰問題）重試一百次也一樣。
       throw e;
     }
   }

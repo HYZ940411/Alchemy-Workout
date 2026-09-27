@@ -35,6 +35,9 @@ class _FakeSource implements AiSuggestionSource {
   /// 分類這一支要不要擲例外 —— 驗「AI 掛掉時退回端內規則」。
   final bool classifyThrows;
 
+  /// 擲出去的訊息。用來分辨「額度用完」與「忙線」。
+  final String throwMessage;
+
   String? classified;
 
   _FakeSource({
@@ -42,12 +45,13 @@ class _FakeSource implements AiSuggestionSource {
     this.throws = false,
     this.classifyAs,
     this.classifyThrows = false,
+    this.throwMessage = '分類逾時',
   });
 
   @override
   Future<RemoteIntent> classify(String say) async {
     classified = say;
-    if (classifyThrows) throw Exception('分類逾時');
+    if (classifyThrows) throw Exception(throwMessage);
     return RemoteIntent(classifyAs);
   }
 
@@ -360,6 +364,55 @@ void main() {
       s.aiSource = _FakeSource(classifyAs: null);
       await s.aiConfirmDemand(AiSource.beforeTraining, '我想多練上胸');
       expect(s.aiUnavailable, isFalse, reason: '不可以一直沿用上一輪的狀態');
+    });
+
+    // 使用者實測拿到兩種失敗：
+    //   429 "You exceeded your current quota"  —— 額度用完
+    //   503 "This model is currently experiencing high demand" —— 忙線
+    // 它們對使用者的意義完全不同：忙線等一下再試就好，
+    // 額度用完是今天不必再試了。說同一句話，他會一直重試一件不會成功的事。
+    group('額度用完與忙線要講不同的話', () {
+      test('429 → 說「今天的 AI 額度已用完」', () async {
+        final s = await ask(
+            _FakeSource(classifyThrows: true, throwMessage: '429 quota'), '早安');
+        final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+        expect(said, contains('額度已用完'));
+        expect(said, isNot(contains('忙不過來')));
+        expect(s.aiQuotaExhausted, isTrue);
+      });
+
+      test('503 → 說「AI 暫時忙不過來」', () async {
+        final s = await ask(
+            _FakeSource(classifyThrows: true, throwMessage: '503 high demand'),
+            '早安');
+        final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+        expect(said, contains('忙不過來'));
+        expect(said, isNot(contains('額度')));
+        expect(s.aiQuotaExhausted, isFalse);
+      });
+
+      test('上一輪額度用完，這一輪好了 —— 旗標要歸零', () async {
+        final s = AppState()
+          ..aiSource =
+              _FakeSource(classifyThrows: true, throwMessage: '429 quota');
+        s.startWorkout(
+            s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+        s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+        await s.aiConfirmDemand(AiSource.beforeTraining, '早安');
+        expect(s.aiQuotaExhausted, isTrue);
+
+        s.aiSource = _FakeSource(classifyAs: AdjustIntent.trim);
+        await s.aiConfirmDemand(AiSource.beforeTraining, '我要趕時間');
+        expect(s.aiQuotaExhausted, isFalse);
+      });
+
+      test('看得出哪些訊息在講額度', () {
+        expect(AppState.looksLikeQuota('gemini 429: quota exceeded'), isTrue);
+        expect(AppState.looksLikeQuota('You exceeded your current quota'),
+            isTrue);
+        expect(AppState.looksLikeQuota('503 high demand'), isFalse);
+        expect(AppState.looksLikeQuota('404 not found'), isFalse);
+      });
     });
 
     test('直接點四顆方向鍵不問模型 —— 那已經是答案了', () async {

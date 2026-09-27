@@ -6788,6 +6788,21 @@ class AppState extends ChangeNotifier {
   /// 這一輪 AI 判讀有沒有掛掉。決定判不出來時要講哪一句話。
   bool aiUnavailable = false;
 
+  /// 掛掉的原因是不是**額度用完**。
+  ///
+  /// 使用者實測拿到兩種：`429 You exceeded your current quota` 與
+  /// `503 high demand`。**它們對使用者的意義完全不同** ——
+  /// 忙線等一下再試就好，額度用完是今天不必再試了。
+  /// 說同一句「AI 暫時忙不過來」，他會一直重試一件不會成功的事。
+  bool aiQuotaExhausted = false;
+
+  /// 這一段錯誤訊息是不是在講額度。
+  ///
+  /// 字串比對是醜的，但錯誤從 Worker 一路包到這裡本來就只剩字串，
+  /// 而「429」與「quota」兩個線索同時出現時不會認錯。
+  static bool looksLikeQuota(String e) =>
+      e.contains('429') || e.toLowerCase().contains('quota');
+
   /// 正在請 AI 判讀方向。畫面靠它顯示「判讀中」。
   final Map<AiSource, bool> aiClassifying = {};
 
@@ -6799,6 +6814,7 @@ class AppState extends ChangeNotifier {
     // 「你講的不在四個方向裡」與「AI 暫時忙線」是兩件完全不同的事，
     // 而在此之前它們的回話一模一樣。
     aiUnavailable = false;
+    aiQuotaExhausted = false;
 
     // 使用者直接點了那四顆方向鍵 —— 不必問模型。
     var intent = _exactIntent(answer);
@@ -6822,6 +6838,7 @@ class AppState extends ChangeNotifier {
           // **退回端內規則，而且要講出來**（只給開發者模式）。
           intentDecidedBy = '端內規則（AI 失敗：$e）';
           aiUnavailable = true;
+          aiQuotaExhausted = looksLikeQuota('$e');
         } finally {
           aiClassifying[src] = false;
         }
@@ -6851,7 +6868,12 @@ class AppState extends ChangeNotifier {
       _say(
           src,
           AiTurnRole.ai,
-          aiUnavailable
+          aiQuotaExhausted
+              ? '今天的 AI 額度已用完，沒辦法判讀你的需求。'
+                  '直接挑一個方向：'
+                  '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
+                  '本次未扣點。'
+              : aiUnavailable
               ? 'AI 暫時忙不過來，沒辦法判讀你的需求。'
                   '直接挑一個方向：'
                   '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
