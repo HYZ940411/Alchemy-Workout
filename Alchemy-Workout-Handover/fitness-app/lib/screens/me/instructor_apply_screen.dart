@@ -69,23 +69,32 @@ class InstructorApplyScreen extends StatelessWidget {
                 //
                 // 而 0 看起來像「很低的分數」。使用者回報「練了 7 次還是 0」
                 // 時，問題不是沒算，是把「沒有分數」畫成了 0。
+                // **暫估的分數不打勾。**
+                //
+                // AI 評分失敗時會退回端內規則算一份備援值，而初審採用的
+                // 是 AI 那一份 —— 打了勾看起來像已經通過，但階段仍停在
+                // 「初審中」，兩者當著使用者的面互相矛盾（他截圖回報過）。
                 _Condition(
                   label: '訓練品質評分 / 通過門檻',
-                  value: s.qualityScored
-                      ? '${s.qualityScore} / '
-                          '${platformConfig.i('instructorGate', 'qualityPass')}'
-                      : '尚未評分',
-                  ok: g.qualityOk,
+                  value: !s.qualityScored
+                      ? '尚未評分'
+                      : s.qualityIsProvisional
+                          ? '暫估 ${s.qualityScore}（等 AI 評分）'
+                          : '${s.qualityScore} / '
+                              '${platformConfig.i('instructorGate', 'qualityPass')}',
+                  ok: g.qualityOk && !s.qualityIsProvisional,
                 ),
                 const Divider(height: 22, color: AppColors.line),
                 _Condition(
                   // 一票否決獨立於加權平均：該單項低於門檻即駁回。
                   label: '紀錄合理性 / 一票否決門檻',
-                  value: s.qualityScored
-                      ? '${s.sanityScore} / '
-                          '${platformConfig.i('instructorGate', 'veto')}'
-                      : '尚未評分',
-                  ok: !g.vetoed,
+                  value: !s.qualityScored
+                      ? '尚未評分'
+                      : s.qualityIsProvisional
+                          ? '暫估 ${s.sanityScore}（等 AI 評分）'
+                          : '${s.sanityScore} / '
+                              '${platformConfig.i('instructorGate', 'veto')}',
+                  ok: !g.vetoed && !s.qualityIsProvisional,
                 ),
               ],
             ),
@@ -574,8 +583,8 @@ String? _note(AppState s) => switch (s.instructorStage) {
       // 而誠實的前提是它真的發生了。
       InstructorStage.screening => s.qualityScoreError == null
           ? '評分處理中：系統正在分析你的歷史訓練紀錄。'
-          : '評分處理中：AI 評分暫時失敗，系統會於隔日重跑。'
-              '**不會因此駁回你的申請。**',
+          : '評分處理中：AI 評分暫時失敗，系統會於隔日重跑，'
+              '不會因此駁回你的申請。',
       InstructorStage.pendingReview =>
         '簡答題已送出，等管理員人工審核（7 個工作天內完成）。逾時不會自動通過。',
       InstructorStage.rejected => s.instructorRejectStage == null

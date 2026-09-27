@@ -403,6 +403,13 @@ class SettingsScreen extends StatelessWidget {
                       if (context.mounted) showToast(context, r);
                     },
                   ),
+                  // 品質評分（教官初審）走的是**另一條** Worker 路徑
+                  // （`sessions` 分流）。它失敗時申請會停在「初審中」，
+                  // 而在此之前那個原因只存在於 `debugPrint` 裡。
+                  if (s.qualityScoreError case final e?) ...[
+                    const SizedBox(height: S.md),
+                    Text('品質評分上次失敗：$e', style: T.caption()),
+                  ],
                 ],
               ),
             ),
@@ -437,8 +444,8 @@ class SettingsScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '差異不為 0 代表次數曾經多算過。兩個來源，而它們**無法事後'
-                      '區分**：一是 2026-09-26 之前「開場即關閉」也算一次訓練的'
+                      '差異不為 0 代表次數曾經多算過。兩個來源，而它們無法事後'
+                      '區分：一是 2026-09-26 之前「開場即關閉」也算一次訓練的'
                       '舊行為（依現在的規則本來就不該算），二是雲端寫入失敗吃掉的'
                       '真實場次（那是真的練過）。',
                       style: T.caption(),
@@ -788,7 +795,7 @@ Future<void> _fillBirthday(BuildContext context, AppState s) async {
     title: '確認生日',
     // 一次性的東西要說清楚是一次性的，在按下去之前。
     message: '${_ymd(picked)}\n\n'
-        '生日決定年齡係數，**填寫後不可自行修改**（如需更正需聯繫客服）。'
+        '生日決定年齡係數，填寫後不可自行修改（如需更正需聯繫客服）。'
         '確認無誤再送出。',
     confirmLabel: '確認送出',
     cancelLabel: '再看看',

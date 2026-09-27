@@ -4826,6 +4826,17 @@ class AppState extends ChangeNotifier {
         : InstructorStage.rejected;
   }
 
+  /// 這份分數是不是**暫時**的 —— 端內規則算的，還在等 AI。
+  ///
+  /// 使用者截圖回報：四項條件全部打勾（品質 77/60、合理性 90/40），
+  /// 階段卻停在「初審中」。那不是矛盾 —— AI 評分失敗時留在初審中是規格
+  /// 要求的，而畫面上那兩個分數是**端內規則算的備援值**，不是初審會採用
+  /// 的那一份。打勾讓它看起來像已經通過了。
+  ///
+  /// 規格：「初審除階級與累積訓練次數門檻外，另須通過 **AI** 訓練品質評分」。
+  bool get qualityIsProvisional =>
+      quality != null && quality!.source != 'gemini' && qualityScoreError != null;
+
   /// 加權平均。**沒評過是 0** —— 畫面要先看 [qualityScored]，
   /// 把「沒有分數」畫成「尚未評分」而不是 0 分。
   int get qualityScore => quality?.weighted ?? 0;
