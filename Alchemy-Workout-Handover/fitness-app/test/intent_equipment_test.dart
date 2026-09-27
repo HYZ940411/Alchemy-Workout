@@ -64,4 +64,61 @@ void main() {
       expect(AppState.parseIntent('早安'), isNull);
     });
   });
+
+  // 2026-09-27 使用者：「希望能先判斷是否符合 4 個調整方向其中一項，
+  // 不要什麼都擋」。擴充說法，但原則沒變：**只收指向唯一方向的說法**。
+  group('常見說法認得出方向', () {
+    void reads(String said, AdjustIntent want) =>
+        expect(AppState.parseIntent(said), want, reason: said);
+
+    test('想輕一點的各種講法', () {
+      for (final said in [
+        '今天太重了',
+        '有點吃力',
+        '肩膀很痠',
+        '今天狀況不好',
+        '想保守一點',
+        '最後一組撐不住',
+      ]) {
+        reads(said, AdjustIntent.easier);
+      }
+    });
+
+    test('想重一點的各種講法', () {
+      for (final said in [
+        '這樣太輕',
+        '想重一點',
+        '今天狀態很好',
+        '想挑戰看看',
+      ]) {
+        reads(said, AdjustIntent.harder);
+      }
+    });
+
+    test('時間不夠 → 減少組數', () {
+      // 最常見卻認不出來的那一類：使用者講的是「我只有 30 分鐘」，
+      // 而不是「減少組數」。
+      for (final said in [
+        '今天時間不夠',
+        '有點趕時間',
+        '想縮短一點',
+        '沒時間練完',
+      ]) {
+        reads(said, AdjustIntent.trim);
+      }
+    });
+
+    test('指向兩個方向的說法一律不收 —— 寧可再問一次', () {
+      for (final said in ['今天這個太難', '想少做一點重量', '早安']) {
+        expect(AppState.parseIntent(said), isNull, reason: said);
+      }
+    });
+
+    // 使用者裁決 B：不新增第五個方向。所以「重點練某個部位」仍然擋下，
+    // 但訊息改口為「目前只能往這 4 個方向調」（不再說「我看不出」）。
+    test('練某個部位不在四個方向裡，仍然認不出來', () {
+      expect(AppState.parseIntent('我想多練上胸'), isNull);
+      expect(AppState.parseIntent('我希望今天重點練上斜'), isNull);
+    });
+  });
 }

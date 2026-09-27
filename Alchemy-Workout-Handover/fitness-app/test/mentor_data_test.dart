@@ -8,6 +8,7 @@
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fitness_app/domain/clock.dart';
 
 import 'package:fitness_app/data/mentor_data.dart';
 import 'package:fitness_app/data/mentor_data_firestore.dart';
@@ -248,8 +249,11 @@ void main() {
           fromName: '學徒',
           fromRank: 20,
           fromMentor: fromMentor,
-          at: DateTime(2026, 9, 1),
-          expiresAt: DateTime(2026, 9, 8),
+          // **相對於現在算，不寫死日期。** 寫死的話，到期日一過
+          // 這條測試就會以完全錯誤的理由變紅 —— `punishment_cloud_test`
+          // 在 2026-09-27 真的發生過一次。
+          at: appNow().subtract(const Duration(days: 1)),
+          expiresAt: appNow().add(const Duration(days: 6)),
         );
 
     test('收件者看得到申請', () async {

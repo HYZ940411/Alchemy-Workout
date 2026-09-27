@@ -245,8 +245,42 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) AppScope.of(context).markRead(widget.conversation);
+      if (!mounted) return;
+      final s = AppScope.of(context);
+      s.markRead(widget.conversation);
+      _offerFollow(s);
     });
+  }
+
+  /// 陌生訊息：問一次要不要追蹤對方。
+  ///
+  /// 使用者要求（2026-09-27）：「如果 A 沒追蹤 B，B 私訊 A 會被丟到
+  /// 陌生訊息，如果 A 看訊息當下還沒追蹤 B，會跳出是否要追蹤對方。」
+  ///
+  /// **同一個對象在同一次開啟期間只問一次**（使用者裁決）。
+  /// 每次開都問的話，同一個人傳十則訊息就會被問十次 —— 那是騷擾。
+  /// 「一次開啟期間」＝這個 State 的生命週期：退出去再進來會再問一次，
+  /// 那是他自己又點進來的，不算打擾。
+  bool _asked = false;
+
+  Future<void> _offerFollow(AppState s) async {
+    if (_asked) return;
+    _asked = true;
+    // 已經追蹤了就沒事；不是陌生訊息也沒事。
+    if (widget.conversation.bucket != MessageCategory.stranger) return;
+    if (s.following.contains(widget.conversation.peer)) return;
+
+    final ok = await showAppDialog(
+      context,
+      title: '要追蹤 ${widget.conversation.peer} 嗎？',
+      message: '他不在你的關注名單裡，所以這則訊息被分到「陌生訊息」。'
+          '追蹤之後，他的訊息會進一般訊息，你也會在動態牆看到他的貼文。',
+      confirmLabel: '追蹤',
+      cancelLabel: '先不要',
+    );
+    if (ok != true || !mounted) return;
+    s.toggleFollow(widget.conversation.peer);
+    if (mounted) showToast(context, '已追蹤 ${widget.conversation.peer}');
   }
 
   @override

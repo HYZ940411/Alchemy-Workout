@@ -6,6 +6,7 @@
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fitness_app/domain/clock.dart';
 
 import 'package:fitness_app/data/team_data.dart';
 import 'package:fitness_app/data/team_data_firestore.dart';
@@ -174,7 +175,8 @@ void main() {
           name: uid == 'b' ? '小美' : '路人',
           rank: 20,
           isInvite: isInvite,
-          expiresAt: DateTime(2026, 9, 20),
+          // 相對於現在算，理由同 `mentor_data_test`。
+          expiresAt: appNow().add(const Duration(days: 7)),
         );
 
     test('被邀請的人看得到邀請', () async {

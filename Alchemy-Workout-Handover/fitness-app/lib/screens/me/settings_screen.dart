@@ -320,6 +320,49 @@ class SettingsScreen extends StatelessWidget {
             // 現在兩者讀同一個旗標（見 `finishWorkout` 的 `recorded`），
             // 不該再漂 —— 但雲端寫入失敗一樣會讓歷史少掉幾筆，
             // 而那條路已經出事過一次。並排一次，下次一眼就看得出來。
+            // 快轉到教官門檻。**只給開發者模式**，而且可還原。
+            //
+            // 使用者要測 T1／T3（師徒關係），兩者都要求其中一方是教官，
+            // 而初審門檻是階級 ≥20 且累積訓練次數 ≥50 —— 測試帳號到不了。
+            const SectionLabel('教官門檻', trailing: '開發者模式'),
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Builder(builder: (_) {
+                    final g = s.instructorGate;
+                    return Text(
+                      '目前：階級 ${s.rank} / ${g.requiredRank}　·　'
+                      '訓練 ${s.totalWorkouts} / ${g.requiredWorkouts} 次\n'
+                      '只會把這兩個數字推到門檻上，不會讓你直接變成教官 —— '
+                      '申請、初審、測驗、人工審核仍要照走。',
+                      style: T.caption(),
+                    );
+                  }),
+                  const SizedBox(height: S.md),
+                  AppButton(
+                    label: '快轉到教官門檻',
+                    kind: BtnKind.secondary,
+                    onPressed: () {
+                      s.fastForwardToInstructorGate();
+                      showToast(context, '已推到門檻，可用下面那顆還原');
+                    },
+                  ),
+                  if (s.canUndoInstructorFastForward) ...[
+                    const SizedBox(height: S.sm),
+                    AppButton(
+                      label: '還原成原本的數字',
+                      kind: BtnKind.secondary,
+                      onPressed: () {
+                        s.undoInstructorFastForward();
+                        showToast(context, '已還原');
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: S.base),
             const SectionLabel('訓練次數對帳', trailing: '開發者模式'),
             Panel(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

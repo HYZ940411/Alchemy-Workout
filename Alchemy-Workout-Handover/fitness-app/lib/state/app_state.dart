@@ -863,6 +863,44 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 快轉到教官初審門檻（**開發者模式專用**）。
+  ///
+  /// 使用者要測 T1／T3（師徒關係），而兩者都要求其中一方是教官 ——
+  /// 教官初審門檻是階級 ≥20 且累積訓練次數 ≥50，測試帳號到不了。
+  ///
+  /// **只動階級與累積訓練次數兩個數字，不碰教官身分本身。**
+  /// 使用者的疑慮是「後續恢復非教官時會出 Bug」——
+  /// 這個做法沒有那個狀態要恢復：教官身分仍然要走完整的
+  /// 申請 → 初審 → 測驗 → 人工審核，這裡只是讓他**按得下申請鍵**。
+  ///
+  /// 階級是由 [totalExp] 推導的（`rankForExp`），不是獨立欄位 ——
+  /// 所以推的是經驗值，推到門檻階級的下限即可。
+  ///
+  /// 快轉前的兩個數字。**存在這裡而不是畫面上** ——
+  /// 還原鍵要撐得過換頁，而設定頁是 StatelessWidget。
+  (int exp, int workouts)? _beforeFastForward;
+
+  bool get canUndoInstructorFastForward => _beforeFastForward != null;
+
+  void fastForwardToInstructorGate() {
+    final gate = instructorGate;
+    // 連按兩次不該把「原本的數字」覆蓋成已經快轉過的那一組。
+    _beforeFastForward ??= (totalExp, totalWorkouts);
+    totalExp = math.max(totalExp, expThresholdForRank(gate.requiredRank));
+    totalWorkouts = math.max(totalWorkouts, gate.requiredWorkouts);
+    notifyListeners();
+  }
+
+  /// 還原成快轉前的兩個數字。沒快轉過就什麼都不做。
+  void undoInstructorFastForward() {
+    final before = _beforeFastForward;
+    if (before == null) return;
+    totalExp = before.$1;
+    totalWorkouts = before.$2;
+    _beforeFastForward = null;
+    notifyListeners();
+  }
+
   /// 把累積訓練次數與累積訓練天數校正成訓練歷史算得出來的值。
   ///
   /// **這會讓數字變小，而規格明訂「累積訓練次數為單調遞增，任何情況下
@@ -6274,8 +6312,20 @@ class AppState extends ChangeNotifier {
           sentAt: r.expiresAt.subtract(kInboundTtl),
         ));
       } else if (t != null && r.teamId == t.id) {
-        if (t.applications.any((a) => a.name == r.name)) continue;
-        if (t.members.any((m) => m.name == r.name)) continue;
+        // **以 uid 去重，不比暱稱。**
+        //
+        // 兩道閘門都會**靜默丟掉**那一筆申請，而「雲端讀到了卻不顯示」
+        // 與「根本沒讀到」在畫面上長得一模一樣 —— T2 那條查了三輪
+        // 就是這個形狀。用暱稱比的話：撞名的人申請會被當成重複而消失，
+        // 改過暱稱的人退隊再申請也會對不上。
+        //
+        // 沒有 uid 的（示範資料）退回比暱稱。
+        bool same(String? otherUid, String otherName) =>
+            otherUid != null && r.uid.isNotEmpty
+                ? otherUid == r.uid
+                : otherName == r.name;
+        if (t.applications.any((a) => same(a.uid, a.name))) continue;
+        if (t.members.any((m) => same(m.uid, m.name))) continue;
         // **uid 一定要帶著。** 核准時要用它寫回雲端，靠名稱反查會失敗。
         t.applications
             .add(PendingRequest(r.name, r.rank, r.expiresAt, uid: r.uid));
@@ -6464,12 +6514,35 @@ class AppState extends ChangeNotifier {
         a.contains('沒有器材') || a.contains('器材不')) {
       return AdjustIntent.swap;
     }
-    if (a.contains('升') || a.contains('加重') || a.contains('加強')) {
+    // **2026-09-27 擴充了說法**（使用者：「希望能先判斷是否符合 4 個調整
+    // 方向其中一項，不要什麼都擋」）。
+    //
+    // 擴充的原則沒變：**只收指向唯一方向的說法**。
+    // 每加一個詞都要問「有沒有另一個方向的人也會這樣講」——
+    // 有的話就不收，寧可再問一次。猜錯方向讓人照著練才是問題。
+    //
+    // 順序有意義：升在降之前（「不要太輕」含『輕』但講的是升），
+    // 組數最後（「組」最容易被其他句子夾帶）。
+    if (a.contains('升') || a.contains('加重') || a.contains('加強') ||
+        // 「太輕」「不夠重」「重一點」—— 都只有升這一個解釋。
+        a.contains('太輕') || a.contains('重一點') || a.contains('不夠重') ||
+        a.contains('挑戰') || a.contains('加碼') || a.contains('更強') ||
+        a.contains('狀況很好') || a.contains('狀態很好')) {
       return AdjustIntent.harder;
     }
     if (a.contains('降') || a.contains('輕') || a.contains('簡單') ||
-        a.contains('緩') || a.contains('累')) {
+        a.contains('緩') || a.contains('累') ||
+        // 「太重」「吃力」「痠」「狀況不好」—— 沒有人用這些字要求加重。
+        a.contains('太重') || a.contains('吃力') || a.contains('痠') ||
+        a.contains('酸') || a.contains('疲') || a.contains('狀況不好') ||
+        a.contains('狀態不好') || a.contains('保守') || a.contains('撐不住')) {
       return AdjustIntent.easier;
+    }
+    // 時間不夠 → 減少組數。這是最常見卻認不出來的那一類：
+    // 使用者講的是「我只有 30 分鐘」，而不是「減少組數」。
+    if (a.contains('時間不夠') || a.contains('趕時間') || a.contains('沒時間') ||
+        a.contains('縮短') || a.contains('快點做完') || a.contains('提早')) {
+      return AdjustIntent.trim;
     }
     if (a.contains('組')) {
       return AdjustIntent.trim;
