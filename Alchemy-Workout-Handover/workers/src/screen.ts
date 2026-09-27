@@ -16,7 +16,7 @@
  * `scoreTrainingQuality()`。規則只有一份，在 Dart 裡，有測試釘著。
  */
 
-import {callGemini} from "./gemini";
+import {callGemini} from "./gemini.ts";
 
 
 /** 一場訓練的摘要。與 Dart 的 `SessionSummary` 對應。 */

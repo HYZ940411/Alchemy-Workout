@@ -18,7 +18,7 @@
  * 不是為了「無論如何給個答案」。
  */
 
-import {callGemini} from "./gemini";
+import {callGemini} from "./gemini.ts";
 
 export type Intent = "easier" | "harder" | "trim" | "swap";
 

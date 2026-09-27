@@ -11,7 +11,7 @@
  * **使用者永遠拿得到一份可用的建議**，差別只在它來自模型還是規則。
  */
 
-import {callGemini} from "./gemini";
+import {callGemini} from "./gemini.ts";
 
 export type Intent = "easier" | "harder" | "trim" | "swap";
 
@@ -100,6 +100,22 @@ export function ruleFallback(
 }
 
 /**
+ * 把 [clamp] 丟掉的那幾項補成「維持原樣」。
+ *
+ * 缺席與「維持原樣」對 `applySuggestion()` 是同一件事（它不動缺席的
+ * 索引），但對**畫面**不是：缺席的那個動作整列消失，使用者看不到它，
+ * 也不會知道模型對它的建議被擋下來了。
+ */
+export function fill(
+  exercises: PlanExercise[],
+  changes: Change[],
+): Change[] {
+  const byIndex = new Map(changes.map((c) => [c.index, c]));
+  return exercises.map((e, index) =>
+    byIndex.get(index) ?? {index, name: e.name, after: e.sets});
+}
+
+/**
  * 逐項驗證模型的輸出。
  *
  * 界線不是品味問題 —— 模型算錯一個數字，使用者照著做會受傷。
@@ -107,10 +123,21 @@ export function ruleFallback(
 export function clamp(
   exercises: PlanExercise[],
   raw: unknown,
-  candidates?: Record<string, string[]>,
+  ctx?: Pick<AdjustContext, "candidates" | "bodyweightKg">,
 ): Change[] {
   if (!Array.isArray(raw)) return [];
   const out: Change[] = [];
+  const candidates = ctx?.candidates;
+
+  // **換了動作之後，原本的重量不是有意義的基準。**
+  // prompt 自己就要求「依新動作給出合適的重量 —— 換了動作，原本的
+  // 重量多半不適用」，那和 ±50% 的帶寬互相矛盾：槓鈴臥推 60 公斤換成
+  // 伏地挺身，新重量是 0，會被當成偏離 100% 而**整筆丟掉** ——
+  // 而「我沒有槓鈴」正是最會產生徒手替代動作的那句話。
+  //
+  // 所以替換過的那一筆改用絕對上界。體重三倍已經是世界紀錄等級的
+  // 深蹲，超過那個數字必然是模型算錯，不是使用者真的練得起來。
+  const ceiling = ctx?.bodyweightKg ? ctx.bodyweightKg * 3 : 300;
 
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue;
@@ -123,6 +150,18 @@ export function clamp(
     if (!Array.isArray(c.after) || c.after.length === 0) continue;
     if (c.after.length > src.sets.length + 2) continue;
 
+    // 替換後的動作**只能是候選清單裡的那幾個**。模型回別的一律丟棄
+    // 整筆 —— 它可能憑空發明一個不存在的動作，使用者照著做不出來。
+    //
+    // **這一步要在驗重量之前**：重量該用哪一組界線，取決於這一筆
+    // 到底算不算一次合法的替換。
+    let swapTo: string | undefined;
+    if (typeof c.replacement === "string" && c.replacement) {
+      const allowed = candidates?.[src.name] ?? [];
+      if (!allowed.includes(c.replacement)) continue;
+      swapTo = c.replacement;
+    }
+
     const after: PlannedSet[] = [];
     let ok = true;
     for (let i = 0; i < c.after.length; i++) {
@@ -132,10 +171,13 @@ export function clamp(
       const r = typeof s?.reps === "number" ? Math.round(s.reps) : NaN;
       if (!Number.isFinite(w) || w < 0) { ok = false; break; }
       if (!Number.isFinite(r) || r < 1 || r > 50) { ok = false; break; }
-      // 自體重動作維持 0；有重量的動作不得偏離原值 ±50%。
-      const bad = ref.weight === 0
-        ? w !== 0
-        : (w < ref.weight * 0.5 || w > ref.weight * 1.5);
+      // 換了動作：只有絕對上界（見上方 [ceiling]）。
+      // 沒換動作：自體重動作維持 0，有重量的不得偏離原值 ±50%。
+      const bad = swapTo
+        ? w > ceiling
+        : ref.weight === 0
+          ? w !== 0
+          : (w < ref.weight * 0.5 || w > ref.weight * 1.5);
       if (bad) { ok = false; break; }
       after.push({weight: w === 0 ? 0 : round2p5(w), reps: r});
     }
@@ -143,15 +185,6 @@ export function clamp(
       // 理由是純文字，**不驗數值**，但要限長 —— 模型話多不是使用者的問題，
       // 但那一行要塞得進畫面。
       const r = typeof c.reason === "string" ? c.reason.trim() : "";
-
-      // 替換後的動作**只能是候選清單裡的那幾個**。模型回別的一律丟棄
-      // 整筆 —— 它可能憑空發明一個不存在的動作，使用者照著做不出來。
-      let swapTo: string | undefined;
-      if (typeof c.replacement === "string" && c.replacement) {
-        const allowed = candidates?.[src.name] ?? [];
-        if (!allowed.includes(c.replacement)) continue;
-        swapTo = c.replacement;
-      }
 
       out.push({
         index,
@@ -258,5 +291,5 @@ export async function askGemini(
     apiKey,
     {temperature: 0.2, timeoutMs: 20000},
   );
-  return clamp(exercises, JSON.parse(text), ctx?.candidates);
+  return clamp(exercises, JSON.parse(text), ctx);
 }

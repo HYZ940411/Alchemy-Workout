@@ -12,13 +12,14 @@
  * 代價是 callable function 免費附送的身分驗證要自己做（見 `auth.ts`）。
  */
 
-import {verifyIdToken} from "./auth";
+import {verifyIdToken} from "./auth.ts";
 import {
+  fill,
   askGemini, isIntent, ruleFallback,
   type AdjustContext, type PlanExercise,
-} from "./adjust";
-import {askQuality, isSessions} from "./screen";
-import {askIntent, isSay} from "./classify";
+} from "./adjust.ts";
+import {askQuality, isSessions} from "./screen.ts";
+import {askIntent, isSay} from "./classify.ts";
 
 interface Env {
   GEMINI_API_KEY: string;
@@ -145,7 +146,18 @@ export default {
         await askGemini(exercises, intent, env.GEMINI_API_KEY, note, ctx);
       if (fromModel.length > 0) {
         source = "gemini";
-        changes = fromModel;
+        // **被丟掉的那幾項要補回來，而且要出聲。**
+        //
+        // `clamp()` 丟掉一筆，那個動作就整個不會出現在畫面的表格裡：
+        // 使用者說「我沒有槓鈴」，四個動作的課表回來只剩三列，而那個
+        // 槓鈴動作一聲不響地維持原樣 —— 他既看不到它，也不知道有東西
+        // 被丟了。補成「維持原樣」才是實話：`applySuggestion()` 對
+        // 缺席的索引本來就是不動它。
+        changes = fill(exercises, fromModel);
+        const dropped = exercises.length - fromModel.length;
+        if (dropped > 0) {
+          error = `模型有 ${dropped} 項沒有通過驗證，那幾項維持原設定`;
+        }
       } else {
         // 模型回了東西但整份都沒通過驗證 —— 不讓使用者空手而回，
         // 但這件事要講出來，不然看起來跟「模型正常」一模一樣。

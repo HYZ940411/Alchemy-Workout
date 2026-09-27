@@ -4,12 +4,15 @@
     "lib": ["es2022"],
     "module": "es2022",
     "moduleResolution": "bundler",
-    "types": ["@cloudflare/workers-types"],
+    // 內部 import 寫明 `.ts` —— Node 的 ESM 解析不補副檔名，
+    // 而測試是用 `node --test` 直接跑原始碼（見 test/）。esbuild 不在意。
+    "allowImportingTsExtensions": true,
+    "types": ["@cloudflare/workers-types", "node"],
     "strict": true,
     "noUnusedLocals": true,
     "noImplicitReturns": true,
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }
