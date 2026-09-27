@@ -6694,6 +6694,42 @@ class AppState extends ChangeNotifier {
         suitableGoals: p.suitableGoals,
       );
 
+  /// 直接打一次意圖分類，把結果或錯誤原樣回傳。**開發者模式的診斷鍵。**
+  ///
+  /// 在此之前要診斷 AI 通不通，得先開一場訓練、進調整畫面、打一句話，
+  /// 然後回到設定頁看一個只在判定過之後才出現的欄位 ——
+  /// 中間任何一步走岔，看到的都是「沒找到在哪看」。
+  ///
+  /// 這顆按鈕把那一串縮成一次點擊。
+  Future<String> probeAiClassify([String say = '我等一下要趕去接小孩']) async {
+    final ai = aiSource;
+    if (ai == null) return 'aiSource 沒有接上（本機或測試環境）';
+    final t = DateTime.now();
+    try {
+      final got = await ai.classify(say);
+      final ms = DateTime.now().difference(t).inMilliseconds;
+      return got.intent == null
+          ? 'AI 回「判不出來」（${ms}ms）'
+          : 'AI → ${adjustIntentNames[got.intent!]}（${ms}ms）';
+    } catch (e) {
+      final ms = DateTime.now().difference(t).inMilliseconds;
+      return '失敗（${ms}ms）：$e';
+    }
+  }
+
+  /// 最近一次診斷的結果。開發者模式顯示。
+  String? aiProbeResult;
+
+  /// 跑一次診斷並記下結果。
+  Future<String> runAiProbe() async {
+    aiProbeResult = '測試中…';
+    notifyListeners();
+    final r = await probeAiClassify();
+    aiProbeResult = r;
+    notifyListeners();
+    return r;
+  }
+
   /// 上一次意圖是誰判的。**開發者模式看得到。**
   ///
   /// 「AI 判的」與「AI 掛了退回關鍵字比對」在畫面上長得一模一樣 ——

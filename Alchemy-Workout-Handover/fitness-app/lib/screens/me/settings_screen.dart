@@ -377,17 +377,36 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: S.base),
-            // 上一次的意圖是誰判的。「AI 判的」與「AI 掛了退回關鍵字比對」
-            // 在畫面上長得一模一樣 —— 而靜默退回在這個專案咬過五次。
-            if (s.intentDecidedBy case final by?) ...[
-              const SectionLabel('AI 意圖分類', trailing: '開發者模式'),
-              Panel(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: _Row(label: '上次由誰判定', value: by, readOnly: true),
+            // AI 意圖分類的診斷。
+            //
+            // **這一區原本只在「判定過之後」才出現** —— 使用者回報
+            // 「沒找到在哪看」。要看到它，得先開一場訓練、進調整畫面、
+            // 打一句話、再回到設定頁；中間任何一步走岔就什麼都沒有。
+            // 改成一律顯示，並加一顆直接打一次的按鈕。
+            const SectionLabel('AI 意圖分類', trailing: '開發者模式'),
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('上次由誰判定：${s.intentDecidedBy ?? '尚未判定過'}',
+                      style: T.caption()),
+                  if (s.aiProbeResult case final r?) ...[
+                    const SizedBox(height: S.sm),
+                    Text(r, style: T.caption(color: C.textPrimary)),
+                  ],
+                  const SizedBox(height: S.md),
+                  AppButton(
+                    label: '直接測一次 AI 連線',
+                    kind: BtnKind.secondary,
+                    onPressed: () async {
+                      final r = await s.runAiProbe();
+                      if (context.mounted) showToast(context, r);
+                    },
+                  ),
+                ],
               ),
-              const SizedBox(height: S.base),
-            ],
+            ),
+            const SizedBox(height: S.base),
             const SectionLabel('訓練次數對帳', trailing: '開發者模式'),
             Panel(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
