@@ -19,28 +19,7 @@ import 'package:http/http.dart' as http;
 import '../domain/ai_adjust.dart';
 import '../domain/models.dart';
 import 'ai_suggestion.dart';
-
-/// 把非 200 的回應轉成**說得出原因**的一句話。
-///
-/// **原本只取狀態碼**（`'AI 服務回應 502'`）—— 而 Worker 把真正的原因
-/// 寫在回應內容裡（`{"error":"分類失敗：gemini … 429: 配額用盡"}`）。
-/// 於是我建了一個開發者模式面板要顯示錯誤，錯誤卻在這一層就被丟掉了：
-/// 面板永遠只寫得出「AI 服務回應 502」，而 502 可能是模型退役、
-/// 金鑰沒權限、或配額用盡 —— 三者的處置完全不同。
-String _why(http.Response res) {
-  final body = utf8.decode(res.bodyBytes, allowMalformed: true);
-  String detail = body;
-  try {
-    final j = jsonDecode(body);
-    if (j is Map && j['error'] is String) detail = j['error'] as String;
-  } catch (_) {
-    // 不是 JSON 就用原文。
-  }
-  detail = detail.replaceAll(RegExp(r'\s+'), ' ').trim();
-  if (detail.length > 300) detail = '${detail.substring(0, 300)}…';
-  return 'AI 服務回應 ${res.statusCode}'
-      '${detail.isEmpty ? '' : '：$detail'}';
-}
+import 'http_error.dart';
 
 class HttpAiSuggestionSource implements AiSuggestionSource {
   /// Worker 的網址，形如 `https://alchemy-workout-ai.xxx.workers.dev`。
@@ -85,7 +64,8 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
         .timeout(const Duration(seconds: 20));
 
     if (res.statusCode != 200) {
-      throw http.ClientException(_why(res), endpoint);
+      throw http.ClientException(
+          httpFailureReason('AI 服務回應', res), endpoint);
     }
     final data =
         (jsonDecode(utf8.decode(res.bodyBytes)) as Map).cast<String, dynamic>();
@@ -130,7 +110,8 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
         .timeout(const Duration(seconds: 25));
 
     if (res.statusCode != 200) {
-      throw http.ClientException(_why(res), endpoint);
+      throw http.ClientException(
+          httpFailureReason('AI 服務回應', res), endpoint);
     }
     final data =
         (jsonDecode(utf8.decode(res.bodyBytes)) as Map).cast<String, dynamic>();

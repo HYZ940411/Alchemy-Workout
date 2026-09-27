@@ -4,6 +4,7 @@
 /// 不同端點（`/screen`）。金鑰在 Cloudflare 的 secret 裡，前端看不到。
 library;
 
+import 'http_error.dart';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -49,7 +50,11 @@ class HttpQualityScoreSource implements QualityScoreSource {
         .timeout(const Duration(seconds: 30));
 
     if (res.statusCode != 200) {
-      throw http.ClientException('評分服務回應 ${res.statusCode}', endpoint);
+      // **把回應內容一起帶出來。** 只取狀態碼的話，開發者模式看到的是
+      // 「評分服務回應 502」—— 而 502 可能是模型忙線、配額用盡、或金鑰
+      // 沒權限，三者的處置完全不同。使用者截圖回報過一次。
+      throw http.ClientException(
+          httpFailureReason('評分服務回應', res), endpoint);
     }
 
     final data =
