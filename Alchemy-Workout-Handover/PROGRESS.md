@@ -50,7 +50,7 @@ Command、Event、Aggregate、不變條件與已定案的決策。程式碼與�
 
 ```bash
 flutter analyze                       # 應該完全乾淨
-flutter test --timeout 90s            # 應為 2,164 passed
+flutter test --timeout 90s            # 應為 2,168 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                       # 應為 17 passed（需要 Chrome）
 ./tools/build_web.sh                  # Web 建置，見第 6 節第 8 條
@@ -1280,6 +1280,50 @@ firebase deploy --only hosting
    部位篩選鍵加了 `ValueKey('part-<名稱>')`。鍵面文字（例「腿 190」）
    在動作名稱裡也找得到（「俯臥屈腿 · 啞鈴」），用文字定位一次命中十幾個
    —— 第一版測試就是這樣紅的。
+
+0H. **2026-09-27 P62 C「一直轉圈不停」—— 非同步化漏掉了畫面那一層**
+
+   ### 根因
+
+   `aiConfirmDemand` 自本日起是非同步的（先問 AI 判方向），
+   而送出鍵**沒有等它**：
+
+   ```dart
+   state.aiConfirmDemand(source, text);   // ← 沒有 await
+   ctrl.clear();
+   onSent();                              // ← 立刻就跑了
+   ```
+
+   而 `onSent` 裡面是：
+
+   ```dart
+   if (s.aiStage[src] == AiStage.analyzing) _startAnalyzing(s);
+   ```
+
+   它執行的那一刻 stage 還是 `clarifying`（await 還沒回來），
+   於是這個條件永遠不成立。**方向判出來了、stage 也變成 `analyzing` 了，
+   卻沒有任何人去產生建議** —— 畫面停在「分析中…」轉圈，永遠不會結束。
+
+   兩個送出入口（四顆方向鍵、自由輸入）都改成 `await`。
+
+   ### 為什麼一條測試都沒紅
+
+   **既有的 AI 測試全部直接呼叫 `AppState` 的方法。**
+   那一層是對的 —— 缺陷只存在於「畫面怎麼串這些方法」這一層，
+   而那一層沒有任何測試。
+
+   已補 `test/ai_flow_end_to_end_test.dart`：從畫面打字、按送出，
+   一路驗到「看得到建議、而且不是停在轉圈」。
+   mutation 驗證（把 `await` 拿掉）→ 6 條紅。
+
+   ### 這一輪連三次的共同形狀
+
+   把 `aiConfirmDemand` 改成非同步，我改了它自己、改了 26 個測試呼叫點，
+   **就是沒有改呼叫它的那個畫面**。
+   而畫面那一層剛好也是唯一沒有測試覆蓋的一層。
+
+   0F 是「我寫了第三支 Gemini 呼叫器」、0G 是「我的診斷面板印不出原因」、
+   0H 是「我改了函式沒改呼叫端」—— 三次都是**改了一半**。
 
 0G. **2026-09-27 我的診斷本身是壞的 —— 所以前兩輪都在沒有資訊的情況下猜**
 

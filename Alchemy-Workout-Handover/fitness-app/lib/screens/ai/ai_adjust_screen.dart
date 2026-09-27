@@ -421,8 +421,12 @@ class _Composer extends StatelessWidget {
                 children: [
                   for (final i in AdjustIntent.values)
                     OutlinedButton(
-                      onPressed: () {
-                        state.aiConfirmDemand(source, adjustIntentNames[i]!);
+                      // **要等它。** `aiConfirmDemand` 自 2026-09-27 起是
+                      // 非同步的（先問 AI 判方向）—— 不等的話 `onSent()`
+                      // 跑的時候 stage 還是 clarifying，見下面那一處的說明。
+                      onPressed: () async {
+                        await state.aiConfirmDemand(
+                            source, adjustIntentNames[i]!);
                         onSent();
                       },
                       child: Text(adjustIntentNames[i]!, style: T.caption()),
@@ -463,15 +467,25 @@ class _Composer extends StatelessWidget {
                   width: Sz.tapTarget,
                   height: Sz.tapTarget,
                   child: IconButton(
-                    onPressed: () {
+                    // **要等 `aiConfirmDemand` 完成再 `onSent()`。**
+                    //
+                    // 它自 2026-09-27 起是非同步的（先問 AI 判方向）。
+                    // 不等的話，`onSent()` 執行的那一刻 stage 還是
+                    // `clarifying` —— 而它裡面的
+                    // `if (stage == analyzing) _startAnalyzing()`
+                    // 因此永遠不成立：方向判出來了、stage 也變成
+                    // `analyzing` 了，卻**沒有任何人去產生建議**。
+                    // 畫面就停在「分析中…」轉圈，永遠不會結束。
+                    // 使用者回報 P62 C「一直轉圈不停」。
+                    onPressed: () async {
                       final text = ctrl.text.trim();
                       if (text.isEmpty) return;
+                      ctrl.clear();
                       if (stage == AiStage.idle) {
                         state.aiRequest(source, text);
                       } else {
-                        state.aiConfirmDemand(source, text);
+                        await state.aiConfirmDemand(source, text);
                       }
-                      ctrl.clear();
                       onSent();
                     },
                     icon: const Icon(Icons.send_rounded, color: C.actionPrimary),
