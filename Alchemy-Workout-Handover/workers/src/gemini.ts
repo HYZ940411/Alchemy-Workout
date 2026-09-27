@@ -91,6 +91,44 @@ export async function discoverModel(apiKey: string): Promise<string> {
   return pick;
 }
 
+/**
+ * 把 429 回應裡**真正有用的那兩個欄位挑到最前面**。
+ *
+ * Gemini 的 429 長這樣：
+ * ```
+ * { "error": { "code": 429, "message": "You exceeded your current quota…",
+ *   "details": [
+ *     { "@type": "…QuotaFailure", "violations": [
+ *         { "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier" } ] },
+ *     { "@type": "…RetryInfo", "retryDelay": "27s" } ] } }
+ * ```
+ *
+ * **`quotaId` 是「每分鐘還是每日」的唯一線索**，而它排在那段很長的
+ * message 後面 —— 呼叫端把訊息截在 300 字，正好把它切掉。
+ * 使用者問「到底是不是額度用完了」，而我們答不出是哪一種。
+ *
+ * 挑到最前面，截斷就切不到它。
+ */
+function quotaHint(body: string): string {
+  if (!body.includes("429")) return "";
+  try {
+    const j = JSON.parse(body) as {
+      error?: { details?: Array<Record<string, unknown>> };
+    };
+    const bits: string[] = [];
+    for (const d of j.error?.details ?? []) {
+      const vs = d.violations as Array<{ quotaId?: string }> | undefined;
+      for (const v of vs ?? []) {
+        if (v.quotaId) bits.push(v.quotaId);
+      }
+      if (typeof d.retryDelay === "string") bits.push(`retry ${d.retryDelay}`);
+    }
+    return bits.length > 0 ? `[${bits.join(" / ")}] ` : "";
+  } catch {
+    return "";
+  }
+}
+
 async function once(
   model: string,
   prompt: string,
@@ -114,7 +152,9 @@ async function once(
     // **把回應內容一起丟出去。** 只給狀態碼的話看到的是「gemini 404」——
     // 那可能是模型名稱過期、金鑰沒權限、或配額用盡，三者的處置完全不同。
     const body = await res.text().catch(() => "");
-    throw new Error(`gemini ${model} ${res.status}: ${body.slice(0, 300)}`);
+    throw new Error(
+      `gemini ${model} ${res.status}: ${quotaHint(body)}${body.slice(0, 300)}`,
+    );
   }
   const data = await res.json() as {
     candidates?: { content?: { parts?: { text?: string }[] } }[];
