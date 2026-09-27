@@ -59,30 +59,30 @@ void main() {
       expectLedgerBalanced(s);
     });
 
-    test('扣點與退還照舊有紀錄', () {
+    test('扣點與退還照舊有紀錄', () async {
       final s = AppState();
       s.startWorkout(s.platformPlans.first);
       s.aiRequest(AiSource.beforeTraining, '想調整');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
       s.aiProduceSuggestion(AiSource.beforeTraining);
       expectLedgerBalanced(s);
       expect(s.creditHistory.first.kind, CreditChange.deduct);
     });
 
-    test('任何一次餘額變動之後，流水都對得起來', () {
+    test('任何一次餘額變動之後，流水都對得起來', () async {
       final s = AppState();
       s.subscribe(yearly: false);
       s.advanceDemoClock(const Duration(days: 35));
       s.startWorkout(s.platformPlans.first);
       s.aiRequest(AiSource.beforeTraining, '想調整');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
       s.aiProduceSuggestion(AiSource.beforeTraining);
       expectLedgerBalanced(s);
     });
   });
 
   group('兩條訓練前 AI 路徑是兩件事', () {
-    test('主動要求的訓練前微調不涉及自訂訓練名額', () {
+    test('主動要求的訓練前微調不涉及自訂訓練名額', () async {
       final s = AppState();
       // 騰出一個名額 —— 名額滿時分流本來就不擋，那樣驗不到東西。
       s.deletePlan(s.customPlans.firstWhere((p) => p.isMine));
@@ -93,7 +93,7 @@ void main() {
       s.aiRequest(AiSource.beforeTraining, '想調整');
       expect(s.aiStage[AiSource.beforeTraining], AiStage.clarifying,
           reason: '不該被名額確認擋下來');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
       s.aiProduceSuggestion(AiSource.beforeTraining);
       s.aiAccept(AiSource.beforeTraining);
       expect(s.aiStage[AiSource.beforeTraining], AiStage.applied);

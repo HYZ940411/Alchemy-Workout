@@ -95,17 +95,17 @@ void main() {
       await t.pumpAndSettle();
     }
 
-    AppState proposed() {
+    Future<AppState> proposed() async {
       final s = AppState();
       s.startWorkout(kPlans.firstWhere((p) => p.id == 'p_push'));
       s.aiRequest(src, '今天狀況不太好');
-      s.aiConfirmDemand(src, '整體降強度');
+      await s.aiConfirmDemand(src, '整體降強度');
       s.aiProduceSuggestion(src);
       return s;
     }
 
     testWidgets('每一個動作各自一列，看得到動作名與調整內容', (t) async {
-      final s = proposed();
+      final s = await proposed();
       final sug = s.aiSuggestion[src];
       expect(sug, isNotNull, reason: '前提：這一步要真的產出建議');
       await open(t, s);
@@ -116,7 +116,7 @@ void main() {
     });
 
     testWidgets('標題列講得出動了幾項', (t) async {
-      final s = proposed();
+      final s = await proposed();
       final sug = s.aiSuggestion[src]!;
       final changed = sug.changes.where((c) => !c.unchanged).length;
       await open(t, s);
@@ -127,14 +127,14 @@ void main() {
     });
 
     testWidgets('作用範圍仍然講得出來', (t) async {
-      final s = proposed();
+      final s = await proposed();
       await open(t, s);
       expect(find.textContaining('作用範圍：'), findsWidgets);
     });
 
     // 對話紀錄要留得下來 —— 一段能唸出來的話比一個物件可靠。
-    test('純文字版本仍然一起存進對話', () {
-      final s = proposed();
+    test('純文字版本仍然一起存進對話', () async {
+      final s = await proposed();
       final turns = s.aiConversations[src]!;
       final ai = turns.lastWhere((x) => x.suggestion != null);
       expect(ai.text, contains('建議如下'));

@@ -50,7 +50,7 @@ Command、Event、Aggregate、不變條件與已定案的決策。程式碼與�
 
 ```bash
 flutter analyze                       # 應該完全乾淨
-flutter test --timeout 90s            # 應為 2,150 passed
+flutter test --timeout 90s            # 應為 2,155 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                       # 應為 17 passed（需要 Chrome）
 ./tools/build_web.sh                  # Web 建置，見第 6 節第 8 條
@@ -1280,6 +1280,44 @@ firebase deploy --only hosting
    部位篩選鍵加了 `ValueKey('part-<名稱>')`。鍵面文字（例「腿 190」）
    在動作名稱裡也找得到（「俯臥屈腿 · 啞鈴」），用文字定位一次命中十幾個
    —— 第一版測試就是這樣紅的。
+
+0E. **2026-09-27 意圖分類改成「AI 先判、端內規則當備援」（使用者裁決 B）**
+
+   使用者：「可不可以就不要擋，一開始就先給 AI 判斷」，並在兩個做法中
+   選了 B（一律先給 AI，本地只當備援）。
+
+   ### 做了什麼
+
+   - Worker 新增 `classify`（`workers/src/classify.ts`），
+     同一個端點看有沒有 `say` 分流 —— 驗身分、CORS、錯誤格式完全一樣，
+     分兩條就是同一個決定寫在兩個地方。
+   - `AiSuggestionSource.classify()` 為邊界；`HttpAiSuggestionSource`
+     實作，**逾時 10 秒**（`suggest` 是 25 秒）——
+     這一步夾在使用者打完字與看到建議之間，等 25 秒等於把流程拖垮。
+   - `aiConfirmDemand` 變成非同步：四顆方向鍵的完全比對 → AI →
+     端內 `parseIntent`。
+
+   ### 保守的原則沒有變
+
+   模型被要求：**只在明確指向唯一方向時才回答，否則回 null。**
+   `intent: null` 是**合法結果**，由 App 再問一次。
+   交給模型是為了聽懂更多說法，不是為了「無論如何給個答案」——
+   猜錯方向會讓人照著一份他沒要求的課表去練。
+
+   **模型回什麼都不信**：只認 `easier`／`harder`／`trim`／`swap` 四個字串，
+   其餘一律當作判不出來。
+
+   ### 退回一定要看得見
+
+   `AppState.intentDecidedBy` 記下這一次是誰判的：
+   `選項`／`AI`／`AI（判不出來）`／`端內規則`／`端內規則（AI 失敗：…）`，
+   開發者模式顯示。**靜默退回在這個專案咬過五次**，這是第六個可能的位置。
+
+   ### 代價
+
+   - 每次追問多一趟往返（四顆方向鍵那條路沒有）
+   - 26 個測試呼叫點要加 `await`；`_upToProposal` 原本是
+     `void … async`（射後不理），改成 `Future<void>` 才等得到
 
 0D. **2026-09-27 教官申請永遠按不下去；追蹤後對話不移區；加上建置戳記**
 

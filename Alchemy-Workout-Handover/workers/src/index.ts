@@ -18,6 +18,7 @@ import {
   type AdjustContext, type PlanExercise,
 } from "./adjust";
 import {askQuality, isSessions} from "./screen";
+import {askIntent, isSay} from "./classify";
 
 interface Env {
   GEMINI_API_KEY: string;
@@ -61,11 +62,37 @@ export default {
     let body: {
       intent?: unknown; exercises?: unknown;
       note?: unknown; context?: unknown; sessions?: unknown;
+      say?: unknown;
     };
     try {
       body = await req.json();
     } catch {
       return fail(400, "請求不是合法的 JSON。", origin);
+    }
+
+    // --- 意圖分類（2026-09-27 使用者裁決：一律先給 AI 判斷）---
+    //
+    // 同一個端點、看有沒有 `say` 分流，理由同下面那一段。
+    //
+    // **這一段也沒有規則退路。** 失敗就回非 200，由 App 退回它自己那份
+    // `parseIntent()` —— 端內那份關鍵字比對本來就在，而且是唯一一份。
+    if (body.say !== undefined) {
+      if (!isSay(body.say)) {
+        return fail(400, "say 必須是 1–200 字的字串。", origin);
+      }
+      try {
+        const model = await currentModel(env.GEMINI_API_KEY);
+        const intent = await askIntent(body.say, env.GEMINI_API_KEY, model);
+        // `intent: null` 是**合法結果**，不是錯誤 ——
+        // 模型判不出來時就該這樣回，由 App 再問一次。
+        return new Response(JSON.stringify({intent, source: "gemini"}), {
+          headers: {"Content-Type": "application/json", ...cors(origin)},
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("意圖分類失敗：", msg);
+        return fail(502, `分類失敗：${msg}`, origin);
+      }
     }
 
     // --- 教官申請的訓練品質評分（`[BE-13]` 周邊）---

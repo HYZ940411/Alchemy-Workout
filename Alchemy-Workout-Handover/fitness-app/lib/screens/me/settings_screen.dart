@@ -377,6 +377,17 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: S.base),
+            // 上一次的意圖是誰判的。「AI 判的」與「AI 掛了退回關鍵字比對」
+            // 在畫面上長得一模一樣 —— 而靜默退回在這個專案咬過五次。
+            if (s.intentDecidedBy case final by?) ...[
+              const SectionLabel('AI 意圖分類', trailing: '開發者模式'),
+              Panel(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: _Row(label: '上次由誰判定', value: by, readOnly: true),
+              ),
+              const SizedBox(height: S.base),
+            ],
             const SectionLabel('訓練次數對帳', trailing: '開發者模式'),
             Panel(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

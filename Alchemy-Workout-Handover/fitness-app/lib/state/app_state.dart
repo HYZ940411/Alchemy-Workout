@@ -6476,6 +6476,16 @@ class AppState extends ChangeNotifier {
   /// 猜錯的代價最小」。那個推論是錯的：使用者打「早安」也會換來一份
   /// 降強度的課表**並且被扣一點**，而他從頭到尾沒要求調整強度。
   /// 猜錯的代價不是保守與否，是**做了他沒要求的事還收了錢**。
+  /// 值域原文的完全比對。四顆方向鍵送來的就是這個 ——
+  /// 那不需要問模型，也不該因為模型掛掉而失敗。
+  static AdjustIntent? _exactIntent(String answer) {
+    final a = answer.trim();
+    for (final i in AdjustIntent.values) {
+      if (a == adjustIntentNames[i]) return i;
+    }
+    return null;
+  }
+
   static AdjustIntent? parseIntent(String answer) {
     final a = answer.trim();
     for (final i in AdjustIntent.values) {
@@ -6684,12 +6694,46 @@ class AppState extends ChangeNotifier {
         suitableGoals: p.suitableGoals,
       );
 
+  /// 上一次意圖是誰判的。**開發者模式看得到。**
+  ///
+  /// 「AI 判的」與「AI 掛了退回關鍵字比對」在畫面上長得一模一樣 ——
+  /// 而靜默退回在這個專案咬過五次。至少記下來。
+  String? intentDecidedBy;
+
   /// 使用者已確認需求 → 系統呼叫 AI API 分析（AI 僅產出建議，不套用）。
-  void aiConfirmDemand(AiSource src, String answer) {
+  ///
+  /// **2026-09-27 起先給 AI 判斷方向**（使用者裁決 B）。
+  /// 端內的 [parseIntent] 只當 AI 掛掉時的備援 —— 它很保守，
+  /// 曖昧一律不收，所以使用者打一句再自然不過的話常常換來一段
+  /// 「我看不出你想往哪個方向調」。
+  ///
+  /// **保守的原則沒有變**：模型也被要求「只在明確指向唯一方向時才回答，
+  /// 否則回 null」。交給模型是為了聽懂更多說法，
+  /// 不是為了「無論如何給個答案」。
+  Future<void> aiConfirmDemand(AiSource src, String answer) async {
     if (aiStage[src] != AiStage.clarifying) return;
     _say(src, AiTurnRole.user, answer);
 
-    final intent = parseIntent(answer);
+    // 使用者直接點了那四顆方向鍵 —— 不必問模型。
+    var intent = _exactIntent(answer);
+    if (intent != null) {
+      intentDecidedBy = '選項';
+    } else {
+      final ai = aiSource;
+      if (ai != null) {
+        try {
+          intent = (await ai.classify(answer)).intent;
+          intentDecidedBy = intent == null ? 'AI（判不出來）' : 'AI';
+        } catch (e) {
+          // **退回端內規則，而且要講出來**（只給開發者模式）。
+          intentDecidedBy = '端內規則（AI 失敗：$e）';
+        }
+      }
+      // AI 沒接、或剛剛失敗 —— 用端內的關鍵字比對。
+      intent ??= parseIntent(answer);
+      intentDecidedBy ??= '端內規則';
+    }
+
     if (intent == null) {
       // **不推進階段、不扣點、不產建議。** 寧可再問一次，也不要送出
       // 一份使用者沒要求的課表 —— 他會照著那份練。

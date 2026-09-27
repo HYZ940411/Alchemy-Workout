@@ -41,7 +41,26 @@ class RemoteSuggestion {
   const RemoteSuggestion(this.origin, this.suggestion, {this.error});
 }
 
+/// 一次意圖分類的結果。
+///
+/// **[intent] 為空值是合法結果，不是失敗** —— 模型判不出來時就該這樣回，
+/// 由呼叫端再問一次。真的失敗是擲例外。
+class RemoteIntent {
+  final AdjustIntent? intent;
+  const RemoteIntent(this.intent);
+}
+
 abstract class AiSuggestionSource {
+  /// 把使用者自己打的那句話分類成四個方向之一。
+  ///
+  /// 2026-09-27 使用者裁決：**一律先給 AI 判斷**，端內的
+  /// `AppState.parseIntent` 只當這一支掛掉時的備援。
+  ///
+  /// 擲出例外代表這一次分類失敗（沒登入、逾時、模型錯誤）——
+  /// 呼叫端退回端內規則，**而且要把退回這件事顯示得出來**：
+  /// 靜默退回在這個專案咬過五次。
+  Future<RemoteIntent> classify(String say);
+
   /// 依這份課表與方向取得建議。
   ///
   /// [onlyFrom] 之前的動作已經練完了，不送上去也不調整。

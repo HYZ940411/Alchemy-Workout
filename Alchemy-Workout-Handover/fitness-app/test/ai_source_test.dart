@@ -27,7 +27,28 @@ class _FakeSource implements AiSuggestionSource {
   final Map<String, dynamic>? reply;
   final bool throws;
   Map<String, dynamic>? sent;
-  _FakeSource({this.reply, this.throws = false});
+
+  /// 意圖分類要回什麼。空值代表「判不出來」（合法結果）。
+  final AdjustIntent? classifyAs;
+
+  /// 分類這一支要不要擲例外 —— 驗「AI 掛掉時退回端內規則」。
+  final bool classifyThrows;
+
+  String? classified;
+
+  _FakeSource({
+    this.reply,
+    this.throws = false,
+    this.classifyAs,
+    this.classifyThrows = false,
+  });
+
+  @override
+  Future<RemoteIntent> classify(String say) async {
+    classified = say;
+    if (classifyThrows) throw Exception('分類逾時');
+    return RemoteIntent(classifyAs);
+  }
 
   @override
   Future<RemoteSuggestion> suggest({
@@ -217,18 +238,74 @@ void main() {
     });
   });
 
-  group('接上 AppState', () {
-    /// 照 `ai_adjust_test.dart` 的建法：開一場訓練，走到「等建議」那一步。
-    AppState upToAnalyzing(AiSuggestionSource? source) {
+  // 2026-09-27 使用者裁決 B：**一律先給 AI 判斷方向**，
+  // 端內的關鍵字比對只當 AI 掛掉時的備援。
+  //
+  // 保守的原則沒有變：模型也被要求「只在明確指向唯一方向時才回答，
+  // 否則回 null」。交給模型是為了聽懂更多說法，不是為了無論如何給個答案。
+  group('意圖分類：AI 先判，端內規則當備援', () {
+    Future<AppState> ask(AiSuggestionSource? source, String say) async {
       final s = AppState()..aiSource = source;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, say);
+      return s;
+    }
+
+    test('AI 判得出來就用 AI 的答案 —— 即使端內規則認不出來', () async {
+      final fake = _FakeSource(classifyAs: AdjustIntent.trim);
+      // 「我想多練上胸」端內一定認不出來（不在四個方向裡）。
+      // 這裡只是要驗「AI 說什麼就是什麼」。
+      final s = await ask(fake, '我等一下要趕去接小孩');
+      expect(fake.classified, '我等一下要趕去接小孩', reason: '原話要送上去');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
+      expect(s.intentDecidedBy, 'AI');
+    });
+
+    test('AI 判不出來就再問一次 —— 不退回端內規則硬猜', () async {
+      final fake = _FakeSource(classifyAs: null);
+      final s = await ask(fake, '早安');
+      expect(s.aiIntent[AiSource.beforeTraining], isNull);
+      expect(s.aiStage[AiSource.beforeTraining], AiStage.clarifying);
+      expect(s.intentDecidedBy, contains('判不出來'));
+    });
+
+    test('**AI 掛掉時退回端內規則，而且記下來**', () async {
+      final fake = _FakeSource(classifyThrows: true);
+      final s = await ask(fake, '今天太重了');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.easier,
+          reason: '端內規則接得住這一句');
+      expect(s.intentDecidedBy, contains('AI 失敗'),
+          reason: '靜默退回在這個專案咬過五次 —— 至少要記下來');
+    });
+
+    test('沒接 AI 時就是端內規則，與接上之前一樣', () async {
+      final s = await ask(null, '今天太重了');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.easier);
+      expect(s.intentDecidedBy, '端內規則');
+    });
+
+    test('直接點四顆方向鍵不問模型 —— 那已經是答案了', () async {
+      final fake = _FakeSource(classifyAs: AdjustIntent.harder);
+      final s = await ask(fake, adjustIntentNames[AdjustIntent.trim]!);
+      expect(fake.classified, isNull, reason: '根本不該呼叫模型');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
+      expect(s.intentDecidedBy, '選項');
+    });
+  });
+
+  group('接上 AppState', () {
+    /// 照 `ai_adjust_test.dart` 的建法：開一場訓練，走到「等建議」那一步。
+    Future<AppState> upToAnalyzing(AiSuggestionSource? source) async {
+      final s = AppState()..aiSource = source;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
       return s;
     }
 
     test('不注入就走端內規則 —— 既有測試的前提', () async {
-      final s = upToAnalyzing(null);
+      final s = await upToAnalyzing(null);
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       expect(s.aiStage[AiSource.beforeTraining], AiStage.proposed);
       expect(s.aiLastOrigin, isNull, reason: '沒接外部 API 就沒有來源可言');
@@ -237,7 +314,7 @@ void main() {
 
     test('注入之後，送出去的是使用者眼前那份課表', () async {
       final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
-      final s = upToAnalyzing(fake);
+      final s = await upToAnalyzing(fake);
       final names = s.session!.exercises.map((e) => e.exercise.name).toList();
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
@@ -278,7 +355,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiOpen(AiSource.beforeTraining);
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       expect(fake.sent!.containsKey('note'), isFalse);
@@ -292,7 +369,7 @@ void main() {
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       final before = s.aiTotal;
       s.aiRequest(AiSource.beforeTraining, '早安');
-      s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
 
       expect(s.aiStage[AiSource.beforeTraining], AiStage.clarifying,
           reason: '停在追問，不往下走');
@@ -315,8 +392,8 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '早安');
-      s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
-      s.aiConfirmDemand(AiSource.beforeTraining, '減少組數');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '減少組數');
 
       expect(s.aiStage[AiSource.beforeTraining], AiStage.analyzing);
       expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
@@ -352,7 +429,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
 
@@ -371,7 +448,7 @@ void main() {
       s.myUid = 'uid-12345';
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
 
@@ -385,7 +462,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.duringTraining, '幫我保留一個動作就好');
-      s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
+      await s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
 
       await s.aiProduceSuggestionAsync(AiSource.duringTraining);
 
@@ -398,7 +475,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.duringTraining, '整體降強度');
-      s.aiConfirmDemand(AiSource.duringTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.duringTraining, '整體降強度');
 
       await s.aiProduceSuggestionAsync(AiSource.duringTraining);
       expect(fake.sent!.containsKey('note'), isFalse);
@@ -409,7 +486,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.duringTraining, '很' * 500);
-      s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
+      await s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
 
       await s.aiProduceSuggestionAsync(AiSource.duringTraining);
       expect((fake.sent!['note'] as String).length, 200);
@@ -442,7 +519,7 @@ void main() {
         });
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       return s;
     }
@@ -485,7 +562,7 @@ void main() {
       // 重跑一次才會用到新的旗標。
       s.aiReset(AiSource.beforeTraining);
       s.aiRequest(AiSource.beforeTraining, '');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
 
       final texts =
@@ -517,7 +594,7 @@ void main() {
             .firstWhere((p) => p.exercises.isNotEmpty));
       final first = base.session!.exercises.first;
 
-      final s = upToAnalyzing(_FakeSource(reply: {
+      final s = await upToAnalyzing(_FakeSource(reply: {
         'source': 'gemini',
         'changes': [
           {
@@ -541,14 +618,14 @@ void main() {
       // 這是既有的 bug，接外部 API 才踩到：畫面上的「模擬逾時」
       // 顯示在 analyzing 階段，而扣點發生在「成功產出建議」時。
       // aiFail 原本無條件退 1 點 —— 使用者每失敗一次就白賺一點。
-      final s = upToAnalyzing(null);
+      final s = await upToAnalyzing(null);
       final before = s.aiTotal;
       s.aiFail(AiSource.beforeTraining, AiFailReason.timeout);
       expect(s.aiTotal, before, reason: '沒扣過就不該退');
     });
 
     test('扣過了才退 —— 成功產出後失敗，點數淨額為零', () async {
-      final s = upToAnalyzing(null);
+      final s = await upToAnalyzing(null);
       final before = s.aiTotal;
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       expect(s.aiTotal, before - 1, reason: '前提：成功產出時扣了一點');
@@ -558,7 +635,7 @@ void main() {
     });
 
     test('接受之後的失敗不退點 —— 那一點已經定了', () async {
-      final s = upToAnalyzing(null);
+      final s = await upToAnalyzing(null);
       final before = s.aiTotal;
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       s.aiAccept(AiSource.beforeTraining);
@@ -567,7 +644,7 @@ void main() {
     });
 
     test('外部 API 失敗走既有的退點流程 —— 點數淨額為零', () async {
-      final s = upToAnalyzing(_FakeSource(throws: true));
+      final s = await upToAnalyzing(_FakeSource(throws: true));
       final before = s.aiTotal;
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);

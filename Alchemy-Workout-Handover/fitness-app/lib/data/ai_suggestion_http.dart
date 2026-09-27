@@ -36,6 +36,39 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
   }) : _client = client ?? http.Client();
 
   @override
+  Future<RemoteIntent> classify(String say) async {
+    final token = await idToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('尚未登入，無法呼叫 AI。');
+    }
+
+    final res = await _client
+        .post(
+          endpoint,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'say': say}),
+        )
+        // **比 suggest 短得多。** 這一步夾在使用者打完字與看到建議之間，
+        // 等 25 秒等於把整條流程拖垮。逾時就退回端內規則，那是即時的。
+        .timeout(const Duration(seconds: 10));
+
+    if (res.statusCode != 200) {
+      throw http.ClientException('AI 服務回應 ${res.statusCode}', endpoint);
+    }
+    final data =
+        (jsonDecode(utf8.decode(res.bodyBytes)) as Map).cast<String, dynamic>();
+    final raw = data['intent'];
+    // 模型回什麼都不信，只認四個值之一。
+    final match = AdjustIntent.values
+        .where((i) => i.name == raw)
+        .firstOrNull;
+    return RemoteIntent(match);
+  }
+
+  @override
   Future<RemoteSuggestion> suggest({
     required List<PlanExercise> exercises,
     required AdjustIntent intent,
