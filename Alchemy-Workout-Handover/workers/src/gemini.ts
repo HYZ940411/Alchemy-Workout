@@ -128,6 +128,33 @@ async function once(
  * [timeoutMs] 由呼叫端決定 —— 使用者在場等著的（意圖分類）與
  * 不在場的（品質評分）可以等的時間差很多。
  */
+/**
+ * 暫時性的失敗 —— **重試就可能好**。
+ *
+ * 2026-09-27 使用者實測拿到的是：
+ *   `gemini-3.6-flash 503: "This model is currently experiencing high
+ *    demand. Spikes in demand are usually temporary."`
+ *
+ * 那是 Google 那側的忙線，不是設定錯。而在此之前 [callGemini] **只對
+ * 404 重試** —— 一次 503 就整個放棄，使用者看到的是「被擋」。
+ *
+ * 429（配額）也放進來：免費層的每分鐘上限撞到時等一下就過。
+ * 4xx 的其餘（400 參數錯、401/403 金鑰問題）重試一百次也一樣，不收。
+ */
+const TRANSIENT = [429, 500, 502, 503, 504];
+
+const isTransient = (msg: string) =>
+  TRANSIENT.some((code) => msg.includes(` ${code}:`));
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 呼叫 Gemini，回傳它輸出的那段文字（呼叫端自己 parse）。
+ *
+ * [timeoutMs] 是**單次嘗試**的上限，由呼叫端決定 ——
+ * 使用者在場等著的（意圖分類）與不在場的（品質評分）差很多。
+ * 最多重試兩次，所以呼叫端的總預算要抓 `timeoutMs × 3 ＋ 約 2 秒`。
+ */
 export async function callGemini(
   prompt: string,
   apiKey: string,
@@ -135,23 +162,40 @@ export async function callGemini(
     temperature?: number; timeoutMs?: number;
   } = {},
 ): Promise<string> {
-  const first = currentModel();
-  try {
-    const out = await once(first, prompt, apiKey, temperature, timeoutMs);
-    resolved = first; // 這個能用，記起來
-    return out;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (!msg.includes("404")) throw e; // 不是「換個模型就能好」，照常往上丟
+  let model = currentModel();
+  // 退避：第一次等 400ms，第二次 1200ms。忙線多半是短暫的尖峰，
+  // 但使用者在等 —— 不能等太久。
+  const backoff = [400, 1200];
+  let last: unknown;
 
-    // 一、錯誤訊息裡直接講了該用哪一個 —— 那是最權威的答案。
-    let next = suggestedModel(msg);
-    // 二、沒講的話才去問清單。
-    next ??= await discoverModel(apiKey);
-    if (next === first) throw e; // 換了跟沒換一樣，不要無限重試
+  for (let attempt = 0; attempt <= backoff.length; attempt++) {
+    try {
+      const out = await once(model, prompt, apiKey, temperature, timeoutMs);
+      resolved = model; // 這個能用，記起來
+      return out;
+    } catch (e) {
+      last = e;
+      const msg = e instanceof Error ? e.message : String(e);
 
-    const out = await once(next, prompt, apiKey, temperature, timeoutMs);
-    resolved = next;
-    return out;
+      // 一、模型不對 —— 換一個，不必等。
+      if (msg.includes("404")) {
+        // 錯誤訊息裡直接講了該用哪一個，那是最權威的答案；
+        // 沒講的話才去問清單。
+        const next = suggestedModel(msg) ?? await discoverModel(apiKey);
+        if (next === model) throw e; // 換了跟沒換一樣，不要無限重試
+        model = next;
+        continue;
+      }
+
+      // 二、暫時性的 —— 等一下再試同一個模型。
+      if (isTransient(msg) && attempt < backoff.length) {
+        await sleep(backoff[attempt]);
+        continue;
+      }
+
+      // 三、其餘（參數錯、金鑰問題）重試一百次也一樣。
+      throw e;
+    }
   }
+  throw last;
 }

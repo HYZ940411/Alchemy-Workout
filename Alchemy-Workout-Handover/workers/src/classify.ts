@@ -87,9 +87,10 @@ export async function askIntent(
   // （模型退役，症狀與金鑰壞掉一模一樣）。同一個決定寫在三個地方，
   // 只有一處是對的。
   //
-  // **逾時 12 秒**：使用者在場等著。前端等 20 秒，留 8 秒給
-  // Worker 自己的往返與可能的一次重試。
-  const text = await callGemini(buildPrompt(say), apiKey, {timeoutMs: 12000});
+  // **單次 5 秒**：使用者在場等著，而 `callGemini` 最多試三次
+  // （忙線時退避 400ms、1200ms）。5 × 3 ＋ 1.6 ≈ 17 秒，
+  // 放得進前端的 20 秒預算。單次拉長的話，一次忙線就會直接吃掉整個預算。
+  const text = await callGemini(buildPrompt(say), apiKey, {timeoutMs: 5000});
   try {
     return parseIntent(JSON.parse(text));
   } catch {

@@ -323,6 +323,45 @@ void main() {
       expect(s.aiClassifying[AiSource.beforeTraining], isFalse);
     });
 
+    // 2026-09-27 使用者實測：Gemini 回 503「模型忙線」，而畫面上顯示的是
+    // 「目前只能往這 4 個方向調」—— 使用者只會以為是自己講錯話，
+    // 不會知道系統剛剛壞了一下。兩件事要講不同的話。
+    test('AI 掛掉且端內也認不出來 → 說「AI 暫時忙不過來」', () async {
+      final s = await ask(_FakeSource(classifyThrows: true), '早安');
+      final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+      expect(said, contains('忙不過來'));
+      expect(said, contains('未扣點'));
+      expect(s.aiUnavailable, isTrue);
+    });
+
+    test('AI 好好的、只是這句話不在四個方向裡 → 說「目前只能往這 4 個方向調」',
+        () async {
+      final s = await ask(_FakeSource(classifyAs: null), '我想多練上胸');
+      final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+      expect(said, contains('4 個方向'));
+      expect(said, isNot(contains('忙不過來')),
+          reason: 'AI 沒壞，不要把自己的限制說成故障');
+      expect(s.aiUnavailable, isFalse);
+    });
+
+    test('AI 掛掉但端內接得住 → 照常產建議，不提故障', () async {
+      final s = await ask(_FakeSource(classifyThrows: true), '今天太重了');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.easier);
+      expect(s.aiStage[AiSource.beforeTraining], AiStage.analyzing);
+    });
+
+    test('上一輪掛過，這一輪好了 —— 旗標要歸零', () async {
+      final s = AppState()..aiSource = _FakeSource(classifyThrows: true);
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '早安');
+      expect(s.aiUnavailable, isTrue);
+
+      s.aiSource = _FakeSource(classifyAs: null);
+      await s.aiConfirmDemand(AiSource.beforeTraining, '我想多練上胸');
+      expect(s.aiUnavailable, isFalse, reason: '不可以一直沿用上一輪的狀態');
+    });
+
     test('直接點四顆方向鍵不問模型 —— 那已經是答案了', () async {
       final fake = _FakeSource(classifyAs: AdjustIntent.harder);
       final s = await ask(fake, adjustIntentNames[AdjustIntent.trim]!);

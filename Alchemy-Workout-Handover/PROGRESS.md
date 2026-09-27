@@ -50,7 +50,7 @@ Command、Event、Aggregate、不變條件與已定案的決策。程式碼與�
 
 ```bash
 flutter analyze                       # 應該完全乾淨
-flutter test --timeout 90s            # 應為 2,168 passed
+flutter test --timeout 90s            # 應為 2,172 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                       # 應為 17 passed（需要 Chrome）
 ./tools/build_web.sh                  # Web 建置，見第 6 節第 8 條
@@ -1280,6 +1280,54 @@ firebase deploy --only hosting
    部位篩選鍵加了 `ValueKey('part-<名稱>')`。鍵面文字（例「腿 190」）
    在動作名稱裡也找得到（「俯臥屈腿 · 啞鈴」），用文字定位一次命中十幾個
    —— 第一版測試就是這樣紅的。
+
+0J. **2026-09-27 真正的原因：Gemini 回 503 忙線，而我只對 404 重試**
+
+   使用者按下「直接測一次 AI 連線」，拿到的是：
+
+   ```
+   失敗（2023ms）：AI 服務回應 502：分類失敗：
+   gemini gemini-3.6-flash 503: { "error": { "code": 503,
+   "message": "This model is currently experiencing high demand.
+   Spikes in demand are usually temporary. Please try again later.",
+   "status": "UNAVAILABLE" } }
+   ```
+
+   **是 Google 那側的忙線，不是設定錯。** 而在此之前 `callGemini`
+   **只對 404 重試** —— 一次 503 就整個放棄。
+
+   這也解釋了為什麼前一次診斷成功（1200ms）而這次失敗：
+   忙線是間歇的，而我們沒有任何應對。
+
+   ### 修法
+
+   - `callGemini` 加**暫時性失敗的重試**：429／500／502／503／504，
+     退避 400ms → 1200ms，最多三次嘗試。
+     4xx 的其餘（400 參數錯、401／403 金鑰問題）重試一百次也一樣，不收。
+   - 分類的**單次**逾時 12 → 5 秒。三次嘗試加退避約 17 秒，
+     放得進前端的 20 秒預算 —— 單次拉長的話，一次忙線就吃掉整個預算。
+
+   ### 順手修掉一個「把自己的限制說成使用者的錯」
+
+   AI 掛掉時，畫面顯示的是「目前只能往這 4 個方向調」——
+   **與「你講的話不在四個方向裡」一模一樣**。使用者只會以為是自己講錯話，
+   不會知道系統剛剛壞了一下。
+
+   已分成兩句：`aiUnavailable` 為真時說「AI 暫時忙不過來，
+   沒辦法判讀你的需求」。旗標每一輪歸零 —— 不可以沿用上一輪的狀態。
+
+   ### 這條路的完整帳（0F → 0J）
+
+   | 輪次 | 症狀 | 真正的原因 |
+   |---|---|---|
+   | 0F | AI 失敗 | 我另外寫了第三支呼叫器，沒帶上 404 重試 |
+   | 0G | 「沒找到在哪看」 | 診斷面板只印得出狀態碼，而且藏在條件後面 |
+   | 0H | 一直轉圈 | 函式改非同步，沒改呼叫它的畫面 |
+   | 0I | 仍被擋 | prompt 的 trim 三個範例都是直述句 |
+   | 0J | 仍被擋 | **Gemini 503 忙線，而只對 404 重試** |
+
+   **五輪裡有四輪的根因是我改了一半。** 而唯一讓 0J 查得出來的，
+   是 0G 補上的那顆按鈕 —— 它把「猜」換成了一行可以照著做的錯誤訊息。
 
 0I. **2026-09-27 P57 通過、P60 仍被擋 —— 差別在「誰判的」**
 

@@ -6746,12 +6746,20 @@ class AppState extends ChangeNotifier {
   /// **保守的原則沒有變**：模型也被要求「只在明確指向唯一方向時才回答，
   /// 否則回 null」。交給模型是為了聽懂更多說法，
   /// 不是為了「無論如何給個答案」。
+  /// 這一輪 AI 判讀有沒有掛掉。決定判不出來時要講哪一句話。
+  bool aiUnavailable = false;
+
   /// 正在請 AI 判讀方向。畫面靠它顯示「判讀中」。
   final Map<AiSource, bool> aiClassifying = {};
 
   Future<void> aiConfirmDemand(AiSource src, String answer) async {
     if (aiStage[src] != AiStage.clarifying) return;
     _say(src, AiTurnRole.user, answer);
+
+    // 這一輪 AI 有沒有掛掉。影響的是**判不出來時要說哪一句話** ——
+    // 「你講的不在四個方向裡」與「AI 暫時忙線」是兩件完全不同的事，
+    // 而在此之前它們的回話一模一樣。
+    aiUnavailable = false;
 
     // 使用者直接點了那四顆方向鍵 —— 不必問模型。
     var intent = _exactIntent(answer);
@@ -6774,6 +6782,7 @@ class AppState extends ChangeNotifier {
         } catch (e) {
           // **退回端內規則，而且要講出來**（只給開發者模式）。
           intentDecidedBy = '端內規則（AI 失敗：$e）';
+          aiUnavailable = true;
         } finally {
           aiClassifying[src] = false;
         }
@@ -6795,10 +6804,22 @@ class AppState extends ChangeNotifier {
       // **數字由值域算出來，不寫死。** 原本寫「請從這三個裡挑一個」
       // 而後面列了四個 —— `AdjustIntent` 加了 `swap` 之後沒人回來改
       // 那兩個字。同一份清單同時決定「幾個」與「有哪些」，就不會再對不上。
-      _say(src, AiTurnRole.ai,
-          '目前只能往這 ${AdjustIntent.values.length} 個方向調：'
-          '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
-          '請挑一個。本次未扣點。');
+      // **AI 掛掉與「不在四個方向裡」要講不同的話。**
+      //
+      // 2026-09-27 使用者實測：Gemini 回 503「模型忙線」，
+      // 而畫面上顯示的是「目前只能往這 4 個方向調」——
+      // 使用者只會以為是自己講錯話，不會知道系統剛剛壞了一下。
+      _say(
+          src,
+          AiTurnRole.ai,
+          aiUnavailable
+              ? 'AI 暫時忙不過來，沒辦法判讀你的需求。'
+                  '直接挑一個方向：'
+                  '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
+                  '本次未扣點。'
+              : '目前只能往這 ${AdjustIntent.values.length} 個方向調：'
+                  '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
+                  '請挑一個。本次未扣點。');
       notifyListeners();
       return;
     }
