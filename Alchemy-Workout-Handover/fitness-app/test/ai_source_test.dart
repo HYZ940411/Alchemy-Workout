@@ -299,8 +299,15 @@ void main() {
       expect(s.aiIntent[AiSource.beforeTraining], isNull);
       expect(s.aiTotal, before, reason: '未扣點');
       expect(fake.sent, isNull, reason: '根本不該呼叫模型');
-      expect(s.aiConversations[AiSource.beforeTraining]!.last.text,
-          contains('看不出你想往哪個方向調'));
+      // 2026-09-27 改了措辭：不說「我看不出你想往哪個方向調」——
+      // 使用者打「我想多練上胸」時，系統看得懂，只是不支援。
+      // 而方向的個數由值域算，不寫死（原本寫「三個」卻列了四個）。
+      final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+      expect(said, contains('${AdjustIntent.values.length} 個方向'));
+      for (final i in AdjustIntent.values) {
+        expect(said, contains(adjustIntentNames[i]!), reason: '要列出每一個方向');
+      }
+      expect(said, contains('未扣點'));
     });
 
     test('再問一次答得出來就繼續', () async {

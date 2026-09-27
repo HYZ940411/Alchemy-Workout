@@ -28,8 +28,14 @@ class _MyTeam extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    final isLeader =
-        team.members.any((m) => m.name == '你' && m.role == TeamRole.leader);
+    // **走 `AppState.iAmLeader`，不在這裡自己判一次。**
+    //
+    // 原本是 `m.name == '你'` —— `'你'` 是示範帳號的預設暱稱，**寫死的**。
+    // 真的登入的使用者有自己的暱稱，所以這個條件對他**永遠是假**：
+    // 隊長看不到「待審申請」那一區，也看不到任何隊長專屬的操作。
+    // 使用者回報「B 申請加入團隊，A 隊長還是沒看到」—— 雲端讀到了那一筆
+    // （開發者模式顯示「1 筆（邀請 0／申請 1）」），是這一行把它藏起來的。
+    final isLeader = s.iAmLeader;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 50),

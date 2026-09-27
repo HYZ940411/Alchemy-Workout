@@ -3391,9 +3391,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 我是不是這支隊伍的隊長。
+  ///
+  /// **以 uid 為準，暱稱只是退路**（與 `isMyPost` 同一套判準）。
+  /// 隊員本來就帶著 uid —— `applyCloudTeam` 把雲端文件的鍵原樣帶進來。
   bool get iAmLeader =>
-      myTeam?.members.any((m) => m.name == displayName &&
-          m.role == TeamRole.leader) ??
+      myTeam?.members.any(
+          (m) => _isMe(m.name, m.uid) && m.role == TeamRole.leader) ??
       false;
 
   /// 隊長已踢除成員。隊長不得踢除自己 —— 隊長離隊須經轉讓或解散。
@@ -6594,10 +6598,19 @@ class AppState extends ChangeNotifier {
     if (intent == null) {
       // **不推進階段、不扣點、不產建議。** 寧可再問一次，也不要送出
       // 一份使用者沒要求的課表 —— 他會照著那份練。
+      // **不說「我看不出你想往哪個方向調」。**
+      //
+      // 使用者實測打「我想多練上胸」，那句話講得再清楚不過了 ——
+      // 系統看得懂，只是**不支援**。回他「我看不出」是把自己的限制
+      // 說成他表達得不好。
+      //
+      // **數字由值域算出來，不寫死。** 原本寫「請從這三個裡挑一個」
+      // 而後面列了四個 —— `AdjustIntent` 加了 `swap` 之後沒人回來改
+      // 那兩個字。同一份清單同時決定「幾個」與「有哪些」，就不會再對不上。
       _say(src, AiTurnRole.ai,
-          '抱歉，我看不出你想往哪個方向調。請從這三個裡挑一個：'
+          '目前只能往這 ${AdjustIntent.values.length} 個方向調：'
           '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
-          '本次未扣點。');
+          '請挑一個。本次未扣點。');
       notifyListeners();
       return;
     }
