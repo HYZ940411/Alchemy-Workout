@@ -88,4 +88,60 @@ void main() {
     final t = await as('a').myTeam();
     expect(t!.members.keys, isNot(contains('b')));
   });
+
+  // 使用者回報「0 人的團隊沒有被移除」。
+  //
+  // 「隊長退出即解散」原本只寫在 `AppState.leaveTeamOutcome()` 裡，而它
+  // 依賴 `iAmLeader` —— 那個在 2026-09-27 之前比對的是暱稱（畫面上甚至
+  // 是寫死的「你」）。判成不是隊長就不會解散：成員被移光、`disbanded`
+  // 仍是 false，於是一支 0 人的隊伍繼續出現在公開團隊清單裡。
+  //
+  // **呼叫端算錯過一次，就不能只靠呼叫端。**
+  group('最後一人離開就是解散', () {
+    test('移除最後一名成員時自動標記解散', () async {
+      await setUpTeam();
+      await as('a').removeMember('t1', 'a');
+
+      final doc = await db.collection('teams').doc('t1').get();
+      expect(doc.data()!['disbanded'], isTrue);
+      expect(doc.data()!['memberUids'], isEmpty);
+    });
+
+    test('還有人在就不解散', () async {
+      await setUpTeam();
+      await as('a').putMember('t1', 'b', member('小美'));
+      await as('b').removeMember('t1', 'b');
+
+      final doc = await db.collection('teams').doc('t1').get();
+      expect(doc.data()!['disbanded'], isFalse);
+    });
+
+    test('解散之後不再出現在公開團隊清單', () async {
+      await setUpTeam();
+      await as('a').removeMember('t1', 'a');
+      expect(await as('b').openTeams(), isEmpty);
+    });
+
+    // 2026-09-27 之前留下的殘留：0 人但 disbanded 仍是 false。
+    // 沒有任何人會去清它 —— 而申請加入一支沒有隊長的隊伍，
+    // 永遠不會有人核准。
+    test('**殘留的 0 人隊伍也不列出來**', () async {
+      await db.collection('teams').doc('t9').set({
+        'name': '空殼隊',
+        'isPublic': true,
+        'capacity': 5,
+        'peakSize': 3,
+        'disbanded': false,
+        'memberUids': <String>[],
+        'members': <String, dynamic>{},
+      });
+      expect(await as('b').openTeams(), isEmpty);
+    });
+
+    test('正常的隊伍照樣列出來 —— 不要把好的一起濾掉', () async {
+      await setUpTeam();
+      final open = await as('b').openTeams();
+      expect(open.map((t) => t.id), contains('t1'));
+    });
+  });
 }

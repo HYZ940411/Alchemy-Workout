@@ -73,6 +73,7 @@ class FirestoreTeams implements TeamSource {
               .snapshots(),
       ]);
 
+  /// 我在哪一隊。**0 人的隊伍當作沒有** —— 理由同 [openTeams]。
   @override
   Future<CloudTeam?> myTeam() async {
     final snap = await _col
@@ -95,8 +96,16 @@ class FirestoreTeams implements TeamSource {
     final out = <CloudTeam>[];
     for (final d in snap.docs) {
       final t = _teamOf(d.id, d.data());
+      if (t == null) continue;
       // 已滿的隊伍不列出來 —— 申請了也進不去。
-      if (t != null && !t.isFull) out.add(t);
+      if (t.isFull) continue;
+      // **0 人的隊伍當作不存在。**
+      //
+      // 上面那個 `removeMember` 從此不會再產生這種東西，但
+      // 2026-09-27 之前留下的殘留還在雲端，而它們沒有任何人會去清 ——
+      // 申請加入一支沒有隊長的隊伍，永遠不會有人核准。
+      if (t.members.isEmpty) continue;
+      out.add(t);
     }
     return out;
   }
@@ -246,6 +255,18 @@ class FirestoreTeams implements TeamSource {
         'members.$memberUid': FieldValue.delete(),
         'memberUids': members.keys.toList(),
         // peakSize **不減** —— 它是「曾經達到過」，不是「現在有幾人」。
+
+        // **最後一人離開就是解散，在這一層守住。**
+        //
+        // 「隊長退出即解散」原本只寫在 `AppState.leaveTeamOutcome()` 裡，
+        // 而它的判斷依賴 `iAmLeader` —— 那個在 2026-09-27 之前比對的是
+        // 暱稱（而畫面上甚至是寫死的「你」）。判成不是隊長，就不會解散：
+        // 成員被移光、`disbanded` 仍是 false，於是一支 0 人的隊伍
+        // 繼續出現在公開團隊清單裡。使用者回報「0 人的團隊沒有被移除」。
+        //
+        // 呼叫端算錯過一次，就不能只靠呼叫端。這裡是所有離隊路徑
+        // （自己退、被踢、轉讓後退）的共同出口。
+        if (members.isEmpty) 'disbanded': true,
       });
     });
   }
