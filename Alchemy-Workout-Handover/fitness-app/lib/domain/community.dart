@@ -1,4 +1,5 @@
 import 'ability.dart';
+import 'ai_adjust.dart';
 
 // --- 社群動態牆 ---
 
@@ -756,7 +757,25 @@ class AiTurn {
   final AiTurnRole role;
   final String text;
   final DateTime at;
-  const AiTurn(this.role, this.text, this.at);
+
+  /// 這一則若是「AI 已產出建議」，帶著那份**結構化**的建議。
+  ///
+  /// **在此之前建議被拼成一整段字串塞進 [text]** —— 動作名、調整前後、
+  /// 替換動作、理由全部黏在一起，再擠進一個寬 260 的對話泡泡裡。
+  /// 使用者回報「AI 建議給的排版不好做閱讀」。
+  ///
+  /// 而那些欄位在 `AdjustChange` 裡本來就是分開的 —— 是渲染時才被拼掉的。
+  /// 帶著結構過去，畫面就排得出表格。
+  ///
+  /// [text] 仍然保留可讀的純文字版本：對話紀錄要留得下來，
+  /// 而「一段能唸出來的話」比一個物件可靠。
+  final AdjustSuggestion? suggestion;
+
+  /// 這份建議的作用範圍（例「本次訓練課表 · 僅本次訓練」）。
+  /// 與 [suggestion] 同進退。
+  final String? scope;
+
+  const AiTurn(this.role, this.text, this.at, {this.suggestion, this.scope});
 }
 
 /// AI 調整已失敗的原因值域：逾時 / 服務錯誤。

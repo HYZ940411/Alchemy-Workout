@@ -85,7 +85,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final reputation = s.reputationOf(name, uid: uid);
     final isInstructor =
         isSelf ? s.isInstructor : s.instructors.any((i) => i.name == name);
-    final myPosts = s.postsBy(name);
+    // 帶上 uid —— 與上面那幾個 `abilityOf`／`gradeOf` 同一個理由。
+    final myPosts = s.postsBy(name, uid: uid);
 
     return Scaffold(
       backgroundColor: AppColors.bg,

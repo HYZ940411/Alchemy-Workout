@@ -67,32 +67,49 @@ class AdjustChange {
 
   bool get setsChanged => before.length != after.length;
 
-  /// 一行人話。畫面直接用它，不各自拼字串。
-  String get summary {
+  static String _w(double v) =>
+      v == v.roundToDouble() ? '${v.round()}' : '$v';
+
+  /// 這一筆改了什麼都沒有。表格用它把沒動的那幾列降一階呈現 ——
+  /// 一份建議裡多半有一半是「維持不變」，它們不該跟真正的改動一樣搶眼。
+  bool get unchanged =>
+      replacement == null &&
+      !setsChanged &&
+      before.first.targetWeight == after.first.targetWeight &&
+      before.first.targetReps == after.first.targetReps;
+
+  /// 表格第一欄：動作。換了動作就是「原動作 → 新動作」。
+  String get title =>
+      replacement == null ? exerciseName : '$exerciseName → ${replacement!.name}';
+
+  /// 表格第二欄：調整成什麼。
+  ///
+  /// **與 [title] 分開兩個 getter，[summary] 由兩者組出來。**
+  /// 原本只有 `summary`，動作名與調整內容用一個全形空格黏在一起 ——
+  /// 表格要分欄就得把那個字串再切開，而「用分隔符切字串」是個
+  /// 遲早會遇到動作名裡剛好有全形空格的做法。
+  String get change {
     final r = replacement;
     if (r != null) {
       final a = after.first;
-      String w(double v) => v == v.roundToDouble() ? '${v.round()}' : '$v';
       final load = a.targetWeight == 0
           ? '${a.targetReps} 下'
-          : '${w(a.targetWeight)}kg × ${a.targetReps} 下';
-      return '$exerciseName → ${r.name}　$load × ${after.length} 組';
+          : '${_w(a.targetWeight)}kg × ${a.targetReps} 下';
+      return '$load × ${after.length} 組';
     }
-    if (setsChanged) {
-      return '$exerciseName　${before.length} 組 → ${after.length} 組';
-    }
+    if (setsChanged) return '${before.length} 組 → ${after.length} 組';
+    if (unchanged) return '維持不變';
     final b = before.first;
     final a = after.first;
-    if (b.targetWeight == a.targetWeight && b.targetReps == a.targetReps) {
-      return '$exerciseName　維持不變';
-    }
-    String w(double v) => v == v.roundToDouble() ? '${v.round()}' : '$v';
     if (b.targetWeight == 0 && a.targetWeight == 0) {
-      return '$exerciseName　${b.targetReps} 下 → ${a.targetReps} 下';
+      return '${b.targetReps} 下 → ${a.targetReps} 下';
     }
-    return '$exerciseName　${w(b.targetWeight)}kg × ${b.targetReps} 下'
-        ' → ${w(a.targetWeight)}kg × ${a.targetReps} 下';
+    return '${_w(b.targetWeight)}kg × ${b.targetReps} 下'
+        ' → ${_w(a.targetWeight)}kg × ${a.targetReps} 下';
   }
+
+  /// 一行人話。純文字的對話紀錄用它。
+  String get summary => '$title　$change';
 
   /// 畫面上這一筆的完整文字：一行數字，有理由就再一行。
   ///

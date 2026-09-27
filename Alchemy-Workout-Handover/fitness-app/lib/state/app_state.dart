@@ -2537,10 +2537,26 @@ class AppState extends ChangeNotifier {
   /// 2026-09-26 之前標為「私人」「僅關注者」的舊貼文因此會出現在
   /// 檔案頁上 —— 但它們**本來就在所有人的動態牆上**（動態牆從來沒有
   /// 依可見範圍過濾過），所以這不是新的曝光，是把不一致修掉。
-  List<Post> postsBy(String name) => posts
-      .where((p) => !p.deleted && p.author == name)
+  /// [uid] 拿得到就以它為準 —— 暱稱可以改、也會撞名。
+  List<Post> postsBy(String name, {String? uid}) => posts
+      .where((p) =>
+          !p.deleted &&
+          (uid != null && p.authorUid != null
+              ? p.authorUid == uid
+              : p.author == name))
       .toList()
     ..sort((a, b) => b.at.compareTo(a.at));
+
+  /// 我發過幾篇**還在**的貼文。
+  ///
+  /// **「我的」那個數字原本是自己數的**：
+  /// `posts.where((p) => p.author == displayName).length` ——
+  /// 沒有排除 `p.deleted`，而貼文是軟刪除（已刪除的仍留在清單裡供
+  /// 獎勵回收與成就計數判定）。使用者回報「刪除了 5 篇，貼文顯示 7 篇」。
+  ///
+  /// 旁邊的 [postsBy] 一直都有排除已刪除的 —— 同一個決定寫在兩個地方，
+  /// 只有一處做對。改成走同一支，數字與清單從此不可能對不起來。
+  int get myPostCount => postsBy(displayName, uid: myUid).length;
 
   /// 暱稱 → uid。[nameByUid] 的反查 —— 畫面上拿得到的是暱稱，
   /// 而雲端要的是 uid。
@@ -6047,8 +6063,10 @@ class AppState extends ChangeNotifier {
   AiFailReason? aiLastFailReason;
   int aiRetryCount = 0;
 
-  void _say(AiSource src, AiTurnRole role, String text) {
-    aiConversations[src]!.add(AiTurn(role, text, now));
+  void _say(AiSource src, AiTurnRole role, String text,
+      {AdjustSuggestion? suggestion, String? scope}) {
+    aiConversations[src]!
+        .add(AiTurn(role, text, now, suggestion: suggestion, scope: scope));
   }
 
   // --- 訓練前調整的名額分流 ---
@@ -6672,14 +6690,22 @@ class AppState extends ChangeNotifier {
     //
     // 折衷：標題有沒有「AI」兩個字就是答案。不佔版面，也分得出來。
     final byModel = got.origin == SuggestionOrigin.gemini;
+    // **帶著結構過去，不是只丟一段字串。**
+    //
+    // 原本這裡把整份建議拼成一大段文字（每筆之間空一行），再擠進一個
+    // 寬 260 的對話泡泡 —— 使用者回報「AI 建議給的排版不好做閱讀」。
+    // 而動作名、調整前後、替換動作、理由在 `AdjustChange` 裡本來就是
+    // 分開的欄位，是渲染時才被拼掉的。
+    //
+    // `text` 仍然給一份可讀的純文字：對話紀錄要留得下來，
+    // 而一段能唸出來的話比一個物件可靠。
     _say(src, AiTurnRole.ai,
-        // **每一筆之間空一行。** 逐筆有理由之後，全部擠在一起
-        // 會變成一大塊字 —— 使用者回報「排版有點難閱讀」。
-        // 空行讓「改什麼」與「為什麼」成為一個看得出邊界的段落。
         '${byModel ? 'AI ' : ''}建議如下（${adjustIntentNames[intent]}）：\n\n'
         '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
         '${aiSuggestion[src]!.rationale == null ? '' : '\n${aiSuggestion[src]!.rationale}\n'}'
-        '\n作用範圍：${aiSourceScope[src]}');
+        '\n作用範圍：${aiSourceScope[src]}',
+        suggestion: aiSuggestion[src],
+        scope: aiSourceScope[src]);
     // **退回規則引擎時要說出來。** 不說的話，使用者看到的是一份
     // 看起來正常、其實沒經過模型的建議 —— 他只會覺得 AI 變笨了，
     // 而真正的原因躺在一個沒有人會去看的 log 裡。
@@ -6727,11 +6753,14 @@ class AppState extends ChangeNotifier {
       aiCharged[src] = true;
     }
     aiSuggestion[src] = suggestion;
+    // 結構與純文字一起給 —— 理由見上面那一處（端內規則這條路也要表格）。
     _say(src, AiTurnRole.ai,
         '建議如下（${adjustIntentNames[intent]}）：\n\n'
         '${suggestion.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
         '${suggestion.rationale == null ? '' : '\n${suggestion.rationale}\n'}'
-        '\n作用範圍：${aiSourceScope[src]}');
+        '\n作用範圍：${aiSourceScope[src]}',
+        suggestion: suggestion,
+        scope: aiSourceScope[src]);
     aiStage[src] = AiStage.proposed;
     notifyListeners();
   }

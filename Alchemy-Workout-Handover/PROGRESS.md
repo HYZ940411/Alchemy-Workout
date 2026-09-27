@@ -50,7 +50,7 @@ Command、Event、Aggregate、不變條件與已定案的決策。程式碼與�
 
 ```bash
 flutter analyze                       # 應該完全乾淨
-flutter test --timeout 90s            # 應為 2,103 passed
+flutter test --timeout 90s            # 應為 2,120 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                       # 應為 17 passed（需要 Chrome）
 ./tools/build_web.sh                  # Web 建置，見第 6 節第 8 條
@@ -1264,6 +1264,57 @@ firebase deploy --only hosting
    部位篩選鍵加了 `ValueKey('part-<名稱>')`。鍵面文字（例「腿 190」）
    在動作名稱裡也找得到（「俯臥屈腿 · 啞鈴」），用文字定位一次命中十幾個
    —— 第一版測試就是這樣紅的。
+
+0z. **2026-09-27 AI 建議改成表格；貼文數不減；一條寫死日期的測試今天腐爛**
+
+   ### ① AI 建議排成表格（使用者要求）
+
+   「AI 建議給的排版不好做閱讀。可否用好看的表格呈現？」
+
+   **根因：整份建議被拼成一段字串，塞進寬 260 的對話泡泡。**
+   而那些欄位在 `AdjustChange` 裡本來就是分開的 —— 是渲染時才被拼掉的。
+
+   - `AdjustChange` 拆出 `title`（動作，換動作時是「原 → 新」）與
+     `change`（調整成什麼），`summary` 改由兩者組出來。
+     **不是反過來** —— 表格若靠切 `summary` 那個全形空格取欄位，
+     遇到名字裡剛好有全形空格的動作就會切錯。
+   - `AiTurn` 多帶一份結構化的 `suggestion` 與 `scope`；
+     `text` 仍然保留可讀的純文字（對話紀錄要留得下來）。
+   - 畫面上建議不再走對話泡泡，改成整寬的表格：標題列講得出方向與
+     「N / M 項調整」，每列是「動作 ｜ 調整」＋理由，
+     **維持不變的那幾列降一階呈現**（灰標籤），真正的改動用重點色。
+
+   **一個自己踩的洞**：第一版第一欄用 `Expanded`、第二欄固定寬，
+   而調整字串可以很長（「60kg × 8 下 → 55kg × 10 下」）——
+   在 375 寬溢出 1.3px。兩欄都給 flex（5:4）才收得住。
+
+   ### ② 我的貼文數不減（使用者回報）
+
+   「刪除了 5 篇，貼文顯示 7 篇。」
+
+   貼文是**軟刪除**（已刪除的仍留在清單裡，供獎勵回收與成就計數判定），
+   而「我的」那個數字是自己數的：
+
+   ```dart
+   posts.where((p) => p.author == displayName).length   // 漏了 !p.deleted
+   ```
+
+   旁邊的 `postsBy()` 一直都有排除已刪除的 ——
+   **同一個決定寫在兩個地方，只有一處做對。**
+
+   已新增 `AppState.myPostCount`，與 `postsBy` 走同一支：數字與清單長度
+   從此不可能對不起來。順手讓兩者都以 uid 為準（暱稱只是退路）。
+
+   ### ③ 一條測試今天自己腐爛了
+
+   `punishment_cloud_test` 的「登入時從雲端讀」寫死
+   `expiresAt: DateTime(2026, 9, 27)` —— **今天就是 9/27**，
+   那筆處罰到期，`communityBlockedReason` 變成空值，測試無緣無故變紅。
+
+   已改成相對於 `appNow()` 算。同類還有兩處
+   （`mentor_data_test` 的 9/8、`team_data_test` 的 9/20），
+   它們目前沒紅是因為那兩支資料層測試不依到期日過濾 ——
+   **屬於潛伏**，讀取路徑哪天開始濾到期就會以錯誤的理由紅掉。已列待辦。
 
 0y. **2026-09-27 加入動作抽屜第二輪 —— 那顆按鈕的標籤在說謊**
 

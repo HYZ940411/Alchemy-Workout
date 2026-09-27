@@ -199,8 +199,11 @@ class _Header extends StatelessWidget {
   double get _tons =>
       state.history.fold<double>(0, (a, h) => a + h.volume) / 1000;
 
-  int get _myPosts =>
-      state.posts.where((p) => p.author == state.displayName).length;
+  /// **走 `AppState.myPostCount`，不自己數。**
+  /// 原本是 `posts.where((p) => p.author == displayName).length` ——
+  /// 漏了 `!p.deleted`，而貼文是軟刪除。使用者回報「刪除了 5 篇，
+  /// 貼文顯示 7 篇」。
+  int get _myPosts => state.myPostCount;
 
   @override
   Widget build(BuildContext context) {

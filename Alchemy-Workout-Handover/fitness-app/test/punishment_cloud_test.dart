@@ -18,6 +18,7 @@
 // 處罰種類改成「警告」。
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fitness_app/domain/clock.dart';
 
 import 'package:fitness_app/data/punishment_data.dart';
 import 'package:fitness_app/domain/admin.dart';
@@ -157,10 +158,14 @@ void main() {
         kind: PunishmentKind.communitySuspended,
         reason: '不實內容',
         evidence: '',
-        issuedAt: DateTime(2026, 9, 20),
+        // **相對於現在算，不寫死日期。**
+        // 原本是 `issuedAt: 2026-09-20`／`expiresAt: 2026-09-27` ——
+        // 到了 2026-09-27 當天這條處罰就過期了，`communityBlockedReason`
+        // 變成空值，測試無緣無故變紅。那天真的到了。
+        issuedAt: appNow().subtract(const Duration(days: 7)),
         violationCount: 3,
         nextConsequence: '社群功能停權 30 天',
-        expiresAt: DateTime(2026, 9, 27),
+        expiresAt: appNow().add(const Duration(days: 23)),
       );
 
       await a.s.loadMyPunishment();

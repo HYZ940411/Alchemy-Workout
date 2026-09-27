@@ -236,7 +236,10 @@ void main() {
     await t.tap(find.byIcon(Icons.send_rounded));
     await t.pump(const Duration(seconds: 2));
     await t.pumpAndSettle();
-    expect(find.textContaining('建議如下'), findsOneWidget);
+    // 建議自 2026-09-27 起排成表格，不再是一段「建議如下…」的純文字
+    // （使用者回報排版難讀）。表格的標題列講得出方向與動了幾項。
+    expect(find.textContaining('項調整'), findsOneWidget);
+    expect(find.textContaining('作用範圍：'), findsWidgets);
 
     // 接受 → 套用新強度
     await t.tap(find.widgetWithText(AppButton, '使用新強度'));
