@@ -268,7 +268,14 @@ class InstructorApplyScreen extends StatelessWidget {
                 InstructorStage.rejected => s.examRetakeLeft > Duration.zero
                     ? '重新申請還要等 ${s.examRetakeLeft.inDays + 1} 天'
                     : '重新申請',
-                _ => '推進到下一階段（Demo）',
+                // **初審中沒有按鈕可按** —— 那一階段的下一步是系統的
+                // Command（AI 評分回來就結算），不是申請人的。
+                //
+                // 在此之前這裡是「推進到下一階段（Demo）」，而它會跳過
+                // 品質評分與測驗、還以滿分送出考卷。那是示範用的捷徑，
+                // 不該出現在真的帳號上（使用者回報「教官申請是寫 Demo」）。
+                InstructorStage.screening =>
+                  s.developerMode ? '推進到下一階段（Demo）' : '等待系統評分',
               },
               onPressed: switch (s.instructorStage) {
                 // 待人工審核的下一步是管理員的 Command ——
@@ -284,15 +291,19 @@ class InstructorApplyScreen extends StatelessWidget {
                   s.examRetakeLeft > Duration.zero
                       ? null
                       : () => _takeExam(context, s),
-                _ => (qualified &&
-                        (s.instructorStage != InstructorStage.notApplied ||
-                            s.specialtyBlockedReason == null))
+                // 申請本身（尚未申請 → 初審中）是使用者的 Command，
+                // 一般使用者當然按得下去。其餘階段的推進是**示範用捷徑**，
+                // 只給開發者模式。
+                InstructorStage.notApplied => (qualified &&
+                        s.specialtyBlockedReason == null)
                     ? s.advanceInstructorApplication
                     : null,
+                _ => s.developerMode ? s.advanceInstructorApplication : null,
               },
             ),
           ),
-          if (s.isInstructor) ...[
+          // 撤銷是管理員的 Command —— 這顆是示範用捷徑，只給開發者模式。
+          if (s.isInstructor && s.developerMode) ...[
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
@@ -554,7 +565,17 @@ class _Info extends StatelessWidget {
 
 /// 各階段的補充說明。回傳 null 代表這一階段沒有話要說。
 String? _note(AppState s) => switch (s.instructorStage) {
-      InstructorStage.screening => '評分處理中：AI 品質評分失敗，待隔日重跑。',
+      // **只在真的失敗時才說失敗。**
+      //
+      // 原本這一句是無條件的 —— 只要停在「初審中」就寫「AI 品質評分失敗」，
+      // 不管評分到底成不成功。那是對使用者說了一件沒發生的事。
+      //
+      // 規格只要求他看到「評分處理中」；失敗那一句是額外的誠實，
+      // 而誠實的前提是它真的發生了。
+      InstructorStage.screening => s.qualityScoreError == null
+          ? '評分處理中：系統正在分析你的歷史訓練紀錄。'
+          : '評分處理中：AI 評分暫時失敗，系統會於隔日重跑。'
+              '**不會因此駁回你的申請。**',
       InstructorStage.pendingReview =>
         '簡答題已送出，等管理員人工審核（7 個工作天內完成）。逾時不會自動通過。',
       InstructorStage.rejected => s.instructorRejectStage == null

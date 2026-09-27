@@ -99,8 +99,17 @@ void main() {
       expect(s.reapplyInstructor(), isFalse, reason: '14 天內不得再申請');
       s.advanceDemoClock(const Duration(days: 15));
       expect(s.reapplyInstructor(), isTrue);
-      expect(s.instructorStage, InstructorStage.screening,
-          reason: '重試產生新的一筆申請，並重跑 AI 品質評分');
+      // **重跑初審之後就有結果了。**
+      //
+      // 2026-09-27 之前「初審中 → 初審通過／駁回」這個自動判定根本沒有
+      // 實作，申請人停在「初審中」，唯一的出路是畫面上那顆
+      // 「推進到下一階段（Demo）」。所以這條測試原本斷言的是
+      // `screening` —— 那是缺陷的形狀，不是規格的形狀。
+      //
+      // 規格：「初審教官資格」的 Actor 是**系統**（自動依門檻判定，
+      // 無人工介入）。這個帳號達標，所以重跑之後是「待作答測驗」。
+      expect(s.instructorStage, InstructorStage.screenPassed,
+          reason: '重試產生新的一筆申請、重跑評分，達標就直接進測驗');
       expect(s.instructorRejectStage, isNull);
     });
 

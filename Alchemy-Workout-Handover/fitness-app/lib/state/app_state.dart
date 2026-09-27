@@ -4727,9 +4727,14 @@ class AppState extends ChangeNotifier {
     return best;
   }
 
-  QualityScore rescoreTrainingQuality() {
+  QualityScore rescoreTrainingQuality({bool settle = false}) {
     final scored = scoreTrainingQuality(_sessionSummaries());
     quality = scored;
+    // 端內規則算出來的分數**不推進初審** —— 規格要的是 AI 的評分，
+    // 而 AI 失敗時申請維持在初審中等隔日重跑。
+    // 只有「根本沒接雲端評分」那條路（`qualitySource` 為空）才在此結算，
+    // 否則既有的一千多條測試會走不到初審通過。
+    if (settle) _settleScreening();
     notifyListeners();
     return scored;
   }
@@ -4783,19 +4788,42 @@ class AppState extends ChangeNotifier {
   /// 因為規格不允許因為平台的 AI 故障而駁回申請者。
   Future<QualityScore> rescoreTrainingQualityAsync() async {
     final src = qualitySource;
-    if (src == null) return rescoreTrainingQuality();
+    if (src == null) return rescoreTrainingQuality(settle: true);
 
     try {
       final q = await src.score(_sessionSummaries());
       qualityScoreError = null;
       quality = q;
+      _settleScreening();
       notifyListeners();
       return q;
     } catch (e) {
+      // **失敗不改變申請狀態**（〈教官申請流程〉：「該教官申請維持在
+      // 初審中，不通過亦不駁回」、「由排程於隔日重跑」）。
+      // 申請者本身無過失，因平台的 AI 故障而駁回他，是把技術風險
+      // 轉嫁給使用者。
       qualityScoreError = '$e';
       debugPrint('品質評分改用規則計算：$e');
       return rescoreTrainingQuality();
     }
+  }
+
+  /// 評分回來了 —— 初審該有結果了。
+  ///
+  /// **在此之前這個轉換根本沒有實作。** 申請人停在「初審中」，唯一的出路
+  /// 是畫面上那顆「推進到下一階段（Demo）」—— 而那顆會跳過品質評分與測驗，
+  /// 還以滿分送出考卷。使用者回報「教官申請是寫 Demo」。
+  ///
+  /// 規格：「[分支] 初審 / 測驗 / 管理員審核任一階段未通過
+  /// → 教官資格已駁回」，而狀態值域是五值
+  /// （初審中 / 待作答測驗 / 待人工審核 / 已通過 / 已駁回）。
+  ///
+  /// **只在「初審中」動作** —— 其餘階段重新評分不該把人踢回去。
+  void _settleScreening() {
+    if (instructorStage != InstructorStage.screening) return;
+    instructorStage = instructorGate.passed
+        ? InstructorStage.screenPassed
+        : InstructorStage.rejected;
   }
 
   /// 加權平均。**沒評過是 0** —— 畫面要先看 [qualityScored]，
