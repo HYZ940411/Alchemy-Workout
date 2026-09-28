@@ -75,7 +75,7 @@ class FeedScreen extends StatelessWidget {
                   posts: s.visiblePosts
                       .where((p) =>
                           p.author == s.displayName ||
-                          s.following.contains(p.author))
+                          s.isFollowing(p.author, uid: p.authorUid))
                       .toList(),
                   empty: '你關注的人還沒有新貼文。',
                 ),

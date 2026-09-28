@@ -188,13 +188,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Expanded(
                   child: AppButton(
-                    label: s.following.contains(name) ? '已關注' : '關注',
+                    label: s.isFollowing(name, uid: uid) ? '已關注' : '關注',
                     onPressed: () {
                       if (socialLocked(context, '關注')) return;
-                      s.toggleFollow(name);
+                      s.toggleFollow(name, uid: uid);
                     },
                     // 已關注＝取消關注，屬破壞性動作，用次要樣式（§4.5）
-                    kind: s.following.contains(name)
+                    kind: s.isFollowing(name, uid: uid)
                         ? BtnKind.secondary
                         : BtnKind.primary,
                   ),

@@ -143,8 +143,13 @@ void main() {
       await t.pumpAndSettle();
     }
 
+    // **要先解鎖師徒功能**：真帳號一開機五件互動都是 0，拜師頁畫的是
+    // 解鎖清單而不是這三種狀態。在此之前不用寫這一行 —— 那是因為
+    // `following` 漏了 `demo` 旗標，白送了一個「關注」進度（見
+    // `AppState.followTotal`）。
     AppState unread() => AppState(demo: false)
       ..myUid = 'u-me'
+      ..markMentorUnlocked()
       ..mentorSource = _Src();
 
     testWidgets('還沒讀到 → 不說「你沒有教官」', (t) async {

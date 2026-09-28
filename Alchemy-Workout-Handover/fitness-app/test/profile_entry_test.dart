@@ -68,11 +68,11 @@ void main() {
       await t.tap(find.text('測試對象').first);
       await t.pumpAndSettle();
 
-      expect(s.following.contains('測試對象'), isFalse, reason: '前提：還沒關注');
+      expect(s.isFollowing('測試對象'), isFalse, reason: '前提：還沒關注');
       await t.tap(find.text('關注'));
       await t.pumpAndSettle();
 
-      expect(s.following.contains('測試對象'), isTrue);
+      expect(s.isFollowing('測試對象'), isTrue);
     });
 
     testWidgets('點到自己開的是自己那一頁，不給「關注自己」', (t) async {

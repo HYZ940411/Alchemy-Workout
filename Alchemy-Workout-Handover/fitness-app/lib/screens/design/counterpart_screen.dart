@@ -34,8 +34,8 @@ class _CounterpartScreenState extends State<CounterpartScreen> {
   int _seq = 0;
   String _name(AppState s) {
     final used = {
-      ...s.followers,
-      ...s.following,
+      ...s.followers.map(s.followName),
+      ...s.following.map(s.followName),
       ...?s.myTeam?.members.map((m) => m.name),
       ...s.apprentices.map((a) => a.name),
       ...s.inbox.map((r) => r.from),
@@ -272,7 +272,7 @@ class _CounterpartScreenState extends State<CounterpartScreen> {
         ),
         if (s.followers.isNotEmpty)
           ListRow(
-            title: '${s.followers.first} 取消關注我',
+            title: '${s.followName(s.followers.first)} 取消關注我',
             subtitle: '粉絲數會少一位，但已解鎖的粉絲成就不撤銷',
             onTap: () => _do('少了一位追蹤者',
                 () => s.loseFollower(s.followers.first)),

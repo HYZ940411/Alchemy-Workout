@@ -12,8 +12,8 @@ Conversation _with(AppState s, String peer) =>
 Conversation _stranger(AppState s) {
   final c = Conversation(id: 'cx', peer: '路人甲', peerRank: 5);
   s.conversations.add(c);
-  s.following.remove('路人甲');
-  s.followers.remove('路人甲');
+  s.following.remove(s.followKeyOf('路人甲', null));
+  s.followers.remove(s.followKeyOf('路人甲', null));
   return c;
 }
 
@@ -25,8 +25,8 @@ void main() {
     test('互相關注 → 一般訊息', () {
       final s = AppState();
       final c = _stranger(s);
-      s.following.add(c.peer);
-      s.followers.add(c.peer);
+      s.toggleFollow(c.peer);
+      s.gainFollower(c.peer);
       s.sendMessage(c, '嗨');
       expect(c.messages.last.category, MessageCategory.normal);
     });
@@ -34,7 +34,7 @@ void main() {
     test('只有單向關注 → 仍是陌生訊息', () {
       final s = AppState();
       final c = _stranger(s);
-      s.following.add(c.peer); // 我關注他，他沒關注我
+      s.toggleFollow(c.peer); // 我關注他，他沒關注我
       s.sendMessage(c, '嗨');
       expect(c.messages.last.category, MessageCategory.stranger);
     });
@@ -76,8 +76,8 @@ void main() {
       s.sendMessage(c, '第一則');
       expect(c.messages.last.category, MessageCategory.stranger);
 
-      s.following.add(c.peer);
-      s.followers.add(c.peer);
+      s.toggleFollow(c.peer);
+      s.gainFollower(c.peer);
       s.sendMessage(c, '第二則');
 
       expect(c.messages.first.category, MessageCategory.stranger,
@@ -157,8 +157,8 @@ void main() {
       s.sendMessage(c, '陌生的第一則');
       expect(c.bucket, MessageCategory.stranger);
 
-      s.following.add(c.peer);
-      s.followers.add(c.peer);
+      s.toggleFollow(c.peer);
+      s.gainFollower(c.peer);
       s.sendMessage(c, '現在互相關注了');
       expect(c.bucket, MessageCategory.normal);
     });

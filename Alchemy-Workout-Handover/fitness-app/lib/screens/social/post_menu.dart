@@ -146,7 +146,7 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
   // 雙方的關注一併解除、師徒關係一併解除、未完成的師徒任務作廢。
   // 解除封鎖**不會**把這些恢復 —— 所以按錯一次就回不去了，
   // 不能是點一下就生效。
-  final wasFollowing = s.following.contains(p.author);
+  final wasFollowing = s.isFollowing(p.author, uid: p.authorUid);
   final wasMentor = s.myInstructor?.name == p.author;
   final ok = await showAppDialog(
     context,
@@ -160,7 +160,7 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
   );
   if (ok != true || !context.mounted) return;
 
-  s.blockUser(p.author);
+  s.blockUser(p.author, uid: p.authorUid);
   showToast(
     context,
     '已封鎖 ${p.author}'

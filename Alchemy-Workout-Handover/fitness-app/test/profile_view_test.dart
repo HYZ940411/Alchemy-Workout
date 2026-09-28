@@ -45,7 +45,8 @@ void main() {
 
     test('粉絲數', () {
       final s = AppState();
-      expect(s.followersOf('早鳥訓練'), s.otherFollowerCounts['早鳥訓練']);
+      expect(s.followersOf('早鳥訓練'),
+          s.otherFollowerCounts[s.followKeyOf('早鳥訓練', null)]);
       expect(s.followersOf('早鳥訓練'), isNot(s.followerCount));
       expect(s.followersOf(s.displayName), s.followerCount);
     });

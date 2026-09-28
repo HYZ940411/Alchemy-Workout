@@ -23,7 +23,7 @@ void main() {
     test('單方追蹤還不夠 —— 要互相關注', () {
       final s = AppState();
       final c = convo('小美', lastCategory: MessageCategory.stranger);
-      s.following.add('小美');
+      s.toggleFollow('小美');
       expect(s.bucketOf(c), MessageCategory.stranger,
           reason: '規格：一般訊息的條件是互相關注');
     });
@@ -31,8 +31,8 @@ void main() {
     test('互相關注之後立刻移到一般訊息，不必等對方再傳一則', () {
       final s = AppState();
       final c = convo('小美', lastCategory: MessageCategory.stranger);
-      s.following.add('小美');
-      s.followers.add('小美');
+      s.toggleFollow('小美');
+      s.gainFollower('小美');
       expect(s.bucketOf(c), MessageCategory.normal);
     });
 
@@ -53,7 +53,7 @@ void main() {
       // 曾經是隊友、後來退隊，那段對話不該回到陌生訊息。
       final s = AppState();
       final c = convo('小美', lastCategory: MessageCategory.normal);
-      expect(s.following.contains('小美'), isFalse, reason: '現在沒有任何關係');
+      expect(s.isFollowing('小美'), isFalse, reason: '現在沒有任何關係');
       expect(s.bucketOf(c), MessageCategory.normal);
     });
 
@@ -67,8 +67,8 @@ void main() {
   group('分類的定義只有一份', () {
     test('分區與發送時用的是同一支判斷', () {
       final s = AppState();
-      s.following.add('小美');
-      s.followers.add('小美');
+      s.toggleFollow('小美');
+      s.gainFollower('小美');
       expect(s.currentCategoryWith('小美'), MessageCategory.normal);
       expect(s.currentCategoryWith('路人'), MessageCategory.stranger);
     });

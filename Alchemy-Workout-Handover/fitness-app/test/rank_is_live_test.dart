@@ -94,7 +94,7 @@ void main() {
   group('貼文上的階級是作者現在的，不是發文當下的', () {
     testWidgets('動態牆上印出來的是 40 階，不是貼文裡那個 11', (t) async {
       final s = AppState(demo: false)..myUid = 'u-me';
-      s.following.add('阿甲');
+      s.following.add(s.followKeyOf('阿甲', null));
       s.posts.add(_postBy('u-阿甲', '阿甲', 11));
       s.applyPublicProfiles([_profile('u-阿甲', '阿甲', 40)]);
 
@@ -344,7 +344,7 @@ void main() {
       // 「已關注」與「粉絲數 0」同時成立是真實情境：這個計數會被
       // `applyPublicProfiles` 重設成對方檔案上的值（那份只有他自己
       // 更新得了），而本機的 `following` 還留著。
-      s.following.add('阿甲');
+      s.following.add(s.followKeyOf('阿甲', 'u-阿甲'));
       expect(s.followersOf('阿甲', uid: 'u-阿甲'), 0);
 
       s.blockUser('阿甲');
@@ -359,7 +359,7 @@ void main() {
         PublicProfile(
             uid: 'u-阿乙', displayName: '阿乙', rank: 30, followers: 5),
       ]);
-      s.following.add('阿乙');
+      s.following.add(s.followKeyOf('阿乙', 'u-阿乙'));
       s.blockUser('阿乙');
       expect(s.followersOf('阿乙', uid: 'u-阿乙'), 4);
     });

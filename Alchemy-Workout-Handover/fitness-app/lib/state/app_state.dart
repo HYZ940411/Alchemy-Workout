@@ -2296,7 +2296,17 @@ class AppState extends ChangeNotifier {
 
   /// 關注關係。單向，唯一鍵為 關注者 ID ＋ 被關注者 ID ——
   /// 用集合表達，重複關注不會產生第二筆。
-  final Set<String> following = {'深蹲王', 'CoreMax', '早鳥訓練'};
+  ///
+  /// **裡面裝的是 [followKeyOf] 算出來的鍵，不是暱稱**（暱稱重構階段三）。
+  /// 認得出 uid 的人以 uid 為鍵：暱稱會改、會撞名，而這份名單要跨改名活著。
+  /// 判斷請用 [isFollowing]，要顯示名字請用 [followName]。
+  ///
+  /// **跟著 [demo] 走。** 在此之前它是無條件帶三個假名字的 `final`，
+  /// 真帳號靠 `resetToNewAccount()` 記得清掉才不會看到它們。
+  late Set<String> following =
+      demo ? {for (final n in _demoFollowing) _nameKey(n)} : {};
+
+  static const _demoFollowing = ['深蹲王', 'CoreMax', '早鳥訓練'];
 
   /// 社群裡的人。關注／粉絲清單要呈現階級與綜合能力等級。
   late List<SocialUser> socialUsers = demo ? buildSocialUsers() : [];
@@ -2308,7 +2318,10 @@ class AppState extends ChangeNotifier {
 
   /// 我的粉絲。粉絲數為使用者 Aggregate 的**儲存欄位**，非即時彙總 ——
   /// 不變條件：粉絲數 ＝ 關注關係中被關注者為本人的筆數。
-  late List<String> followers = demo ? buildFollowers() : [];
+  ///
+  /// 同 [following]，裝的是鍵不是暱稱。順序有意義（新的在前）。
+  late List<String> followers =
+      demo ? [for (final n in buildFollowers()) _nameKey(n)] : [];
   int get followerCount => followers.length;
 
   /// 歷史最高粉絲數。粉絲成就依它判定 ——
@@ -2318,9 +2331,19 @@ class AppState extends ChangeNotifier {
   int get followerMilestones => followerMilestonesReached(peakFollowerCount);
 
   /// 他人的粉絲數。我關注／取消關注時 +1 / −1。
+  ///
+  /// **以 [followKeyOf] 的鍵為鍵**，與 [following] 同一套 —— 原本以暱稱為鍵，
+  /// 兩個同名的人會共用一個數字，而改名的人會從此對不上自己的舊計數。
   late Map<String, int> otherFollowerCounts = {
-    for (final u in socialUsers) u.name: 40 + u.rank * 3,
+    for (final u in socialUsers) followKeyOf(u.name, u.uid): 40 + u.rank * 3,
   };
+
+  /// 關注／粉絲名單上，某個鍵在建立當下看到的暱稱。
+  ///
+  /// **只是墊底值。** 顯示一律先問 [nameByUid] 拿現值，查不到才用這裡的 ——
+  /// 對方還沒發布公開檔案時，名單上至少寫得出一個名字而不是一串 uid。
+  /// 同 `apprenticeName`／`mentorName` 那一套（見 [applyCloudBonds]）。
+  final Map<String, String> _followNames = {};
 
   // --- 公開檔案（[BE-11] 批次 1）---
 
@@ -2393,7 +2416,12 @@ class AppState extends ChangeNotifier {
       // `otherFollowerCounts` 這個 late 欄位初始化，那份初始值是用
       // 示範公式 `40 + rank * 3` 算的 —— 等輪到 putIfAbsent 時鍵已經在了，
       // 雲端讀回來的真實數字就這樣被一個假數字蓋掉。
-      otherFollowerCounts[p.displayName] = p.followers;
+      otherFollowerCounts[p.uid] = p.followers;
+
+      // **把暱稱鍵升級成 uid 鍵。** 我在對方發布公開檔案之前就關注了他
+      // （示範資料的人一直都是這樣），那一筆當時只能以暱稱為鍵；
+      // 不升級的話他會在名單上變成兩個人 —— 一個舊的按不動、一個新的。
+      _upgradeFollowKey(_nameKey(p.displayName), p.uid);
 
       // 對方關閉了綜合等級的對外可見時，畫面顯示最低階 ——
       // 不猜、也不留空白造成版面破洞。
@@ -2517,6 +2545,59 @@ class AppState extends ChangeNotifier {
   bool _isMe(String name, String? uid) =>
       uid != null && myUid != null ? uid == myUid : _mineByName(name);
 
+  // --- 關注名單的鍵（暱稱重構階段三）---
+
+  /// 沒有 uid 的人在關注名單上長什麼樣。
+  ///
+  /// 加前綴是為了**不可能跟某個真實 uid 撞值** —— Firebase 的 uid 不含冒號。
+  static const _namePrefix = 'name:';
+
+  static String _nameKey(String name) => '$_namePrefix$name';
+
+  static bool _isNameKey(String key) => key.startsWith(_namePrefix);
+
+  /// 這個人在關注名單上的鍵。**有 uid 就用 uid。**
+  ///
+  /// 呼叫端拿不到 uid 時會再走一次 [_uidByName] 反查 —— 那是退路不是主路
+  /// （見 [_uidByName] 的說明），查不到才退成暱稱鍵。
+  /// 退成暱稱鍵的人日後發布了公開檔案，[applyPublicProfiles] 會把那一筆
+  /// 升級成 uid 鍵，名單不會多出一個分身。
+  String followKeyOf(String name, String? uid) =>
+      uid ?? _uidByName[name] ?? _nameKey(name);
+
+  /// 關注／粉絲名單上這個鍵該顯示的名字。
+  ///
+  /// 順序有意義：**現在的暱稱優先**，其次是當初記下來的，都沒有才認賠。
+  /// 反過來的話，對方改了名字而我這裡永遠顯示舊的。
+  String followName(String key) => _isNameKey(key)
+      ? key.substring(_namePrefix.length)
+      : (nameByUid[key] ?? _followNames[key] ?? '（資料載入中）');
+
+  /// 名單上這個鍵背後的 uid。暱稱鍵沒有 uid，回空值。
+  String? uidOfFollowKey(String key) => _isNameKey(key) ? null : key;
+
+  /// 讀存檔用：把**階段三之前存下來的暱稱**翻成鍵。
+  ///
+  /// 翻得出 uid 的就此收斂到 uid，翻不出的留成暱稱鍵 —— 而登入時
+  /// [applyFollows] 會以雲端為準把 uid 那一半整份換掉，所以翻錯也只錯一次。
+  String followKeyFromLegacyName(String name) => followKeyOf(name, null);
+
+  /// 我有沒有關注這個人。
+  ///
+  /// **拿得到 uid 就給 uid。** 只給暱稱的話，對方改名之後這裡會答錯 ——
+  /// 畫面顯示「關注」，按下去卻在雲端建了第二次同樣的關係。
+  bool isFollowing(String name, {String? uid}) =>
+      following.contains(followKeyOf(name, uid));
+
+  /// 這個人有沒有關注我。
+  bool isFollower(String name, {String? uid}) =>
+      followers.contains(followKeyOf(name, uid));
+
+  /// 把一個鍵記上它當下的暱稱，供 [followName] 墊底。
+  void _rememberFollowName(String key, String name) {
+    if (!_isNameKey(key)) _followNames[key] = name;
+  }
+
   /// 已經去數過的人。避免同一頁重複查 —— 與 [_profilesInFlight] 同理。
   final Set<String> _followerCountsInFlight = {};
 
@@ -2534,7 +2615,7 @@ class AppState extends ChangeNotifier {
     if (src == null || uid == null || uid == myUid) return;
     if (!_followerCountsInFlight.add(uid)) return;
     try {
-      otherFollowerCounts[name] = await src.followerCountOf(uid);
+      otherFollowerCounts[uid] = await src.followerCountOf(uid);
       notifyListeners();
     } catch (_) {
       // 數不到就維持現狀 —— 一次網路失敗不該把畫面上的數字洗掉。
@@ -2551,7 +2632,9 @@ class AppState extends ChangeNotifier {
   /// 我關注了某人、他的粉絲數卻紋風不動 —— 那個 +1 被雲端快照蓋掉了。
   int followersOf(String name, {String? uid}) => _isMe(name, uid)
       ? followerCount
-      : (otherFollowerCounts[name] ?? _profile(name, uid)?.followers ?? 0);
+      : (otherFollowerCounts[followKeyOf(name, uid)] ??
+          _profile(name, uid)?.followers ??
+          0);
 
   /// 某人在檔案頁上該顯示的六維能力值。
   ///
@@ -2678,28 +2761,54 @@ class AppState extends ChangeNotifier {
   /// **即發即忘，而且吞掉錯誤**：關注是樂觀更新，記憶體與畫面已經改了。
   /// 這裡失敗就讓它失敗 —— 下次登入 [applyFollows] 會以雲端為準重新對齊。
   /// 為了一次網路失敗把畫面倒回去，比晚一點才一致更難解釋。
-  void _pushFollow(String name, {required bool nowFollowing}) {
+  void _pushFollow(String key, {required bool nowFollowing}) {
     final src = followSource;
     if (src == null) return;
-    final target = uidOf(name);
-    // 對方不在公開檔案裡（示範用的假使用者就是這種）—— 只在本地生效。
-    if (target == null) return;
-    (nowFollowing ? src.follow(target) : src.unfollow(target))
-        .catchError((_) {});
+    // 暱稱鍵代表對方不在公開檔案裡（示範用的假使用者就是這種），
+    // 雲端沒有這個人可以指 —— 只在本地生效。
+    if (_isNameKey(key)) return;
+    (nowFollowing ? src.follow(key) : src.unfollow(key)).catchError((_) {});
+  }
+
+  /// 把名單上的 [from] 換成 [to]，三份資料一起換。
+  ///
+  /// 用在「原本只認得暱稱的人，現在拿到 uid 了」。
+  void _upgradeFollowKey(String from, String to) {
+    if (from == to) return;
+    if (following.remove(from)) following.add(to);
+    final at = followers.indexOf(from);
+    if (at >= 0) followers[at] = to;
+    final count = otherFollowerCounts.remove(from);
+    // **舊的計數不蓋掉新的。** 上面那一行剛把雲端讀回來的真實數字寫進
+    // `otherFollowerCounts[p.uid]`，暱稱鍵底下那個是示範公式算出來的。
+    if (count != null) otherFollowerCounts.putIfAbsent(to, () => count);
   }
 
   /// 以雲端的關注關係為準重新對齊（[BE-11] 批次 2）。
   ///
-  /// **只處理認得出暱稱的 uid**：對方若還沒發布公開檔案，
-  /// 這裡沒有暱稱可以填進 [following]，略過即可 —— 下次它發布了自然會出現。
+  /// **uid 那一半整份換掉，不是併入。** 併入的話，我在另一台裝置上取消的
+  /// 關注永遠回不來 —— 雲端已經沒有那筆關係，而本機這份留著。
+  /// 暱稱鍵那一半留著：那是示範資料的假使用者，雲端本來就沒有他們，
+  /// 跟著換掉的話一登入就整批消失。
+  ///
+  /// **不再要求「認得出暱稱」。** 在此之前查不到暱稱的 uid 會被整筆丟掉，
+  /// 於是「對方還沒發布公開檔案」等於「我沒有關注他」—— 名單少人、
+  /// 粉絲數也少。現在名單存的是 uid，名字查不到就由 [followName] 墊底。
   void applyFollows(Set<String> followingUids, Set<String> followerUids) {
-    for (final uid in followingUids) {
-      final name = nameByUid[uid];
-      if (name != null) following.add(name);
-    }
-    for (final uid in followerUids) {
-      final name = nameByUid[uid];
-      if (name != null && !followers.contains(name)) followers.insert(0, name);
+    following
+      ..removeWhere((k) => !_isNameKey(k))
+      ..addAll(followingUids);
+    followers.removeWhere((k) => !_isNameKey(k));
+    // **封鎖過的人不回來。** 我刪不掉他那一筆關係文件（安全規則只讓
+    // 建立者刪），雲端於是永遠留著 —— 不擋的話，「封鎖自動解除雙方關注」
+    // 這條後置條件每次登入都被推翻一次。
+    final blocked = {
+      for (final b in blockedUsers) followKeyOf(b.name, b.uid),
+    };
+    // 反著插，雲端那批彼此的相對順序才跟傳進來的一致。
+    for (final uid in followerUids.toList().reversed) {
+      if (blocked.contains(uid)) continue;
+      if (!followers.contains(uid)) followers.insert(0, uid);
     }
     // 粉絲數的不變條件：等於關注關係中被關注者為本人的筆數。
     peakFollowerCount = math.max(peakFollowerCount, followers.length);
@@ -3032,13 +3141,19 @@ class AppState extends ChangeNotifier {
   ///
   /// 封鎖**不受社群功能停權限制**：功能對照表列的是發文、私訊、關注這些
   /// 對外互動，封鎖是自保。停權中的人一樣會被騷擾。
-  bool blockUser(String name) {
+  bool blockUser(String name, {String? uid}) {
     if (blockBlockedReason(name) != null) return false;
-    blockedUsers.insert(0, BlockedUser(name, now));
+    blockedUsers.insert(0, BlockedUser(name, now, uid: uid ?? uidOf(name)));
 
     // Postcondition：自動解除**雙方**的關注關係。
-    _unfollow(name);
-    followers.remove(name);
+    //
+    // **「對方關注我」那一半只解得掉本機這一份。** 雲端的關係文件是
+    // `follows/{他的uid}_{我的uid}`，而安全規則只讓 `followerId` 本人刪除 ——
+    // 我刪不了別人建立的關係。下次登入 `applyFollows` 會把他加回粉絲名單。
+    // 見 PROGRESS 1Q，待裁決。
+    final key = followKeyOf(name, uid);
+    _unfollow(key);
+    followers.remove(key);
 
     // Postcondition：自動解除師徒關係，未完成的師徒任務作廢。
     // 封鎖後該關係只剩空殼，且會繼續佔用教官的帶徒名額。
@@ -3057,10 +3172,10 @@ class AppState extends ChangeNotifier {
   /// 於是「已關注」與「粉絲數 0」同時成立，一扣就變負的。
   ///
   /// 聲望早就有地板了（`applyReputation`），粉絲數漏掉。
-  void _unfollow(String name) {
-    if (!following.remove(name)) return;
-    final now = (otherFollowerCounts[name] ?? 1) - 1;
-    otherFollowerCounts[name] = now < 0 ? 0 : now;
+  void _unfollow(String key) {
+    if (!following.remove(key)) return;
+    final now = (otherFollowerCounts[key] ?? 1) - 1;
+    otherFollowerCounts[key] = now < 0 ? 0 : now;
   }
 
   /// 使用者已解除封鎖。
@@ -3430,31 +3545,37 @@ class AppState extends ChangeNotifier {
 
   /// 使用者已關注帳號 / 已取消關注。
   /// Postcondition：被關注者的粉絲數 +1 / −1。
-  void toggleFollow(String name) {
+  void toggleFollow(String name, {String? uid}) {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return;
-    if (following.contains(name)) {
-      _unfollow(name);
-      _pushFollow(name, nowFollowing: false);
+    final key = followKeyOf(name, uid);
+    if (following.contains(key)) {
+      _unfollow(key);
+      _pushFollow(key, nowFollowing: false);
     } else {
-      following.add(name);
-      otherFollowerCounts[name] = (otherFollowerCounts[name] ?? 0) + 1;
+      following.add(key);
+      _rememberFollowName(key, name);
+      otherFollowerCounts[key] = (otherFollowerCounts[key] ?? 0) + 1;
       // 歷史行為計數，取消關注不扣回去。
       followTotal += 1;
-      _pushFollow(name, nowFollowing: true);
+      _pushFollow(key, nowFollowing: true);
     }
     notifyListeners();
   }
 
   /// 對方取消關注我 —— 粉絲數減少，但已解鎖的粉絲成就不撤銷。
-  void loseFollower(String name) {
-    if (!followers.remove(name)) return;
+  ///
+  /// 收的是[followers] 裡的鍵（畫面上那份清單就是它）。
+  void loseFollower(String key) {
+    if (!followers.remove(key)) return;
     notifyListeners();
   }
 
-  void gainFollower(String name) {
-    if (followers.contains(name)) return;
-    followers.insert(0, name);
+  void gainFollower(String name, {String? uid}) {
+    final key = followKeyOf(name, uid);
+    if (followers.contains(key)) return;
+    followers.insert(0, key);
+    _rememberFollowName(key, name);
     peakFollowerCount = math.max(peakFollowerCount, followers.length);
     notifyListeners();
   }
@@ -4802,9 +4923,14 @@ class AppState extends ChangeNotifier {
 
   /// 曾經關注過幾次。歷史計數，取消關注不扣。
   ///
-  /// **初始值取自已關注的人數**，不是 0 —— 這個帳號一開始就關注著三個人，
+  /// **初始值取自已關注的人數**，不是 0 —— 示範帳號一開始就關注著三個人，
   /// 計數卻從零起算的話，個人頁寫「關注 3」、師徒解鎖清單寫「關注 尚未做過」，
   /// 同一件事兩個答案。不變條件：曾經關注的次數不會少於現在關注中的人數。
+  ///
+  /// **真帳號是 0。** 在此之前 [following] 沒跟著 [demo] 走，於是
+  /// `AppState(demo: false)` 一開機就帶著三個假關注、`followTotal` 也是 3 ——
+  /// 師徒解鎖清單裡的「關注」對每一個新帳號**預設就是做過了**。
+  /// 這是「假資料撐著功能」的第五次（前四次見 PROGRESS 1N）。
   late int followTotal = following.length;
 
   /// 存檔還原用：解鎖旗標一經設定不可撤銷。
@@ -5803,7 +5929,7 @@ class AppState extends ChangeNotifier {
 
     if (myInstructor?.name == c.peer) _messagedInstructorThisWeek = true;
 
-    final category = currentCategoryWith(c.peer);
+    final category = currentCategoryWith(c.peer, peerUid: c.peerUid);
 
     c.messages.add(ChatMessage(
       true,
@@ -6843,8 +6969,10 @@ class AppState extends ChangeNotifier {
   /// 三種關係的定義只有這一份（`classifyMessage`），發送時與分區時共用。
   /// **「一般訊息」要的是互相關注**，不是我單方追蹤 ——
   /// 規格：「可直接發送私訊的對象：互相關注者、具師徒關係者、同團隊成員」。
-  MessageCategory currentCategoryWith(String peer) => classifyMessage(
-        mutualFollow: following.contains(peer) && followers.contains(peer),
+  MessageCategory currentCategoryWith(String peer, {String? peerUid}) =>
+      classifyMessage(
+        mutualFollow: isFollowing(peer, uid: peerUid) &&
+            isFollower(peer, uid: peerUid),
         mentorBond: myInstructor?.name == peer ||
             apprentices.any((a) => a.name == peer),
         sameTeam: myTeam?.members.any((m) => m.name == peer) ?? false,
@@ -6860,7 +6988,7 @@ class AppState extends ChangeNotifier {
   /// 改成「此刻的關係算一般 **或** 最後一則本來就是一般」——
   /// **只升不降**：曾經是隊友、後來退隊，那段對話不該被丟回陌生訊息區。
   MessageCategory bucketOf(Conversation c) =>
-      currentCategoryWith(c.peer) == MessageCategory.normal ||
+      currentCategoryWith(c.peer, peerUid: c.peerUid) == MessageCategory.normal ||
               c.bucket == MessageCategory.normal
           ? MessageCategory.normal
           : MessageCategory.stranger;
@@ -9157,7 +9285,9 @@ class AppState extends ChangeNotifier {
           !planQuotaLocked(p);
     }
     // 他人的：須開了對關注者可見，且我確實關注了作者。
-    return p.visibleToFollowers && following.contains(p.author);
+    // `CustomPlan` 身上沒有 `authorUid`，只能由暱稱反查 —— 這是退路，
+    // 作者改名之後就查不到了（暱稱重構階段四的範圍）。
+    return p.visibleToFollowers && isFollowing(p.author);
   }
 
   /// 刪除為釋放名額的唯一手段；已刪除為終止狀態，不再出現。
@@ -10236,6 +10366,7 @@ class AppState extends ChangeNotifier {
     checkInRecords.clear();
     followers.clear();
     following.clear();
+    _followNames.clear();
     blockedUsers.clear();
     sentApplications.clear();
     // 加入／退出的時戳也要清 —— 新帳號沒有換隊冷卻，也沒有誤入窗口。

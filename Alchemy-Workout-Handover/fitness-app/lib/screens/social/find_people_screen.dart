@@ -98,7 +98,7 @@ class _FindPeopleScreenState extends State<FindPeopleScreen> {
                                 '${s.rankOf(people[i].name, uid: people[i].uid, fallback: people[i].rank)}'
                                 '　·　綜合 '
                                 '${s.gradeOf(people[i].name, uid: people[i].uid) ?? people[i].grade}'
-                                '${s.following.contains(people[i].name) ? '　·　追蹤中' : ''}',
+                                '${s.isFollowing(people[i].name, uid: people[i].uid) ? '　·　追蹤中' : ''}',
                             chevron: true,
                             // 點進公開檔案，「開始聊天」在那裡。
                             onTap: () =>

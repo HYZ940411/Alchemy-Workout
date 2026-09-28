@@ -72,7 +72,7 @@ void main() {
 
     testWidgets('別人的貼文：檢舉與封鎖，沒有編輯', (t) async {
       final s = _me();
-      s.following.add('阿甲');
+      s.following.add(s.followKeyOf('阿甲', 'u-阿甲'));
       s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
       await _pump(t, s, const Scaffold(body: FeedScreen()));
 
@@ -126,7 +126,7 @@ void main() {
 
     testWidgets('別人的貼文', (t) async {
       final s = _me();
-      s.following.add('阿甲');
+      s.following.add(s.followKeyOf('阿甲', 'u-阿甲'));
       s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
       await _pump(t, s, const Scaffold(body: FeedScreen()));
       await _tapFeedMenu(t);
@@ -140,7 +140,7 @@ void main() {
   group('封鎖要先確認，不是點一下就生效', () {
     testWidgets('跳出確認對話框，取消就不封鎖', (t) async {
       final s = _me();
-      s.following.add('阿甲');
+      s.following.add(s.followKeyOf('阿甲', 'u-阿甲'));
       s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
       await _pump(t, s, const Scaffold(body: FeedScreen()));
       await _tapFeedMenu(t);
@@ -163,12 +163,13 @@ void main() {
       await t.tap(find.text('取消'));
       await t.pumpAndSettle();
       expect(s.isBlocked('阿甲'), isFalse, reason: '取消了就不該封鎖');
-      expect(s.following.contains('阿甲'), isTrue, reason: '關注也不該被解除');
+      expect(s.isFollowing('阿甲', uid: 'u-阿甲'), isTrue,
+          reason: '關注也不該被解除');
     });
 
     testWidgets('確認之後才真的封鎖', (t) async {
       final s = _me();
-      s.following.add('阿甲');
+      s.following.add(s.followKeyOf('阿甲', 'u-阿甲'));
       s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
       await _pump(t, s, const Scaffold(body: FeedScreen()));
       await _tapFeedMenu(t);

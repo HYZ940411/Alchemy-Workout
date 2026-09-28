@@ -212,8 +212,13 @@ extension AppStateSnapshot on AppState {
         'currentPlanId': currentPlan?.id,
 
         // --- 關注 ---
-        'following': following.toList(),
-        'followers': followers,
+        //
+        // **鍵不是暱稱**（暱稱重構階段三）。欄位名跟著換，舊存檔裡的
+        // `following`／`followers` 因此不會被當成鍵讀進來 ——
+        // 版本號要另外維護，換欄位名不用。
+        'followingKeys': following.toList(),
+        'followerKeys': followers,
+        'followNames': _followNames,
         'peakFollowerCount': peakFollowerCount,
 
         // --- 訓練歷史與信箱（會隨使用累積，丟了最有感） ---
@@ -627,12 +632,30 @@ extension AppStateSnapshot on AppState {
         ? null
         : platformPlans.where((p) => p.id == planId).firstOrNull;
 
-    if (pick<List>('following') != null) {
+    // 關注名單。新欄位是鍵，舊欄位（階段三之前）是暱稱，翻一次。
+    final names = pick<Map>('followNames');
+    if (names != null) {
+      _followNames
+        ..clear()
+        ..addAll({
+          for (final e in names.entries)
+            if (e.value is String) '${e.key}': e.value as String,
+        });
+    }
+    if (pick<List>('followingKeys') != null) {
       following
         ..clear()
-        ..addAll(strs('following'));
+        ..addAll(strs('followingKeys'));
+    } else if (pick<List>('following') != null) {
+      following
+        ..clear()
+        ..addAll(strs('following').map(followKeyFromLegacyName));
     }
-    if (pick<List>('followers') != null) followers = strs('followers');
+    if (pick<List>('followerKeys') != null) {
+      followers = strs('followerKeys');
+    } else if (pick<List>('followers') != null) {
+      followers = strs('followers').map(followKeyFromLegacyName).toList();
+    }
     peakFollowerCount = intOf('peakFollowerCount', peakFollowerCount);
 
     final hist = pick<List>('history');

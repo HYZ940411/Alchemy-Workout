@@ -30,6 +30,15 @@ const _writeOnly = <String, String>{
   'savedAt': '診斷用的時間戳，給人看的，不套回狀態',
 };
 
+/// 只讀不寫是對的那些鍵：**舊存檔的欄位，讀進來翻成新的，不再寫回去。**
+///
+/// 每一筆都要寫「舊的是什麼、新的是哪一個」，否則一個打錯字的鍵
+/// 混進來就會永遠躲過上面那道檢查。
+const _legacyRead = <String, String>{
+  'following': '暱稱重構階段三：改存鍵，新欄位 followingKeys',
+  'followers': '暱稱重構階段三：改存鍵，新欄位 followerKeys',
+};
+
 void main() {
   test('存檔的寫與讀兩邊對得上', () {
     final src =
@@ -62,7 +71,7 @@ void main() {
     );
 
     expect(
-      read.difference(written),
+      read.difference(written).difference(_legacyRead.keys.toSet()),
       isEmpty,
       reason: '讀取器在等一個永遠不會被寫出去的鍵，預設值會靜靜生效。\n'
           '信箱獎勵被清空那次就是這樣來的。',

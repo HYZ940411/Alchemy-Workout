@@ -28,8 +28,15 @@ class SocialUser {
 /// 一筆封鎖。單向關係，唯一鍵為 封鎖者 ID ＋ 被封鎖者 ID。
 class BlockedUser {
   final String name;
+
+  /// 對方的雲端身分。**示範資料的假使用者沒有，所以可以是空值。**
+  ///
+  /// 理由同 [SocialUser.uid]。封鎖的後置條件是「解除雙方的關注關係」，
+  /// 而關注名單以 uid 為鍵 —— 只留暱稱的話，對方改名之後解不掉，
+  /// 也擋不住他在下一次登入時從雲端回到我的粉絲名單。
+  final String? uid;
   final DateTime at;
-  const BlockedUser(this.name, this.at);
+  const BlockedUser(this.name, this.at, {this.uid});
 }
 
 /// 通知的兩類。**只有推播類受同日總量上限約束。**

@@ -268,7 +268,10 @@ class _ChatScreenState extends State<ChatScreen> {
     _asked = true;
     // 已經追蹤了就沒事；不是陌生訊息也沒事。
     if (s.bucketOf(widget.conversation) != MessageCategory.stranger) return;
-    if (s.following.contains(widget.conversation.peer)) return;
+    if (s.isFollowing(widget.conversation.peer,
+        uid: widget.conversation.peerUid)) {
+      return;
+    }
 
     final ok = await showAppDialog(
       context,
@@ -283,7 +286,8 @@ class _ChatScreenState extends State<ChatScreen> {
       cancelLabel: '先不要',
     );
     if (ok != true || !mounted) return;
-    s.toggleFollow(widget.conversation.peer);
+    s.toggleFollow(widget.conversation.peer,
+        uid: widget.conversation.peerUid);
     if (mounted) showToast(context, '已追蹤 ${widget.conversation.peer}');
   }
 

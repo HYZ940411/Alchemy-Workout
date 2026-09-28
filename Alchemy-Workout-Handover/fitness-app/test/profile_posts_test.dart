@@ -123,7 +123,7 @@ void main() {
 
     testWidgets('動態牆畫的也是 PostCard —— 兩邊同一個型別才不會長歪', (t) async {
       final s = _withPosts();
-      s.following.add('小明');
+      s.following.add(s.followKeyOf('小明', null));
       await _pump(t, s, const FeedScreen());
       expect(find.byType(PostCard), findsWidgets);
     });
