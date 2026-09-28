@@ -63,31 +63,57 @@ class AppButton extends StatelessWidget {
           child: Container(
             // 【必須】最小高度 48px，非固定高度 —— 字級放大時必須能長高
             constraints: const BoxConstraints(minHeight: Sz.buttonMinHeight),
-            padding: const EdgeInsets.symmetric(horizontal: S.base, vertical: S.md),
-            alignment: Alignment.center,
-            child: loading
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: fg),
-                  )
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (icon != null) ...[
-                        Icon(icon, size: Sz.iconDense, color: fg),
-                        const SizedBox(width: S.sm),
-                      ],
-                      Flexible(
-                        child: Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          style: T.button(color: fg),
-                        ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: S.base,
+              vertical: S.md,
+            ),
+            // **`heightFactor: 1` 不可省。**
+            //
+            // 這裡原本是 `Container` 的 `alignment: Alignment.center`，
+            // 而**帶 alignment 的 Container 在「有界但寬鬆」的約束下會把
+            // 自己撐到最大**（它內部就是一個 widthFactor／heightFactor
+            // 皆為空的 `Align`）。
+            //
+            // 在 `Column`／`Row`／`ListView` 裡看不出來 —— 那些給的是
+            // 無界主軸，`Align` 會縮到子項大小。但放進 `Center`、或
+            // `Scaffold.bottomNavigationBar` 就會撐滿整個畫面。
+            //
+            // 2026-09-28 使用者實測教官測驗：交卷鍵佔了 16,16→377,836，
+            // 而題目清單的高度是 **0** —— 二十三題一題都畫不出來，
+            // 他只看到一整片橘色。
+            //
+            // `heightFactor: 1` 讓它依子項決定高度；寬度仍然吃滿，
+            // 所以既有版面（全寬按鈕）不變。
+            child: Align(
+              alignment: Alignment.center,
+              heightFactor: 1,
+              child: loading
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: fg,
                       ),
-                    ],
-                  ),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (icon != null) ...[
+                          Icon(icon, size: Sz.iconDense, color: fg),
+                          const SizedBox(width: S.sm),
+                        ],
+                        Flexible(
+                          child: Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            style: T.button(color: fg),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
           ),
         ),
       ),
@@ -104,27 +130,28 @@ class ButtonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, c) {
-          final half = (c.maxWidth - S.md) / 2;
-          final stack = _needsWrap(left.label, half) || _needsWrap(right.label, half);
-          if (stack) {
-            return Column(
-              children: [
-                SizedBox(width: double.infinity, child: left),
-                const SizedBox(height: S.md),
-                SizedBox(width: double.infinity, child: right),
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: left),
-              const SizedBox(width: S.md),
-              Expanded(child: right),
-            ],
-          );
-        },
+    builder: (context, c) {
+      final half = (c.maxWidth - S.md) / 2;
+      final stack =
+          _needsWrap(left.label, half) || _needsWrap(right.label, half);
+      if (stack) {
+        return Column(
+          children: [
+            SizedBox(width: double.infinity, child: left),
+            const SizedBox(height: S.md),
+            SizedBox(width: double.infinity, child: right),
+          ],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: left),
+          const SizedBox(width: S.md),
+          Expanded(child: right),
+        ],
       );
+    },
+  );
 
   static bool _needsWrap(String label, double width) {
     final tp = TextPainter(
@@ -159,26 +186,28 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(R.card),
-          boxShadow: C.shadow,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(R.card),
+      boxShadow: C.shadow,
+    ),
+    child: Material(
+      color: color ?? C.bgSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(R.card),
+        side: BorderSide(
+          color: borderColor ?? C.lineDivider,
+          width: borderWidth,
         ),
-        child: Material(
-          color: color ?? C.bgSurface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(R.card),
-            side: BorderSide(
-                color: borderColor ?? C.lineDivider, width: borderWidth),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            highlightColor: C.press,
-            splashColor: C.press,
-            child: Padding(padding: padding, child: child),
-          ),
-        ),
-      );
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        highlightColor: C.press,
+        splashColor: C.press,
+        child: Padding(padding: padding, child: child),
+      ),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -219,26 +248,31 @@ class ListRow extends StatelessWidget {
               minHeight: subtitle == null ? Sz.listRowSingle : Sz.listRowDouble,
             ),
             padding: const EdgeInsets.symmetric(
-                horizontal: S.base, vertical: S.base),
+              horizontal: S.base,
+              vertical: S.base,
+            ),
             child: Row(
               children: [
-                if (leading != null) ...[
-                  leading!,
-                  const SizedBox(width: S.md),
-                ],
+                if (leading != null) ...[leading!, const SizedBox(width: S.md)],
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       // 【必須】主文字過長時截斷加省略號，不可推擠右側元素
-                      Text(title,
-                          style: T.body(), maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
+                      Text(
+                        title,
+                        style: T.body(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       if (subtitle != null)
-                        Text(subtitle!,
-                            style: T.caption(), maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
+                        Text(
+                          subtitle!,
+                          style: T.caption(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                     ],
                   ),
                 ),
@@ -249,8 +283,11 @@ class ListRow extends StatelessWidget {
                 ],
                 if (chevron) ...[
                   const SizedBox(width: S.md),
-                  const Icon(Icons.chevron_right,
-                      size: Sz.iconDense, color: C.textSecondary),
+                  const Icon(
+                    Icons.chevron_right,
+                    size: Sz.iconDense,
+                    color: C.textSecondary,
+                  ),
                 ],
               ],
             ),
@@ -274,22 +311,22 @@ class ListGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppCard(
-        padding: EdgeInsets.zero,
-        child: Column(
-          children: [
-            for (var i = 0; i < rows.length; i++)
-              ListRow(
-                title: rows[i].title,
-                subtitle: rows[i].subtitle,
-                leading: rows[i].leading,
-                trailing: rows[i].trailing,
-                chevron: rows[i].chevron,
-                onTap: rows[i].onTap,
-                showDivider: i != rows.length - 1,
-              ),
-          ],
-        ),
-      );
+    padding: EdgeInsets.zero,
+    child: Column(
+      children: [
+        for (var i = 0; i < rows.length; i++)
+          ListRow(
+            title: rows[i].title,
+            subtitle: rows[i].subtitle,
+            leading: rows[i].leading,
+            trailing: rows[i].trailing,
+            chevron: rows[i].chevron,
+            onTap: rows[i].onTap,
+            showDivider: i != rows.length - 1,
+          ),
+      ],
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -312,50 +349,53 @@ class AppProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
         children: [
-          Row(
-            children: [
-              Expanded(child: Text(label, style: T.body())),
-              if (trailingLabel != null)
-                Text(trailingLabel!, style: T.numberS()),
-            ],
-          ),
-          const SizedBox(height: S.sm),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(R.inset),
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: value.clamp(0.0, 1.0)),
-              duration: kAnimProgress,
-              curve: Curves.easeOut,
-              builder: (context, v, _) => LinearProgressIndicator(
-                value: v,
-                minHeight: Sz.progressHeight,
-                backgroundColor: C.lineTrack,
-                valueColor: const AlwaysStoppedAnimation(C.statusSuccess),
-              ),
-            ),
-          ),
+          Expanded(child: Text(label, style: T.body())),
+          if (trailingLabel != null) Text(trailingLabel!, style: T.numberS()),
         ],
-      );
+      ),
+      const SizedBox(height: S.sm),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(R.inset),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: value.clamp(0.0, 1.0)),
+          duration: kAnimProgress,
+          curve: Curves.easeOut,
+          builder: (context, v, _) => LinearProgressIndicator(
+            value: v,
+            minHeight: Sz.progressHeight,
+            backgroundColor: C.lineTrack,
+            valueColor: const AlwaysStoppedAnimation(C.statusSuccess),
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 /// 只有一條軌道、由呼叫端自行負責旁邊的文字（用於已含數值的複合版面）。
 class BareProgress extends StatelessWidget {
   final double value;
   final Color color;
-  const BareProgress({super.key, required this.value, this.color = C.statusSuccess});
+  const BareProgress({
+    super.key,
+    required this.value,
+    this.color = C.statusSuccess,
+  });
 
   @override
   Widget build(BuildContext context) => ClipRRect(
-        borderRadius: BorderRadius.circular(R.inset),
-        child: LinearProgressIndicator(
-          value: value.clamp(0.0, 1.0),
-          minHeight: Sz.progressHeight,
-          backgroundColor: C.lineTrack,
-          valueColor: AlwaysStoppedAnimation(color),
-        ),
-      );
+    borderRadius: BorderRadius.circular(R.inset),
+    child: LinearProgressIndicator(
+      value: value.clamp(0.0, 1.0),
+      minHeight: Sz.progressHeight,
+      backgroundColor: C.lineTrack,
+      valueColor: AlwaysStoppedAnimation(color),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -366,20 +406,29 @@ class StatCard extends StatelessWidget {
   final String label;
   final String value;
   final String? unit;
-  const StatCard({super.key, required this.label, required this.value, this.unit});
+  const StatCard({
+    super.key,
+    required this.label,
+    required this.value,
+    this.unit,
+  });
 
   @override
   Widget build(BuildContext context) => AppCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: T.caption(), maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            const SizedBox(height: S.xs),
-            ValueUnit(value: value, unit: unit, style: T.numberM()),
-          ],
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: T.caption(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-      );
+        const SizedBox(height: S.xs),
+        ValueUnit(value: value, unit: unit, style: T.numberM()),
+      ],
+    ),
+  );
 }
 
 /// 卡片內的統計欄位（不自帶卡片外框）。
@@ -387,18 +436,27 @@ class StatField extends StatelessWidget {
   final String label;
   final String value;
   final String? unit;
-  const StatField({super.key, required this.label, required this.value, this.unit});
+  const StatField({
+    super.key,
+    required this.label,
+    required this.value,
+    this.unit,
+  });
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: T.caption(), maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-          const SizedBox(height: S.xs),
-          ValueUnit(value: value, unit: unit, style: T.numberM()),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: T.caption(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      const SizedBox(height: S.xs),
+      ValueUnit(value: value, unit: unit, style: T.numberM()),
+    ],
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -413,18 +471,19 @@ class TagBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: S.sm, vertical: 2),
-        decoration: BoxDecoration(
-          color: fill ?? Colors.transparent,
-          borderRadius: BorderRadius.circular(R.child),
-          border: Border.all(color: borderColor ?? C.lineDivider),
-        ),
-        child: Text(text,
-            // 填色可能是深藍也可能是橘黃，前景依實測對比擇一 ——
-            // 一律用墨字會讓深底徽章整個看不見。
-            style: T.caption(
-                color: fill != null ? C.onFill(fill!) : C.textSecondary)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: S.sm, vertical: 2),
+    decoration: BoxDecoration(
+      color: fill ?? Colors.transparent,
+      borderRadius: BorderRadius.circular(R.child),
+      border: Border.all(color: borderColor ?? C.lineDivider),
+    ),
+    child: Text(
+      text,
+      // 填色可能是深藍也可能是橘黃，前景依實測對比擇一 ——
+      // 一律用墨字會讓深底徽章整個看不見。
+      style: T.caption(color: fill != null ? C.onFill(fill!) : C.textSecondary),
+    ),
+  );
 }
 
 /// 數字徽章（未讀數）：圓形，最小 20×20，底 status/error、字 text/on-dark。
@@ -434,16 +493,18 @@ class CountBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-        padding: const EdgeInsets.symmetric(horizontal: 5),
-        decoration: const BoxDecoration(
-          color: C.statusError,
-          shape: BoxShape.circle,
-        ),
-        alignment: Alignment.center,
-        child: Text(count > 99 ? '99+' : '$count',
-            style: T.caption(color: C.textOnDark)),
-      );
+    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+    padding: const EdgeInsets.symmetric(horizontal: 5),
+    decoration: const BoxDecoration(
+      color: C.statusError,
+      shape: BoxShape.circle,
+    ),
+    alignment: Alignment.center,
+    child: Text(
+      count > 99 ? '99+' : '$count',
+      style: T.caption(color: C.textOnDark),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -461,33 +522,32 @@ class AppCheckbox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => GestureDetector(
-        onTap: onChanged == null ? null : () => onChanged!(!value),
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: Sz.tapTarget,
-          height: Sz.tapTarget,
-          child: Center(
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: value ? C.actionOutline : Colors.transparent,
-                borderRadius: BorderRadius.circular(R.child),
-                border: Border.all(
-                  color: onChanged == null
-                      ? C.textDisabled
-                      : (value ? C.actionOutline : C.lineDivider),
-                  width: 2,
-                ),
-              ),
-              child: value
-                  ? Icon(Icons.check,
-                      size: 16, color: C.onFill(C.actionOutline))
-                  : null,
+    onTap: onChanged == null ? null : () => onChanged!(!value),
+    behavior: HitTestBehavior.opaque,
+    child: SizedBox(
+      width: Sz.tapTarget,
+      height: Sz.tapTarget,
+      child: Center(
+        child: Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: value ? C.actionOutline : Colors.transparent,
+            borderRadius: BorderRadius.circular(R.child),
+            border: Border.all(
+              color: onChanged == null
+                  ? C.textDisabled
+                  : (value ? C.actionOutline : C.lineDivider),
+              width: 2,
             ),
           ),
+          child: value
+              ? Icon(Icons.check, size: 16, color: C.onFill(C.actionOutline))
+              : null,
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class AppSwitch extends StatelessWidget {
@@ -497,28 +557,28 @@ class AppSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => GestureDetector(
-        onTap: () => onChanged(!value),
-        child: AnimatedContainer(
-          duration: kAnim,
-          width: Sz.switchW,
-          height: Sz.switchH,
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            // 位置 ＋ 明度兩種訊號
-            color: value ? C.actionOutline : C.lineDivider,
-            borderRadius: BorderRadius.circular(R.switchTrack),
-          ),
-          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            width: 24,
-            height: 24,
-            decoration: const BoxDecoration(
-              color: C.bgSurface,
-              shape: BoxShape.circle,
-            ),
-          ),
+    onTap: () => onChanged(!value),
+    child: AnimatedContainer(
+      duration: kAnim,
+      width: Sz.switchW,
+      height: Sz.switchH,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        // 位置 ＋ 明度兩種訊號
+        color: value ? C.actionOutline : C.lineDivider,
+        borderRadius: BorderRadius.circular(R.switchTrack),
+      ),
+      alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        width: 24,
+        height: 24,
+        decoration: const BoxDecoration(
+          color: C.bgSurface,
+          shape: BoxShape.circle,
         ),
-      );
+      ),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -544,47 +604,49 @@ class OptionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Stack(
-        children: [
-          AppCard(
-            onTap: onTap,
-            // 選中＝2px action/outline，不用顏色區分
-            borderColor: selected ? C.actionOutline : C.lineDivider,
-            borderWidth: selected ? 2 : 1,
-            padding: const EdgeInsets.fromLTRB(S.base, S.base, S.xl + S.base, S.base),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: subtitle == null ? 24 : 0,
-                  ),
-                  child: Text(title, style: T.body(weight: FontWeight.w600)),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: S.xs),
-                  Text(subtitle!, style: T.caption()),
-                ],
-              ],
+    children: [
+      AppCard(
+        onTap: onTap,
+        // 選中＝2px action/outline，不用顏色區分
+        borderColor: selected ? C.actionOutline : C.lineDivider,
+        borderWidth: selected ? 2 : 1,
+        padding: const EdgeInsets.fromLTRB(
+          S.base,
+          S.base,
+          S.xl + S.base,
+          S.base,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: subtitle == null ? 24 : 0),
+              child: Text(title, style: T.body(weight: FontWeight.w600)),
             ),
+            if (subtitle != null) ...[
+              const SizedBox(height: S.xs),
+              Text(subtitle!, style: T.caption()),
+            ],
+          ],
+        ),
+      ),
+      if (selected)
+        Positioned(
+          top: S.md,
+          right: S.md,
+          child: Container(
+            width: Sz.iconDense,
+            height: Sz.iconDense,
+            decoration: BoxDecoration(
+              color: C.actionOutline,
+              shape: multiSelect ? BoxShape.rectangle : BoxShape.circle,
+              borderRadius: multiSelect ? BorderRadius.circular(R.inset) : null,
+            ),
+            child: const Icon(Icons.check, size: 14, color: C.textOnDark),
           ),
-          if (selected)
-            Positioned(
-              top: S.md,
-              right: S.md,
-              child: Container(
-                width: Sz.iconDense,
-                height: Sz.iconDense,
-                decoration: BoxDecoration(
-                  color: C.actionOutline,
-                  shape: multiSelect ? BoxShape.rectangle : BoxShape.circle,
-                  borderRadius:
-                      multiSelect ? BorderRadius.circular(R.inset) : null,
-                ),
-                child: const Icon(Icons.check, size: 14, color: C.textOnDark),
-              ),
-            ),
-        ],
-      );
+        ),
+    ],
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -598,30 +660,26 @@ class AppTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        decoration: const BoxDecoration(
-          color: C.bgSurface,
-          border: Border(bottom: BorderSide(color: C.lineDivider)),
-        ),
-        child: TabBar(
-          isScrollable: scrollable || tabs.length > 4,
-          tabAlignment:
-              (scrollable || tabs.length > 4) ? TabAlignment.start : null,
-          indicator: const UnderlineTabIndicator(
-            borderSide: BorderSide(width: 2, color: C.actionOutline),
-          ),
-          indicatorSize: TabBarIndicatorSize.label,
-          dividerColor: Colors.transparent,
-          labelColor: C.textPrimary,
-          unselectedLabelColor: C.textSecondary,
-          labelStyle: T.body(weight: FontWeight.w600),
-          unselectedLabelStyle: T.body(),
-          overlayColor: WidgetStateProperty.all(C.press),
-          tabs: [
-            for (final t in tabs)
-              Tab(height: Sz.tapTarget, text: t),
-          ],
-        ),
-      );
+    decoration: const BoxDecoration(
+      color: C.bgSurface,
+      border: Border(bottom: BorderSide(color: C.lineDivider)),
+    ),
+    child: TabBar(
+      isScrollable: scrollable || tabs.length > 4,
+      tabAlignment: (scrollable || tabs.length > 4) ? TabAlignment.start : null,
+      indicator: const UnderlineTabIndicator(
+        borderSide: BorderSide(width: 2, color: C.actionOutline),
+      ),
+      indicatorSize: TabBarIndicatorSize.label,
+      dividerColor: Colors.transparent,
+      labelColor: C.textPrimary,
+      unselectedLabelColor: C.textSecondary,
+      labelStyle: T.body(weight: FontWeight.w600),
+      unselectedLabelStyle: T.body(),
+      overlayColor: WidgetStateProperty.all(C.press),
+      tabs: [for (final t in tabs) Tab(height: Sz.tapTarget, text: t)],
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -695,56 +753,58 @@ class PriceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppCard(
-        onTap: onTap,
-        borderColor: selected ? C.actionOutline : C.lineDivider,
-        borderWidth: selected ? 2 : 1,
-        // 選中時內距 15 ＋ 2px 邊框，維持總寬不變
-        padding: EdgeInsets.all(selected ? S.base - 1 : S.base),
-        child: Row(
-          children: [
-            // 圖示方塊 56 × 56，圓角 12
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: C.bgPage,
-                borderRadius: BorderRadius.circular(R.control),
-              ),
-              alignment: Alignment.center,
-              child: Text(icon, style: const TextStyle(fontSize: 26)),
-            ),
-            const SizedBox(width: S.base),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    onTap: onTap,
+    borderColor: selected ? C.actionOutline : C.lineDivider,
+    borderWidth: selected ? 2 : 1,
+    // 選中時內距 15 ＋ 2px 邊框，維持總寬不變
+    padding: EdgeInsets.all(selected ? S.base - 1 : S.base),
+    child: Row(
+      children: [
+        // 圖示方塊 56 × 56，圓角 12
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: C.bgPage,
+            borderRadius: BorderRadius.circular(R.control),
+          ),
+          alignment: Alignment.center,
+          child: Text(icon, style: const TextStyle(fontSize: 26)),
+        ),
+        const SizedBox(width: S.base),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(title,
-                            style: T.h3(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      if (badge != null) ...[
-                        const SizedBox(width: S.sm),
-                        TagBadge(badge!, borderColor: C.accentInfo),
-                      ],
-                    ],
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: T.h3(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 2),
-                    Text(subtitle!, style: T.caption()),
+                  if (badge != null) ...[
+                    const SizedBox(width: S.sm),
+                    TagBadge(badge!, borderColor: C.accentInfo),
                   ],
                 ],
               ),
-            ),
-            const SizedBox(width: S.md),
-            // 價格靠右，Number-S
-            Text(price, style: T.numberS()),
-          ],
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(subtitle!, style: T.caption()),
+              ],
+            ],
+          ),
         ),
-      );
+        const SizedBox(width: S.md),
+        // 價格靠右，Number-S
+        Text(price, style: T.numberS()),
+      ],
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -766,32 +826,34 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(S.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 64, color: C.textSecondary),
-              const SizedBox(height: S.lg),
-              Text(title, style: T.h3(), textAlign: TextAlign.center),
-              const SizedBox(height: S.sm),
-              Text(message,
-                  style: T.body(color: C.textSecondary),
-                  textAlign: TextAlign.center,
-                  maxLines: 2),
-              if (action != null) ...[
-                const SizedBox(height: S.lg),
-                // 【必須】行動按鈕寬度依內容，最小 120（§8.5）——
-                // 拉滿整列會讓它看起來像頁面的主 CTA。
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 120),
-                  child: IntrinsicWidth(child: action!),
-                ),
-              ],
-            ],
+    child: Padding(
+      padding: const EdgeInsets.all(S.xl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 64, color: C.textSecondary),
+          const SizedBox(height: S.lg),
+          Text(title, style: T.h3(), textAlign: TextAlign.center),
+          const SizedBox(height: S.sm),
+          Text(
+            message,
+            style: T.body(color: C.textSecondary),
+            textAlign: TextAlign.center,
+            maxLines: 2,
           ),
-        ),
-      );
+          if (action != null) ...[
+            const SizedBox(height: S.lg),
+            // 【必須】行動按鈕寬度依內容，最小 120（§8.5）——
+            // 拉滿整列會讓它看起來像頁面的主 CTA。
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 120),
+              child: IntrinsicWidth(child: action!),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
 }
 
 /// 小節標題
@@ -802,29 +864,29 @@ class SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: S.lg, bottom: S.md),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(child: Text(text, style: T.h3())),
-            // 補充說明的長度不受控（「當前 143　距下一門檻還差 107」），
-            // 放不下時截斷，不要爆版。標題至少留得住一半寬度。
-            if (trailing != null)
-              Flexible(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: S.sm),
-                  child: Text(
-                    trailing!,
-                    style: T.caption(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                  ),
-                ),
+    padding: const EdgeInsets.only(top: S.lg, bottom: S.md),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(child: Text(text, style: T.h3())),
+        // 補充說明的長度不受控（「當前 143　距下一門檻還差 107」），
+        // 放不下時截斷，不要爆版。標題至少留得住一半寬度。
+        if (trailing != null)
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.only(left: S.sm),
+              child: Text(
+                trailing!,
+                style: T.caption(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
               ),
-          ],
-        ),
-      );
+            ),
+          ),
+      ],
+    ),
+  );
 }
 
 /// 搜尋框。動作庫與訓練歷史的動作趨勢共用 —— 兩處的行為完全一樣。
@@ -835,36 +897,39 @@ class SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TextField(
-        controller: controller,
-        style: T.body(),
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: hint,
-          hintStyle: T.body(color: C.textDisabled),
-          prefixIcon: const Icon(Icons.search_rounded,
-              size: Sz.iconDense, color: C.textSecondary),
-          suffixIcon: controller.text.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close_rounded, size: Sz.iconDense),
-                  color: C.textSecondary,
-                  onPressed: () => controller.clear(),
-                ),
-          filled: true,
-          fillColor: C.bgSurface,
-          contentPadding: const EdgeInsets.symmetric(vertical: S.md),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(R.control),
-            borderSide: const BorderSide(color: C.lineDivider),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(R.control),
-            borderSide: const BorderSide(color: C.lineDivider),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(R.control),
-            borderSide: const BorderSide(color: C.actionOutline, width: 2),
-          ),
-        ),
-      );
+    controller: controller,
+    style: T.body(),
+    decoration: InputDecoration(
+      isDense: true,
+      hintText: hint,
+      hintStyle: T.body(color: C.textDisabled),
+      prefixIcon: const Icon(
+        Icons.search_rounded,
+        size: Sz.iconDense,
+        color: C.textSecondary,
+      ),
+      suffixIcon: controller.text.isEmpty
+          ? null
+          : IconButton(
+              icon: const Icon(Icons.close_rounded, size: Sz.iconDense),
+              color: C.textSecondary,
+              onPressed: () => controller.clear(),
+            ),
+      filled: true,
+      fillColor: C.bgSurface,
+      contentPadding: const EdgeInsets.symmetric(vertical: S.md),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(R.control),
+        borderSide: const BorderSide(color: C.lineDivider),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(R.control),
+        borderSide: const BorderSide(color: C.lineDivider),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(R.control),
+        borderSide: const BorderSide(color: C.actionOutline, width: 2),
+      ),
+    ),
+  );
 }

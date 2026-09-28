@@ -180,6 +180,7 @@ Future<(List<String>, int)> crawlTab(WidgetTester t, String tab) async {
         problems.add('$where 點開後：\n    $ex');
         continue;
       }
+      if (blankPage(t) case final why?) problems.add('$where $why');
 
       // 第二層：在點開的這一頁裡，每個元素也點一次。
       final inner = hittable(t);
@@ -198,11 +199,46 @@ Future<(List<String>, int)> crawlTab(WidgetTester t, String tab) async {
         ex = t.takeException();
         if (ex != null) {
           problems.add('$where →「${t2.label}」點開後：\n    $ex');
+          continue;
+        }
+        if (blankPage(t) case final why?) {
+          problems.add('$where →「${t2.label}」$why');
         }
       }
     }
   }
   return (problems, taps);
+}
+
+/// 這一頁是不是「什麼都沒畫出來」。有問題時回一句話，沒問題回空值。
+///
+/// ## 為什麼要有這一條
+///
+/// 爬蟲原本只收**丟例外**的情況（見上面四處 `problems.add`）。
+/// 而 2026-09-28 使用者踩到的那個缺陷**不丟任何例外**：
+/// `AppButton` 在 `bottomNavigationBar` 裡撐滿整個畫面，把 `body` 擠成
+/// 0 高，`ListView` 沒有高度就一個子項都不建 —— 教官測驗二十三題
+/// 一題都沒畫出來，他只看到一整片橘色。
+///
+/// **「畫面沒爆」不等於「畫面有東西」**（使用者裁決 A）。
+///
+/// ## 判準
+///
+/// 看得見的文字少於兩則就算空白。一則是留給 AppBar 標題的 ——
+/// 只有標題、內容空空，正是要抓的那一種。
+///
+/// **空狀態不算空白**：「你還沒有任何訓練紀錄」那種畫面本身就有字，
+/// 通得過這一條。真正過不了的是「連一句話都沒有」。
+String? blankPage(WidgetTester t) {
+  final texts = t
+      .widgetList<Text>(find.byType(Text))
+      .map((w) => w.data)
+      .whereType<String>()
+      .where((s) => s.trim().isNotEmpty)
+      .toList();
+  if (texts.length >= 2) return null;
+  return '點開後畫面幾乎是空的（只有 ${texts.length} 則文字：$texts）'
+      ' —— 沒有丟例外，但也沒有東西';
 }
 
 void main() {
