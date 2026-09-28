@@ -47,16 +47,20 @@ class InstructorApplyScreen extends StatelessWidget {
             child: Column(
               children: [
                 _Condition(
-                  label: '我的階級 / 需求階級',
+                  // **標題不寫規格術語**（2026-09-28 使用者要求）。
+                  // 「／需求階級」「／通過門檻」「／一票否決門檻」是事件風暴的
+                  // 欄位名 —— 右邊那個 `51 / 20` 已經把「現值 / 門檻」講完了，
+                  // 標題再重複一次只是把規格搬到前台。
+                  label: '我的階級',
                   value: '${s.rank} / ${g.requiredRank}',
                   ok: g.rankOk,
                 ),
                 const Divider(height: 22, color: AppColors.line),
                 _Condition(
                   // 品質分達折抵門檻者，需求次數改用折抵後的值；階級門檻不折抵。
-                  label: g.discounted
-                      ? '累積訓練次數 / 需求次數（已折抵）'
-                      : '累積訓練次數 / 需求次數',
+                  // **「已折抵」留著** —— 那不是術語，是「你的門檻比別人低」
+                  // 這件事，不說他會以為數字錯了。
+                  label: g.discounted ? '累積訓練次數（已折抵）' : '累積訓練次數',
                   value: '${s.totalWorkouts} / ${g.requiredWorkouts}',
                   ok: g.workoutsOk,
                 ),
@@ -75,7 +79,7 @@ class InstructorApplyScreen extends StatelessWidget {
                 // 是 AI 那一份 —— 打了勾看起來像已經通過，但階段仍停在
                 // 「初審中」，兩者當著使用者的面互相矛盾（他截圖回報過）。
                 _Condition(
-                  label: '訓練品質評分 / 通過門檻',
+                  label: '訓練品質評分',
                   value: !s.qualityScored
                       ? '尚未評分'
                       : s.qualityIsProvisional
@@ -87,7 +91,8 @@ class InstructorApplyScreen extends StatelessWidget {
                 const Divider(height: 22, color: AppColors.line),
                 _Condition(
                   // 一票否決獨立於加權平均：該單項低於門檻即駁回。
-                  label: '紀錄合理性 / 一票否決門檻',
+                  // **那件事不寫在標題上** —— 它是規則，不是這一列的名字。
+                  label: '紀錄合理性',
                   value: !s.qualityScored
                       ? '尚未評分'
                       : s.qualityIsProvisional
