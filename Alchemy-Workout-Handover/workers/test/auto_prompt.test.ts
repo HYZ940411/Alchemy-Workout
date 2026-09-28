@@ -64,3 +64,35 @@ test("數值的界線與訓練前調整同一套", () => {
   assert.ok(p.includes("1 到 50"));
   assert.ok(p.includes("自體重動作維持 0"));
 });
+
+// 2026-09-28 使用者實測：一份 16 組的課表只完成 2 組（13%），
+// 自動優化卻回「看不出該往哪個方向調」—— 因為送過去的只有每個動作的
+// （重量, 次數），模型**完全不知道他做到一半就走了**。
+test("最近幾場的完成度要送進去", () => {
+  const p = buildAutoPrompt(plan, {
+    sessions: [{plan: "無器材-背部", completion: 0.13, minutes: 8}],
+  });
+  assert.ok(p.includes("0.13"), "完成度本身要在 prompt 裡");
+  assert.ok(p.includes("完成度是最重要的訊號"));
+  assert.ok(!p.includes("沒有歷來成績"),
+    "有完成度就不算「沒有成績」，不該叫它回 null");
+});
+
+test("只有完成度、沒有逐動作成績時也算有依據", () => {
+  const p = buildAutoPrompt(plan, {
+    sessions: [{plan: "無器材-背部", completion: 0.2, minutes: 10}],
+  });
+  assert.ok(p.includes("判斷依據"));
+  assert.ok(!p.includes("歷來成績（舊→新"), "沒有逐動作成績就不要硬擺一個空的");
+});
+
+test("完成度低時，easier 與 trim 都是可選的答案", () => {
+  const p = buildAutoPrompt(plan, {sessions: [{plan: "x", completion: 0.1, minutes: 5}]});
+  assert.ok(p.includes("動作太重就 easier，組數太多就 trim"),
+    "做不完可能是太重、也可能是太長，兩條路都要講");
+});
+
+test("兩者都沒有才叫它回 null", () => {
+  const p = buildAutoPrompt(plan, {});
+  assert.ok(p.includes("沒有歷來成績"));
+});

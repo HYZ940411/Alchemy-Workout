@@ -41,6 +41,19 @@ export interface AdjustContext {
   equipment?: string[];
   /** 動作名稱 → 歷來成績（舊→新）。 */
   recent?: Record<string, { weight: number; reps: number }[]>;
+  /**
+   * 最近幾場訓練的**完成度**（新→舊）。
+   *
+   * **判斷「該升該降」最強的訊號，而 2026-09-28 之前根本沒送。**
+   * 使用者實測：一份 16 組的課表只完成 2 組（13%），自動優化卻回
+   * 「看不出該往哪個方向調」—— 送過去的只有每個動作的（重量, 次數），
+   * 模型完全不知道他做到一半就走了。做了 13% 的人需要的是減量，
+   * 而那件事寫在完成度裡，不在重量裡。
+   *
+   * `completion` 缺席代表空白課表（沒有計畫組數，算不出完成度）。
+   */
+  sessions?: { plan: string; completion?: number; minutes: number }[];
+
   /** 動作名稱 → 允許替換成的動作。**模型只能從這裡挑。** */
   candidates?: Record<string, string[]>;
 }
@@ -303,7 +316,8 @@ export function buildAutoPrompt(
   if (ctx?.equipment?.length) who.push(`可用器材：${ctx.equipment.join("、")}`);
 
   const recent = ctx?.recent ?? {};
-  const hasHistory = Object.keys(recent).length > 0;
+  const sessions = ctx?.sessions ?? [];
+  const hasHistory = Object.keys(recent).length > 0 || sessions.length > 0;
 
   return [
     "你是重量訓練的教練。這位使用者最近練完了幾次，",
@@ -318,12 +332,27 @@ export function buildAutoPrompt(
     ...(who.length ? ["使用者：", who.join("；"), ""] : []),
     ...(hasHistory ?
       [
-        "他練這些動作的歷來成績（舊→新，最多五次）：",
-        JSON.stringify(recent),
-        "",
-        "**判斷依據**：完成度持續不足（次數沒做滿、最後幾組掉很多）→ easier；",
-        "連續輕鬆完成、次數都做滿 → harder；",
-        "成績本身沒問題但訓練量明顯偏高 → trim。",
+        ...(sessions.length ?
+          [
+            "他最近幾場訓練做完了多少（新→舊，completion 是完成的組數比例）：",
+            JSON.stringify(sessions),
+            "",
+            "**完成度是最重要的訊號**：做不完代表這份課表對他太重或太長。",
+            "",
+          ] :
+          []),
+        ...(Object.keys(recent).length ?
+          [
+            "他練這些動作的歷來成績（舊→新，最多五次）：",
+            JSON.stringify(recent),
+            "",
+          ] :
+          []),
+        "**判斷依據**：",
+        "- 完成度偏低（大半組沒做完）→ 動作太重就 easier，組數太多就 trim",
+        "- 完成度高但次數沒做滿、最後幾組掉很多 → easier",
+        "- 連續輕鬆完成、次數都做滿 → harder",
+        "- 成績本身沒問題但訓練時間明顯偏長 → trim",
         "",
       ] :
       [

@@ -135,6 +135,18 @@ class AdjustContext {
   /// 動作名稱 → 這個人練它的歷來成績（舊→新，最多取最近幾次）。
   final Map<String, List<({double weight, int reps})>> recent;
 
+  /// 最近幾場訓練的**完成度**（新→舊）。
+  ///
+  /// **這是判斷「該升該降」最強的訊號，而在 2026-09-28 之前根本沒送。**
+  ///
+  /// 使用者實測：他練了一份 16 組的課表只完成 2 組（13%），
+  /// 然後自動優化回「這次看不出該往哪個方向調」—— 因為送過去的只有
+  /// 每個動作的（重量, 次數），模型**完全不知道他做到一半就走了**。
+  /// 一個做了 13% 的人需要的是減量，那件事寫在完成度裡，不在重量裡。
+  ///
+  /// `completion` 為空值代表空白課表（沒有計畫組數，算不出完成度）。
+  final List<({String plan, double? completion, int minutes})> sessions;
+
   /// 動作名稱 → 可用來替換它的候選動作名稱。
   ///
   /// **候選由前端算好再送**，不把 527 筆動作庫塞進 prompt。模型只能
@@ -148,6 +160,7 @@ class AdjustContext {
     required this.goal,
     this.equipment = const [],
     this.recent = const {},
+    this.sessions = const [],
     this.candidates = const {},
   });
 
@@ -163,6 +176,15 @@ class AdjustContext {
               for (final r in e.value) {'weight': r.weight, 'reps': r.reps},
             ],
         },
+        if (sessions.isNotEmpty)
+          'sessions': [
+            for (final s in sessions)
+              {
+                'plan': s.plan,
+                if (s.completion != null) 'completion': s.completion,
+                'minutes': s.minutes,
+              },
+          ],
         if (candidates.isNotEmpty) 'candidates': candidates,
       };
 }

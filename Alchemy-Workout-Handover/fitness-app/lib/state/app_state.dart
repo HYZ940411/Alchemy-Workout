@@ -6591,6 +6591,13 @@ class AppState extends ChangeNotifier {
   ///
   /// **不含身分**：沒有暱稱、uid、電子郵件、生日。體重與性別有送 ——
   /// DOTS 標準化本來就靠它們。
+  /// 測試接縫：`_aiContext` 是私有的，但**送出去的東西該長什麼樣**
+  /// 正是要釘住的事（2026-09-28 漏送完成度就是這樣才發現的）。
+  @visibleForTesting
+  AdjustContext aiContextForTest(List<PlanExercise> target,
+          {bool swap = false}) =>
+      _aiContext(target, swap: swap);
+
   AdjustContext _aiContext(List<PlanExercise> target, {bool swap = false}) {
     final stats = exerciseStats;
     return AdjustContext(
@@ -6608,6 +6615,13 @@ class AppState extends ChangeNotifier {
                 (weight: t.weight, reps: t.reps),
             ].reversed.toList(),
       },
+      // **最近幾場的完成度。** 一個 16 組只做 2 組的人需要的是減量，
+      // 而那件事寫在完成度裡，不在重量與次數裡（見 `AdjustContext.sessions`）。
+      // 只取最近五場 —— 再多對判斷沒有幫助，卻讓 prompt 變長。
+      sessions: [
+        for (final h in history.take(5))
+          (plan: h.planName, completion: h.completion, minutes: h.minutes),
+      ],
       candidates: {
         for (final pe in target)
           if (swap)
