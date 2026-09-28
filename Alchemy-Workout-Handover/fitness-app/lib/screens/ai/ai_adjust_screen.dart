@@ -368,18 +368,12 @@ class _Composer extends StatelessWidget {
         ));
 
       case AiStage.analyzing:
-        return wrap(Row(
-          children: [
-            Expanded(
-              child: Text('AI 分析中，請稍候…', style: T.caption()),
-            ),
-            // Demo：手動觸發失敗路徑，供驗收
-            TextButton(
-              onPressed: () => state.aiFail(source, AiFailReason.timeout),
-              child: Text('模擬逾時', style: T.caption(color: C.accentInfo)),
-            ),
-          ],
-        ));
+        // **這裡曾經有一顆「模擬逾時」。** 那是驗收用的 Demo 按鈕，
+        // 但它沒有藏在開發者模式後面 —— 使用者等 AI 回話時，
+        // 右下角就擺著一顆會讓它失敗的按鈕（2026-09-28 截圖回報）。
+        // 失敗路徑由 `ai_source_test.dart` 直接呼叫 `aiFail()` 驗，
+        // 不需要畫面上留一個入口。
+        return wrap(Text('AI 分析中，請稍候…', style: T.caption()));
 
       case AiStage.idle:
       case AiStage.clarifying:

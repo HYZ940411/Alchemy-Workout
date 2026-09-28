@@ -6548,14 +6548,25 @@ class AppState extends ChangeNotifier {
     //
     // 器材名稱直接取自值域（`kEquipmentItems`），不自己再列一份 ——
     // 管理員在後台加了品項，這裡要跟著認得。
+    //
+    // **泛稱也要認得。** 2026-09-28 使用者打「我沒有任何器材」，
+    // 而條件寫的是 `contains('沒有器材')` —— 中間插一個「任何」，
+    // 整串比對就失效了。上一次的結論「沒有人會說我沒有器材」只對了
+    // 一半：他確實不會單講「器材」，但他會講「任何器材」「所有器材」。
+    //
+    // 所以泛稱走與具體品項**同一條路**（否定詞 ＋ 名稱），
+    // 而不是再加一串寫死的整句比對 —— 那種寫法下次換個副詞又會漏。
+    const generic = ['器材', '設備', '裝備', '器械'];
     final missing = a.contains('沒有') || a.contains('沒') ||
         a.contains('壞') || a.contains('不能用') || a.contains('被占') ||
         a.contains('用不到') || a.contains('沒帶');
-    if (missing && kEquipmentItems.any((e) => a.contains(e))) {
+    if (missing &&
+        (kEquipmentItems.any((e) => a.contains(e)) ||
+            generic.any((g) => a.contains(g)))) {
       return AdjustIntent.swap;
     }
     if (a.contains('換') || a.contains('替代') || a.contains('做不了') ||
-        a.contains('沒有器材') || a.contains('器材不')) {
+        a.contains('器材不')) {
       return AdjustIntent.swap;
     }
     // **2026-09-27 擴充了說法**（使用者：「希望能先判斷是否符合 4 個調整
