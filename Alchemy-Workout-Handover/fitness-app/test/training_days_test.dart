@@ -116,10 +116,10 @@ void _repairGroup() {
       final b = AppState()..applySnapshot(snap);
       expect(b.history.length, 3, reason: '前提：歷史帶得過去');
       expect(b.totalWorkoutDays, 1, reason: '同一天三場算一天');
-      // 連續訓練天數**不補** —— 它可以被合法地調低（永久停權經申訴撤銷
-      // 時要重設），從歷史往上補會把那個動作默默抵銷掉。
-      // 它本來就會自己好：下一次訓練是該日第一場就重新算。
-      expect(b.trainingStreakDays, 0);
+      // 連續天數**不整段重算**（那條規則只能有一份，在 `finishWorkout`
+      // 與 `runStreakCheck`），但「今天練過卻顯示 0 天」是實話與畫面
+      // 不符 —— 只補這一格下限。
+      expect(b.trainingStreakDays, 1);
     });
 
     test('只增不減 —— 存檔比歷史多就不動它', () {
@@ -131,6 +131,15 @@ void _repairGroup() {
       final b = AppState()..applySnapshot(snap);
       expect(b.totalWorkoutDays, 99,
           reason: '單調遞增；算多了是 reconcileWorkoutCount() 的事');
+    });
+
+    test('不整段重算 —— 存檔說 5 天就是 5 天，不會被歷史改寫', () {
+      final a = fresh();
+      train(a);
+      final snap = a.toSnapshot();
+      snap['trainingStreakDays'] = 5;
+      final b = AppState()..applySnapshot(snap);
+      expect(b.trainingStreakDays, 5, reason: '只補 0 這一格，不做推算');
     });
 
     test('沒有訓練歷史時不會憑空補出天數', () {

@@ -821,18 +821,26 @@ extension AppStateSnapshot on AppState {
     final days = {for (final h in history) businessDate(h.date)};
     if (days.length > totalWorkoutDays) totalWorkoutDays = days.length;
 
-    // **連續訓練天數不在這裡補。**
+    // --- 連續訓練天數：只補「今天」這一格 ---
     //
-    // 我第一版也從歷史往上補了它，兩條既有測試當場倒 —— 而它們是對的：
-    // 連續訓練天數**可以被合法地調低**（`lastTrainedDate` 的註解：
-    // 「永久停權經申訴撤銷時要以撤銷時點重設它」），從歷史往上補會把
-    // 那個動作默默抵銷掉。
+    // **不整段重算。** 連續天數的規則只能有一份，而它在 `finishWorkout`
+    // （遞增）與 `runStreakCheck`（超過 36 小時歸零）兩處 ——
+    // `finishWorkout` 自己的註解就寫著「與 `runStreakCheck` 的中斷判定
+    // 共用同一條規則，兩邊各寫一份就會對不起來」。在載入時再推算一次
+    // 就是第三份。
     //
-    // 累積訓練天數沒有這個問題 —— 規格明訂它**單調遞增**，
-    // 任何情況下都不該被調低，所以「比歷史少」一定是漏算。
+    // 但**今天練過卻顯示 0 天**是實話與畫面不符 —— 那是 1C 那個缺陷的
+    // 殘留：那一天的遞增分支沒跑到，而今天不會再跑第二次。
+    // 所以只補這一格：歷史裡今天有訓練，連續天數至少是 1。
+    // 這不是重算，是把 `finishWorkout` 當時該寫進去的下限補上。
     //
-    // 連續天數本來就會自己好：下一次訓練是該日第一場，
-    // `finishWorkout` 會重新算。
+    // 〔更正〕第一版我寫的理由是「連續天數可以被合法地調低（永久停權
+    // 經申訴撤銷時要重設）」—— **那是錯的**：`rebaseClocks()` 只移動
+    // 計時基準，完全不動 `trainingStreakDays`。留著錯的理由比沒有理由糟。
+    if (trainingStreakDays == 0 &&
+        history.any((h) => businessDate(h.date) == businessDate(now))) {
+      trainingStreakDays = 1;
+    }
   }
 }
 
