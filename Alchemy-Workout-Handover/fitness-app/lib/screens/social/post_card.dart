@@ -28,6 +28,9 @@ class PostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
+    // **作者現在的名字，不是發文當下那個。** `post.author` 只在查不到
+    // 他的公開檔案時墊底 —— 與旁邊的階級、教官聲望同一套。
+    final author = s.nameOf(post.author, uid: post.authorUid);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
@@ -48,14 +51,15 @@ class PostCard extends StatelessWidget {
                   Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => openProfile(context, post.author, uid: post.authorUid),
+                      onTap: () =>
+                          openProfile(context, author, uid: post.authorUid),
                       child: Row(
                         children: [
                           CircleAvatar(
                             radius: 17,
                             backgroundColor: AppColors.surfaceAlt,
                             child: Text(
-                              post.author.characters.first,
+                              author.characters.first,
                               style: const TextStyle(
                                 color: AppColors.accent,
                                 fontWeight: FontWeight.w800,
@@ -71,7 +75,7 @@ class PostCard extends StatelessWidget {
                                 Row(
                                   children: [
                                     Text(
-                                      post.author,
+                                      author,
                                       style: const TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
@@ -241,7 +245,7 @@ class PostCard extends StatelessWidget {
                   text: TextSpan(
                     children: [
                       TextSpan(
-                        text: '${c.author}　',
+                        text: '${s.nameOf(c.author, uid: c.authorUid)}　',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,

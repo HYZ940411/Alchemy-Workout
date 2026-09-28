@@ -97,9 +97,11 @@ Future<void> _mineMenu(
 
 /// 別人的貼文：檢舉與封鎖。兩個 Command 的對象都只能是別人。
 Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
+  // 作者現在的名字 —— 標題、確認視窗、提示訊息一律用它。
+  final author = s.nameOf(p.author, uid: p.authorUid);
   final action = await showAppSheet<String>(
     context,
-    title: p.author,
+    title: author,
     child: Column(
       children: [
         ListRow(
@@ -107,7 +109,9 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
           onTap: () => Navigator.pop(context, 'report'),
         ),
         ListRow(
-          title: s.isBlocked(p.author) ? '解除封鎖' : '封鎖這個人',
+          title: s.isBlocked(p.author, uid: p.authorUid)
+              ? '解除封鎖'
+              : '封鎖這個人',
           showDivider: false,
           onTap: () => Navigator.pop(context, 'block'),
         ),
@@ -128,15 +132,15 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
     return;
   }
 
-  if (s.isBlocked(p.author)) {
-    s.unblockUser(p.author);
+  if (s.isBlocked(p.author, uid: p.authorUid)) {
+    s.unblockUser(p.author, uid: p.authorUid);
     // 解除封鎖不自動恢復任何已解除的關注或師徒關係。
     showToast(context, '已解除封鎖。原本的關注與師徒關係不會自動回復。');
     return;
   }
 
   // 同隊的人不能封鎖 —— 擋下時要講得出為什麼，不能靜靜地沒反應。
-  final blocked = s.blockBlockedReason(p.author);
+  final blocked = s.blockBlockedReason(p.author, uid: p.authorUid);
   if (blocked != null) {
     showToast(context, blocked);
     return;
@@ -151,7 +155,7 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
   final wasMentor = s.myInstructor?.name == p.author;
   final ok = await showAppDialog(
     context,
-    title: '封鎖 ${p.author}？',
+    title: '封鎖 $author？',
     // **「他關注我」那一半只解得掉你這邊看到的。** 那筆關注是他建立的，
     // 只有他自己取消得了 —— 別人看你的檔案時仍會把他算進粉絲數。
     // 使用者裁決 2026-09-28：不改安全規則，改成在這裡講清楚。
@@ -170,7 +174,7 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
   s.blockUser(p.author, uid: p.authorUid);
   showToast(
     context,
-    '已封鎖 ${p.author}'
+    '已封鎖 $author'
     '${wasMentor ? '，師徒關係一併解除' : (wasFollowing ? '，關注一併取消' : '')}',
   );
 }

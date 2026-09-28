@@ -46,6 +46,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     final p = widget.post;
+    // 作者現在的名字，不是發文當下那個 —— 與旁邊的階級同一套。
+    final author = s.nameOf(p.author, uid: p.authorUid);
 
     return Scaffold(
       backgroundColor: C.bgPage,
@@ -78,13 +80,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       // 整條點進作者的公開檔案（`[QA-02i]`）。
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: () => openProfile(context, p.author, uid: p.authorUid),
+                        onTap: () =>
+                            openProfile(context, author, uid: p.authorUid),
                         child: Row(
                         children: [
                           CircleAvatar(
                             radius: 18,
                             backgroundColor: C.bgPage,
-                            child: Text(p.author.characters.first,
+                            child: Text(author.characters.first,
                                 style: T.body(weight: FontWeight.w700)),
                           ),
                           const SizedBox(width: S.md),
@@ -92,7 +95,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(p.author,
+                                Text(author,
                                     style: T.body(weight: FontWeight.w700)),
                                 const SizedBox(height: 2),
                                 Text(
@@ -204,15 +207,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     for (var i = 0; i < p.visibleComments.length; i++)
                       () {
                         final c = p.visibleComments[i];
-                        final mine = c.author == s.displayName;
+                        // **不是比暱稱。** 撞名或改名之後，這顆「⋯」
+                        // 會消失在自己的留言上、出現在別人的留言上。
+                        // `isMyComment` 是同一個判斷的唯一一份。
+                        final mine = s.isMyComment(c);
+                        final who = s.nameOf(c.author, uid: c.authorUid);
                         return ListRow(
                           leading: CircleAvatar(
                             radius: 16,
                             backgroundColor: C.bgPage,
-                            child: Text(c.author.characters.first,
-                                style: T.caption()),
+                            child:
+                                Text(who.characters.first, style: T.caption()),
                           ),
-                          title: c.author,
+                          title: who,
                           // 已編輯旗標要對讀者顯示，不是只留在資料裡。
                           subtitle: '${c.text}${c.edited ? '（已編輯）' : ''}'
                               '　·　${_ago(c.at)}',

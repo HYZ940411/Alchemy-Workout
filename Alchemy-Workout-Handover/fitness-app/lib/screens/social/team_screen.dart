@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../domain/community.dart';
+import '../../domain/social.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -143,6 +144,9 @@ class _MyTeam extends StatelessWidget {
           child: Column(
             children: [
               for (final m in team.members)
+                // 隊友現在的名字。名冊上那份是他加入當下存的 ——
+                // 與旁邊的階級同一套。
+                if (s.nameOf(m.name, uid: m.uid) case final who)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 11),
                   child: Row(
@@ -150,7 +154,7 @@ class _MyTeam extends StatelessWidget {
                       CircleAvatar(
                         radius: 16,
                         backgroundColor: AppColors.surfaceAlt,
-                        child: Text(m.name.characters.first,
+                        child: Text(who.characters.first,
                             style: const TextStyle(
                                 color: AppColors.accent,
                                 fontWeight: FontWeight.w800,
@@ -161,7 +165,7 @@ class _MyTeam extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(m.name,
+                            Text(who,
                                 style: const TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600)),
@@ -171,7 +175,7 @@ class _MyTeam extends StatelessWidget {
                             Text(
                               // 隊友現在的階級。名冊上那份是他加入當下存的。
                               '${s.rankOf(m.name, uid: m.uid, fallback: m.rank)} 階　·　本隊已貢獻 '
-                              '${team.contributions[m.name] ?? 0} 分',
+                              '${team.contributions[s.personKeyOf(m.name, m.uid)] ?? 0} 分',
                               style: const TextStyle(
                                   color: AppColors.textDim, fontSize: 11.5),
                             ),
@@ -281,21 +285,21 @@ class _MyTeam extends StatelessWidget {
       BuildContext context, AppState s, TeamMember m) async {
     final ok = await showAppDialog(
       context,
-      title: '把隊長轉讓給「${m.name}」？',
+      title: '把隊長轉讓給「${s.nameOf(m.name, uid: m.uid)}」？',
       message: '轉讓後你成為一般成員，核准申請、邀請成員、指派與踢人都改由他負責。'
           '團隊不會進入無隊長狀態。',
       confirmLabel: '轉讓',
     );
     if (ok != true || !context.mounted) return;
     s.transferLeader(m);
-    showToast(context, '已轉讓給 ${m.name}');
+    showToast(context, '已轉讓給 ${s.nameOf(m.name, uid: m.uid)}');
   }
 
   /// 隊長已踢除成員。被踢除者不適用 12 小時換隊冷卻期。
   Future<void> _kick(BuildContext context, AppState s, TeamMember m) async {
     final ok = await showAppDialog(
       context,
-      title: '踢除「${m.name}」？',
+      title: '踢除「${s.nameOf(m.name, uid: m.uid)}」？',
       message: '團隊人數 −1。對方可立即加入或建立其他團隊，不受 12 小時換隊冷卻期限制'
           '——該次離隊非其本人所為。他已貢獻的團隊分數留在本隊。',
       confirmLabel: '踢除',
@@ -381,23 +385,27 @@ class _TimedTaskCard extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(
-                    tally.credited.contains(m.name)
+                    tally.credited.contains(personKey(m.name, m.uid))
                         ? Icons.check_circle
                         : Icons.radio_button_unchecked,
                     size: Sz.iconDense,
-                    color: tally.credited.contains(m.name)
+                    color: tally.credited.contains(personKey(m.name, m.uid))
                         ? C.statusSuccess
                         : C.textSecondary,
                   ),
                   const SizedBox(width: S.sm),
-                  Expanded(child: Text(m.name, style: T.body())),
+                  Expanded(
+                      child: Text(state.nameOf(m.name, uid: m.uid),
+                          style: T.body())),
                   // 「提醒」是催隊友的，自己那一列不該有 —— 催自己沒有意義。
                   // 自己還沒做的話，該做的是去把它做完，不是按提醒。
-                  if (!tally.credited.contains(m.name) &&
+                  if (!tally.credited.contains(personKey(m.name, m.uid)) &&
                       !expired &&
-                      m.name != state.displayName)
+                      !AppState.sameUser(
+                          m.name, m.uid, state.displayName, state.myUid))
                     GestureDetector(
-                      onTap: () => showToast(context, '已提醒 ${m.name}'),
+                      onTap: () => showToast(
+                          context, '已提醒 ${state.nameOf(m.name, uid: m.uid)}'),
                       child: const TagBadge('提醒'),
                     ),
                 ],
@@ -446,7 +454,8 @@ class _TimedTaskCard extends StatelessWidget {
             const SizedBox(height: S.md),
             Text('本日獎勵已領取。', style: T.caption()),
           ],
-          if (!expired && !t.doneBy(state.displayName)) ...[
+          if (!expired &&
+              !t.doneBy(state.displayName, uid: state.myUid)) ...[
             const SizedBox(height: S.md),
             AppButton(
               label: '開始限時任務',

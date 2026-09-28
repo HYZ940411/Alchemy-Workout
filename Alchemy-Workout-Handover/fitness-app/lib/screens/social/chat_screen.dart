@@ -98,7 +98,7 @@ Future<void> _delete(BuildContext context, Conversation c) async {
   final s = AppScope.of(context);
   final ok = await showAppDialog(
     context,
-    title: '刪除與「${c.peer}」的對話？',
+    title: '刪除與「${s.nameOf(c.peer, uid: c.peerUid)}」的對話？',
     message: '只會從你這一側消失，對方仍看得到這段對話。'
         '訊息本身不會被刪除。',
     confirmLabel: '刪除',
@@ -138,6 +138,10 @@ class _List extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         for (final c in sorted)
+          // 對方現在的名字。`c.peer` 是開這個對話當下存下來的 ——
+          // 與旁邊的階級、教官徽章同一套。
+          if (AppScope.of(context).nameOf(c.peer, uid: c.peerUid)
+              case final peer)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Panel(
@@ -156,7 +160,7 @@ class _List extends StatelessWidget {
                       radius: 20,
                       backgroundColor: AppColors.surfaceAlt,
                       child: Text(
-                        c.peer.characters.first,
+                        peer.characters.first,
                         style: const TextStyle(
                           color: AppColors.accent,
                           fontWeight: FontWeight.w800,
@@ -171,7 +175,7 @@ class _List extends StatelessWidget {
                           Row(
                             children: [
                               Text(
-                                c.peer,
+                                peer,
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -275,7 +279,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final ok = await showAppDialog(
       context,
-      title: '要追蹤 ${widget.conversation.peer} 嗎？',
+      title: '要追蹤 ${s.nameOf(widget.conversation.peer, uid: widget.conversation.peerUid)} 嗎？',
       // **不要承諾「追蹤之後就會進一般訊息」** —— 那是假的。
       // 規格：一般訊息要的是**互相關注**（或師徒、同隊），
       // 我單方追蹤不夠。承諾了而它沒發生，使用者只會以為功能壞了。
@@ -288,7 +292,10 @@ class _ChatScreenState extends State<ChatScreen> {
     if (ok != true || !mounted) return;
     s.toggleFollow(widget.conversation.peer,
         uid: widget.conversation.peerUid);
-    if (mounted) showToast(context, '已追蹤 ${widget.conversation.peer}');
+    if (mounted) {
+      showToast(context,
+          '已追蹤 ${s.nameOf(widget.conversation.peer, uid: widget.conversation.peerUid)}');
+    }
   }
 
   @override
@@ -310,7 +317,8 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Row(
           children: [
             Text(
-              c.peer,
+              // 對方現在的名字。`c.peer` 是開這個對話當下存下來的。
+              s.nameOf(c.peer, uid: c.peerUid),
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
             const SizedBox(width: 8),

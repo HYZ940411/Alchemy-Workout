@@ -42,9 +42,10 @@ void main() {
 
     test('記到該成員的貢獻欄位，不是一個孤兒數字', () {
       final s = _outsideRegroup();
-      final before = s.myTeam!.contributions[s.displayName]!;
+      final me = s.personKeyOf(s.displayName, s.myUid);
+      final before = s.myTeam!.contributions[me]!;
       _train(s);
-      expect(s.myTeam!.contributions[s.displayName], greaterThan(before));
+      expect(s.myTeam!.contributions[me], greaterThan(before));
       // 不變條件：團隊分數 ＝ 各成員貢獻的總和，且為結構上成立。
       expect(s.myTeam!.dailyScore,
           s.myTeam!.contributions.values.reduce((a, b) => a + b));

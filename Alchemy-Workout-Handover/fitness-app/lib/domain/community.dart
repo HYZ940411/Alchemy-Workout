@@ -1,5 +1,6 @@
 import 'ability.dart';
 import 'ai_adjust.dart';
+import 'social.dart';
 
 // --- 社群動態牆 ---
 
@@ -381,7 +382,11 @@ class TimedTask {
     Set<String>? completedBy,
   }) : completedBy = completedBy ?? {};
 
-  bool doneBy(String name) => completedBy.contains(name);
+  /// 這個人完成了沒有。**鍵是 [personKey]**，與 `Team.timedCredited`
+  /// 同一套 —— 兩者之間有一條不變條件（記在某隊帳上的必定也完成了），
+  /// 用兩種鍵的話那條不變條件會在改名時無聲地失效。
+  bool doneBy(String name, {String? uid}) =>
+      completedBy.contains(personKey(name, uid));
 }
 
 /// 某支團隊在今日限時任務上的成績。
@@ -394,7 +399,8 @@ class TimedTaskTally {
   const TimedTaskTally({required this.members, required this.credited});
 
   int get total => members.length;
-  int get doneCount => members.where((m) => credited.contains(m.name)).length;
+  int get doneCount =>
+      members.where((m) => credited.contains(personKey(m.name, m.uid))).length;
   bool get allDone => total > 0 && doneCount == total;
 
   /// 團隊限時分數 ＝ 完成人數 × 10；全員完成再加固定 50。

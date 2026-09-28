@@ -72,7 +72,7 @@ void main() {
 
     testWidgets('別人的貼文：檢舉與封鎖，沒有編輯', (t) async {
       final s = _me();
-      s.following.add(s.followKeyOf('阿甲', 'u-阿甲'));
+      s.following.add(s.personKeyOf('阿甲', 'u-阿甲'));
       s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
       await _pump(t, s, const Scaffold(body: FeedScreen()));
 
@@ -126,7 +126,7 @@ void main() {
 
     testWidgets('別人的貼文', (t) async {
       final s = _me();
-      s.following.add(s.followKeyOf('阿甲', 'u-阿甲'));
+      s.following.add(s.personKeyOf('阿甲', 'u-阿甲'));
       s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
       await _pump(t, s, const Scaffold(body: FeedScreen()));
       await _tapFeedMenu(t);
@@ -140,7 +140,7 @@ void main() {
   group('封鎖要先確認，不是點一下就生效', () {
     testWidgets('跳出確認對話框，取消就不封鎖', (t) async {
       final s = _me();
-      s.following.add(s.followKeyOf('阿甲', 'u-阿甲'));
+      s.following.add(s.personKeyOf('阿甲', 'u-阿甲'));
       s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
       await _pump(t, s, const Scaffold(body: FeedScreen()));
       await _tapFeedMenu(t);
@@ -169,7 +169,7 @@ void main() {
 
     testWidgets('確認之後才真的封鎖', (t) async {
       final s = _me();
-      s.following.add(s.followKeyOf('阿甲', 'u-阿甲'));
+      s.following.add(s.personKeyOf('阿甲', 'u-阿甲'));
       s.posts.add(_post(author: '阿甲', uid: 'u-阿甲'));
       await _pump(t, s, const Scaffold(body: FeedScreen()));
       await _tapFeedMenu(t);

@@ -20,7 +20,7 @@ void main() {
       final mine = s.followerCount;
       final target =
           s.socialUsers.firstWhere((u) => !s.isFollowing(u.name, uid: u.uid));
-      final key = s.followKeyOf(target.name, target.uid);
+      final key = s.personKeyOf(target.name, target.uid);
       final theirs = s.otherFollowerCounts[key]!;
 
       s.toggleFollow(target.name, uid: target.uid);
@@ -44,7 +44,7 @@ void main() {
       final s = AppState();
       const name = '深蹲王'; // 一開始就在關注中
       expect(s.isFollowing(name), isTrue);
-      final key = s.followKeyOf(name, null);
+      final key = s.personKeyOf(name, null);
       final theirs = s.otherFollowerCounts[key]!;
       s.toggleFollow(name);
       expect(s.isFollowing(name), isFalse);
@@ -63,7 +63,7 @@ void main() {
 
       // 掉回門檻以下
       for (var i = 0; i < 8; i++) {
-        s.loseFollower(s.followKeyOf('粉絲$i', null));
+        s.loseFollower(s.personKeyOf('粉絲$i', null));
       }
       expect(s.followerCount, lessThan(10));
       expect(s.followerMilestones, unlocked,

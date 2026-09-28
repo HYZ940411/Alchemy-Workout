@@ -55,7 +55,7 @@ class _MentorChatScreenState extends State<MentorChatScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    final asked = s.questions.where((q) => q.from == s.displayName).toList();
+    final asked = s.questions.where(s.isMyQuestion).toList();
     final answered = asked.where((q) => q.answer != null).length;
 
     return Scaffold(

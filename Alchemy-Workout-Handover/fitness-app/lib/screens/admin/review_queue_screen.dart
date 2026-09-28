@@ -169,6 +169,9 @@ class _ReportCard extends StatelessWidget {
     final after = state.violationsForCase(c) + 1;
     final tier = tierForViolations(after);
     final mine = c.handlerName == state.admin.name;
+    // 被檢舉者**現在**的名字。案件上那份是開案當下存的 ——
+    // 判定與記點靠的是 `accusedUid`，這裡只是顯示。
+    final accused = state.nameOf(c.accused, uid: c.accusedUid);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: S.md),
@@ -207,7 +210,7 @@ class _ReportCard extends StatelessWidget {
                 value: c.reason),
             if (c.origin == CaseOrigin.userReport)
               _Row(label: '檢舉者人數', value: '${c.reporterCount}'),
-            _Row(label: '被檢舉者', value: c.accused),
+            _Row(label: '被檢舉者', value: accused),
             _Row(label: '累計違規次數', value: '${c.accusedViolations}'),
             if (c.handlerName != null)
               _Row(label: '處理中的管理員', value: c.handlerName!),
@@ -273,7 +276,7 @@ class _ReportCard extends StatelessWidget {
                     final ok = await showAppDialog(
                       context,
                       title: '確認處罰',
-                      message: '${c.accused} 的累計違規將成為 '
+                      message: '$accused 的累計違規將成為 '
                           '$after 次，處以「${tier.label}」。'
                           '${c.target == ReportTarget.account ? '' : '違規內容一併下架。'}',
                       confirmLabel: '處罰',
@@ -347,7 +350,10 @@ class _AppealTab extends StatelessWidget {
                   ),
                   const SizedBox(height: S.md),
                   _Row(label: '已等待', value: '${c.waited} 小時'),
-                  _Row(label: '申訴者', value: c.appellant),
+                  _Row(
+                      label: '申訴者',
+                      value: AppScope.of(context)
+                          .nameOf(c.appellant, uid: c.appellantUid)),
                   _Row(label: '所申訴的對象', value: c.subject),
                   _Row(label: '距事發天數', value: '${c.daysSinceIncident} 天'),
                   if (c.handlerName != null)
@@ -440,7 +446,11 @@ class _InstructorTab extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Expanded(child: Text(c.applicant, style: T.h3())),
+                      Expanded(
+                          child: Text(
+                              AppScope.of(context)
+                                  .nameOf(c.applicant, uid: c.applicantUid),
+                              style: T.h3())),
                       _DeadlineTag(overdue: c.overdue, left: c.timeLeft),
                       const SizedBox(width: S.sm),
                       Container(

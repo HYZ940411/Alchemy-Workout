@@ -12,8 +12,8 @@ Conversation _with(AppState s, String peer) =>
 Conversation _stranger(AppState s) {
   final c = Conversation(id: 'cx', peer: '路人甲', peerRank: 5);
   s.conversations.add(c);
-  s.following.remove(s.followKeyOf('路人甲', null));
-  s.followers.remove(s.followKeyOf('路人甲', null));
+  s.following.remove(s.personKeyOf('路人甲', null));
+  s.followers.remove(s.personKeyOf('路人甲', null));
   return c;
 }
 

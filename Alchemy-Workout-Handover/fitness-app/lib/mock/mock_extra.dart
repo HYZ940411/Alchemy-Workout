@@ -75,11 +75,12 @@ Team buildMyTeam() => Team(
       lockedGroupSize: 4,
       // 各成員的本隊已貢獻分數。加總即為月累計日常分數（9960）。
       // 可變 —— 成員每次得分時同額累加，不是一份固定數字。
+      // 鍵是 `personKey` —— 示範資料的假隊友沒有 uid，所以是暱稱鍵。
       contributions: {
-        '你': 3120,
-        '早鳥訓練': 2980,
-        'Yuki': 2010,
-        '核心怪物': 1850,
+        personKey('你', null): 3120,
+        personKey('早鳥訓練', null): 2980,
+        personKey('Yuki', null): 2010,
+        personKey('核心怪物', null): 1850,
       },
       timedScore: 620,
       dailyRankPos: 7,
@@ -92,7 +93,8 @@ Team buildMyTeam() => Team(
         const TeamMember('核心怪物', 33, TeamRole.member),
       ],
       // 今日限時任務中，完成紀錄記在本隊帳上的成員。
-      timedCredited: {'早鳥訓練', 'Yuki'},
+      // 鍵是 `personKey` —— 示範資料的假隊友沒有 uid，所以是暱稱鍵。
+      timedCredited: {personKey('早鳥訓練', null), personKey('Yuki', null)},
       invites: [PendingRequest('林小美', 22, DateTime.now().add(const Duration(days: 5)))],
       applications: [
         PendingRequest('增肌中', 15, DateTime.now().add(const Duration(days: 6))),
@@ -253,7 +255,7 @@ TimedTask buildTimedTask() {
     detail: '深蹲 15 下 ＋ 伏地挺身 10 下 ＋ 棒式 30 秒，做完三輪。'
         '訓練類項目照常走訓練紀錄流程，連續天數與能力值全部照常累計。',
     assignedOn: DateTime.now(),
-    completedBy: {'早鳥訓練', 'Yuki'},
+    completedBy: {personKey('早鳥訓練', null), personKey('Yuki', null)},
   );
 }
 

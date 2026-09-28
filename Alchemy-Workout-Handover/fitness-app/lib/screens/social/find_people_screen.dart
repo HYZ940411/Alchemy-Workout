@@ -88,11 +88,15 @@ class _FindPeopleScreenState extends State<FindPeopleScreen> {
                               radius: 18,
                               backgroundColor: C.bgPage,
                               child: Text(
-                                people[i].name.characters.first,
+                                s
+                                    .nameOf(people[i].name,
+                                        uid: people[i].uid)
+                                    .characters
+                                    .first,
                                 style: T.body(weight: FontWeight.w700),
                               ),
                             ),
-                            title: people[i].name,
+                            title: s.nameOf(people[i].name, uid: people[i].uid),
                             // 現在的階級與綜合等級，不是我第一次見到他時那個。
                             subtitle: '階級 '
                                 '${s.rankOf(people[i].name, uid: people[i].uid, fallback: people[i].rank)}'

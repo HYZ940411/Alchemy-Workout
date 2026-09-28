@@ -74,12 +74,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     final isSelf = viewing == null;
-    final name = viewing ?? s.displayName;
+    final frozen = viewing ?? s.displayName;
     // **可見度不是由我這邊的開關決定的。** 原本寫 `s.abilityPublic`，
     // 那是「我要不要公開我的」，拿來決定「我看不看得到他的」是反的。
     // 對方公開了什麼，就由我們手上有沒有他那份資料如實反映。
     // 拿得到 uid 就用 uid 查 —— 暱稱可以改，uid 不會。
-    final uid = isSelf ? s.myUid : (viewingUid ?? s.uidOf(name));
+    final uid = isSelf ? s.myUid : (viewingUid ?? s.uidOf(frozen));
+    // 這個人**現在**的名字。呼叫端手上那份是他當時叫什麼 ——
+    // 從三個月前的貼文點進來的話，那個名字早就過期了。
+    final name = isSelf ? s.displayName : s.nameOf(frozen, uid: uid);
     final ability = s.abilityOf(name, uid: uid);
     final grade = s.gradeOf(name, uid: uid);
     final reputation = s.reputationOf(name, uid: uid);

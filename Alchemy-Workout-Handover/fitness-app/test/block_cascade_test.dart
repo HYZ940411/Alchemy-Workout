@@ -19,7 +19,7 @@ void main() {
       final s = AppState();
       const who = '深蹲王';
       expect(s.isFollowing(who), isTrue);
-      final key = s.followKeyOf(who, null);
+      final key = s.personKeyOf(who, null);
       final before = s.otherFollowerCounts[key] ?? 0;
       expect(s.blockUser(who), isTrue);
       expect(s.isFollowing(who), isFalse);

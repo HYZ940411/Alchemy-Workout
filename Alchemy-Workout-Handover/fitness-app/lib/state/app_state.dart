@@ -1149,12 +1149,17 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t == null) return;
     // 該成員於得分當下須為本團隊成員。
-    if (!t.members.any((m) => m.name == displayName)) return;
+    if (!t.members.any((m) => sameUser(m.name, m.uid, displayName, myUid))) {
+      return;
+    }
     // 重新分隊期內兩個團隊分數皆不累加；限制的是隊，不是練。
     if (inRegroupWindow(now)) return;
     // 中途加入者僅能貢獻加入後產生的分數 —— 由「當下累加」自然成立，
     // 加入前的個人分數本就沒有經過這裡。
-    t.contributions[displayName] = (t.contributions[displayName] ?? 0) + n;
+    // **以 uid 為鍵。** 只用暱稱的話，我改名之後貢獻分數會從 0 重算，
+    // 而舊的那一筆變成沒有主人的孤兒。
+    final me = personKeyOf(displayName, myUid);
+    t.contributions[me] = (t.contributions[me] ?? 0) + n;
   }
 
   bool _allTasksBonusGiven = false;
@@ -2297,7 +2302,7 @@ class AppState extends ChangeNotifier {
   /// 關注關係。單向，唯一鍵為 關注者 ID ＋ 被關注者 ID ——
   /// 用集合表達，重複關注不會產生第二筆。
   ///
-  /// **裡面裝的是 [followKeyOf] 算出來的鍵，不是暱稱**（暱稱重構階段三）。
+  /// **裡面裝的是 [personKeyOf] 算出來的鍵，不是暱稱**（暱稱重構階段三）。
   /// 認得出 uid 的人以 uid 為鍵：暱稱會改、會撞名，而這份名單要跨改名活著。
   /// 判斷請用 [isFollowing]，要顯示名字請用 [followName]。
   ///
@@ -2332,10 +2337,10 @@ class AppState extends ChangeNotifier {
 
   /// 他人的粉絲數。我關注／取消關注時 +1 / −1。
   ///
-  /// **以 [followKeyOf] 的鍵為鍵**，與 [following] 同一套 —— 原本以暱稱為鍵，
+  /// **以 [personKeyOf] 的鍵為鍵**，與 [following] 同一套 —— 原本以暱稱為鍵，
   /// 兩個同名的人會共用一個數字，而改名的人會從此對不上自己的舊計數。
   late Map<String, int> otherFollowerCounts = {
-    for (final u in socialUsers) followKeyOf(u.name, u.uid): 40 + u.rank * 3,
+    for (final u in socialUsers) personKeyOf(u.name, u.uid): 40 + u.rank * 3,
   };
 
   /// 關注／粉絲名單上，某個鍵在建立當下看到的暱稱。
@@ -2547,14 +2552,28 @@ class AppState extends ChangeNotifier {
 
   // --- 關注名單的鍵（暱稱重構階段三）---
 
-  /// 沒有 uid 的人在關注名單上長什麼樣。
-  ///
-  /// 加前綴是為了**不可能跟某個真實 uid 撞值** —— Firebase 的 uid 不含冒號。
+  /// 沒有 uid 的人長什麼樣。定義在 `domain/social.dart`，
+  /// 因為不認得 `AppState` 的地方（例如 [TimedTaskTally]）也要用同一份。
   static const _namePrefix = 'name:';
 
-  static String _nameKey(String name) => '$_namePrefix$name';
+  static String _nameKey(String name) => personKey(name, null);
 
-  static bool _isNameKey(String key) => key.startsWith(_namePrefix);
+  static bool _isNameKey(String key) => isNamePersonKey(key);
+
+  /// 這一則師徒問答是不是我自己問的（我在學徒那一側）。
+  ///
+  /// **看 [MentorQuestion.apprenticeUid] 是不是空的，不比暱稱。**
+  /// 雲端的問答掛在特定師徒關係下、帶著提問學徒的 uid；我自己問的那些
+  /// 沒有這個欄位（見該欄位的說明）。在此之前這裡比的是
+  /// `q.from == displayName` —— 我改個名字，自己問過的問題就全部不見了。
+  bool isMyQuestion(MentorQuestion q) => q.apprenticeUid == null;
+
+  /// 兩筆資料指的是不是同一個人。
+  ///
+  /// **兩邊都有 uid 就只比 uid。** 有一邊沒有（示範資料、還沒發布公開
+  /// 檔案的人）就只剩暱稱可比 —— 那是退路，會在撞名與改名時答錯。
+  static bool sameUser(String nameA, String? uidA, String nameB, String? uidB) =>
+      (uidA != null && uidB != null) ? uidA == uidB : nameA == nameB;
 
   /// 這個人在關注名單上的鍵。**有 uid 就用 uid。**
   ///
@@ -2562,7 +2581,7 @@ class AppState extends ChangeNotifier {
   /// （見 [_uidByName] 的說明），查不到才退成暱稱鍵。
   /// 退成暱稱鍵的人日後發布了公開檔案，[applyPublicProfiles] 會把那一筆
   /// 升級成 uid 鍵，名單不會多出一個分身。
-  String followKeyOf(String name, String? uid) =>
+  String personKeyOf(String name, String? uid) =>
       uid ?? _uidByName[name] ?? _nameKey(name);
 
   /// 關注／粉絲名單上這個鍵該顯示的名字。
@@ -2571,7 +2590,7 @@ class AppState extends ChangeNotifier {
   /// 反過來的話，對方改了名字而我這裡永遠顯示舊的。
   String followName(String key) => _isNameKey(key)
       ? key.substring(_namePrefix.length)
-      : (nameByUid[key] ?? _followNames[key] ?? '（資料載入中）');
+      : nameOf(_followNames[key] ?? '（資料載入中）', uid: key);
 
   /// 名單上這個鍵背後的 uid。暱稱鍵沒有 uid，回空值。
   String? uidOfFollowKey(String key) => _isNameKey(key) ? null : key;
@@ -2580,18 +2599,18 @@ class AppState extends ChangeNotifier {
   ///
   /// 翻得出 uid 的就此收斂到 uid，翻不出的留成暱稱鍵 —— 而登入時
   /// [applyFollows] 會以雲端為準把 uid 那一半整份換掉，所以翻錯也只錯一次。
-  String followKeyFromLegacyName(String name) => followKeyOf(name, null);
+  String followKeyFromLegacyName(String name) => personKeyOf(name, null);
 
   /// 我有沒有關注這個人。
   ///
   /// **拿得到 uid 就給 uid。** 只給暱稱的話，對方改名之後這裡會答錯 ——
   /// 畫面顯示「關注」，按下去卻在雲端建了第二次同樣的關係。
   bool isFollowing(String name, {String? uid}) =>
-      following.contains(followKeyOf(name, uid));
+      following.contains(personKeyOf(name, uid));
 
   /// 這個人有沒有關注我。
   bool isFollower(String name, {String? uid}) =>
-      followers.contains(followKeyOf(name, uid));
+      followers.contains(personKeyOf(name, uid));
 
   /// 把一個鍵記上它當下的暱稱，供 [followName] 墊底。
   void _rememberFollowName(String key, String name) {
@@ -2632,7 +2651,7 @@ class AppState extends ChangeNotifier {
   /// 我關注了某人、他的粉絲數卻紋風不動 —— 那個 +1 被雲端快照蓋掉了。
   int followersOf(String name, {String? uid}) => _isMe(name, uid)
       ? followerCount
-      : (otherFollowerCounts[followKeyOf(name, uid)] ??
+      : (otherFollowerCounts[personKeyOf(name, uid)] ??
           _profile(name, uid)?.followers ??
           0);
 
@@ -2680,6 +2699,22 @@ class AppState extends ChangeNotifier {
     final known = socialUsers.where((u) => u.name == name).firstOrNull;
     if (known != null) return known.rank;
     return fallback ?? 1;
+  }
+
+  /// 某人**現在**該顯示的名字（暱稱重構階段四）。
+  ///
+  /// **一律回「他現在的暱稱」，不是任何時點的快照。** 與 [rankOf] 同一套：
+  /// 貼文、留言、對話、團隊名冊、收件匣各自存了一份「發生當下的名字」，
+  /// 那些值只是這裡查不到人時的墊底。
+  ///
+  /// [frozen] 就是呼叫端手上那份快照。**改名之後它就過期了** ——
+  /// 規格說得很清楚：「暱稱為顯示名稱，不是識別碼」（〈註冊流程〉），
+  /// 所以顯示的第一順位永遠是公開檔案上的現值。
+  ///
+  /// 沒有 uid 就只能原封不動回傳 —— 那不是查詢失敗，是**沒有東西可查**。
+  String nameOf(String frozen, {String? uid}) {
+    if (_isMe(frozen, uid)) return displayName;
+    return uid == null ? frozen : (nameByUid[uid] ?? frozen);
   }
 
   /// 某人**現在**的教官聲望。非教官回空值。
@@ -2803,7 +2838,7 @@ class AppState extends ChangeNotifier {
     // 建立者刪），雲端於是永遠留著 —— 不擋的話，「封鎖自動解除雙方關注」
     // 這條後置條件每次登入都被推翻一次。
     final blocked = {
-      for (final b in blockedUsers) followKeyOf(b.name, b.uid),
+      for (final b in blockedUsers) personKeyOf(b.name, b.uid),
     };
     // 反著插，雲端那批彼此的相對順序才跟傳進來的一致。
     for (final uid in followerUids.toList().reversed) {
@@ -3115,7 +3150,12 @@ class AppState extends ChangeNotifier {
 
   late List<BlockedUser> blockedUsers = demo ? buildBlockedUsers() : [];
 
-  bool isBlocked(String name) => blockedUsers.any((b) => b.name == name);
+  /// 這個人有沒有被我封鎖。
+  ///
+  /// **拿得到 uid 就給 uid。** 只比暱稱的話，對方改名之後
+  /// 「封鎖過的人」會變回「沒封鎖過」—— 而封鎖是自保，不是社交功能。
+  bool isBlocked(String name, {String? uid}) =>
+      blockedUsers.any((b) => sameUser(b.name, b.uid, name, uid));
 
   /// 不能封鎖的理由；null 表示可以封鎖。
   ///
@@ -3126,10 +3166,10 @@ class AppState extends ChangeNotifier {
   /// 已知代價：騷擾者為同隊隊友時，受害者須先退出團隊才能自保。
   /// 這是模型明示接受的代價，而它成立的前提正是這條 Precondition 真的擋住 ——
   /// 不擋的話，使用者付了退隊的代價卻換不到任何東西。
-  String? blockBlockedReason(String name) {
-    if (isBlocked(name)) return '已經封鎖過這個人了。';
+  String? blockBlockedReason(String name, {String? uid}) {
+    if (isBlocked(name, uid: uid)) return '已經封鎖過這個人了。';
     final t = myTeam;
-    if (t != null && t.members.any((m) => m.name == name)) {
+    if (t != null && t.members.any((m) => sameUser(m.name, m.uid, name, uid))) {
       return '同隊的人不能封鎖。要先退出「${t.name}」，'
           '退出後 12 小時換隊冷卻期照常適用。';
     }
@@ -3142,7 +3182,7 @@ class AppState extends ChangeNotifier {
   /// 封鎖**不受社群功能停權限制**：功能對照表列的是發文、私訊、關注這些
   /// 對外互動，封鎖是自保。停權中的人一樣會被騷擾。
   bool blockUser(String name, {String? uid}) {
-    if (blockBlockedReason(name) != null) return false;
+    if (blockBlockedReason(name, uid: uid) != null) return false;
     blockedUsers.insert(0, BlockedUser(name, now, uid: uid ?? uidOf(name)));
 
     // Postcondition：自動解除**雙方**的關注關係。
@@ -3151,7 +3191,7 @@ class AppState extends ChangeNotifier {
     // `follows/{他的uid}_{我的uid}`，而安全規則只讓 `followerId` 本人刪除 ——
     // 我刪不了別人建立的關係。下次登入 `applyFollows` 會把他加回粉絲名單。
     // 見 PROGRESS 1Q，待裁決。
-    final key = followKeyOf(name, uid);
+    final key = personKeyOf(name, uid);
     _unfollow(key);
     followers.remove(key);
 
@@ -3179,9 +3219,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// 使用者已解除封鎖。
-  void unblockUser(String name) {
+  void unblockUser(String name, {String? uid}) {
     final before = blockedUsers.length;
-    blockedUsers.removeWhere((b) => b.name == name);
+    blockedUsers.removeWhere((b) => sameUser(b.name, b.uid, name, uid));
     if (blockedUsers.length != before) notifyListeners();
   }
 
@@ -3548,7 +3588,7 @@ class AppState extends ChangeNotifier {
   void toggleFollow(String name, {String? uid}) {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return;
-    final key = followKeyOf(name, uid);
+    final key = personKeyOf(name, uid);
     if (following.contains(key)) {
       _unfollow(key);
       _pushFollow(key, nowFollowing: false);
@@ -3572,7 +3612,7 @@ class AppState extends ChangeNotifier {
   }
 
   void gainFollower(String name, {String? uid}) {
-    final key = followKeyOf(name, uid);
+    final key = personKeyOf(name, uid);
     if (followers.contains(key)) return;
     followers.insert(0, key);
     _rememberFollowName(key, name);
@@ -3780,7 +3820,7 @@ class AppState extends ChangeNotifier {
   bool timedRewardClaimed = false;
 
   bool get canClaimTimedReward =>
-      timedTask.doneBy(displayName) && !timedRewardClaimed;
+      timedTask.doneBy(displayName, uid: myUid) && !timedRewardClaimed;
 
   ({int exp, int coins})? claimTimedReward() {
     if (!canClaimTimedReward) return null;
@@ -3852,18 +3892,18 @@ class AppState extends ChangeNotifier {
 
   /// 我今天完成了，但分數記在別支隊伍帳上（完成後才換隊或重建）。
   bool get timedDoneElsewhere =>
-      timedTask.doneBy(displayName) &&
+      timedTask.doneBy(displayName, uid: myUid) &&
       myTeam != null &&
-      !myTeam!.timedCredited.contains(displayName);
+      !myTeam!.timedCredited.contains(personKeyOf(displayName, myUid));
 
   /// Demo：把自己標記為完成。完成判定實際由系統訂閱 Event 自動累計，
   /// 不採自行回報 —— 可自行按鈕加分的排行榜不成立。
   void completeTimedTask() {
-    if (timedTaskExpired || timedTask.doneBy(displayName)) return;
-    timedTask.completedBy.add(displayName);
+    if (timedTaskExpired || timedTask.doneBy(displayName, uid: myUid)) return;
+    timedTask.completedBy.add(personKeyOf(displayName, myUid));
     // 完成的當下記在當時所屬的隊帳上。中途加入者僅能貢獻加入後產生的分數，
     // 轉隊也不帶走舊團隊已貢獻的分數 —— 與團隊日常分數同一條規則。
-    myTeam?.timedCredited.add(displayName);
+    myTeam?.timedCredited.add(personKeyOf(displayName, myUid));
     notifyListeners();
   }
   late List<PublicTeam> publicTeams = demo ? buildPublicTeams() : [];
@@ -4268,11 +4308,12 @@ class AppState extends ChangeNotifier {
   Map<String, int> _seedContributions(PublicTeam t) {
     if (t.members.isEmpty) return {};
     final each = t.dailyScore ~/ t.members.length;
-    final out = <String, int>{for (final m in t.members) m.name: each};
-    final leader = t.members
-        .firstWhere((m) => m.role == TeamRole.leader,
-            orElse: () => t.members.first)
-        .name;
+    final out = <String, int>{
+      for (final m in t.members) personKeyOf(m.name, m.uid): each,
+    };
+    final l = t.members.firstWhere((m) => m.role == TeamRole.leader,
+        orElse: () => t.members.first);
+    final leader = personKeyOf(l.name, l.uid);
     out[leader] = out[leader]! + t.dailyScore - each * t.members.length;
     return out;
   }
@@ -4434,12 +4475,14 @@ class AppState extends ChangeNotifier {
   /// 成員已完成一次限時任務。
   ///
   /// 完成記在**當時所屬的隊**帳上，與我自己完成時同一條規則。
-  bool teammateCompletesTimedTask(String name) {
+  bool teammateCompletesTimedTask(String name, {String? uid}) {
     final t = myTeam;
     if (t == null || timedTaskExpired) return false;
-    if (!t.members.any((m) => m.name == name)) return false;
-    if (!timedTask.completedBy.add(name)) return false;
-    t.timedCredited.add(name);
+    final m =
+        t.members.where((m) => sameUser(m.name, m.uid, name, uid)).firstOrNull;
+    if (m == null) return false;
+    if (!timedTask.completedBy.add(personKeyOf(m.name, m.uid))) return false;
+    t.timedCredited.add(personKeyOf(m.name, m.uid));
     notifyListeners();
     return true;
   }
@@ -5384,18 +5427,25 @@ class AppState extends ChangeNotifier {
   ///
   /// [weekly] 為該週互動評分（每人每週一次、幅度較大）；
   /// 否則為單次師徒任務評分（每人每週最多 2 次計入聲望）。
-  bool apprenticeRatesMe(String who, int stars, {bool weekly = false}) {
+  bool apprenticeRatesMe(String who, int stars,
+      {bool weekly = false, String? uid}) {
     if (!isInstructor || !isValidStars(stars)) return false;
-    if (!apprentices.any((a) => a.name == who)) return false;
+    final a = apprentices
+        .where((a) => sameUser(a.name, a.uid, who, uid))
+        .firstOrNull;
+    if (a == null) return false;
+    // **以 uid 為鍵。** 只用暱稱的話，學徒改名之後那個「每週最多 2 次」
+    // 的上限會重新歸零 —— 而它是聲望的節流閥。
+    final key = personKeyOf(a.name, a.uid);
 
     if (weekly) {
-      if (!apprenticeWeeklyRated.add(who)) return false;
+      if (!apprenticeWeeklyRated.add(key)) return false;
       _bumpReputation(kWeeklyInteractionReputationDelta[stars - 1]);
     } else {
-      final n = apprenticeTaskRatings[who] ?? 0;
+      final n = apprenticeTaskRatings[key] ?? 0;
       // 超出上限者仍可評分，只是不計入聲望 ——
       // 該擋的是計分，不是行為。
-      apprenticeTaskRatings[who] = n + 1;
+      apprenticeTaskRatings[key] = n + 1;
       if (n < kMentorTaskRatingWeeklyCap) {
         _bumpReputation(kMentorTaskReputationDelta[stars - 1]);
       }

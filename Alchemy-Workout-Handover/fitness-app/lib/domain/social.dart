@@ -26,6 +26,19 @@ class SocialUser {
 }
 
 /// 一筆封鎖。單向關係，唯一鍵為 封鎖者 ID ＋ 被封鎖者 ID。
+/// 一個人在「以人為鍵」的集合裡長什麼樣（暱稱重構）。
+///
+/// **有 uid 就是 uid。** 沒有的（示範資料、還沒發布公開檔案的人）退回
+/// 暱稱並加上前綴 —— 加前綴是為了不可能跟某個真實 uid 撞值，
+/// Firebase 的 uid 不含冒號。
+///
+/// 關注名單、他人的粉絲數、團隊貢獻、限時任務完成名單、學徒評分次數
+/// 都用這個鍵。`AppState.personKeyOf` 是它加上「暱稱反查 uid」的版本。
+String personKey(String name, String? uid) => uid ?? 'name:$name';
+
+/// 這個鍵是不是「沒有 uid」的那一種。
+bool isNamePersonKey(String key) => key.startsWith('name:');
+
 class BlockedUser {
   final String name;
 

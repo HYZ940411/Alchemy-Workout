@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/screens/social/mentor_screen.dart';
+import 'package:fitness_app/domain/social.dart';
 
 import 'package:fitness_app/domain/ability.dart';
 import 'package:fitness_app/domain/community.dart';
@@ -175,12 +176,13 @@ void main() {
     test('限時任務：全平台完成與記在本隊帳上是兩件事', () {
       final s = AppState();
       final t = s.myTeam!;
-      final outsider = s.timedTask.completedBy
-          .where((n) => !t.members.any((m) => m.name == n))
-          .toList();
-      expect(t.timedCredited.every(s.timedTask.doneBy), isTrue,
+      // 兩邊都是 `personKey`，所以直接比鍵。
+      final mine = {for (final m in t.members) personKey(m.name, m.uid)};
+      final outsider =
+          s.timedTask.completedBy.where((k) => !mine.contains(k)).toList();
+      expect(t.timedCredited.every(s.timedTask.completedBy.contains), isTrue,
           reason: '記在本隊帳上的，必定也完成了');
-      expect(outsider.every((n) => !t.timedCredited.contains(n)), isTrue,
+      expect(outsider.every((k) => !t.timedCredited.contains(k)), isTrue,
           reason: '別隊的人完成了，不該記在我隊帳上');
     });
 

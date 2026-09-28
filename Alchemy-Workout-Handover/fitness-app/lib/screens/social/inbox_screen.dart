@@ -77,7 +77,7 @@ class _InboxScreenState extends State<InboxScreen> {
             ],
           ),
           const SizedBox(height: S.md),
-          Text(_title(r), style: T.h3()),
+          Text(_title(r, s), style: T.h3()),
           const SizedBox(height: S.xs),
           Text(_detail(r, s), style: T.caption()),
           // 不能接受的理由要講出來，否則使用者只看到一顆按不下去的按鈕。
@@ -122,18 +122,24 @@ class _InboxScreenState extends State<InboxScreen> {
     );
   }
 
-  static String _title(InboundRequest r) => switch (r.kind) {
-        InboundKind.teamInvite => '${r.from} 邀你加入「${r.subject}」',
-        InboundKind.mentorInvite => '${r.from} 想收你為徒',
-        InboundKind.apprenticeApply => '${r.from} 想拜你為師',
-      };
+  /// 送件方**現在的**名字。`r.from` 是送出當下存的，只在查不到
+  /// 對方的公開檔案時墊底 —— 與下面的階級同一套。
+  static String _title(InboundRequest r, AppState s) {
+    final from = s.nameOf(r.from, uid: r.fromUid);
+    return switch (r.kind) {
+      InboundKind.teamInvite => '$from 邀你加入「${r.subject}」',
+      InboundKind.mentorInvite => '$from 想收你為徒',
+      InboundKind.apprenticeApply => '$from 想拜你為師',
+    };
+  }
 
   /// 送件方**現在的**階級。`r.fromRank` 是送出當下存的，只在查不到
   /// 對方的公開檔案時墊底。
   static String _detail(InboundRequest r, AppState s) {
     final rank = s.rankOf(r.from, uid: r.fromUid, fallback: r.fromRank);
+    final from = s.nameOf(r.from, uid: r.fromUid);
     return switch (r.kind) {
-      InboundKind.teamInvite => '隊長 ${r.from}（$rank 階）。一次只能屬於一個團隊。',
+      InboundKind.teamInvite => '隊長 $from（$rank 階）。一次只能屬於一個團隊。',
       InboundKind.mentorInvite => '$rank 階教官。一位學徒同時只能有一位教官。',
       InboundKind.apprenticeApply => '$rank 階。接受後佔用一個帶徒名額。',
     };

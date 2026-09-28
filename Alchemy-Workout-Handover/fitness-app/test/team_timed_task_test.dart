@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/main.dart';
+import 'package:fitness_app/domain/social.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 Future<AppState> openTeam(WidgetTester t) async {
@@ -57,8 +58,11 @@ void main() {
     final s = await openTeam(t);
     final tally = s.timedTally;
     final other = tally.members
-        .map((m) => m.name)
-        .firstWhere((n) => n != s.displayName && !tally.credited.contains(n));
+        .where((m) =>
+            m.name != s.displayName &&
+            !tally.credited.contains(personKey(m.name, m.uid)))
+        .first
+        .name;
 
     final row = find.ancestor(
       of: find.text(other),
