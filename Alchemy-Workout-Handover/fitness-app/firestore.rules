@@ -165,7 +165,38 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.auth.uid in request.resource.data.memberUids;
 
-      allow update: if request.auth != null && (
+      // 分數只能動自己那一格，而且只能往上（使用者裁決 2026-09-28）。
+      //
+      // **這不是防作弊的完整防線** —— 分數本身仍由裝置算出來，
+      // 真正的把關要等 `[BE-07]` 把評分搬上 Cloud Functions。
+      // 這裡擋的是「改隊友的貢獻」與「把自己的分數改小」，
+      // 也就是一個人動得了別人紀錄的那一半。
+      function contribOk() {
+        let before = resource.data.get('contributions', {});
+        let after = request.resource.data.get('contributions', {});
+        let changed = after.diff(before).affectedKeys();
+        return changed.size() == 0
+               || (changed.hasOnly([request.auth.uid])
+                   && after[request.auth.uid] >= before.get(request.auth.uid, 0));
+      }
+
+      // 限時任務的完成名單：只能把自己加進去，或在換日時整份換成只有自己。
+      // 換日清空沒有伺服器可以做（免費方案沒有排程），由第一個完成的人做。
+      function timedOk() {
+        let before = resource.data.get('timedCredited', []).toSet();
+        let after = request.resource.data.get('timedCredited', []).toSet();
+        let sameDay = request.resource.data.get('timedDay', '')
+                      == resource.data.get('timedDay', '');
+        return after == before
+               || (sameDay
+                   && after.difference(before) == [request.auth.uid].toSet()
+                   && before.difference(after).size() == 0)
+               || (!sameDay && after == [request.auth.uid].toSet());
+      }
+
+      allow update: if request.auth != null
+                    && contribOk() && timedOk()
+                    && (
                       // 隊員可以改隊伍（加人、踢人、改可見性、解散）
                       request.auth.uid in resource.data.memberUids
                       // 或者：有一筆給我的待回應請求，而我正把自己加進去

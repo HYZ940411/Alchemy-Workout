@@ -25,6 +25,11 @@ import 'package:fitness_app/domain/inbound.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 class _FakeTeams implements TeamSource {
+  @override
+  Future<void> addScore(String teamId, String uid, int delta) async {}
+  @override
+  Future<void> creditTimed(String teamId, String uid, String day) async {}
+
   final List<(String team, String uid)> members = [];
   final List<(String team, String uid)> dropped = [];
 

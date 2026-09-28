@@ -1160,6 +1160,8 @@ class AppState extends ChangeNotifier {
     // 而舊的那一筆變成沒有主人的孤兒。
     final me = personKeyOf(displayName, myUid);
     t.contributions[me] = (t.contributions[me] ?? 0) + n;
+    // 送上雲。**累加不是覆寫** —— 見 `TeamSource.addScore`。
+    _pushTeam((src, uid) => src.addScore(t.id, uid, n));
   }
 
   bool _allTasksBonusGiven = false;
@@ -3693,12 +3695,28 @@ class AppState extends ChangeNotifier {
           TeamMember(e.value.name, e.value.rank, e.value.role, uid: e.key),
       ],
       lockedGroupSize: t.peakSize,
+      // **分數以雲端為準。** 在此之前團隊分數完全沒有上雲，重開 App
+      // 就回到示範資料、真帳號則每次從零開始（使用者 2026-09-28 回報）。
+      contributions: {...t.contributions},
+      // 限時任務的完成名單只在**今天**才算數 —— 雲端那份如果是昨天的，
+      // 清空這件事沒有伺服器可以做，由第一個完成的人順手做
+      // （見 `CloudTeam.timedDay`），在那之前這裡先當它是空的。
+      timedCredited:
+          t.timedDay == _timedDayKey() ? {...t.timedCredited} : <String>{},
     );
     // **雲端說我已經在隊上，本機那筆「已送出的申請」就該消失。**
     // 一次只能屬於一個團隊，申請被核准後它已經沒有意義了 ——
     // 留著的話畫面會同時顯示「已加入」和「等隊長回應」。
     sentApplications.clear();
     notifyListeners();
+  }
+
+  /// 限時任務完成名單屬於哪一個業務日（04:00 換日，與全域規範一致）。
+  String _timedDayKey() {
+    final d = businessDate(now);
+    return '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
   }
 
   /// 我是不是這支隊伍的隊長。
@@ -3903,7 +3921,11 @@ class AppState extends ChangeNotifier {
     timedTask.completedBy.add(personKeyOf(displayName, myUid));
     // 完成的當下記在當時所屬的隊帳上。中途加入者僅能貢獻加入後產生的分數，
     // 轉隊也不帶走舊團隊已貢獻的分數 —— 與團隊日常分數同一條規則。
-    myTeam?.timedCredited.add(personKeyOf(displayName, myUid));
+    final t = myTeam;
+    if (t != null) {
+      t.timedCredited.add(personKeyOf(displayName, myUid));
+      _pushTeam((src, uid) => src.creditTimed(t.id, uid, _timedDayKey()));
+    }
     notifyListeners();
   }
   late List<PublicTeam> publicTeams = demo ? buildPublicTeams() : [];

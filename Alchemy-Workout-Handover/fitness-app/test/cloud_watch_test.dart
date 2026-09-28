@@ -70,6 +70,11 @@ class _FakeChats implements ChatSource {
 }
 
 class _FakeTeams implements TeamSource {
+  @override
+  Future<void> addScore(String teamId, String uid, int delta) async {}
+  @override
+  Future<void> creditTimed(String teamId, String uid, String day) async {}
+
   final issued = <StreamController<void>>[];
   String? watchedTeamId;
   int reads = 0;

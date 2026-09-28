@@ -20,6 +20,26 @@ class CloudTeam {
   /// 已解散。**軟刪除** —— 解散後排行榜歷史仍要查得到這支隊伍。
   final bool disbanded;
 
+  /// 各成員對本隊的日常貢獻。**uid → 分數。**
+  ///
+  /// 在此之前團隊分數完全沒有上雲，也沒有進本機存檔 —— 重開 App 就
+  /// 回到示範資料，真帳號則每次從零開始，練完的分數下一秒就沒了
+  /// （使用者 2026-09-28 回報，裁決 A：上雲）。
+  ///
+  /// **不存 `dailyScore`**：那是這份 Map 的加總，另存一個數字就會漂移
+  /// （見 `Team.dailyScore` 的說明）。
+  final Map<String, int> contributions;
+
+  /// 今日限時任務中，完成紀錄記在本隊帳上的成員（uid）。
+  final Set<String> timedCredited;
+
+  /// [timedCredited] 屬於哪一個業務日（`yyyy-MM-dd`，04:00 換日）。
+  ///
+  /// **換日要清空，而清空這件事沒有伺服器可以做**（免費方案沒有排程）。
+  /// 所以改由「第一個在新的一天完成的人」順手清掉 —— 他看到日期不同，
+  /// 就把名單換成只有自己。空字串代表還沒有人完成過。
+  final String timedDay;
+
   const CloudTeam({
     required this.id,
     required this.name,
@@ -28,6 +48,9 @@ class CloudTeam {
     this.capacity = kTeamCapacity,
     this.peakSize = 0,
     this.disbanded = false,
+    this.contributions = const {},
+    this.timedCredited = const {},
+    this.timedDay = '',
   });
 
   bool get isFull => members.length >= capacity;
@@ -105,6 +128,18 @@ abstract class TeamSource {
 
   /// 收回／拒絕／接受後移除該筆請求。
   Future<void> dropRequest(String teamId, String uid);
+
+  /// 把 [delta] 分加到某位成員對本隊的貢獻上。
+  ///
+  /// **是累加不是覆寫。** 兩台裝置同時練完各自送一次，覆寫會丟掉一次；
+  /// 而且安全規則只放行「自己那一格、而且往上」，覆寫寫不過去。
+  Future<void> addScore(String teamId, String uid, int delta);
+
+  /// 把某位成員記進今日限時任務的完成名單。
+  ///
+  /// [day] 是業務日字串。雲端那份如果屬於別的日子就整份換掉 ——
+  /// 換日清空沒有伺服器可以做，由第一個完成的人順手做。
+  Future<void> creditTimed(String teamId, String uid, String day);
 
 
   /// 有變動時發一次訊號（`[BE-16]`）。**訊號不帶內容。**
