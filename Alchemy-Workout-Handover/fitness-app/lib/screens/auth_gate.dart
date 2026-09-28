@@ -8,6 +8,7 @@ import '../data/auth.dart';
 import '../data/platform_data.dart';
 import '../data/public_profile.dart';
 import '../data/follow_data.dart';
+import '../data/photo_data.dart';
 import '../data/post_data.dart';
 import '../data/chat_data.dart';
 import '../data/team_data.dart';
@@ -61,6 +62,7 @@ class AuthGate extends StatefulWidget {
 
   /// 貼文的來源（[BE-11] 批次 3）。空值代表不同步。
   final PostSource Function(String uid)? postsFor;
+  final PhotoSource Function(String uid)? photosFor;
 
   /// 私訊的來源（[BE-14]）。空值代表不同步。
   final ChatSource Function(String uid)? chatsFor;
@@ -93,6 +95,7 @@ class AuthGate extends StatefulWidget {
     this.qualitySource,
     this.followsFor,
     this.postsFor,
+    this.photosFor,
     this.chatsFor,
     this.teamsFor,
     this.mentorFor,
@@ -324,6 +327,7 @@ class _AuthGateState extends State<AuthGate> {
     // 使用者接下來做的事全部只留在記憶體裡。
     widget.state.myUid = uid;
     widget.state.postSource = widget.postsFor?.call(uid);
+    widget.state.photoSource = widget.photosFor?.call(uid);
     widget.state.chatSource = widget.chatsFor?.call(uid);
     widget.state.teamSource = widget.teamsFor?.call(uid);
     widget.state.mentorSource = widget.mentorFor?.call(uid);

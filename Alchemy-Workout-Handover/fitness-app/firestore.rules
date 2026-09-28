@@ -248,6 +248,26 @@ service cloud.firestore {
     // 計數本身仍可被竄改（有心人可以不按讚而直接加十次），
     // 與金幣、能力值一樣要等 [BE-07] 搬上 Cloud Functions 才擋得住。
     // 現階段它至少不能改別人的文字。
+    // 使用者上傳的照片（2026-09-28 使用者裁決：存 Firestore，不開 R2）。
+    //
+    // 讀：登入者皆可 —— 貼文本來就是公開的，圖跟著文走。
+    // 建立：只能掛自己的 uid，而且**當場驗大小**。App 那一側壓過一次，
+    //       但那是客戶端的程式碼，改得掉；這裡是改不掉的那一道。
+    // 更新：**一律禁止**。照片換掉等於偷換別人已經看過的內容。
+    //       要改就刪掉重傳，那會換一個新 ID。
+    // 刪除：只有作者自己與管理員（下架違規內容）。
+    match /post_photos/{photoId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.bytes is bytes
+                    && request.resource.data.bytes.size() <= 911360;
+      allow update: if false;
+      allow delete: if request.auth != null
+                    && (resource.data.ownerUid == request.auth.uid
+                        || isAdmin());
+    }
+
     match /posts/{postId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null

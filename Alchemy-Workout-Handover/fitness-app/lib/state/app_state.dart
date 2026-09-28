@@ -26,6 +26,11 @@ import '../domain/registration.dart';
 import '../domain/social.dart';
 import '../domain/leaderboard.dart';
 import '../domain/rank.dart';
+import 'dart:typed_data';
+
+import '../data/photo_data.dart';
+import '../design/image_library.dart' show PhotoScope;
+import '../domain/photo.dart';
 import '../domain/plan_duration.dart';
 import '../domain/rewards.dart';
 import '../domain/admin.dart';
@@ -2671,6 +2676,35 @@ class AppState extends ChangeNotifier {
 
   /// 雲端的貼文。**空值代表不同步** —— 既有測試走這條。
   PostSource? postSource;
+
+  /// 使用者上傳的照片（2026-09-28 使用者裁決：存 Firestore，不開 R2）。
+  ///
+  /// **空值代表不接雲端** —— 既有測試全部走這條，
+  /// 行為與加這個功能之前一模一樣（選不到裝置照片，只有內建圖庫）。
+  PhotoSource? photoSource;
+
+  bool get canUploadPhoto => photoSource != null;
+
+  /// 壓縮並上傳一張照片。回傳 `(照片 ID, 失敗原因)`，兩者必有其一。
+  ///
+  /// **壓縮在這裡做，不在存讀層做。** 存讀層只負責存得進去；
+  /// 「這個檔案能不能變成一張存得下的照片」是先決條件，
+  /// 而它在沒有雲端的環境（測試）也該驗得出來。
+  Future<(String?, String?)> uploadPhoto(Uint8List raw) async {
+    final src = photoSource;
+    if (src == null) return (null, '目前無法上傳照片。');
+    final encoded = encodePhoto(raw);
+    if (encoded == null) return (null, '這個檔案不是看得懂的圖片。');
+    try {
+      return (await src.put(encoded.bytes), null);
+    } catch (e) {
+      return (null, '照片上傳失敗：$e');
+    }
+  }
+
+  /// 取一張上傳照片的位元組。畫面用（見 `PhotoScope`）。
+  Future<Uint8List?> photoBytes(String id) async =>
+      isUploadedPhoto(id) ? await photoSource?.get(id) : null;
 
   /// 動態牆一次讀幾篇。登入時的首次載入與下拉重新整理共用同一個值 ——
   /// 兩邊不一致的話，下拉之後看到的篇數會跟剛登入時不一樣。
@@ -10234,8 +10268,17 @@ class AppState extends ChangeNotifier {
 
 /// 極簡的狀態注入，不引入任何外部套件。
 class AppScope extends InheritedNotifier<AppState> {
-  const AppScope({super.key, required AppState state, required super.child})
-      : super(notifier: state);
+  /// **順手裝上 [PhotoScope]。**
+  ///
+  /// 上傳的照片畫在 `AppImageView` 裡，而那是設計層 —— 它只拿得到一個
+  /// ID，位元組得有人餵。裝在這裡的理由是「有 AppScope 的地方就有
+  /// AppState」，於是每一個既有畫面與既有測試都自動拿得到，
+  /// 不必每一處各包一層。
+  AppScope({super.key, required AppState state, required Widget child})
+      : super(
+          notifier: state,
+          child: PhotoScope(load: state.photoBytes, child: child),
+        );
 
   static AppState of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppScope>()!.notifier!;
