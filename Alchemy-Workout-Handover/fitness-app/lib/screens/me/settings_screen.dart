@@ -752,6 +752,26 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const SectionLabel('帳號'),
+          // 改名入口（暱稱重構階段五）。規格：「暱稱可於設定頁事後更新」。
+          Panel(
+            child: InkWell(
+              onTap: () => _editNickname(context, s),
+              child: Row(
+                children: [
+                  const Icon(Icons.badge_outlined,
+                      size: 18, color: AppColors.textFaint),
+                  const SizedBox(width: 11),
+                  const Expanded(
+                    child: Text('暱稱', style: TextStyle(fontSize: 13.5)),
+                  ),
+                  Text(s.displayName, style: T.caption()),
+                  const Icon(Icons.chevron_right,
+                      size: 18, color: AppColors.textFaint),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           // 沒有初始化 Firebase 就不顯示登出 —— 既有的 widget 測試
           // （畫面爬蟲會走過每一頁）沒有 Firebase，碰 FirebaseAuth.instance
           // 會當場丟例外。用 Firebase.apps 判斷是安全的：它是純查詢，不會拋。
@@ -1018,6 +1038,69 @@ Future<void> _editNumber(
   final v = double.parse(ctrl.text.trim());
   onSave(s.metricUnits ? v : s.toMetric(v, title == '身高'));
   showToast(context, '已更新$title');
+}
+
+/// 改名（暱稱重構階段五，使用者裁決 A：30 天一次）。
+///
+/// **冷卻期在打開之前就先講**，不是按下儲存才說 —— 讓人打完 12 個字
+/// 才告訴他這個月不能改，是刁難不是驗證。
+Future<void> _editNickname(BuildContext context, AppState s) async {
+  final blocked = s.renameBlockedReason();
+  if (blocked != null) {
+    showToast(context, blocked);
+    return;
+  }
+  final ctrl = TextEditingController(text: s.displayName);
+  final ok = await showAppSheet<bool>(
+    context,
+    title: '修改暱稱',
+    child: StatefulBuilder(
+      builder: (context, setSheetState) {
+        final v = ctrl.text.trim();
+        final error = isValidNickname(v)
+            ? (v == s.displayName ? '這就是你現在的暱稱。' : null)
+            : '暱稱要 1–$kNicknameMaxLength 個字。';
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              style: T.body(),
+              onChanged: (_) => setSheetState(() {}),
+              decoration: InputDecoration(
+                isDense: true,
+                errorText: error,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: S.base, vertical: S.md),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(R.control),
+                ),
+              ),
+            ),
+            const SizedBox(height: S.sm),
+            Text('改了之後，動態牆、隊伍、私訊、排行榜都會跟著改成新的名字。\n'
+                '每 $kRenameCooldownDays 天只能改一次。',
+                style: T.caption()),
+            const SizedBox(height: S.md),
+            SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                label: '儲存',
+                onPressed: error == null
+                    ? () => Navigator.of(context).pop(true)
+                    : null,
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+  final why = s.rename(ctrl.text);
+  showToast(context, why ?? '暱稱已改成 ${s.displayName}');
 }
 
 Future<void> _editEmail(BuildContext context, AppState s) async {

@@ -110,6 +110,55 @@ class SettlementResult {
 class AppState extends ChangeNotifier {
   // --- 使用者 Aggregate（假資料）---
   String displayName = '你';
+
+  // --- 改名（暱稱重構階段五，使用者裁決 A：30 天一次）---
+
+  /// 上次改名的時點。**空值代表從來沒改過。**
+  DateTime? lastRenamedAt;
+
+  /// 曾用名，新的在前。**只給管理員看，不對一般使用者呈現。**
+  ///
+  /// 規格說暱稱是顯示名稱不是識別碼 —— 把一個人的改名史公開出去
+  /// 等於替他做了一次他沒同意的揭露。管理端的用途見
+  /// `review_queue_screen`：那裡呈現的是**案件建立當下**的名字，
+  /// 而那一份本來就跟著案件存著（`ReportCase.accused`）。
+  final List<String> formerNames = [];
+
+  /// 現在不能改名的理由；null 表示可以改。
+  ///
+  /// **規格沒有規定改名頻率**（〈註冊流程〉只說「可於設定頁事後更新」）。
+  /// 30 天是使用者 2026-09-28 的裁決 A —— 理由是管理員的待審佇列
+  /// 靠名字認人（`02_Aggregate定義.md`：顯示名稱「供待審佇列與稽核呈現」），
+  /// 不限次數的話，被檢舉的人改個名字就換了一張臉。
+  String? renameBlockedReason() {
+    final at = lastRenamedAt;
+    if (at == null) return null;
+    final days = businessDate(now).difference(businessDate(at)).inDays;
+    if (days >= kRenameCooldownDays) return null;
+    return '暱稱每 $kRenameCooldownDays 天只能改一次，'
+        '還要等 ${kRenameCooldownDays - days} 天。';
+  }
+
+  /// 使用者已更新暱稱。回傳失敗的理由；null 表示成功。
+  String? rename(String to) {
+    final blocked = renameBlockedReason();
+    if (blocked != null) return blocked;
+    final next = to.trim();
+    if (!isValidNickname(next)) {
+      return '暱稱要 1–$kNicknameMaxLength 個字。';
+    }
+    if (next == displayName) return '這就是你現在的暱稱。';
+
+    formerNames.insert(0, displayName);
+    displayName = next;
+    lastRenamedAt = now;
+    // **立刻重寫公開檔案。** 不然別人看到的還是舊名字 ——
+    // 而整個暱稱重構的前提就是「顯示名稱一律去查現值」，
+    // 現值沒更新的話那一整套白做。
+    publishMyProfile();
+    notifyListeners();
+    return null;
+  }
   double bodyweightKg = 72;
   bool isMale = true;
 
@@ -10520,6 +10569,9 @@ class AppState extends ChangeNotifier {
     followers.clear();
     following.clear();
     _followNames.clear();
+    // 新帳號沒有改過名，也沒有曾用名。
+    lastRenamedAt = null;
+    formerNames.clear();
     blockedUsers.clear();
     sentApplications.clear();
     // 加入／退出的時戳也要清 —— 新帳號沒有換隊冷卻，也沒有誤入窗口。

@@ -211,6 +211,10 @@ extension AppStateSnapshot on AppState {
         'purchasedPlanIds': purchasedPlanIds.toList(),
         'currentPlanId': currentPlan?.id,
 
+        // --- 改名（階段五）---
+        'lastRenamedAt': _iso(lastRenamedAt),
+        'formerNames': formerNames,
+
         // --- 關注 ---
         //
         // **鍵不是暱稱**（暱稱重構階段三）。欄位名跟著換，舊存檔裡的
@@ -631,6 +635,13 @@ extension AppStateSnapshot on AppState {
     currentPlan = planId == null
         ? null
         : platformPlans.where((p) => p.id == planId).firstOrNull;
+
+    lastRenamedAt = _date(pick<String>('lastRenamedAt'));
+    if (pick<List>('formerNames') != null) {
+      formerNames
+        ..clear()
+        ..addAll(strs('formerNames'));
+    }
 
     // 關注名單。新欄位是鍵，舊欄位（階段三之前）是暱稱，翻一次。
     final names = pick<Map>('followNames');

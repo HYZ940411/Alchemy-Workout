@@ -7,6 +7,23 @@ import '../../domain/custom_plan.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 
+/// 這個人**現在**叫什麼，以及案件建立當下叫什麼（兩者不同才寫）。
+///
+/// **管理員是靠名字認人的** —— `02_Aggregate定義.md` 把顯示名稱列為
+/// 「供待審佇列與稽核呈現」。使用者 2026-09-28 裁決 A 開放改名之後，
+/// 被檢舉的人可以在案件審完之前換一張臉；30 天的冷卻期擋掉大部分，
+/// 這一列擋掉剩下的。
+///
+/// 曾用名**只在這裡呈現，不對一般使用者公開** —— 那等於替一個人做了
+/// 一次他沒同意的揭露，而規格說暱稱是顯示名稱不是識別碼。
+///
+/// 不必另存一份曾用名清單：案件本來就凍結著建立當下的名字
+/// （`ReportCase.accused` 等），那正好就是這裡要的那一個。
+String _withFormerName(AppState s, String frozen, String? uid) {
+  final now = s.nameOf(frozen, uid: uid);
+  return now == frozen ? now : '$now（案件建立時：$frozen）';
+}
+
 /// Read Model：管理員待審佇列
 ///
 /// 分四個分頁，不採單一混合佇列 —— 混合後管理員每點一筆須切換心智模式；
@@ -169,9 +186,9 @@ class _ReportCard extends StatelessWidget {
     final after = state.violationsForCase(c) + 1;
     final tier = tierForViolations(after);
     final mine = c.handlerName == state.admin.name;
-    // 被檢舉者**現在**的名字。案件上那份是開案當下存的 ——
+    // 被檢舉者**現在**的名字，後面括號補上開案當下那個。
     // 判定與記點靠的是 `accusedUid`，這裡只是顯示。
-    final accused = state.nameOf(c.accused, uid: c.accusedUid);
+    final accused = _withFormerName(state, c.accused, c.accusedUid);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: S.md),
@@ -352,8 +369,8 @@ class _AppealTab extends StatelessWidget {
                   _Row(label: '已等待', value: '${c.waited} 小時'),
                   _Row(
                       label: '申訴者',
-                      value: AppScope.of(context)
-                          .nameOf(c.appellant, uid: c.appellantUid)),
+                      value: _withFormerName(AppScope.of(context), c.appellant,
+                          c.appellantUid)),
                   _Row(label: '所申訴的對象', value: c.subject),
                   _Row(label: '距事發天數', value: '${c.daysSinceIncident} 天'),
                   if (c.handlerName != null)
@@ -448,8 +465,8 @@ class _InstructorTab extends StatelessWidget {
                     children: [
                       Expanded(
                           child: Text(
-                              AppScope.of(context)
-                                  .nameOf(c.applicant, uid: c.applicantUid),
+                              _withFormerName(AppScope.of(context), c.applicant,
+                                  c.applicantUid),
                               style: T.h3())),
                       _DeadlineTag(overdue: c.overdue, left: c.timeLeft),
                       const SizedBox(width: S.sm),
