@@ -1300,6 +1300,22 @@ class AppState extends ChangeNotifier {
     '留言': 41,
   };
 
+  /// 把互動的終身累計歸零（**開發者模式專用**）。
+  ///
+  /// 2026-09-28 使用者的帳號上有一組假的互動計數
+  /// （`{按讚:145, 留言:41, …}`，來自示範種子漏進真帳號，見 1F）。
+  /// 根因修好了，但**那個數字早就被存進雲端**，而它
+  /// **沒辦法從證據修補** —— 天數可以從訓練歷史重算，
+  /// 「按過幾個讚」沒有一份完整的紀錄可查。
+  ///
+  /// 所以給一顆自救的按鈕。**已解鎖的成就不動** ——
+  /// 規格：一經解鎖不可撤銷（`persistence_test` 也釘著這一條）。
+  /// 計數歸零之後會出現「已解鎖但當前值對不上」，那是合法狀態。
+  void resetInteractionTotals() {
+    interactionTotals.clear();
+    notifyListeners();
+  }
+
   /// 存檔套用完畢後補跑一次解鎖判定。供 [applySnapshot] 使用。
   void syncAchievementsAfterLoad() => _syncAchievements();
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../build_stamp.dart';
 import '../../data/auth.dart';
 import '../../domain/registration.dart';
+import '../../mock/mock_data.dart';
 import '../../mock/mock_equipment.dart';
 import '../../state/app_state.dart';
 import '../train/preferred_times_screen.dart';
@@ -463,6 +464,42 @@ class SettingsScreen extends StatelessWidget {
                         '${AppState.kAutoOptimizeEvery}'
                         '${s.optimizedPlanId == null ? '' : '（已有一份待看）'}',
                     readOnly: true,
+                  ),
+                ],
+              ),
+            ),
+            // 互動計數的自救鍵（2026-09-28 使用者裁決 A）。
+            //
+            // 示範種子漏進真帳號那件事今天發生了四次，而這一個**修不回來**：
+            // 「按過幾個讚」沒有證據可查。與其硬湊一個數字，不如給一顆
+            // 讓他自己歸零的按鈕 —— 下次再漏也不必等我改程式再部署。
+            const SizedBox(height: S.sm),
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '互動計數：'
+                    '${kInteractionKinds.map((k) => '$k ${s.interactionTotals[k] ?? 0}').join('、')}',
+                    style: T.caption(),
+                  ),
+                  const SizedBox(height: S.md),
+                  AppButton(
+                    label: '重設互動計數',
+                    kind: BtnKind.secondary,
+                    onPressed: () async {
+                      final ok = await showAppDialog(
+                        context,
+                        title: '把互動計數歸零？',
+                        message: '分享、發文、按讚、留言的終身累計會歸零。'
+                            '已經解鎖的成就不會被收回。',
+                        confirmLabel: '歸零',
+                      );
+                      if (ok != true || !context.mounted) return;
+                      s.resetInteractionTotals();
+                      if (!context.mounted) return;
+                      showToast(context, '互動計數已歸零');
+                    },
                   ),
                 ],
               ),
