@@ -79,6 +79,8 @@ void main() {
     expect(s.trainingStreakDays, 0);
   });
 
+  _repairGroup();
+
   // 這兩個數字在開發者模式的「訓練次數對帳」裡是並排的 ——
   // 就是為了讓這種漂移一眼看得出來。
   test('天數永遠不會大於次數', () {
@@ -91,5 +93,51 @@ void main() {
     expect(s.totalWorkoutDays, lessThanOrEqualTo(s.totalWorkouts));
     expect(s.totalWorkoutDays, 4);
     expect(s.totalWorkouts, 8);
+  });
+}
+
+// 根因修好了，但**修不了已經漏掉的那幾天** —— 那一天的訓練已經寫進歷史，
+// 計數器卻永遠少了 1。使用者實測：修完之後再練三次，天數仍然是 0
+//（因為歷史裡今天已經有紀錄，新的那幾場不算「今天第一場」）。
+//
+// 所以 `repairLoadedState()` 要補：歷史是證據，有證據卻沒算到的補上去。
+void _repairGroup() {
+  group('載入時由歷史修補漏掉的天數', () {
+    test('練過卻記成 0 天 —— 載入後補回來', () {
+      final a = fresh();
+      for (var i = 0; i < 3; i++) {
+        train(a);
+      }
+      final snap = a.toSnapshot();
+      // 模擬舊版留下的壞資料：歷史有三筆（同一天），天數卻是 0。
+      snap['totalWorkoutDays'] = 0;
+      snap['trainingStreakDays'] = 0;
+
+      final b = AppState()..applySnapshot(snap);
+      expect(b.history.length, 3, reason: '前提：歷史帶得過去');
+      expect(b.totalWorkoutDays, 1, reason: '同一天三場算一天');
+      // 連續訓練天數**不補** —— 它可以被合法地調低（永久停權經申訴撤銷
+      // 時要重設），從歷史往上補會把那個動作默默抵銷掉。
+      // 它本來就會自己好：下一次訓練是該日第一場就重新算。
+      expect(b.trainingStreakDays, 0);
+    });
+
+    test('只增不減 —— 存檔比歷史多就不動它', () {
+      final a = fresh();
+      train(a);
+      final snap = a.toSnapshot();
+      snap['totalWorkoutDays'] = 99;
+
+      final b = AppState()..applySnapshot(snap);
+      expect(b.totalWorkoutDays, 99,
+          reason: '單調遞增；算多了是 reconcileWorkoutCount() 的事');
+    });
+
+    test('沒有訓練歷史時不會憑空補出天數', () {
+      final a = fresh();
+      final b = AppState()..applySnapshot(a.toSnapshot());
+      expect(b.history, isEmpty);
+      expect(b.totalWorkoutDays, 0);
+    });
   });
 }

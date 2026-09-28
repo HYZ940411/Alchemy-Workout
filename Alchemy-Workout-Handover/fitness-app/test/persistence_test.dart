@@ -136,8 +136,14 @@ void main() {
       expect(a.unlocked, isTrue);
 
       // 手動把存檔裡的進度改低，模擬「解鎖過但當前值對不上」。
+      //
+      // **訓練歷史要一起清掉。** 2026-09-28 起 `repairLoadedState()` 會
+      // 由歷史補回累積訓練天數（歷史裡有幾天就至少是幾天，單調遞增）——
+      // 留著歷史卻把天數改成 0，那份存檔是自相矛盾的，會當場被修回去。
+      // 這一條要驗的是「解鎖不可撤銷」，不是「壞資料讀得回來」。
       final snap = s.toSnapshot();
       snap['totalWorkoutDays'] = 0;
+      snap['history'] = const [];
 
       final back = AppState();
       expect(back.applySnapshot(snap), isTrue);
