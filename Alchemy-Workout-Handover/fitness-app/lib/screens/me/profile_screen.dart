@@ -251,7 +251,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ],
-          const SectionLabel('能力值'),
+          // **自己的檔案照常顯示，但要標出哪些別人看不到。**
+          //
+          // 2026-09-28 使用者裁決 A。在此之前兩個畫面做法不一樣：
+          // 「我的」分頁把「綜合 X」整顆藏起來（註解寫「免得誤以為別人
+          // 看得到」），而這一頁完整顯示卻**沒有任何標示** ——
+          // 同一件事兩種處理，而且都不對。
+          //
+          // 藏起來是錯的方向：那是我自己的檔案，我當然該看得到我自己的
+          // 能力值。**用「資訊消失」來表達「未公開」，使用者只會以為壞了**
+          // —— 使用者找不到那顆標籤就是這樣（他問「我要去哪裡找更多」）。
+          SectionLabel('能力值',
+              trailing: isSelf && !(s.abilityPublic && s.overallGradePublic)
+                  ? '部分未公開'
+                  : null),
+          if (isSelf && !s.abilityPublic) ...[
+            Panel(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.visibility_off_outlined,
+                      size: Sz.iconDense, color: AppColors.textDim),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s.overallGradePublic
+                          ? '六維能力值只有你看得到，別人只看得到綜合能力等級。'
+                          : '能力值只有你看得到，別人檢視你的檔案時不呈現這一區。',
+                      style: T.caption(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ] else if (isSelf && !s.overallGradePublic) ...[
+            Panel(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.visibility_off_outlined,
+                      size: Sz.iconDense, color: AppColors.textDim),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('綜合能力等級只有你看得到。', style: T.caption()),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           if (ability != null)
             // F 圖表型骨架：六邊形實心 ＋ 數值列。
             // 新使用者六維有初始值，故本區塊沒有空狀態。

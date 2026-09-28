@@ -265,10 +265,16 @@ class _Header extends StatelessWidget {
                 children: [
                   Pill('階級 ${state.rank}', color: C.accentDeep),
                   const SizedBox(width: 8),
-                  // 綜合能力等級可設為不公開；不公開時連自己的頁首也不掛，
-                  // 免得誤以為別人看得到。
-                  if (state.overallGradePublic)
-                    Pill('綜合 ${overallGrade(state.points)}'),
+                  // **不公開時仍然顯示，但標出來**（2026-09-28 使用者裁決 A）。
+                  //
+                  // 原本是整顆藏起來，理由寫著「免得誤以為別人看得到」——
+                  // 方向錯了：用「資訊消失」表達狀態，使用者只會以為壞了。
+                  // 使用者實測時就是這樣，他找不到那顆標籤，問「我要去哪裡找」。
+                  Pill('綜合 ${overallGrade(state.points)}'),
+                  if (!state.overallGradePublic) ...[
+                    const SizedBox(width: 6),
+                    const Pill('未公開', color: C.textSecondary),
+                  ],
                 ],
               ),
               const SizedBox(height: 16),
