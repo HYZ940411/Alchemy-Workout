@@ -147,12 +147,19 @@ Future<void> _othersMenu(BuildContext context, AppState s, Post p) async {
   // 解除封鎖**不會**把這些恢復 —— 所以按錯一次就回不去了，
   // 不能是點一下就生效。
   final wasFollowing = s.isFollowing(p.author, uid: p.authorUid);
+  final wasFollower = s.isFollower(p.author, uid: p.authorUid);
   final wasMentor = s.myInstructor?.name == p.author;
   final ok = await showAppDialog(
     context,
     title: '封鎖 ${p.author}？',
+    // **「他關注我」那一半只解得掉你這邊看到的。** 那筆關注是他建立的，
+    // 只有他自己取消得了 —— 別人看你的檔案時仍會把他算進粉絲數。
+    // 使用者裁決 2026-09-28：不改安全規則，改成在這裡講清楚。
     message: '對方看不到你的貼文，也無法傳私訊給你。'
         '${wasFollowing ? '\n\n雙方的關注會一併解除。' : ''}'
+        '${wasFollower ? '\n\n他不會再出現在你的粉絲名單，'
+            '但別人看你的檔案時仍會把他算進粉絲數 —— '
+            '那筆關注只有他自己取消得了。' : ''}'
         '${wasMentor ? '\n\n師徒關係會一併解除，未完成的任務作廢。' : ''}'
         '\n\n解除封鎖不會把這些恢復。',
     confirmLabel: '封鎖',
