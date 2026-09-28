@@ -10,7 +10,7 @@ import '../../widgets/image_picker_sheet.dart';
 /// 發文（〈發文與互動流程〉）
 ///
 /// 貼文支援文字與圖片，不支援影片，無標籤欄位。
-/// 發布時指定可見範圍：公開 / 僅關注者 / 私人。
+/// **貼文一律公開**（使用者裁決 2026-09-26，2026-09-28 再次確認 A）。
 /// 送出前先經自動過濾，依判定分兩條路：明顯違規當場攔截、疑似違規照常發布並自動送審。
 class ComposePostScreen extends StatefulWidget {
   const ComposePostScreen({super.key});
@@ -34,6 +34,10 @@ class _ComposePostScreenState extends State<ComposePostScreen> {
   ///
   /// 使用者裁決：**移除選項，一律公開**。停止假裝有保護，比留著一個
   /// 擋不住任何人的開關誠實。
+  ///
+  /// **2026-09-28 補上告知。** 移除選項之後畫面上**什麼都沒說** ——
+  /// 使用者從一個有三個選項的畫面，變成一個沒有選項的畫面，
+  /// 而沒有任何地方告訴他結果是哪一種。不給選擇可以，不告知不行。
   final PostVisibility visibility = PostVisibility.public;
   String? errorText;
 
@@ -72,6 +76,22 @@ class _ComposePostScreenState extends State<ComposePostScreen> {
               padding: const EdgeInsets.fromLTRB(
                   S.base, S.base, S.base, S.scrollBottom),
               children: [
+                // 貼文是公開的，這件事要講出來 —— 見上面 [visibility]。
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.public,
+                        size: Sz.iconDense, color: C.accentInfo),
+                    const SizedBox(width: S.sm),
+                    Expanded(
+                      child: Text(
+                        '這篇貼文公開，任何人都看得到。',
+                        style: T.caption(),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: S.base),
                 // 多行輸入框（§8.2）：最小高 120、文字從頂部開始、字數上限置右下
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
