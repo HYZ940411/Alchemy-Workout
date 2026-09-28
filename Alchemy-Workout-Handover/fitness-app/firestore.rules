@@ -428,9 +428,14 @@ service cloud.firestore {
 
       // **只寫得了自己那一筆。** 規格：評分後可修改、覆蓋原值，
       // 所以 create 與 update 同一條規則。
+      // **`is number` 而不是 `is int`。** Flutter Web 的數字是 JS number，
+      // 一個 Dart int 寫過去可能落地成 double —— `is int` 會把它整個擋掉，
+      // 而且是**靜靜地**（用戶端即發即忘、吞掉錯誤）。
+      // 2026-09-28 P127 就是這樣：評分寫不上去，一筆都沒有。
+      // 範圍檢查照留 —— 那才是真正要守的東西。
       allow create, update: if request.auth != null
                             && request.resource.data.raterUid == request.auth.uid
-                            && request.resource.data.stars is int
+                            && request.resource.data.stars is number
                             && request.resource.data.stars >= 1
                             && request.resource.data.stars <= 5;
 

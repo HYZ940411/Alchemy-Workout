@@ -9137,11 +9137,30 @@ class AppState extends ChangeNotifier {
 
   /// 以雲端為準對齊我自己那一份（登入時）。
   ///
-  /// **整份換掉，不是併入。** 在另一台裝置改過的評分才不會被本機的舊值蓋回去。
+  /// **雲端有的以雲端為準，雲端沒有的留著並補送上去。**
+  ///
+  /// 原本這裡是「整份換掉」，理由是「在另一台裝置改過的評分才不會被
+  /// 本機的舊值蓋回去」。那個理由對，但**代價被我漏算了**：
+  /// 上傳失敗時雲端是空的，於是登入一次就把本機那筆也洗掉了 ——
+  /// 使用者 2026-09-28 測 P127 回報「評分不見了」，那比「沒同步」更糟。
+  ///
+  /// 而且這裡本來就要處理一次遷移：`[BE-18]` 之前的評分只存在本機存檔裡，
+  /// 雲端一筆都沒有。整份換掉等於把那些舊評分全部刪掉。
   void applyCloudRatings(List<ExperienceRating> cloud) {
+    (RatingTarget, String) keyOf(ExperienceRating r) => (r.target, r.targetId);
+    final fromCloud = {for (final r in cloud) keyOf(r)};
+    // 本機有、雲端沒有的：留著，並補送一次。
+    final orphans = [
+      for (final r in experienceRatings)
+        if (!fromCloud.contains(keyOf(r))) r,
+    ];
     experienceRatings
       ..clear()
-      ..addAll(cloud);
+      ..addAll(cloud)
+      ..addAll(orphans);
+    for (final r in orphans) {
+      _pushRating(r);
+    }
     notifyListeners();
   }
 
@@ -9213,8 +9232,27 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  void _pushRating(ExperienceRating r) =>
-      ratingSource?.put(r).catchError((_) {});
+  /// 送一筆評分上雲。**失敗要留下痕跡。**
+  ///
+  /// 原本這裡是 `catchError((_) {})` —— 吞得乾乾淨淨。
+  /// 2026-09-28 評分一筆都沒寫上去（安全規則把 `stars` 擋掉了），
+  /// 而畫面說「已送出評分」、開發者模式也看不出任何異狀，
+  /// 只能靠翻雲端才知道。**這是本專案第三次犯同一個錯**
+  /// （前兩次：`quotaHint`、`inboundFailure`）。
+  void _pushRating(ExperienceRating r) {
+    final src = ratingSource;
+    if (src == null) return;
+    src.put(r).then((_) {
+      ratingSyncError = null;
+    }).catchError((Object e) {
+      ratingSyncError = '$e';
+      notifyListeners();
+    });
+  }
+
+  /// 上一次評分寫不上雲的原因。**空值代表沒問題。**
+  /// 開發者模式的同步報告會顯示它。
+  String? ratingSyncError;
 
   /// 使用者已領取新手任務獎勵 → 新手任務獎勵已發放。
   ///

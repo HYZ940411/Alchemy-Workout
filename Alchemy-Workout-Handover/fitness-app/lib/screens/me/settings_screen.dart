@@ -590,6 +590,19 @@ class SettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
             ],
+            // 評分寫不上雲的原因。**同步報告只記登入那一趟**，
+            // 而評分是使用者按下去的那一刻才寫 —— 兩者不同時機，
+            // 所以另外列一行。
+            if (s.ratingSyncError case final why?) ...[
+              Panel(
+                color: C.statusError.withValues(alpha: 0.08),
+                border: C.statusError,
+                child: Text('評分沒有寫上雲：$why',
+                    style: const TextStyle(
+                        fontSize: 11.5, color: C.statusError)),
+              ),
+              const SizedBox(height: 10),
+            ],
             Panel(
               child: s.syncReport.isEmpty
                   ? const Text(

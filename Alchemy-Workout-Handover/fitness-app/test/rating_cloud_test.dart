@@ -36,6 +36,17 @@ ExperienceRating _r(String uid, RatingTarget t, String id, int stars,
       at: at ?? DateTime(2026, 9, 28),
     );
 
+/// 一律拒絕的來源（模擬安全規則擋下）。
+class _Refuses implements RatingSource {
+  @override
+  Future<void> put(ExperienceRating r) async =>
+      throw StateError('permission-denied');
+  @override
+  Future<List<ExperienceRating>> mine() async => const [];
+  @override
+  Future<List<ExperienceRating>> all({int limit = 500}) async => const [];
+}
+
 void main() {
   late FakeFirebaseFirestore db;
   setUp(() => db = FakeFirebaseFirestore());
@@ -196,9 +207,42 @@ void main() {
 
     test('登入時以雲端為準對齊', () {
       final s = AppState(demo: false)..myUid = 'u1';
+      s.rateExperience(RatingTarget.trainingPlan, 'p_push', 5);
       s.applyCloudRatings([_r('u1', RatingTarget.trainingPlan, 'p_push', 2)]);
 
-      expect(s.ratingFor(RatingTarget.trainingPlan, 'p_push')?.stars, 2);
+      expect(s.ratingFor(RatingTarget.trainingPlan, 'p_push')?.stars, 2,
+          reason: '同一個對象以雲端那一份為準');
+      expect(s.experienceRatings.length, 1, reason: '不該變成兩筆');
+    });
+
+    test('雲端沒有的本機評分要留著，而且補送上去', () async {
+      final s = AppState(demo: false)
+        ..myUid = 'u1'
+        ..ratingSource = as('u1');
+      // `[BE-18]` 之前的評分只存在本機存檔裡，雲端一筆都沒有。
+      s.experienceRatings
+          .add(_r('u1', RatingTarget.trainingPlan, '舊課表', 3));
+
+      s.applyCloudRatings(const []);
+
+      expect(s.ratingFor(RatingTarget.trainingPlan, '舊課表')?.stars, 3,
+          reason: '整份換掉的話，上傳失敗或還沒遷移的評分會被登入洗掉 '
+              '—— 使用者回報的「評分不見了」就是這樣來的');
+      await Future<void>.delayed(Duration.zero);
+      expect((await as('u1').all()).length, 1, reason: '順手補送上去');
+    });
+
+    test('寫不上去要留下痕跡，不能吞掉', () async {
+      final s = AppState(demo: false)
+        ..myUid = 'u1'
+        ..ratingSource = _Refuses();
+
+      s.rateExperience(RatingTarget.trainingPlan, 'p_push', 4);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(s.ratingSyncError, isNotNull,
+          reason: '畫面說「已送出評分」而雲端一筆都沒有，'
+              '只能靠翻雲端才查得出來 —— 那是第三次犯同一個錯');
     });
 
     test('管理員讀得到全平台的，一般使用者讀不到', () async {
