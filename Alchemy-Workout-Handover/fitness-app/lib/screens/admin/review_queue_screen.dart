@@ -280,8 +280,14 @@ class _ReportCard extends StatelessWidget {
                       destructive: true,
                     );
                     if (ok != true || !context.mounted) return;
-                    state.upholdReport(c);
-                    showToast(context, '已處罰：${tier.label}');
+                    // **說實際發生的事，不說級距的名字。**
+                    //
+                    // 原本固定印「已處罰：警告」之類 —— 那是照著級距算出來
+                    // 的字，不是照著結果印的。2026-09-28 使用者雙人實測 T8：
+                    // 判成立之後貼文兩邊都還在、對方也沒有收到處罰，
+                    // 而畫面照樣說「已處罰」。
+                    final out = state.upholdReport(c);
+                    showToast(context, '${tier.label}　·　${out.summary}');
                   },
                 ),
               ),

@@ -321,3 +321,61 @@ class RatingSummary {
     return sum / count;
   }
 }
+
+/// 一次「檢舉成立」到底做了什麼。
+///
+/// ## 為什麼需要它
+///
+/// 2026-09-28 使用者雙人實測 T8：判成立之後**貼文兩邊都還在**、
+/// 被檢舉者也沒有收到任何處罰，而案件從佇列裡消失了。
+///
+/// 而管理員按下「成立並處罰」之後，畫面只說「已處罰：警告」——
+/// **那句話是照著級距印的，不是照著實際發生的事印的。**
+/// 下架了幾則、記點記到誰身上，一個字都沒說。
+///
+/// 邏輯本身在測試裡是通的（案件從雲端讀進來、判成立、`deleted` 變 true、
+/// 違規次數 +1），所以斷點在真實的雲端往返上 —— 而那裡**沒有任何回饋
+/// 可以讓人分辨是哪一段斷了**。
+class UpholdOutcome {
+  /// 下架了幾則內容。**-1 代表帳號類**（本來就不下架）。
+  /// 0 代表「找得到案件，卻找不到那則內容」—— 那正是要抓的狀況。
+  final int removed;
+
+  /// 記點後的累計違規次數。
+  final int violationsAfter;
+
+  /// 記得進被檢舉者的雲端紀錄嗎。
+  /// 沒有 `accusedUid` 的舊案件寫不進 `violations/{uid}` ——
+  /// 那時候被檢舉者永遠不會知道自己被記點。
+  final bool recordedForAccused;
+
+  /// 被拒絕的原因。空值代表真的執行了。
+  final String? refusedWhy;
+
+  const UpholdOutcome({
+    required this.removed,
+    required this.violationsAfter,
+    required this.recordedForAccused,
+  }) : refusedWhy = null;
+
+  const UpholdOutcome.refused(String why)
+      : removed = 0,
+        violationsAfter = 0,
+        recordedForAccused = false,
+        refusedWhy = why;
+
+  /// 給管理員看的一句話。**說實際發生的事，不說級距的名字。**
+  String get summary {
+    if (refusedWhy case final why?) return why;
+    final parts = <String>[
+      switch (removed) {
+        -1 => '帳號類不下架內容',
+        0 => '⚠ 沒有下架任何內容（找不到那則，可能不在這台裝置的清單裡）',
+        final n => '已下架 $n 則',
+      },
+      '累計第 $violationsAfter 次違規',
+      if (!recordedForAccused) '⚠ 這一案沒有對方的帳號識別，記點寫不進他的紀錄',
+    ];
+    return parts.join('　·　');
+  }
+}

@@ -8196,15 +8196,17 @@ class AppState extends ChangeNotifier {
 
   /// 檢舉成立 → 管理員已下架違規內容（帳號類除外）＋ 使用者已受處罰。
   /// 管理員僅判斷檢舉是否成立，**不裁量處罰種類與時長** —— 級距由階梯累犯制決定。
-  void upholdReport(ReportCase c) {
-    if (!canReview) return;
-    if (c.state != CaseState.reviewing) return;
+  UpholdOutcome upholdReport(ReportCase c) {
+    if (!canReview) return const UpholdOutcome.refused('沒有內容審核權限。');
+    if (c.state != CaseState.reviewing) {
+      return const UpholdOutcome.refused('這一案不在審視中，不能裁決。');
+    }
     c.state = CaseState.upheld;
     c.handlerName = null; // 案件轉入終止狀態時清空
 
     // 管理員已下架違規內容。**帳號類不走下架路徑** ——
     // 帳號不是一則內容，沒有可下架的標的。
-    if (canTakeDownContent(c.target)) _takeDown(c);
+    final removed = canTakeDownContent(c.target) ? _takeDown(c) : -1;
 
     // 記點。本機先加（畫面立刻反映），雲端寫完再以雲端那份為準 ——
     // 兩位管理員同時裁決同一個人時，本機推算會少算。
@@ -8214,6 +8216,14 @@ class AppState extends ChangeNotifier {
     _pushVerdict(c, upheld: true);
     notifyListeners();
     _recordViolation(c, after);
+    return UpholdOutcome(
+      removed: removed,
+      violationsAfter: after,
+      // 沒有 uid 就寫不進 `violations/{uid}` —— 被檢舉者那一側
+      // 永遠不會知道自己被記點（`CloudReport.accusedUid` 的註解寫著
+      // 舊案件沒有這個欄位）。**那件事要講出來**。
+      recordedForAccused: c.accusedUid != null,
+    );
   }
 
   /// 管理員已下架違規內容。僅適用貼文 / 留言 / 私訊。
@@ -8226,12 +8236,16 @@ class AppState extends ChangeNotifier {
   /// 管理員按下「成立」，自己畫面上那則消失了，雲端一個位元都沒動 ——
   /// **其他人照樣看得到**。而安全規則那一側也不允許管理員改別人的貼文，
   /// 所以就算接了寫入也會被拒絕。兩邊 2026-09-25 一起補。
-  void _takeDown(ReportCase c) {
+  int _takeDown(ReportCase c) {
     final id = reportedId(c.targetKey);
+    var hit = 0;
     switch (c.target) {
       case ReportTarget.post:
         for (final p in posts) {
-          if (p.id == id) p.deleted = true;
+          if (p.id == id) {
+            p.deleted = true;
+            hit++;
+          }
         }
         _pushSocial((src, _) => src.markPostDeleted(id));
       case ReportTarget.comment:
@@ -8241,6 +8255,7 @@ class AppState extends ChangeNotifier {
             if (m.id == id) {
               m.deleted = true;
               postId = p.id;
+              hit++;
             }
           }
         }
@@ -8256,12 +8271,16 @@ class AppState extends ChangeNotifier {
         for (final conv in conversations) {
           if (conv.id != id) continue;
           for (final m in conv.messages) {
-            if (m.text == c.content) m.deleted = true;
+            if (m.text == c.content) {
+              m.deleted = true;
+              hit++;
+            }
           }
         }
       case ReportTarget.account:
         break; // 帳號不走下架路徑，由 [upholdReport] 擋在前面
     }
+    return hit;
   }
 
   /// 雲端的處罰狀態。**空值代表不同步** —— 既有測試走這條。
