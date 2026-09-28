@@ -236,8 +236,16 @@ class SettingsScreen extends StatelessWidget {
               onChanged: (v) => s.setFlag(metric: v),
             ),
           ),
-          // 這一段講的是「你的進度存在哪裡」。接了帳號之後答案變了 ——
-          // 還寫「存在這台裝置上」的話，使用者換裝置前會先把進度抄下來。
+          // 這一段講的是「你的進度存在哪裡」。
+          //
+          // **接了帳號的人看不到它**（2026-09-28 使用者裁決：
+          // 「設定內的儲存可以拿掉，不用給使用者看到」）——
+          // 對他而言答案是「存在帳號裡，不會不見」，那是預期，不是新聞；
+          // 而「已存 41 次」是給我看的除錯數字，不是給他看的。
+          //
+          // **示範模式留著**：那時候資料真的存在這台裝置上，清瀏覽器資料
+          // 就會不見，那句話非說不可。開發者模式也留著。
+          if (s.demo || s.developerMode) ...[
           SectionLabel('儲存', trailing: s.demo ? '存在這台裝置上' : '存在你的帳號'),
           Panel(
             child: Column(
@@ -282,6 +290,7 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
           ),
+          ],
           // 模擬載入與模擬離線是除錯用的控制項，跟 `[QA-02n]`／`[QA-02o]`
           // 那一批同一個道理 —— 一般使用者看到只會問「這是什麼」。
           if (s.developerMode) ...[
@@ -434,6 +443,17 @@ class SettingsScreen extends StatelessWidget {
                         : '${s.totalWorkouts - s.history.length}（歷史少了）',
                     readOnly: true,
                   ),
+                  // 2026-09-28 加：使用者要驗「同一天練兩場，天數只加一」，
+                  // 而**累積訓練天數畫面上根本沒有**，只有次數看得到 ——
+                  // 那一條就測不了。三個並排才看得出哪一個不對。
+                  _Row(
+                      label: '累積訓練天數',
+                      value: '${s.totalWorkoutDays}',
+                      readOnly: true),
+                  _Row(
+                      label: '連續訓練天數',
+                      value: '${s.trainingStreakDays}',
+                      readOnly: true),
                 ],
               ),
             ),

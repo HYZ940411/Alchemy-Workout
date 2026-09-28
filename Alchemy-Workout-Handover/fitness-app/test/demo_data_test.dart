@@ -213,33 +213,57 @@ void main() {
         child: const MaterialApp(home: SettingsScreen()),
       ));
       await t.pumpAndSettle();
-      // **一定要先捲到「儲存」那一區。** 設定頁是 ListView，沒捲到的區塊
-      // 根本不會被建出來 —— 直接斷言 findsNothing 是假的綠燈，
-      // 藏沒藏都會過。捲到之後，該在的與不該在的都在同一個畫面上。
+    }
+
+    /// 捲到底。**驗「某段不在」時非用不可** —— 設定頁是 ListView，
+    /// 沒捲到的區塊根本不會被建出來，直接斷言 findsNothing 是假的綠燈。
+    ///
+    /// 原本 [open] 裡是 `dragUntilVisible(find.text('儲存'))`，
+    /// 但 2026-09-28 起接了帳號的人**根本沒有那一區**（使用者裁決），
+    /// 於是它捲到底也找不到、當場丟例外。所以拆成兩個：
+    /// 驗「不在」用這個，驗「在」用 [scrollTo]。
+    Future<void> scrollToBottom(WidgetTester t) async {
+      for (var i = 0; i < 12; i++) {
+        await t.drag(find.byType(Scrollable).first, const Offset(0, -400));
+        await t.pumpAndSettle();
+      }
+    }
+
+    Future<void> scrollTo(WidgetTester t, Finder f) async {
       await t.dragUntilVisible(
-        find.text('儲存'),
+        f,
         find.byType(Scrollable).first,
         const Offset(0, -200),
       );
       await t.pumpAndSettle();
     }
 
-    testWidgets('接了後端就不能再說「存在這台裝置上」', (t) async {
-      // 這句話會讓使用者在換裝置前先把進度抄下來 —— 而那是白做工。
+    // 這一條原本驗的是「接了後端就要改口說『存在你的帳號』」。
+    //
+    // **2026-09-28 使用者裁決把整區拿掉了**：「設定內的儲存可以拿掉，
+    // 不用給使用者看到」—— 對接了帳號的人而言「資料不會不見」是預期
+    // 而不是新聞，而「已存 41 次」是除錯數字。
+    //
+    // 所以要驗的意圖從「改口」變成「整區不出現」。
+    // **原本的意圖仍然守得住**：那句會害人白抄進度的話依然不在。
+    testWidgets('接了後端就整個不提「儲存」這件事', (t) async {
       await open(t, AppState(demo: false));
+      await scrollToBottom(t);
       expect(find.text('存在這台裝置上'), findsNothing);
-      expect(find.text('存在你的帳號'), findsOneWidget);
-      expect(find.textContaining('換裝置'), findsOneWidget);
+      expect(find.text('儲存'), findsNothing);
+      expect(find.textContaining('已存'), findsNothing);
     });
 
     testWidgets('接了後端就沒有「重設示範資料」這回事', (t) async {
       await open(t, AppState(demo: false));
+      await scrollToBottom(t);
       expect(find.text('重設示範資料'), findsNothing);
       expect(find.textContaining('社群假資料'), findsNothing);
     });
 
     testWidgets('沒接後端時那些照樣在 —— 示範用得到', (t) async {
       await open(t, AppState());
+      await scrollTo(t, find.text('儲存'));
       expect(find.text('存在這台裝置上'), findsOneWidget);
       expect(find.text('重設示範資料'), findsOneWidget);
     });

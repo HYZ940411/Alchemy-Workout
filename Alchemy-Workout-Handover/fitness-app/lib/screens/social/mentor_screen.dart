@@ -157,13 +157,40 @@ class _InstructorList extends StatelessWidget {
         //（使用者裁決 2026-09-26）。
         //
         // 已經是教官的不顯示：那一頁對他只剩「你已通過」一句話。
+        // **與團隊頁的「你目前沒有團隊」同一張卡**（2026-09-28 使用者要求：
+        // 「希望跟團隊的『建立團隊』按鈕跟標題方式長得一樣」）。
+        //
+        // 兩處是同一件事：這一頁對還沒加入的人是空的，而空的時候要講得出
+        // 「你可以做什麼」。長相不一樣只會讓人以為是兩種不同的東西。
         if (!s.isInstructor) ...[
-          AppButton(
-            label: '我要成為教官',
-            kind: BtnKind.secondary,
-            icon: Icons.school_outlined,
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const InstructorApplyScreen())),
+          Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('你還不是教官',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text(
+                  '通過初審與測驗後可以帶學徒。門檻是階級 '
+                  '${s.instructorGate.requiredRank} 與累積訓練 '
+                  '${s.instructorGate.requiredWorkouts} 次，'
+                  '你目前是階級 ${s.rank}、${s.totalWorkouts} 次。',
+                  style: const TextStyle(
+                      color: AppColors.textDim, fontSize: 12.5, height: 1.5),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    label: '我要成為教官',
+                    onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const InstructorApplyScreen())),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: S.base),
         ],
