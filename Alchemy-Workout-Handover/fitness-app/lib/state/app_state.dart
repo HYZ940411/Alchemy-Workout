@@ -10012,19 +10012,41 @@ class AppState extends ChangeNotifier {
       String collection, String docId, Map<String, dynamic> data) async {
     final src = platformSource;
     if (src == null) return null;
+    if (_notReallyAdmin case final why?) return why;
     try {
-      await src.put(collection, docId, data);
+      await src.put(collection, docId, data).timeout(_cloudWriteTimeout);
       return null;
     } catch (e) {
       return '已改在本機，但沒有寫上雲（$e）。重新整理後會打回原形。';
     }
   }
 
+  /// 雲端寫入等多久才放棄。
+  ///
+  /// **不能無限等。** Firestore 的用戶端會把寫入排進本地佇列，
+  /// 被安全規則擋下時那個 Future 可能一直不完成 —— 畫面於是卡在
+  /// 「等雲端回覆」，連失敗訊息都吐不出來，看起來就像什麼都沒發生。
+  static const _cloudWriteTimeout = Duration(seconds: 8);
+
+  /// 「看起來是管理員，但雲端不認」的那句話；null 表示沒這個問題。
+  ///
+  /// `adminMode` 是開發者模式長按三秒就開得了的旗標，而
+  /// `firestore.rules` 的 `isAdmin()` 看的是帳號上的 custom claim。
+  /// 兩者不一致時後台每一頁都點得下去、每一個寫入都被擋下。
+  ///
+  /// **這個陷阱踩過兩次**（2026-09-28 審檢舉、2026-09-29 改成就門檻），
+  /// 兩次都查了很久才發現 —— 所以現在由程式自己講出來。
+  String? get _notReallyAdmin => adminMode && !adminClaim
+      ? '這個帳號沒有管理員標記，改的東西只會留在本機 —— '
+          '雲端會擋下（開發者模式的管理員身分不是真的）。'
+      : null;
+
   Future<String?> _dropPlatform(String collection, String docId) async {
     final src = platformSource;
     if (src == null) return null;
+    if (_notReallyAdmin case final why?) return why;
     try {
-      await src.remove(collection, docId);
+      await src.remove(collection, docId).timeout(_cloudWriteTimeout);
       return null;
     } catch (e) {
       return '已在本機移除，但沒有寫上雲（$e）。重新整理後會回來。';

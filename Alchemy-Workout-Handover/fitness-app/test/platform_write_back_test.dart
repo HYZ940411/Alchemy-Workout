@@ -155,6 +155,30 @@ void main() {
           reason: '管理員要知道這次沒存進去，不然他下次登入才發現');
     });
 
+    test('開發者模式的管理員：當場說「寫不上雲」，不要等到下次登入才發現', () async {
+      final fake = AppState()
+        ..platformSource = FirestorePlatformData(firestore: db)
+        ..adminMode = true
+        ..adminClaim = false;
+      fake.applySettings('reward', {'trainCoin': 45});
+
+      final why = await fake.pushConfigGroup('reward');
+
+      expect(why, isNotNull);
+      expect(why, contains('沒有管理員標記'));
+      expect((await db.collection('platform_config').doc('reward').get()).exists,
+          isFalse, reason: '本來就寫不進去，連試都不必試');
+    });
+
+    test('帶著管理員標記就照常寫', () async {
+      final boss = AppState()
+        ..platformSource = FirestorePlatformData(firestore: db)
+        ..adminMode = true
+        ..adminClaim = true;
+      boss.applySettings('reward', {'trainCoin': 45});
+      expect(await boss.pushConfigGroup('reward'), isNull);
+    });
+
     test('沒接雲端就當作成功 —— 既有測試與示範走這條', () async {
       final offline = AppState();
       offline.applySettings('reward', {'trainCoin': 45});
