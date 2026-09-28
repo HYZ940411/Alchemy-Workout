@@ -191,8 +191,11 @@ void main() {
       // COLLECTION_GROUP 範圍的 `(uid, isInvite)` 複合索引，
       // 只查單一欄位的 collection group 查詢需要「集合群組範圍的
       // 單欄位索引」，而那種索引**不會自動建立**。
-      expect(chains, 9,
-          reason: '複合查詢從 9 個變了 —— 請同步檢查 firestore.indexes.json');
+      // 2026-09-28 由 9 增為 11：排行榜的
+      // `(weeklyGroup, weeklyScore)` 與 `(monthlyGroup, monthlyScore)`，
+      // 兩個索引都已加進 `firestore.indexes.json`。
+      expect(chains, 11,
+          reason: '複合查詢從 11 個變了 —— 請同步檢查 firestore.indexes.json');
     });
   });
 

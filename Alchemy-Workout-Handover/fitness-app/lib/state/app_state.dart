@@ -2027,8 +2027,51 @@ class AppState extends ChangeNotifier {
   ///
   /// 空清單的意思是「這個榜還沒有資料」，畫面據此顯示尚未開放，
   /// 而 [myPlace] 回傳空值讓結算整個跳過。
+  /// 雲端讀回來的排行榜視窗。**空值代表還沒讀到**，不是「我是第 1 名」。
+  final Map<bool, LeaderboardPage> _cloudBoards = {};
+  final Set<bool> _boardsFetched = {};
+  final Set<bool> _boardsInFlight = {};
+
+  /// 去雲端讀一次排行榜（使用者裁決 B，2026-09-28）。
+  ///
+  /// 呼叫端不必 await：讀回來會 [notifyListeners]，畫面自己重畫 ——
+  /// 與 [ensureFollowerCount] 同一套。
+  ///
+  /// **一個榜只讀一次**，除非 [force]。畫面每次重建都讀的話，
+  /// 捲一下排行榜就是好幾十次查詢。
+  Future<void> ensureLeaderboard({required bool weekly, bool force = false}) async {
+    final src = profileSource;
+    if (demo || src == null || myUid == null) return;
+    if (!force && _boardsFetched.contains(weekly)) return;
+    if (!_boardsInFlight.add(weekly)) return;
+    try {
+      final page = await src.leaderboard(
+        weekly: weekly,
+        group: rankGroupNow(weekly: weekly),
+        // **我手上這份，不是雲端那份。** 公開檔案是即發即忘寫上去的，
+        // 雲端可能比我剛剛練完的分數舊。
+        myScore: weekly ? weeklyScore : monthlyScore,
+      );
+      if (page != null) {
+        _cloudBoards[weekly] = page;
+        _boardsFetched.add(weekly);
+        notifyListeners();
+      }
+    } catch (_) {
+      // 讀不到就維持「還沒讀到」——畫面會說「排行榜還在讀取」而不是
+      // 宣稱一個名次。
+    } finally {
+      _boardsInFlight.remove(weekly);
+    }
+  }
+
+  /// 排行榜讀到了沒有。**「讀到了但只有我一個」與「還沒讀到」是兩件事** ——
+  /// 畫面那兩種空狀態要講不一樣的話。
+  bool get leaderboardReady =>
+      demo || _boardsFetched.isNotEmpty || profileSource == null;
+
   List<LeaderboardEntry> leaderboardWindow({required bool weekly}) {
-    if (!demo) return const [];
+    if (!demo) return _cloudWindow(weekly: weekly);
     final myScore = weekly ? weeklyScore : monthlyScore;
     final rnd = math.Random(weekly ? 7 : 30);
     final myPos = 11 + rnd.nextInt(40);
@@ -2045,6 +2088,39 @@ class AppState extends ChangeNotifier {
       }
     }
     return out;
+  }
+
+  /// 把雲端讀回來的那一頁排成畫面要的樣子。
+  ///
+  /// **名次以我那一列為錨點。** 我的名次是「同組裡分數比我高的人數 ＋ 1」，
+  /// 那正是「同分並列、並列後順延跳號」的定義；其餘各列由視窗內的相對
+  /// 名次平移過去。視窗最上面那一列若剛好切在同分群中間，它上面幾列的
+  /// 名次會偏低 —— 要完全正確得為每一列各跑一次聚合查詢，不值得。
+  List<LeaderboardEntry> _cloudWindow({required bool weekly}) {
+    final page = _cloudBoards[weekly];
+    if (page == null) return const [];
+    final myScore = weekly ? weeklyScore : monthlyScore;
+
+    // **自己那一列用本機的分數重新插進去**，不用雲端那一份 ——
+    // 剛練完還沒同步上去的話，畫面會顯示一個比我實際少的數字。
+    final rows = <({int score, String name, bool self})>[
+      for (final p in page.rows)
+        if (p.uid != myUid)
+          (
+            score: weekly ? p.weeklyScore : p.monthlyScore,
+            name: p.displayName,
+            self: false
+          ),
+      (score: myScore, name: displayName, self: true),
+    ]..sort((a, b) => b.score.compareTo(a.score));
+
+    final rel = placesOf([for (final r in rows) r.score]);
+    final offset = page.place - rel[rows.indexWhere((r) => r.self)];
+    return [
+      for (var i = 0; i < rows.length; i++)
+        LeaderboardEntry(rel[i] + offset, rows[i].name, rows[i].score,
+            isSelf: rows[i].self),
+    ];
   }
 
   // -------------------------------------------------------------------------
@@ -2394,6 +2470,11 @@ class AppState extends ChangeNotifier {
         avgRating: myRatingStats.avg,
         ratingCount: myRatingStats.count,
         specialties: instructorSpecialties.toList(),
+        // 排行榜要跟別人比，就得讓別人讀得到我的分數（使用者裁決 B）。
+        weeklyScore: weeklyScore,
+        monthlyScore: monthlyScore,
+        weeklyGroup: rankGroupNow(weekly: true),
+        monthlyGroup: rankGroupNow(weekly: false),
       );
 
   /// 把我自己的公開檔案重寫上雲。

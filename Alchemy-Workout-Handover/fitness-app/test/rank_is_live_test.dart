@@ -29,6 +29,15 @@ import 'package:fitness_app/state/app_state.dart';
 
 /// 假的雲端公開檔案。記下每一次寫入與每一次按 uid 的查詢。
 class _FakeProfiles implements PublicProfileSource {
+  @override
+  Future<LeaderboardPage?> leaderboard({
+    required bool weekly,
+    required int group,
+    required int myScore,
+    int window = 10,
+  }) async =>
+      null;
+
   final Map<String, PublicProfile> cloud;
   final List<PublicProfile> published = [];
   final List<List<String>> uidQueries = [];

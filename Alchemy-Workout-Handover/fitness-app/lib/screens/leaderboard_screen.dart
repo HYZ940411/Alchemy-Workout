@@ -24,7 +24,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     // 週期結算由排程觸發；本專案於進入本頁時結算，效果相同 ——
     // 使用者看到的一定是已經結算過的狀態。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) AppScope.of(context).settleDueBoards();
+      if (!mounted) return;
+      final s = AppScope.of(context);
+      s.settleDueBoards();
+      // 去雲端讀名次（使用者裁決 B，2026-09-28）。不 await ——
+      // 讀回來會 notifyListeners，這一頁自己重畫。
+      s.ensureLeaderboard(weekly: true);
+      s.ensureLeaderboard(weekly: false);
     });
   }
 
@@ -38,14 +44,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     // 下面整頁都建立在「我在第幾名」上 —— 沒有名次就沒有東西好畫，
     // 而編一個出來正是 `[QA-02e]` 要移除的事。
     if (rows.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(S.base),
+      return Padding(
+        padding: const EdgeInsets.all(S.base),
         child: EmptyState(
           icon: Icons.leaderboard_outlined,
-          title: '排行榜尚未開放',
-          message: '排名要跟平台上的其他人比，'
-              '那份資料還在後端施工中。你的週／月累計分數照常在累積，'
-              '開放後直接接得上。',
+          title: s.leaderboardReady ? '這個榜還沒有其他人' : '排行榜讀取中',
+          message: s.leaderboardReady
+              ? '同階級組別裡目前只有你一個人。有人加入之後就會出現名次。'
+              : '正在跟同階級組別的其他人比對名次。你的分數照常在累積。',
         ),
       );
     }

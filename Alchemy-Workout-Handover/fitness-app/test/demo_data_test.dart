@@ -339,7 +339,9 @@ void main() {
       ));
       await t.pumpAndSettle();
 
-      expect(find.text('排行榜尚未開放'), findsOneWidget);
+      // 2026-09-28 起真帳號有真的排行榜（裁決 B），但**沒接雲端**時
+      // 仍然沒有名次可畫 —— 這條釘的是「不畫假名次」，不是那句文案。
+      expect(find.text('這個榜還沒有其他人'), findsOneWidget);
       expect(find.text('名次視窗'), findsNothing);
       expect(find.text('本期獎勵'), findsNothing);
       expect(t.takeException(), isNull);
