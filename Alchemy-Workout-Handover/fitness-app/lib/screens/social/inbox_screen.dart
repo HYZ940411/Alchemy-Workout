@@ -107,7 +107,10 @@ class _InboxScreenState extends State<InboxScreen> {
                       ? null
                       : () {
                           final ok = s.acceptInbound(r);
-                          showToast(context, ok ? '已接受' : '沒有成功');
+                          // **失敗要說得出原因。** 原本固定印「沒有成功」，
+                          // 而那句話對使用者與對查問題的人都一樣沒有用。
+                          showToast(context,
+                              ok ? '已接受' : (s.inboundFailure ?? '沒有成功'));
                           setState(() {});
                         },
                 ),

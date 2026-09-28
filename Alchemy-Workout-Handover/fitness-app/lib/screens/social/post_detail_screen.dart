@@ -179,8 +179,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           _Action(
                             icon: Icons.ios_share_rounded,
                             label: '分享',
-                            // 分享把內容交給系統的分享面板，屬系統邊界之外。
-                            onTap: () => showToast(context, '已開啟分享面板'),
+                            // **原本這裡說「已開啟分享面板」—— 那是假的**，
+                            // 沒有任何面板被開啟，程式裡連一行都沒有。
+                            //
+                            // 而師徒功能的解鎖條件之一是「發文者已分享訓練
+                            // 成果」，使用者按了這顆以為算數，實際上不算 ——
+                            // 真正計數的那條在訓練結算頁（`shareWorkout`）。
+                            // 2026-09-28 雙人實測 T1：「找不到分享的部分」。
+                            onTap: () => showToast(
+                                context, '把連結複製給朋友即可。'
+                                    '若要解鎖師徒功能，請在訓練結算頁分享訓練成果。'),
                           ),
                         ],
                       ),

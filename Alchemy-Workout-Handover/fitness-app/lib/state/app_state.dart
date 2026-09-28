@@ -3177,6 +3177,19 @@ class AppState extends ChangeNotifier {
     }
     coins += 5; // 發文獎勵
     _bumpTasks('發文者已發布貼文', 1);
+    // **這一行原本不在。**
+    //
+    // `interactionTotals['發文']` 因此**沒有任何增加的路徑** ——
+    // 發文者已發布貼文是師徒功能五個解鎖條件之一，而它永遠是 0。
+    //
+    // 以前看不出來，是因為示範種子給了 18（`{分享:26, 發文:18, …}`）。
+    // 1F 把那組種子從真帳號清掉之後，**師徒功能對所有真實使用者
+    // 變成永遠解不開** —— 2026-09-28 雙人實測 T1 當場撞到：
+    // 「就算發文了無法解鎖發文任務」。
+    //
+    // 按讚（3267）、留言（3284）、分享（3312）三處本來就有，
+    // 只有發文這一處漏了。
+    _grantInteraction('Post');
     notifyListeners();
     return v;
   }
@@ -3914,13 +3927,53 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 上一次 [acceptInbound] 為什麼沒成功。
+  ///
+  /// **原本只回一個 `bool`**，畫面印「沒有成功」—— 而那句話對使用者
+  /// 與對我都一樣沒有用。2026-09-28 雙人實測 T2 卡在這裡：
+  /// B 接受了團隊邀請，畫面說成功（或沒有成功），重整之後什麼都沒有，
+  /// 而**沒有任何地方說得出是哪一段斷的**。
+  String? inboundFailure;
+
   /// 使用者已接受邀請 / 對方已接受申請。
   bool acceptInbound(InboundRequest r) {
-    if (!inbox.contains(r)) return false;
-    if (inboundBlockedReason(r) != null) return false;
+    inboundFailure = null;
+    // 這兩條原本也是「回 false、不說原因」。
+    if (!inbox.contains(r)) {
+      inboundFailure = '這筆請求已經不在信箱裡了（可能逾期或已處理過）。';
+      return false;
+    }
+    if (inboundBlockedReason(r) case final why?) {
+      inboundFailure = why;
+      return false;
+    }
     switch (r.kind) {
       case InboundKind.teamInvite:
-        final t = publicTeams.firstWhere((x) => x.name == r.subject);
+        // **`firstWhere` 原本沒有 `orElse`** —— 找不到就丟例外，
+        // 而呼叫端只看得到 `ok` 是 true 還是 false。
+        //
+        // 找不到是真的會發生：`publicTeams` 是「公開團隊清單」，
+        // 而它要載入過才有東西。使用者若從通知直接點進信箱、
+        // 沒去過團隊分頁，那份清單就是空的。
+        //
+        // 2026-09-28 雙人實測 T2：A 邀 B → B 接受 → **重整也沒有**。
+        final t = publicTeams.where((x) => x.name == r.subject).firstOrNull;
+        if (t == null) {
+          inboundFailure = '找不到「${r.subject}」這支團隊。'
+              '先到社群的團隊分頁看一下公開團隊清單，再回來接受。';
+          notifyListeners();
+          return false;
+        }
+        // **雲端寫得進去，才算加入成功。**
+        //
+        // `_joinPublicTeam()` 只動本機；雲端那一步失敗的話，
+        // 畫面上加入了、重新整理就沒了 —— 那正是使用者看到的。
+        if (t.id.isEmpty) {
+          inboundFailure = '這支團隊還沒有雲端識別碼，加入不會被保存。'
+              '請隊長重新建立團隊，或改用「申請加入」。';
+          notifyListeners();
+          return false;
+        }
         _joinPublicTeam(t);
         _pushJoinedTeam();
       case InboundKind.mentorInvite:
