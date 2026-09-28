@@ -92,6 +92,25 @@ void main() {
       expect(doc.data()!['rewardCoins'], 50);
     });
 
+    test('改門檻不會多長出一枚成就 —— 文件 ID 不編碼會被改的欄位', () async {
+      final a = s.achievements.first;
+      final before = s.achievements.length;
+      final oldId = achievementDocId(a);
+
+      s.setAchievementDefinition(a, threshold: 777, coins: 1, exp: 1);
+      final now = s.achievements
+          .firstWhere((x) => x.category == a.category && x.name == a.name);
+      await s.pushAchievement(now);
+
+      final all = await db.collection('achievement_defs').get();
+      expect(all.docs.length, 1,
+          reason: '鍵是「類別＋名稱」時只會有一筆；'
+              '用門檻當鍵的話改一次就多一筆，舊門檻那枚還留著');
+      expect(achievementDocId(now), oldId,
+          reason: '改門檻不該讓它換一個身分');
+      expect(s.achievements.length, before);
+    });
+
     test('平台動作', () async {
       final e = s.platformExercises.first;
       expect(

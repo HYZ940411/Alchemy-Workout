@@ -180,7 +180,19 @@ PlatformPlanSpec planSpecFromDoc(String id, Map<String, dynamic> m) =>
 
 /// 成就定義的 doc id 沿用既有 `category#threshold` 邏輯（見 Schema §2.6）——
 /// 用索引的話成就表一改順序，已解鎖紀錄就會套到別的成就上。
-String achievementDocId(Achievement a) => '${a.category}#${a.threshold}';
+/// 成就定義的文件 ID。
+///
+/// **鍵是「類別＋名稱」，不是「類別＋門檻」。**
+///
+/// 原本用門檻 —— 而門檻正是管理員在後台會改的東西
+/// （〈設定成就定義〉的三個欄位之一）。改了之後寫回雲端會落在**新的**
+/// 文件 ID 上，舊那筆留在原地：下次登入讀回來變成兩枚成就，
+/// 而且舊門檻那一枚還在。2026-09-29 補上寫回路徑時才看出來。
+///
+/// **文件 ID 不可以編碼一個會被改的欄位。** 名稱與類別在
+/// `settings/成就定義` 那一頁改不了，所以是穩定的；
+/// 99 枚的 (類別, 名稱) 已驗證唯一。
+String achievementDocId(Achievement a) => '${a.category}#${a.name}';
 
 /// 要上傳到 Firestore 的那一份種子：集合名 → (文件 ID → 內容)。
 ///

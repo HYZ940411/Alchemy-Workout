@@ -90,7 +90,7 @@ void main() {
       expect(back.items[0].restSeconds, 90);
     });
 
-    test('成就定義：doc id 為 category#threshold、獎勵原樣回來', () {
+    test('成就定義：doc id 為 category#name、獎勵原樣回來', () {
       final a = Achievement(
         category: '能力值',
         name: '任一維達 100 點',
@@ -98,7 +98,9 @@ void main() {
         rewardCoins: 100,
         rewardExp: 50,
       );
-      expect(achievementDocId(a), '能力值#100');
+      // **不是 `能力值#100`。** 門檻是管理員改得動的欄位，拿它當文件 ID
+      // 的話，後台改一次就在雲端多長出一筆（見 PROGRESS 1W）。
+      expect(achievementDocId(a), '能力值#任一維達 100 點');
       final back = achievementFromDoc(achievementDocId(a), achievementToMap(a));
       expect(back.category, '能力值');
       expect(back.threshold, 100);
