@@ -505,6 +505,21 @@ class SettingsScreen extends StatelessWidget {
                     '${kInteractionKinds.map((k) => '$k ${s.interactionTotals[k] ?? 0}').join('、')}',
                     style: T.caption(),
                   ),
+                  // 改名冷卻鎖的逃生門。理由同上面的重考鎖 ——
+                  // 測的人一按下去就把自己鎖住 30 天。
+                  if (s.renameBlockedReason() case final why?) ...[
+                    const SizedBox(height: S.md),
+                    Text(why, style: T.caption()),
+                    const SizedBox(height: S.sm),
+                    AppButton(
+                      label: '解除改名冷卻',
+                      kind: BtnKind.secondary,
+                      onPressed: () {
+                        s.clearRenameCooldown();
+                        showToast(context, '已解除，可以再改一次暱稱了');
+                      },
+                    ),
+                  ],
                   const SizedBox(height: S.md),
                   AppButton(
                     label: '重設互動計數',

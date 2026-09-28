@@ -139,6 +139,16 @@ class AppState extends ChangeNotifier {
         '還要等 ${kRenameCooldownDays - days} 天。';
   }
 
+  /// 開發者模式：解除改名冷卻鎖。**只清時間鎖，曾用名不動。**
+  ///
+  /// 與教官重考鎖同一個理由：30 天是給真實使用者的節流，
+  /// 而測試的人一按下去就把自己鎖住一個月，那條路從此驗不了
+  /// （重考鎖那次就是這樣，見 `clearExamRetakeLock`）。
+  void clearRenameCooldown() {
+    lastRenamedAt = null;
+    notifyListeners();
+  }
+
   /// 使用者已更新暱稱。回傳失敗的理由；null 表示成功。
   String? rename(String to) {
     final blocked = renameBlockedReason();

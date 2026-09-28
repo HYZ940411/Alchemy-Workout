@@ -90,6 +90,18 @@ void main() {
     test('從來沒改過的人不受限', () {
       expect(_me().renameBlockedReason(), isNull);
     });
+
+    test('開發者模式解得開 —— 不然測的人一按就把自己鎖住 30 天', () {
+      final s = _me();
+      s.rename('阿華');
+      expect(s.renameBlockedReason(), isNotNull);
+
+      s.clearRenameCooldown();
+
+      expect(s.renameBlockedReason(), isNull);
+      expect(s.rename('大雄'), isNull);
+      expect(s.formerNames, ['阿華', '小明'], reason: '只清時間鎖，曾用名不動');
+    });
   });
 
   group('曾用名', () {
