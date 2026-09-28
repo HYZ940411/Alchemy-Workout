@@ -9,7 +9,6 @@ import '../domain/rewards.dart';
 import '../design/skeleton.dart';
 import '../state/app_state.dart';
 import '../widgets/load_boundary.dart';
-import '../widgets/part_filter.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'train/plan_detail_screen.dart';
@@ -129,18 +128,12 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
             equipment: equipment,
             experience: experience,
             sessionLength: sessionLength,
+            part: part,
             onEquipment: (v) => setState(() => equipment = v),
             onExperience: (v) => setState(() => experience = v),
             onSessionLength: (v) => setState(() => sessionLength = v),
+            onPart: (v) => setState(() => part = v),
           ),
-          // 部位篩選與動作庫共用同一個元件（`widgets/part_filter.dart`）——
-          // 鍵面與測試接縫兩處一致。
-          PartFilterBar(
-            parts: [for (final d in Dim.values) dimNames[d]!],
-            picked: part,
-            onPick: (v) => setState(() => part = v),
-          ),
-          const SizedBox(height: S.base),
           SectionLabel('選擇今天的課表',
               trailing: filtered
                   ? '${plans.length + customs.length} / '
@@ -200,16 +193,20 @@ class _Filters extends StatelessWidget {
   final String? equipment;
   final String? experience;
   final String? sessionLength;
+  final String? part;
   final ValueChanged<String?> onEquipment;
   final ValueChanged<String?> onExperience;
   final ValueChanged<String?> onSessionLength;
+  final ValueChanged<String?> onPart;
   const _Filters({
     required this.equipment,
     required this.experience,
     required this.sessionLength,
+    required this.part,
     required this.onEquipment,
     required this.onExperience,
     required this.onSessionLength,
+    required this.onPart,
   });
 
   /// 鍵面短標 → 註冊問卷的值域字串。
@@ -224,6 +221,11 @@ class _Filters extends StatelessWidget {
   /// 「30 分鐘以下」本來就短，縮成「30」反而看不懂是以上還是以下。
   static final _lengthOptions = {for (final v in kDurations) v: v};
 
+  /// 六維的中文名。鍵面即值域，不縮寫。
+  static final _partOptions = {
+    for (final d in Dim.values) dimNames[d]!: dimNames[d]!,
+  };
+
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(top: S.md),
@@ -237,13 +239,22 @@ class _Filters extends StatelessWidget {
               _row('經驗', _experienceShort, experience, onExperience),
               const SizedBox(height: S.md),
               _row('時長', _lengthOptions, sessionLength, onSessionLength),
+              const SizedBox(height: S.md),
+              // 2026-09-28 使用者：「我看到篩選欄了，但能不能跟上面的
+              // 篩選欄一樣」。第一版用的是動作庫那一頁的樣式
+              // （標題列 ＋ 圓角鍵），擺在這個面板底下就是兩種長相。
+              // **一頁之內只該有一種篩選列。**
+              _row('部位', _partOptions, part, onPart, keyPrefix: 'part'),
             ],
           ),
         ),
       );
 
+  /// [keyPrefix] 給測試定位用。**部位那一排非有不可** ——
+  /// 鍵面文字在課表名稱裡也找得到（「腿」對上「無器材-腿部」），
+  /// 用文字定位會一次命中好幾個。
   Widget _row(String label, Map<String, String> options, String? picked,
-          ValueChanged<String?> onPick) =>
+          ValueChanged<String?> onPick, {String? keyPrefix}) =>
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -259,16 +270,24 @@ class _Filters extends StatelessWidget {
               spacing: S.sm,
               runSpacing: S.sm,
               children: [
-                _chip('不限', picked == null, () => onPick(null)),
+                _chip('不限', picked == null, () => onPick(null),
+                    key: keyPrefix == null
+                        ? null
+                        : ValueKey('$keyPrefix-all')),
                 for (final e in options.entries)
-                  _chip(e.key, picked == e.value, () => onPick(e.value)),
+                  _chip(e.key, picked == e.value, () => onPick(e.value),
+                      key: keyPrefix == null
+                          ? null
+                          : ValueKey('$keyPrefix-${e.key}')),
               ],
             ),
           ),
         ],
       );
 
-  Widget _chip(String text, bool on, VoidCallback onTap) => GestureDetector(
+  Widget _chip(String text, bool on, VoidCallback onTap, {Key? key}) =>
+      GestureDetector(
+        key: key,
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),

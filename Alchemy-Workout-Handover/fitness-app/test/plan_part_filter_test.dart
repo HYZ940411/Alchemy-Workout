@@ -32,6 +32,16 @@ void main() {
   }
 
   group('部位篩選', () {
+    // 2026-09-28 使用者：「我看到篩選欄了，但能不能跟上面的篩選欄一樣」。
+    // 第一版用的是動作庫那一頁的樣式，擺在器材／經驗／時長的面板底下
+    // 就是兩種長相。改成那個面板的第四排。
+    testWidgets('和器材／經驗／時長排在同一個面板裡', (t) async {
+      await open(t);
+      expect(find.text('部位'), findsOneWidget);
+      // 動作庫那一頁的樣式不該出現在這裡。
+      expect(find.text('部位：全部'), findsNothing);
+    });
+
     testWidgets('六個部位都按得到', (t) async {
       await open(t);
       expect(find.byKey(const ValueKey('part-all')), findsOneWidget);
@@ -81,7 +91,13 @@ void main() {
       if (find.text('清除篩選').evaluate().isEmpty) return;
       await t.tap(find.text('清除篩選'));
       await t.pumpAndSettle();
-      expect(find.text('部位：全部'), findsOneWidget);
+      final all = t.widget<GestureDetector>(
+          find.ancestor(
+            of: find.byKey(const ValueKey('part-all')),
+            matching: find.byType(GestureDetector),
+          ).first);
+      expect(all, isNotNull);
+      expect(find.byKey(const ValueKey('part-all')), findsOneWidget);
     });
   });
 
