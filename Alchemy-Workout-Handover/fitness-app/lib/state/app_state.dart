@@ -1815,9 +1815,27 @@ class AppState extends ChangeNotifier {
 
     // --- 連續訓練天數 ---
     // 次數每場都加；天數與連續天數只在該日第一場加。
+    //
+    // **「今天算過了沒」要問訓練歷史，不能問 [lastTrainedDate]。**
+    //
+    // `resetToNewAccount()` 把 `lastTrainedDate` 設成 `registeredOn`
+    // ＝今天（那個初始值本身是對的，它是給退步門檻用的：「從未訓練者的
+    // 四道門檻自註冊日的日界起算」）。但這裡拿它來問「今天是不是第一場」
+    // 的話，**註冊當天練的每一場都會被當成不是第一場** ——
+    // 天數與連續天數一整天都不動。
+    //
+    // 2026-09-28 使用者實測：累積訓練次數 3、累積訓練天數 0。
+    //
+    // 同一個欄位兩種語意，日後必然衝突 —— `Exercise.dim` / `parts`
+    // 的註解早就寫過這句話。這裡改用歷史當判準，與
+    // `reconcileWorkoutCount()` 的算法同源（那支也是用 history 重算天數）。
+    //
+    // **這一段跑在 `history.insert` 之前**，所以此刻的歷史還不含這一場。
     if (recorded) {
       totalWorkouts += 1;
-      if (lastTrainedDate != today) {
+      final firstToday =
+          !history.any((h) => businessDate(h.date) == today);
+      if (firstToday) {
         // 距上次訓練日的日界未超過 36 小時者續計 —— 與 [runStreakCheck]
         // 的中斷判定共用同一條規則，兩邊各寫一份就會對不起來。
         trainingStreakDays =
