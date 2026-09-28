@@ -6437,6 +6437,16 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// 動作名稱的相鄰二字集合 —— 用來衡量「是不是同一類動作」。
+  ///
+  /// 「三頭肌下壓」→ `{三頭, 頭肌, 肌下, 下壓}`。
+  /// 與「三頭肌伸展」重疊 2 個，與「二頭肌屈臂」只重疊 1 個。
+  /// **器材那一段不算** —— 我們要找的正是「同一個動作換個器材」。
+  static Set<String> _nameBigrams(String name) {
+    final base = name.split(' · ').first.replaceAll(RegExp(r'[\s()（）]'), '');
+    return {for (var i = 0; i + 1 < base.length; i++) base.substring(i, i + 2)};
+  }
+
   /// 這個動作的替代候選 —— 同肌群、且目前器材做得到。
   ///
   /// **候選由前端算，不把 527 筆動作庫送進 prompt。** 那樣 prompt 會
@@ -6444,9 +6454,29 @@ class AppState extends ChangeNotifier {
   /// 挑一個，驗證就變成「挑的在不在候選裡」——滴水不漏。
   ///
   /// 依據是「持有器材明細」（`02_Aggregate定義.md` §1324）。
+  ///
+  /// ## 排序為什麼不能只看相對強度
+  ///
+  /// 2026-09-28 使用者打「今天沒有滑輪機可以用」，
+  /// **三頭肌下壓 · 滑輪機** 被換成 **二頭肌屈臂 · 槓鈴** ——
+  /// 推變成拉。那不是模型亂挑：候選清單是我們給的，而**送過去的
+  /// 前五個全是二頭動作**。
+  ///
+  /// 原因是六維裡「手」是一維，三頭與二頭同屬 `Dim.arms`（依模型自己
+  /// 的粒度那確實是同肌群），而排序只比相對強度 —— 二頭在 2.1、
+  /// 三頭在 2.2，原動作 1.9。**差 0.1 就讓三頭訓練變成二頭訓練。**
+  /// 候選池裡本來有 16 個三頭動作，一個都沒進前五。
+  ///
+  /// 所以先比名稱相似度（[_nameBigrams]），再比相對強度。
+  /// 中文的動作名稱本來就把目標肌肉寫在裡面，那是現成的訊號。
+  ///
+  /// **這是權宜之計。** 真正乾淨的做法是動作庫多一個「細部肌群」欄位，
+  /// 但那要動 CSV 與匯入腳本，且屬於資料決策。記在 `PROGRESS.md` 0S。
   List<Exercise> swapCandidatesFor(Exercise e, {int limit = 5}) {
     final have = availableEquipment;
-    return [
+    final want = _nameBigrams(e.name);
+    int alike(Exercise x) => _nameBigrams(x.name).intersection(want).length;
+    final pool = [
       for (final x in platformExercises)
         if (x.id != e.id &&
             x.dim == e.dim &&
@@ -6456,11 +6486,19 @@ class AppState extends ChangeNotifier {
               return need.isEmpty || need.every(have.contains);
             }())
           x,
-    ]
-        // 相對強度相近的排前面 —— 換動作不該順便換掉訓練強度。
-        ..sort((a, b) => (a.relativeIntensity - e.relativeIntensity)
-            .abs()
-            .compareTo((b.relativeIntensity - e.relativeIntensity).abs()));
+    ];
+    pool.sort((a, b) {
+      // 名字越像的越前面 —— 同一個動作換個器材會排到第一。
+      final byName = alike(b).compareTo(alike(a));
+      if (byName != 0) return byName;
+      // 一樣像，才比相對強度 —— 換動作不該順便換掉訓練強度。
+      return (a.relativeIntensity - e.relativeIntensity)
+          .abs()
+          .compareTo((b.relativeIntensity - e.relativeIntensity).abs());
+    });
+    // [limit] 原本**寫了沒用** —— 函式回傳全部，兩個呼叫端各自
+    // `.take(5)`。參數騙人比沒有參數更糟：它看起來已經把關了。
+    return pool.take(limit).toList();
   }
 
   /// 送給模型的脈絡（`[BE-08]` 方案 A）。
@@ -6493,7 +6531,7 @@ class AppState extends ChangeNotifier {
         for (final pe in target)
           if (swap)
             pe.exercise.name: [
-              for (final c in swapCandidatesFor(pe.exercise).take(5)) c.name,
+              for (final c in swapCandidatesFor(pe.exercise)) c.name,
             ],
       },
     );
@@ -6942,7 +6980,7 @@ class AppState extends ChangeNotifier {
         candidates: intent == AdjustIntent.swap
             ? {
                 for (final pe in target)
-                  pe.exercise.name: swapCandidatesFor(pe.exercise).take(5).toList(),
+                  pe.exercise.name: swapCandidatesFor(pe.exercise),
               }
             : const {},
       );
