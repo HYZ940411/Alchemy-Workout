@@ -20,11 +20,14 @@ import {
 } from "./adjust.ts";
 import {askQuality, isSessions} from "./screen.ts";
 import {askIntent, isSay} from "./classify.ts";
+import {consume, limitMessage, DAILY_LIMIT} from "./limit.ts";
 
 interface Env {
   GEMINI_API_KEY: string;
   ALLOWED_ORIGIN: string;
   FIREBASE_PROJECT_ID: string;
+  /** 每人每日呼叫次數的計數器。**可有可無** —— 沒綁定就不擋（見 `limit.ts`）。 */
+  AI_USAGE?: KVNamespace;
 }
 
 const cors = (origin: string) => ({
@@ -71,6 +74,22 @@ export default {
       return fail(400, "請求不是合法的 JSON。", origin);
     }
 
+    /**
+     * 記一次用量並決定放不放行。**每個分支各自在驗完輸入之後才呼叫** ——
+     * 擺在這裡之前的話，一個格式錯誤的請求也會吃掉一次額度，
+     * 而它根本沒碰到 Gemini。
+     *
+     * 回傳非空值代表被擋下來了，直接把它回給前端。
+     */
+    const overLimit = async (): Promise<Response | null> => {
+      const v = await consume(env.AI_USAGE, uid, new Date());
+      if (v.allowed) return null;
+      console.log(`用量上限：${uid} 今日第 ${v.used} 次`);
+      // 429 —— 與 Gemini 自己的額度錯誤同一個狀態碼，但訊息完全不同：
+      // 那個是上游的額度，這個是我們自己設的上限。
+      return fail(429, limitMessage(DAILY_LIMIT), origin);
+    };
+
     // --- 意圖分類（2026-09-27 使用者裁決：一律先給 AI 判斷）---
     //
     // 同一個端點、看有沒有 `say` 分流，理由同下面那一段。
@@ -81,6 +100,8 @@ export default {
       if (!isSay(body.say)) {
         return fail(400, "say 必須是 1–200 字的字串。", origin);
       }
+      const blocked = await overLimit();
+      if (blocked) return blocked;
       try {
         // 不先探測模型 —— `callGemini` 直接用偏好的那個，
         // 只有它 404 時才去問清單。原本每次都多一趟 `listModels`，
@@ -112,6 +133,8 @@ export default {
       if (!isSessions(body.sessions)) {
         return fail(400, "訓練紀錄的格式不合法，或筆數超過上限。", origin);
       }
+      const blocked = await overLimit();
+      if (blocked) return blocked;
       try {
         const q = await askQuality(body.sessions, env.GEMINI_API_KEY);
         return new Response(JSON.stringify(q), {
@@ -137,6 +160,9 @@ export default {
     if (!Array.isArray(exercises) || exercises.length === 0) {
       return fail(400, "課表是空的。", origin);
     }
+
+    const blocked = await overLimit();
+    if (blocked) return blocked;
 
     let source = "rule";
     let error: string | undefined;
