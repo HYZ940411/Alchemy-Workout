@@ -166,7 +166,7 @@ class _ReportCard extends StatelessWidget {
     final waited = appNow().difference(c.enteredAt);
     // 級距一律依**當下的**累計違規次數決定；同一人的前一案成立後，
     // 後續案件的預告級距要跟著變。
-    final after = state.violationsOf(c.accused) + 1;
+    final after = state.violationsForCase(c) + 1;
     final tier = tierForViolations(after);
     final mine = c.handlerName == state.admin.name;
 

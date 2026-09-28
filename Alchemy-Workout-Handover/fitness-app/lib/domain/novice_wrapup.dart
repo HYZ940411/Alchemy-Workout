@@ -117,6 +117,16 @@ class ExperienceRating {
   final RatingTarget target;
   final String targetId;
   final String rater;
+
+  /// 評分者的雲端身分。**比對一律看它**（暱稱重構階段二，2026-09-28）。
+  ///
+  /// 唯一鍵是「評分者 ＋ 對象類型 ＋ 對象 ID」，而 `ratingFor()` 原本
+  /// 用 `r.rater == displayName` 去找 —— **改了暱稱就找不到自己的舊評分**，
+  /// 於是同一個對象可以再評一次，而規格說每人每個對象終身僅一筆。
+  ///
+  /// 舊存檔沒有這個欄位，所以可以是空值（那時仍以暱稱退路比對）。
+  final String? raterUid;
+
   int stars;
   String? feedback;
   DateTime at;
@@ -125,6 +135,7 @@ class ExperienceRating {
     required this.target,
     required this.targetId,
     required this.rater,
+    this.raterUid,
     required this.stars,
     required this.at,
     this.feedback,

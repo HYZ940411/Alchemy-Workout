@@ -205,6 +205,16 @@ class AppealCase {
 class InstructorCase {
   final String id;
   final String applicant;
+
+  /// 申請人的雲端身分。**判定一律看它，不看暱稱**（暱稱重構階段二）。
+  ///
+  /// 在此之前 `decideInstructor()` 寫的是
+  /// `c.applicant == displayName` —— 撞名或改過名的話，
+  /// **教官資格會發給錯的人**。
+  ///
+  /// 示範資料的假案件沒有，所以可以是空值 ——
+  /// 與 `AppealCase.appellantUid`、`CloudReport.accusedUid` 同一個處理。
+  final String? applicantUid;
   /// AI 評分三維度與加權平均
   final Map<String, double> aiScores;
   final double weighted;
@@ -213,6 +223,7 @@ class InstructorCase {
   final DateTime enteredAt;
   CaseState state;
   InstructorCase({
+    this.applicantUid,
     required this.id,
     required this.applicant,
     required this.aiScores,

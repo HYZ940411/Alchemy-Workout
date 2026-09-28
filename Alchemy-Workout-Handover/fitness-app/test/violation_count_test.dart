@@ -99,7 +99,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       // 初版本機加一次、雲端那支又加一次，一次裁決記成兩點。
-      expect(a.s.violationsOf('阿昶'), 1);
+      expect(a.s.violationsOf('u-阿昶', name: '阿昶'), 1);
       expect(a.src.counts['u-阿昶'], 1);
     });
 
@@ -112,7 +112,7 @@ void main() {
       a.s.upholdReport(c);
       await Future<void>.delayed(Duration.zero);
 
-      expect(a.s.violationsOf('阿昶'), 8, reason: '不是本機推算的 1');
+      expect(a.s.violationsOf('u-阿昶', name: '阿昶'), 8, reason: '不是本機推算的 1');
     });
 
     test('駁回不記點', () async {
@@ -137,7 +137,18 @@ void main() {
       // 寫到暱稱底下的話，改名就斷了、撞名就記到別人頭上 ——
       // 記錯人比不記更糟。
       expect(a.src.writes, isEmpty);
-      expect(a.s.violationsOf('阿昶'), 1, reason: '本機這一次還是要算');
+
+      // **2026-09-28（暱稱重構階段二）改了這一條的斷言。**
+      //
+      // 原本要求「本機這一次還是要算」，而本機那份 Map 當時以暱稱為鍵
+      // —— 也就是把這一點記在「叫阿昶的那個人」身上。
+      // **那與上面那句註解互相矛盾**：記錯人比不記更糟，
+      // 而暱稱記法就是記錯人，只是錯在記憶體裡而不是雲端。
+      //
+      // 現在沒有 uid 就哪裡都不記，並且**由裁決結果講出來**
+      // （見 `UpholdOutcome.recordedForAccused`），
+      // 管理員看得到「這一案沒有對方的帳號識別，記點寫不進他的紀錄」。
+      expect(a.s.violationsOf(null, name: '阿昶'), 0);
     });
 
     test('寫不上去不會把本機那一次吃掉', () async {
@@ -148,7 +159,7 @@ void main() {
       a.s.upholdReport(c);
       await Future<void>.delayed(Duration.zero);
 
-      expect(a.s.violationsOf('阿昶'), 1);
+      expect(a.s.violationsOf('u-阿昶', name: '阿昶'), 1);
     });
   });
 

@@ -62,7 +62,7 @@ void main() {
 
     final progress = s.mentorUnlockProgress;
     for (final e in progress.entries) {
-      expect(e.value, greaterThan(0), reason: '「${e.key}」走不到 —— ${progress}');
+      expect(e.value, greaterThan(0), reason: '「${e.key}」走不到 —— $progress');
     }
     expect(s.mentorUnlocked, isTrue);
   });

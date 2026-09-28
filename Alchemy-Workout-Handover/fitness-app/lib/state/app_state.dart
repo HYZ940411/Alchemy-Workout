@@ -3173,6 +3173,7 @@ class AppState extends ChangeNotifier {
         target: ReportTarget.post,
         content: text,
         accused: displayName,
+        accusedUid: myUid,
       );
     }
     coins += 5; // 發文獎勵
@@ -4284,6 +4285,7 @@ class AppState extends ChangeNotifier {
         target: ReportTarget.message,
         content: body,
         accused: c.peer,
+        accusedUid: c.peerUid,
       );
     }
     notifyListeners();
@@ -4350,7 +4352,7 @@ class AppState extends ChangeNotifier {
         reason: reason,
         reporterCount: 1,
         accused: displayName,
-        accusedViolations: violationsOf(displayName),
+        accusedViolations: violationsOf(myUid, name: displayName),
         enteredAt: now,
       ),
     );
@@ -5514,6 +5516,7 @@ class AppState extends ChangeNotifier {
       InstructorCase(
         id: newId('IC-'),
         applicant: displayName,
+        applicantUid: myUid,
         // AI 訓練品質評分。**目前仍是寫死的** —— 規格說它由系統依申請人的
         // 訓練紀錄算出（`02_Aggregate定義.md` 第 1475 行，Actor 為「系統」），
         // 而那個計算還沒實作。見 PROGRESS.md 第 5 節 0j。
@@ -5857,6 +5860,7 @@ class AppState extends ChangeNotifier {
         target: ReportTarget.message,
         content: body,
         accused: displayName,
+        accusedUid: myUid,
       );
     }
     notifyListeners();
@@ -5872,6 +5876,9 @@ class AppState extends ChangeNotifier {
     required ReportTarget target,
     required String content,
     required String accused,
+    /// 被指的那個人的雲端身分。**記點與級距一律看它**（暱稱重構階段二）。
+    /// 私訊對方那一路可能查不到，空值代表「這一案記不了點」。
+    String? accusedUid,
   }) {
     if (reports.any(
         (r) => r.targetKey == targetKey && r.state == CaseState.pending)) {
@@ -5886,6 +5893,7 @@ class AppState extends ChangeNotifier {
       content: content,
       reason: '自動過濾命中疑似違規',
       accused: accused,
+      accusedUid: accusedUid,
     );
     reports.insert(
       0,
@@ -5899,7 +5907,11 @@ class AppState extends ChangeNotifier {
         reason: '自動過濾命中疑似違規',
         reporterCount: 0,
         accused: accused,
-        accusedViolations: violationsOf(accused),
+        // **這一行原本不在。** 自動開立的案件沒有 uid，
+        // 於是它們永遠記不了點（`_recordViolation` 看的就是這個欄位）——
+        // 管理員判成立、畫面說處罰了，而被指的人身上什麼都沒發生。
+        accusedUid: accusedUid,
+        accusedViolations: violationsOf(accusedUid, name: accused),
         enteredAt: now,
       ),
     );
@@ -8089,7 +8101,7 @@ class AppState extends ChangeNotifier {
         reporterCount: 1,
         accused: accused,
         accusedUid: accusedUid ?? uidOf(accused),
-        accusedViolations: violationsOf(accused),
+        accusedViolations: violationsOf(accusedUid, name: accused),
         enteredAt: now,
       ),
     );
@@ -8098,14 +8110,48 @@ class AppState extends ChangeNotifier {
   }
 
   /// 各使用者的累計違規次數。自己的存在 [myViolations]。
+  ///
+  /// **鍵是 uid，不是暱稱**（暱稱重構階段二，2026-09-28）。
+  ///
+  /// 在此之前這裡以暱稱為鍵，而 `_recordViolation()` 的註解早就寫著
+  /// 「寫到暱稱底下的話，改名或撞名就記到別人頭上」—— 那句話講的是
+  /// 雲端那一側，**本機這一份卻正是那樣做的**。
+  /// 處罰級距依這個數字決定，記錯人就處罰錯人。
+  ///
   /// 初值取自佇列中既有案件所記的累計次數 —— 級距一律依它決定，
   /// 若不灌入，所有人都會從 0 起跳而算成「警告」。
+  /// **只灌有 uid 的**：沒有 uid 的舊案件本來就記不了點
+  /// （`_recordViolation` 也是這樣擋的），灌進來只會製造一個
+  /// 查得到卻寫不回去的數字。
   late final Map<String, int> _violations = {
-    for (final c in reports) c.accused: c.accusedViolations,
+    for (final c in reports) ?c.accusedUid: c.accusedViolations,
   };
 
-  int violationsOf(String user) =>
-      user == displayName ? myViolations : (_violations[user] ?? 0);
+  /// 某個人的累計違規次數。
+  ///
+  /// [uid] 是權威；[name] 只在**它就是我**時用得上（自己的存在
+  /// [myViolations]，而自己的 uid 在沒登入的測試裡可能是空的）。
+  int violationsOf(String? uid, {String? name}) {
+    if (_isMe(name ?? '', uid)) return myViolations;
+    return uid == null ? 0 : (_violations[uid] ?? 0);
+  }
+
+  /// 這一案該用哪個累計次數算級距。
+  ///
+  /// **取「現在查得到的」與「案件當初記下的」之中較大者。**
+  ///
+  /// 暱稱重構階段二把 `_violations` 改成以 uid 為鍵之後，
+  /// **沒有 uid 的案件查出來一律是 0** —— 而級距依這個數字決定，
+  /// 於是一個累犯第五次的人會被算成「警告」。
+  /// `ReportCase.accusedViolations` 是檢舉建案當下記下的值，
+  /// 那些案件只剩它可用。
+  ///
+  /// 取較大者而不是「查不到才用案件的」：兩位管理員同時裁決同一個人時，
+  /// 本機查到的可能比案件當初記的還新。
+  int violationsForCase(ReportCase c) => math.max(
+        violationsOf(c.accusedUid, name: c.accused),
+        c.accusedViolations,
+      );
 
   /// 雲端的累計違規次數。**空值代表不同步** —— 既有測試走這條。
   ViolationSource? violationSource;
@@ -8141,8 +8187,7 @@ class AppState extends ChangeNotifier {
     if (src == null || uid == null) return local;
     try {
       final cloud = await src.increment(uid, name: c.accused);
-      _setViolations(c.accused, cloud);
-      if (c.accused == displayName) myViolations = cloud;
+      _setViolations(uid, cloud, name: c.accused);
       notifyListeners();
       return cloud;
     } catch (_) {
@@ -8150,12 +8195,14 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _setViolations(String user, int v) {
-    if (user == displayName) {
+  void _setViolations(String? uid, int v, {String? name}) {
+    if (_isMe(name ?? '', uid)) {
       myViolations = v;
-    } else {
-      _violations[user] = v;
+      return;
     }
+    // **沒有 uid 就不記。** 記到暱稱底下的話，那個人改名之後
+    // 數字就跟著留在舊名字上，而下一個叫那個名字的人會繼承它。
+    if (uid != null) _violations[uid] = v;
   }
 
   /// 管理員已審視檢舉。待審視 → 審視中，寫入處理中的管理員 ID。
@@ -8212,7 +8259,7 @@ class AppState extends ChangeNotifier {
         reporterCount: rows.length,
         accused: first.accused,
         accusedUid: first.accusedUid,
-        accusedViolations: violationsOf(first.accused),
+        accusedViolations: violationsOf(first.accusedUid, name: first.accused),
         enteredAt: first.at,
         // 已在審視中的案件不要被重讀打回待審 —— 管理員可能正開著它。
         state: at >= 0 ? reports[at].state : CaseState.pending,
@@ -8263,8 +8310,8 @@ class AppState extends ChangeNotifier {
 
     // 記點。本機先加（畫面立刻反映），雲端寫完再以雲端那份為準 ——
     // 兩位管理員同時裁決同一個人時，本機推算會少算。
-    final after = violationsOf(c.accused) + 1;
-    _setViolations(c.accused, after);
+    final after = violationsForCase(c) + 1;
+    _setViolations(c.accusedUid, after, name: c.accused);
     _issuePunishment(c, after);
     _pushVerdict(c, upheld: true);
     notifyListeners();
@@ -8742,7 +8789,8 @@ class AppState extends ChangeNotifier {
 
   ExperienceRating? ratingFor(RatingTarget target, String targetId) {
     for (final r in experienceRatings) {
-      if (r.rater == displayName &&
+      // **以 uid 為準，暱稱只是退路**（舊存檔沒有 uid）。
+      if (_isMe(r.rater, r.raterUid) &&
           r.target == target &&
           r.targetId == targetId) {
         return r;
@@ -8776,6 +8824,7 @@ class AppState extends ChangeNotifier {
         target: target,
         targetId: targetId,
         rater: displayName,
+        raterUid: myUid,
         stars: stars,
         feedback: feedback,
         at: now,
@@ -9834,7 +9883,11 @@ class AppState extends ChangeNotifier {
     c.state = pass ? CaseState.upheld : CaseState.dismissed;
     // 判定的若是我的申請，我這一側的狀態也要跟著走完 ——
     // 先前這裡只改案件狀態，申請人永遠停在「待人工審核」。
-    if (c.applicant == displayName &&
+    // **以 uid 判定，不比暱稱**（暱稱重構階段二）。
+    // 撞名或改過名的話，原本會把教官資格發給錯的人 ——
+    // 而管理員自己審自己那條路（今天實測走過）更容易踩到：
+    // 兩邊的 `displayName` 本來就一樣。
+    if (_isMe(c.applicant, c.applicantUid) &&
         instructorStage == InstructorStage.pendingReview) {
       if (pass) {
         instructorStage = InstructorStage.approved;
