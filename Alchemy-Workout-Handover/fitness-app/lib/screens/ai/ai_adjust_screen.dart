@@ -29,11 +29,23 @@ class _AiAdjustScreenState extends State<AiAdjustScreen> {
   @override
   void initState() {
     super.initState();
-    // 一進來就直接問「要怎麼調」，不必先打一句話。
-    // **要等第一幀之後** —— `aiOpen` 會 `notifyListeners()`，在 build
-    // 期間觸發的話 Flutter 當場拋例外。
+    // **自動優化不問方向。** 規格（〈AI 自動優化訓練流程〉）把
+    // 「優化訓練強度」的 Actor 寫成系統，使用者只負責確認或拒絕 ——
+    // 它一進來就該直接算好一份給你看。
+    //
+    // 其餘兩條（訓練前／訓練中調整）是使用者主動要求的，
+    // 一進來就問「要怎麼調」，不必先打一句話。
+    //
+    // **要等第一幀之後** —— 兩者都會 `notifyListeners()`，
+    // 在 build 期間觸發的話 Flutter 當場拋例外。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) AppScope.of(context).aiOpen(src);
+      if (!mounted) return;
+      final s = AppScope.of(context);
+      if (src == AiSource.autoOptimize) {
+        s.aiAutoPropose();
+      } else {
+        s.aiOpen(src);
+      }
     });
   }
 

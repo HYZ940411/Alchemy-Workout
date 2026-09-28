@@ -15,7 +15,7 @@
 import {verifyIdToken} from "./auth.ts";
 import {
   fill,
-  askGemini, isIntent, ruleFallback,
+  askGemini, askGeminiAuto, isIntent, ruleFallback,
   type AdjustContext, type PlanExercise,
 } from "./adjust.ts";
 import {askQuality, isSessions} from "./screen.ts";
@@ -150,15 +150,47 @@ export default {
 
     const intent = body.intent;
     const exercises = body.exercises as PlanExercise[] | undefined;
+    // 自動優化：**方向由模型自己判斷**，使用者沒給。
+    // 規格（〈AI 自動優化訓練流程〉）把「優化訓練強度」的 Actor
+    // 寫成系統，流程裡沒有「使用者挑方向」這一步。
+    const auto = intent === "auto";
     // 使用者自己打的話。非字串一律當作沒有 —— 這是外部輸入，
     // 型別都不對的東西沒必要送進 prompt。
     const note = typeof body.note === "string" ? body.note : undefined;
     const ctx = body.context && typeof body.context === "object" ?
       body.context as AdjustContext :
       undefined;
-    if (!isIntent(intent)) return fail(400, "intent 不合法。", origin);
+    if (!auto && !isIntent(intent)) {
+      return fail(400, "intent 不合法。", origin);
+    }
     if (!Array.isArray(exercises) || exercises.length === 0) {
       return fail(400, "課表是空的。", origin);
+    }
+
+    if (auto) {
+      const blockedAuto = await overLimit();
+      if (blockedAuto) return blockedAuto;
+      try {
+        const out = await askGeminiAuto(exercises, env.GEMINI_API_KEY, ctx);
+        // **沒有規則退路**（見 `askGeminiAuto` 的註解）：訓練前調整的退路
+        // 存在是因為使用者在等；這裡沒有人在等，判斷不出來就不掛，
+        // 下次再說。用一條 ×0.9 假裝成教練的判斷比不給更糟。
+        return new Response(
+          JSON.stringify({
+            source: "gemini",
+            intent: out.intent,
+            why: out.why,
+            changes: out.intent === null ?
+              [] :
+              fill(exercises, out.changes),
+          }),
+          {headers: {"Content-Type": "application/json", ...cors(origin)}},
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("自動優化失敗：", msg);
+        return fail(502, `自動優化失敗：${msg}`, origin);
+      }
     }
 
     const blocked = await overLimit();

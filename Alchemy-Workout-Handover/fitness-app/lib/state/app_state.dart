@@ -7150,6 +7150,88 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 自動優化：**系統自己判斷方向並產出建議**，不問使用者。
+  ///
+  /// 規格（`01_Command清單.md`〈AI 自動優化訓練流程〉）把「優化訓練強度」
+  /// 的 Actor 寫成**系統** —— 流程裡只有「確認使用新訓練強度」與
+  /// 「拒絕調整」兩個使用者 Command，沒有「挑方向」這一步。
+  ///
+  /// 2026-09-28 之前的實作把它接到訓練前調整的同一條追問流程上，
+  /// 反過來問使用者要調哪個方向。那個差別不只是少一步：
+  /// **訓練前調整是免費功能，自動優化是會員權益** ——
+  /// 兩者都要人挑方向的話，付費買到的只是「幫你記得每三次提醒一次」。
+  ///
+  /// **不扣點**（會員權益），也**沒有規則退路**：判斷不出來就不掛，
+  /// 下次再說。用一條 ×0.9 假裝成教練的判斷比不給更糟。
+  Future<void> aiAutoPropose() async {
+    const src = AiSource.autoOptimize;
+    if (aiStage[src] != AiStage.idle) return;
+    if (aiConversations[src]!.isNotEmpty) return;
+
+    final target = _aiTarget(src);
+    if (target.isEmpty) return;
+
+    final remote = aiSource;
+    if (remote == null) {
+      // 沒接外部 AI —— 端內規則產不出「該升還是該降」的判斷，
+      // 那不是一條 ×0.9 算得出來的東西。退回舊的追問流程，
+      // 至少使用者挑得了方向。
+      aiOpen(src);
+      return;
+    }
+
+    aiStage[src] = AiStage.analyzing;
+    notifyListeners();
+
+    RemoteAutoAdjust got;
+    try {
+      got = await remote.suggestAuto(
+        exercises: target,
+        context: _aiContext(target, swap: true),
+        candidates: {
+          for (final pe in target)
+            pe.exercise.name: swapCandidatesFor(pe.exercise),
+        },
+      );
+    } catch (_) {
+      if (aiStage[src] != AiStage.analyzing) return;
+      aiStage[src] = AiStage.idle;
+      _say(src, AiTurnRole.system,
+          '這次沒能產出建議，稍後再試。建議標記還在，不會消失。');
+      notifyListeners();
+      return;
+    }
+    if (aiStage[src] != AiStage.analyzing) return;
+
+    final sug = got.suggestion;
+    final decided = got.intent;
+    if (decided == null || sug == null || sug.changes.isEmpty || sug.isEmpty) {
+      aiStage[src] = AiStage.idle;
+      _say(src, AiTurnRole.ai,
+          '這次看不出該往哪個方向調 —— 多練幾次、有了成績才說得出所以然。');
+      notifyListeners();
+      return;
+    }
+
+    aiIntent[src] = decided;
+    aiLastOrigin = SuggestionOrigin.gemini;
+    // 模型講得出「為什麼是這個方向」時，把那句話當成整份建議的依據 ——
+    // 這正是自動優化與訓練前調整的差別：方向本身也要有理由。
+    aiSuggestion[src] = got.why == null
+        ? sug
+        : AdjustSuggestion(
+            intent: sug.intent, changes: sug.changes, rationale: got.why);
+    _say(src, AiTurnRole.ai,
+        'AI 建議如下（${adjustIntentNames[decided]}）：\n\n'
+        '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
+        '${got.why == null ? '' : '\n${got.why}\n'}'
+        '\n作用範圍：${aiSourceScope[src]}',
+        suggestion: aiSuggestion[src],
+        scope: aiSourceScope[src]);
+    aiStage[src] = AiStage.proposed;
+    notifyListeners();
+  }
+
   /// AI 已產出建議。**依使用者眼前的那份課表產生**，不是一段固定文字。
   ///
   /// 模型把 LLM 放在軟體邊界之外（「AI 為系統呼叫的外部 API」），

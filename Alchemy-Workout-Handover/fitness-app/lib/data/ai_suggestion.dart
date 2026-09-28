@@ -41,6 +41,23 @@ class RemoteSuggestion {
   const RemoteSuggestion(this.origin, this.suggestion, {this.error});
 }
 
+/// 一次自動優化的結果。
+///
+/// **[intent] 為空值是合法結果**：模型看不出這個人該升該降時就該這樣回
+/// （多半是還沒有歷來成績）。呼叫端不掛建議，下次再說 ——
+/// **不要用一條 ×0.9 假裝成教練的判斷**。
+class RemoteAutoAdjust {
+  final AdjustIntent? intent;
+
+  /// 為什麼判斷成這個方向。空值代表模型沒講。
+  final String? why;
+
+  /// [intent] 為空時必為空的建議。
+  final AdjustSuggestion? suggestion;
+
+  const RemoteAutoAdjust({this.intent, this.why, this.suggestion});
+}
+
 /// 一次意圖分類的結果。
 ///
 /// **[intent] 為空值是合法結果，不是失敗** —— 模型判不出來時就該這樣回，
@@ -69,6 +86,21 @@ abstract class AiSuggestionSource {
   /// [note] 是**使用者自己打的那幾句話**。原樣送給模型當作額外脈絡，
   /// 但它**不能推翻任何驗證規則** —— 伺服器端的逐項驗證在模型回話之後
   /// 才跑，使用者寫什麼都越不過去。
+  /// 自動優化：**方向由模型自己判斷**，不是使用者挑的。
+  ///
+  /// 規格（`01_Command清單.md`〈AI 自動優化訓練流程〉）把「優化訓練強度」
+  /// 的 Actor 寫成**系統** —— 流程裡沒有「使用者挑方向」這一步，
+  /// 使用者只負責確認或拒絕。
+  ///
+  /// **沒有規則退路。** [suggest] 的退路存在是因為使用者在等、不能空手
+  /// 而回；這裡沒有人在等（建議是每三次訓練後默默掛上的），
+  /// 擲出例外就讓呼叫端說「這次沒能產出」，下次再試。
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  });
+
   Future<RemoteSuggestion> suggest({
     required List<PlanExercise> exercises,
     required AdjustIntent intent,

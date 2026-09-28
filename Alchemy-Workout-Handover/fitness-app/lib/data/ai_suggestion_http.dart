@@ -78,6 +78,51 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
   }
 
   @override
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) async {
+    final token = await idToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('尚未登入，無法呼叫 AI。');
+    }
+
+    final res = await _client
+        .post(
+          endpoint,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            // `auto` 不是四個方向之一 —— 它是「請你自己判斷」的意思。
+            'intent': 'auto',
+            ...encodePlan(exercises, 0, context: context),
+          }),
+        )
+        .timeout(const Duration(seconds: 25));
+
+    if (res.statusCode != 200) {
+      throw http.ClientException(
+          httpFailureReason('自動優化', res), endpoint);
+    }
+    final data =
+        (jsonDecode(utf8.decode(res.bodyBytes)) as Map).cast<String, dynamic>();
+    final raw = data['intent'];
+    final intent =
+        AdjustIntent.values.where((i) => i.name == raw).firstOrNull;
+    if (intent == null) return const RemoteAutoAdjust();
+    final why = data['why'];
+    return RemoteAutoAdjust(
+      intent: intent,
+      why: why is String && why.trim().isNotEmpty ? why.trim() : null,
+      suggestion: decodeSuggestion(data, exercises, intent, 0,
+          candidates: candidates),
+    );
+  }
+
+  @override
   Future<RemoteSuggestion> suggest({
     required List<PlanExercise> exercises,
     required AdjustIntent intent,

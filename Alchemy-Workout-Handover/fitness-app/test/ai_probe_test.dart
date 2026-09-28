@@ -5,6 +5,7 @@ import 'package:http/testing.dart';
 import 'package:fitness_app/data/ai_suggestion.dart';
 import 'package:fitness_app/data/ai_suggestion_http.dart';
 import 'package:fitness_app/domain/ai_adjust.dart';
+import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 /// 診斷用的兩件事。
@@ -87,6 +88,16 @@ void main() {
 }
 
 class _Fake implements AiSuggestionSource {
+  /// 這幾份假件都不測自動優化 —— **擲例外而不是回空值**：
+  /// 回空值會讓「沒被呼叫到」與「回了個空的」長得一樣。
+  @override
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) =>
+      throw UnimplementedError('這個假件不支援自動優化');
+
   final RemoteIntent? reply;
   final String? err;
   _Fake(this.reply, {this.err});

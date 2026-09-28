@@ -275,6 +275,115 @@ export function buildPrompt(
   ].join("\n");
 }
 
+/**
+ * **自動優化的問法：不給方向，要模型自己判斷。**
+ *
+ * 規格（`01_Command清單.md`〈AI 自動優化訓練流程〉）把「優化訓練強度」的
+ * Actor 寫成**系統** —— 流程裡沒有「使用者挑方向」這一步，使用者只負責
+ * 確認或拒絕。而 2026-09-28 之前的實作是把它接到訓練前調整的同一條追問
+ * 流程上，反過來問使用者要調哪個方向。
+ *
+ * 那個差別不只是少一步：訓練前調整是**免費**功能，本來就是使用者自己挑；
+ * 自動優化是**會員權益**。兩者都要人挑方向的話，付費買到的只是提醒。
+ *
+ * 所以這支 prompt 的任務比 [buildPrompt] 難：它要先**看出這個人現在
+ * 該升還是該降**，再算數字。判斷的依據是歷來成績 —— 沒有成績就講不出
+ * 所以然，那時候寧可回 `null`（見下方指令）讓上層說「這次沒有建議」，
+ * 也不要憑空挑一個方向。
+ */
+export function buildAutoPrompt(
+  exercises: PlanExercise[],
+  ctx?: AdjustContext,
+): string {
+  const who: string[] = [];
+  if (ctx?.experience) who.push(`經驗：${ctx.experience}`);
+  if (ctx?.goal) who.push(`目標：${ctx.goal}`);
+  if (ctx?.bodyweightKg) who.push(`體重：${ctx.bodyweightKg} 公斤`);
+  if (ctx?.isMale !== undefined) who.push(`性別：${ctx.isMale ? "男" : "女"}`);
+  if (ctx?.equipment?.length) who.push(`可用器材：${ctx.equipment.join("、")}`);
+
+  const recent = ctx?.recent ?? {};
+  const hasHistory = Object.keys(recent).length > 0;
+
+  return [
+    "你是重量訓練的教練。這位使用者最近練完了幾次，",
+    "請**你自己判斷**這份課表現在該怎麼調，他不會告訴你方向。",
+    "",
+    "可以選的方向只有這四個，選一個：",
+    "- easier：整體降低強度（降低單組負荷，盡量維持總訓練量）",
+    "- harder：整體提高強度（提高負荷，組數與次數維持）",
+    "- trim：減少訓練量（減少組數，重量與次數維持）",
+    "- swap：替換做不了的動作（同肌群、器材做得到的另一個）",
+    "",
+    ...(who.length ? ["使用者：", who.join("；"), ""] : []),
+    ...(hasHistory ?
+      [
+        "他練這些動作的歷來成績（舊→新，最多五次）：",
+        JSON.stringify(recent),
+        "",
+        "**判斷依據**：完成度持續不足（次數沒做滿、最後幾組掉很多）→ easier；",
+        "連續輕鬆完成、次數都做滿 → harder；",
+        "成績本身沒問題但訓練量明顯偏高 → trim。",
+        "",
+      ] :
+      [
+        "**他沒有歷來成績。**",
+        "沒有成績就看不出該升該降 —— 這種情況請回 `\"intent\": null`，",
+        "不要憑空挑一個方向。",
+        "",
+      ]),
+    "課表（JSON）：",
+    JSON.stringify(exercises),
+    "",
+    "請只輸出 JSON 物件，不要有任何說明文字或程式碼框，格式為：",
+    "{\"intent\":\"easier\",\"why\":\"為什麼判斷成這個方向\",",
+    "\"changes\":[{\"index\":0,\"name\":\"動作名稱\",",
+    "\"after\":[{\"weight\":60,\"reps\":8}],\"reason\":\"這一筆為什麼這樣調\"}]}",
+    "",
+    "why 與 reason 都用繁體中文、一句話、60 字以內，**要引用歷來成績**",
+    "（例如「上次 60 公斤第三組只完成 6 下」）。不要空泛地說「降低強度」。",
+    "",
+    "限制：index 與 name 必須與上方課表一致；weight 為公斤，",
+    "自體重動作維持 0，其餘不得偏離原重量的 ±50%；reps 介於 1 到 50。",
+    "判斷不出方向時回 {\"intent\":null,\"changes\":[]}。",
+  ].join("\n");
+}
+
+/** [askGeminiAuto] 的結果。[intent] 為空代表模型判斷不出方向。 */
+export interface AutoAdjust {
+  intent: Intent | null;
+  why?: string;
+  changes: Change[];
+}
+
+/**
+ * 自動優化：模型自己決定方向，並算出調整。
+ *
+ * **沒有規則退路。** 訓練前調整的規則退路存在是因為「使用者在等，
+ * 不能讓他空手而回」；這裡沒有人在等 —— 建議是每三次訓練後默默掛上的。
+ * 模型判斷不出來時就不掛，下次再說，**不要用一條 ×0.9 假裝成教練的判斷**。
+ */
+export async function askGeminiAuto(
+  exercises: PlanExercise[],
+  apiKey: string,
+  ctx?: AdjustContext,
+): Promise<AutoAdjust> {
+  const text = await callGemini(
+    buildAutoPrompt(exercises, ctx),
+    apiKey,
+    {temperature: 0.2, timeoutMs: 20000},
+  );
+  const raw = JSON.parse(text) as Record<string, unknown>;
+  const intent = isIntent(raw.intent) ? raw.intent : null;
+  if (intent === null) return {intent: null, changes: []};
+  const why = typeof raw.why === "string" ? raw.why.trim().slice(0, 120) : "";
+  return {
+    intent,
+    ...(why ? {why} : {}),
+    changes: clamp(exercises, raw.changes, ctx),
+  };
+}
+
 export async function askGemini(
   exercises: PlanExercise[],
   intent: Intent,

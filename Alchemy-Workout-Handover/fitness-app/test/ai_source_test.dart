@@ -25,6 +25,16 @@ import 'package:fitness_app/state/app_state.dart';
 
 /// 回傳預先寫好的東西，或是擲出例外。
 class _FakeSource implements AiSuggestionSource {
+  /// 這幾份假件都不測自動優化 —— **擲例外而不是回空值**：
+  /// 回空值會讓「沒被呼叫到」與「回了個空的」長得一樣。
+  @override
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) =>
+      throw UnimplementedError('這個假件不支援自動優化');
+
   final Map<String, dynamic>? reply;
   final bool throws;
   Map<String, dynamic>? sent;
@@ -890,6 +900,16 @@ void main() {
 
 /// 卡在呼叫端給的那個 Future 上 —— 用來觀察「等待期間」的狀態。
 class _SlowSource implements AiSuggestionSource {
+  /// 這幾份假件都不測自動優化 —— **擲例外而不是回空值**：
+  /// 回空值會讓「沒被呼叫到」與「回了個空的」長得一樣。
+  @override
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) =>
+      throw UnimplementedError('這個假件不支援自動優化');
+
   final Future<RemoteIntent> gate;
   _SlowSource(this.gate);
 

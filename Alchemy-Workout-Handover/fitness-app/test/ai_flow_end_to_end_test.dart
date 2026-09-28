@@ -87,6 +87,16 @@ void main() {
 }
 
 class _Classifies implements AiSuggestionSource {
+  /// 這幾份假件都不測自動優化 —— **擲例外而不是回空值**：
+  /// 回空值會讓「沒被呼叫到」與「回了個空的」長得一樣。
+  @override
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) =>
+      throw UnimplementedError('這個假件不支援自動優化');
+
   final AdjustIntent? intent;
   _Classifies(this.intent);
 
@@ -109,6 +119,16 @@ class _Classifies implements AiSuggestionSource {
 }
 
 class _Throws implements AiSuggestionSource {
+  /// 這幾份假件都不測自動優化 —— **擲例外而不是回空值**：
+  /// 回空值會讓「沒被呼叫到」與「回了個空的」長得一樣。
+  @override
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) =>
+      throw UnimplementedError('這個假件不支援自動優化');
+
   @override
   Future<RemoteIntent> classify(String say) async => throw Exception('分類逾時');
 

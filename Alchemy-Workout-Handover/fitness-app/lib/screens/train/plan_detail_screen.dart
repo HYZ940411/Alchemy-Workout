@@ -426,7 +426,11 @@ class _OptimizationCard extends StatelessWidget {
             children: [
               const Pill('新的優化建議', color: AppColors.cool),
               const SizedBox(height: S.sm),
-              Text('AI 已依你的紀錄調整訓練強度。常駐標記，未處理前一直存在。', style: T.caption()),
+              // 2026-09-28 之前這句話是**假的** —— 按下「查看」之後畫面
+              // 反過來問使用者要調哪個方向，什麼都還沒調。
+              // 現在系統真的會先算好（`AppState.aiAutoPropose`）。
+              Text('AI 會依你的紀錄判斷該怎麼調，點「查看」看建議。'
+                  '常駐標記，未處理前一直存在。', style: T.caption()),
             ],
           ),
         ),
