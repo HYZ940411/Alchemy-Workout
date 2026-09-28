@@ -142,7 +142,15 @@ final kPlans = <WorkoutPlan>[
     suitableGoals: const {'培養運動習慣'},
     source: PlanSource.privateCustom,
     equipmentTier: '徒手',
-    hasOptimizationSuggestion: true,
+    // **這裡本來寫著 `hasOptimizationSuggestion: true`。**
+    //
+    // 那是「**我**有一份待看的優化建議」—— 每個人各自不同，不該長在
+    // 共用的課表目錄上。寫死的結果是每一位真實使用者一開啟 App
+    // 就看到一張不是自己的課表掛著「新的優化建議」，點進去卻什麼也沒有。
+    //
+    // 與 0k③ 的 `lastTrainedAt`／`lastCompletion` 同一個家族：
+    // **使用者的資料寫進了平台目錄。** 現在那件事記在
+    // `AppState.optimizedPlanId`，存在使用者自己的存檔裡。
     exercises: [
       PlanExercise(
           exercise: ex('plank'),

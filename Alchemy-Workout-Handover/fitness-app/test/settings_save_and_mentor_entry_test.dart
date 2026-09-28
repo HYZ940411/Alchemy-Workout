@@ -68,10 +68,12 @@ void main() {
 
   // 使用者要驗「同一天練兩場，天數只加一」，而累積訓練天數畫面上原本
   // 根本沒有 —— 只有次數看得到，那一條就測不了。
-  testWidgets('開發者模式的對帳區三個數字並排', (t) async {
+  testWidgets('開發者模式的對帳區把相關的數字並排', (t) async {
     final s = AppState(demo: false)..toggleDeveloperMode();
     await open(t, s, const SettingsScreen());
-    for (final label in ['累積訓練次數', '訓練歷史筆數', '累積訓練天數', '連續訓練天數']) {
+    for (final label in [
+      '累積訓練次數', '訓練歷史筆數', '累積訓練天數', '連續訓練天數', '自動優化計數',
+    ]) {
       await scrollTo(t, find.text(label));
       expect(find.text(label), findsOneWidget, reason: label);
     }

@@ -5,6 +5,7 @@ import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/custom_plan.dart';
 import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/domain/platform_config.dart';
+import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 /// 全部課表範本的內容快照。用來驗「訓練前／訓練中調整不寫回範本」。
@@ -15,6 +16,25 @@ List<List<List<(double, int)>>> allPlans(AppState s) => [
             [for (final x in e.planned) (x.targetWeight, x.targetReps)]
         ]
     ];
+
+/// 真的產生一份自動優化建議：訂閱 ＋ 練滿三次。
+///
+/// **在此之前這兩條測試靠的是假資料** —— `kPlans` 裡的「我的核心日」
+/// 寫死了 `hasOptimizationSuggestion: true`，所以 `AppState()` 一建好
+/// 就有一份掛著建議可以拿來測。
+///
+/// 2026-09-28 那個寫死的記號被移除了（它是「**我**有一份待看的建議」，
+/// 每個人各自不同，不該長在共用的課表目錄上），於是這裡得自己造一份。
+/// **這樣也才是真的走過那條路**：前提由觸發條件產生，而不是由假資料給。
+AppState _withSuggestion() {
+  final s = AppState()..subscribe(yearly: false);
+  for (var i = 0; i < AppState.kAutoOptimizeEvery; i++) {
+    s.startWorkout(s.platformPlans.firstWhere((p) => p.id == 'p_push'));
+    s.completeCurrentSet();
+    s.finishWorkout(EndKind.completed);
+  }
+  return s;
+}
 
 /// 走完一輪：提出 → 確認需求 → 產出建議。
 Future<void> _upToProposal(AppState s, AiSource src, String intent) async {
@@ -187,7 +207,7 @@ void main() {
 
   group('自動優化改的是來源課表範本', () {
     test('接受後範本改變，且常駐標記清除', () async {
-      final s = AppState();
+      final s = _withSuggestion();
       final plan = s.aiOptimizePlan!;
       final before = [
         for (final e in plan.exercises)
@@ -207,7 +227,7 @@ void main() {
     });
 
     test('拒絕後範本不變，但標記一樣清除', () async {
-      final s = AppState();
+      final s = _withSuggestion();
       final plan = s.aiOptimizePlan!;
       final before = [
         for (final e in plan.exercises)

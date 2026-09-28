@@ -454,6 +454,16 @@ class SettingsScreen extends StatelessWidget {
                       label: '連續訓練天數',
                       value: '${s.trainingStreakDays}',
                       readOnly: true),
+                  // 自動優化的計數。**在此之前任何地方都看不到它** ——
+                  // 使用者問「我要去哪看優化推薦」，而答案取決於這個數字
+                  // 是 0 還是 2，我卻沒辦法從外面判斷他是哪一種狀態。
+                  _Row(
+                    label: '自動優化計數',
+                    value: '${s.autoOptimizeCount} / '
+                        '${AppState.kAutoOptimizeEvery}'
+                        '${s.optimizedPlanId == null ? '' : '（已有一份待看）'}',
+                    readOnly: true,
+                  ),
                 ],
               ),
             ),

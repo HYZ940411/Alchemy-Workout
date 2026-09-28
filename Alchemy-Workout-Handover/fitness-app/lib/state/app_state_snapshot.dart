@@ -137,6 +137,9 @@ extension AppStateSnapshot on AppState {
         // 168 小時的期限 —— 「還剩幾天」要跨啟動才算得準。
         'inbox': [for (final r in inbox) r.toJson()],
         'autoOptimizeCount': autoOptimizeCount,
+        // 哪一份課表掛著優化建議。**平台目錄存不住它** ——
+        // `applyPlatformData()` 每次登入都整份重建（見 `applyOptimizationMark`）。
+        'optimizedPlanId': optimizedPlanId,
         'followTotal': followTotal,
         'mentorUnlocked': mentorUnlocked,
 
@@ -525,6 +528,9 @@ extension AppStateSnapshot on AppState {
 
     followTotal = intOf('followTotal', followTotal);
     autoOptimizeCount = intOf('autoOptimizeCount', autoOptimizeCount);
+    optimizedPlanId = pick<String>('optimizedPlanId');
+    // 存檔載回來之後，記號要貼回目錄上才看得見。
+    applyOptimizationMark();
     // 單調遞增：存檔說解鎖過就是解鎖過。
     if (boolOf('mentorUnlocked', false)) markMentorUnlocked();
 

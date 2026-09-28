@@ -6760,6 +6760,35 @@ class AppState extends ChangeNotifier {
   WorkoutPlan? get aiOptimizePlan =>
       platformPlans.where((p) => p.hasOptimizationSuggestion).firstOrNull;
 
+  /// 目前掛著優化建議的課表 ID。
+  ///
+  /// **這是使用者自己的資料，不是課表目錄的。**
+  /// 在此之前只有 `platformPlans[i].hasOptimizationSuggestion` 這一個
+  /// 記號，而那份清單是平台目錄 —— `applyPlatformData()` 每次登入都
+  /// **整份重建**，記號當場蒸發；存檔也不含它，重新整理一樣沒了。
+  ///
+  /// 2026-09-28 使用者實測：訂閱後看不到「新的優化建議」標籤（P86）。
+  /// 產生是產生了，只是活不過下一次重新整理。
+  String? optimizedPlanId;
+
+  /// 把 [optimizedPlanId] 的記號貼回課表目錄上。
+  ///
+  /// **`applyPlatformData()` 之後與載入存檔之後都要跑一次** ——
+  /// 那兩個時機各自會把目錄換成一份沒有記號的新清單。
+  void applyOptimizationMark() {
+    final id = optimizedPlanId;
+    if (id == null) return;
+    final i = platformPlans.indexWhere((p) => p.id == id);
+    if (i < 0) {
+      // 課表被管理員下架了 —— 記號跟著失效，不要留一個指向空氣的 ID。
+      optimizedPlanId = null;
+      return;
+    }
+    if (platformPlans[i].hasOptimizationSuggestion) return;
+    platformPlans[i] = _copyPlan(platformPlans[i], suggestion: true);
+    if (currentPlan?.id == id) currentPlan = platformPlans[i];
+  }
+
   // --- AI 自動優化的觸發 Policy ---
 
   /// 距上次優化後累計的合格訓練次數。
@@ -6801,14 +6830,20 @@ class AppState extends ChangeNotifier {
 
   /// 要優化哪一份範本：最近練過的官方課表。
   /// 已經掛著建議的那一份優先 —— 後者覆蓋前者，不會同時存在兩份。
+  ///
+  /// **「最近練過」要從訓練歷史推**，不是讀 `WorkoutPlan.lastTrainedAt`。
+  /// 那個欄位在 0k③（2026-09-26）之後對官方課表**永遠是空值** ——
+  /// 當時把寫死在平台目錄裡的假日期移除了（那是「**我**上次練它是什麼
+  /// 時候」，每個人各自不同，不該長在共用目錄上），但沒有回頭看誰在讀它。
+  /// 於是這裡的排序整段失效，永遠退回「第一份官方課表」。
   WorkoutPlan? _autoOptimizeTarget() {
     final existing = aiOptimizePlan;
     if (existing != null) return existing;
-    final official =
-        platformPlans.where((p) => p.source == PlanSource.official && p.exercises.isNotEmpty);
+    final official = platformPlans.where(
+        (p) => p.source == PlanSource.official && p.exercises.isNotEmpty);
     if (official.isEmpty) return null;
-    final used = official.where((p) => p.lastTrainedAt != null).toList()
-      ..sort((a, b) => b.lastTrainedAt!.compareTo(a.lastTrainedAt!));
+    final used = official.where((p) => lastTrainedOf(p) != null).toList()
+      ..sort((a, b) => lastTrainedOf(b)!.compareTo(lastTrainedOf(a)!));
     return used.isNotEmpty ? used.first : official.first;
   }
 
@@ -6820,6 +6855,7 @@ class AppState extends ChangeNotifier {
     // 新的一份建議＝新的一段流程。上一輪若以「拒絕」結束，狀態機停在
     // rejected；不重設的話這一份建議按不動，等於白產出。
     aiReset(AiSource.autoOptimize);
+    optimizedPlanId = plan.id;
     platformPlans[i] = _copyPlan(plan, suggestion: true);
     if (currentPlan?.id == plan.id) currentPlan = platformPlans[i];
   }
@@ -7260,6 +7296,7 @@ class AppState extends ChangeNotifier {
     // 建議已處理，常駐標記隨之清除 —— 未處理前一直存在，處理後就不該還在。
     platformPlans[i] = _copyPlan(plan,
         suggestion: false, exercises: applySuggestion(plan.exercises, suggestion));
+    optimizedPlanId = null;
     if (currentPlan?.id == plan.id) currentPlan = platformPlans[i];
   }
 
@@ -7279,6 +7316,7 @@ class AppState extends ChangeNotifier {
     if (plan == null) return;
     final i = platformPlans.indexOf(plan);
     if (i < 0) return;
+    optimizedPlanId = null;
     platformPlans[i] = _copyPlan(plan, suggestion: false);
     if (currentPlan?.id == plan.id) currentPlan = platformPlans[i];
   }
@@ -9251,6 +9289,9 @@ class AppState extends ChangeNotifier {
     platformExercises = List.of(d.exercises);
     planSpecById = {for (final s in d.planSpecs) s.id: s};
     platformPlans = [...kPlans, ...buildCsvPlansFrom(d.planSpecs, d.exercises)];
+    // **整份重建會把優化建議的記號洗掉。** 它是使用者的資料，
+    // 不屬於這份目錄 —— 重建完貼回去。
+    applyOptimizationMark();
     // 這兩份之後會被改（成就解鎖、管理員增刪任務），必須是可變 list。
     achievements = List.of(d.achievements);
     taskPool = List.of(d.taskPool);
