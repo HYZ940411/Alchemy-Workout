@@ -372,6 +372,28 @@ class SettingsScreen extends StatelessWidget {
                       showToast(context, '已推到門檻，可用下面那顆還原');
                     },
                   ),
+                  // 14 天重考鎖的逃生門。
+                  //
+                  // 使用者測驗沒過被駁回後問「有沒有辦法跳過測驗」——
+                  // 當下沒有：Demo 推進鍵的階段清單裡沒有「已駁回」，
+                  // 而重新申請擋在 14 天鎖上。**逃生門在最需要它的時候
+                  // 打不開。**
+                  //
+                  // 只清時間鎖，不改階段、不給分數。
+                  if (s.examRetakeLeft > Duration.zero) ...[
+                    const SizedBox(height: S.sm),
+                    Text('重考鎖剩餘 ${_dh(s.examRetakeLeft)}。',
+                        style: T.caption()),
+                    const SizedBox(height: S.sm),
+                    AppButton(
+                      label: '解除重考鎖',
+                      kind: BtnKind.secondary,
+                      onPressed: () {
+                        s.clearExamRetakeLock();
+                        showToast(context, '已解除，可以重新申請了');
+                      },
+                    ),
+                  ],
                   if (s.canUndoInstructorFastForward) ...[
                     const SizedBox(height: S.sm),
                     AppButton(
@@ -840,6 +862,10 @@ Future<void> _reconcile(BuildContext context, AppState s) async {
   final removed = s.reconcileWorkoutCount();
   showToast(context, removed > 0 ? '已校正，扣掉 $removed 次' : '本來就相符');
 }
+
+/// 「N 天 M 小時」。重考鎖剩餘時間用。
+String _dh(Duration d) =>
+    d.inDays > 0 ? '${d.inDays} 天 ${d.inHours % 24} 小時' : '${d.inHours} 小時';
 
 /// 補填生日。只在原本沒有時走得到這裡（見設定頁那一列）。
 Future<void> _fillBirthday(BuildContext context, AppState s) async {

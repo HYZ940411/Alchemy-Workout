@@ -5392,6 +5392,25 @@ class AppState extends ChangeNotifier {
     return left.isNegative ? Duration.zero : left;
   }
 
+  /// 解除 14 天重考鎖（**開發者模式專用**）。
+  ///
+  /// 2026-09-28 使用者測完 P3–P5 之後沒到 80%，被駁回並鎖 14 天。
+  /// 他問「有沒有辦法跳過測驗進入待審核」—— **當下沒有**：
+  ///
+  /// - `advanceInstructorApplication()`（Demo 推進鍵）的階段清單裡
+  ///   **沒有 `rejected`**，`indexOf` 回 -1 就直接 return，按了沒反應
+  /// - `reapplyInstructor()` 擋在 `examRetakeLeft > 0`
+  ///
+  /// **開發者模式的逃生門，在最需要它的時候打不開。**
+  ///
+  /// 這一支只清掉時間鎖，**不改階段、不給分數** —— 解除之後仍要走
+  /// 「重新申請 → 初審 → 測驗」的完整流程。14 天是真實時間，
+  /// 而真實時間是測試唯一無法加速的東西。
+  void clearExamRetakeLock() {
+    lastExamAt = null;
+    notifyListeners();
+  }
+
   /// 抽一份考卷。**題庫不足時回空清單**（訊息見 [examBankWarning]）。
   ///
   /// 在此之前作答畫面是一個拉桿，申請人自己拉答對幾題，那個數字直接
