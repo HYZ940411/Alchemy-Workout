@@ -9,6 +9,7 @@ import '../data/platform_data.dart';
 import '../data/public_profile.dart';
 import '../data/follow_data.dart';
 import '../data/photo_data.dart';
+import '../data/rating_data.dart';
 import '../data/post_data.dart';
 import '../data/chat_data.dart';
 import '../data/team_data.dart';
@@ -64,6 +65,9 @@ class AuthGate extends StatefulWidget {
   final PostSource Function(String uid)? postsFor;
   final PhotoSource Function(String uid)? photosFor;
 
+  /// 訓練體驗評分（`[BE-18]`）。
+  final RatingSource Function(String uid)? ratingsFor;
+
   /// 私訊的來源（[BE-14]）。空值代表不同步。
   final ChatSource Function(String uid)? chatsFor;
 
@@ -96,6 +100,7 @@ class AuthGate extends StatefulWidget {
     this.followsFor,
     this.postsFor,
     this.photosFor,
+    this.ratingsFor,
     this.chatsFor,
     this.teamsFor,
     this.mentorFor,
@@ -339,6 +344,7 @@ class _AuthGateState extends State<AuthGate> {
     widget.state.punishmentSource = widget.punishmentsFor?.call();
     widget.state.appealSource = widget.appealsFor?.call();
     widget.state.followSource = widget.followsFor?.call(uid);
+    widget.state.ratingSource = widget.ratingsFor?.call(uid);
 
     // **公開檔案的來源也要交給狀態層。** 在此之前只有這個畫面握著它，
     // 於是「把我的公開檔案寫上去」只在這裡發生得了 —— 這個 session 內
@@ -440,6 +446,15 @@ class _AuthGateState extends State<AuthGate> {
         final b = await follows.followers();
         widget.state.applyFollows(a, b);
         return '關注 ${a.length}／粉絲 ${b.length}';
+      });
+    }
+
+    final ratings = widget.state.ratingSource;
+    if (ratings != null) {
+      await step('訓練體驗評分', () async {
+        final mine = await ratings.mine();
+        widget.state.applyCloudRatings(mine);
+        return '${mine.length} 筆';
       });
     }
 

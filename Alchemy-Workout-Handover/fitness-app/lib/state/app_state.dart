@@ -29,6 +29,7 @@ import '../domain/rank.dart';
 import 'dart:typed_data';
 
 import '../data/photo_data.dart';
+import '../data/rating_data.dart';
 import '../design/image_library.dart' show PhotoScope;
 import '../domain/photo.dart';
 import '../domain/plan_duration.dart';
@@ -9127,6 +9128,40 @@ class AppState extends ChangeNotifier {
   /// 訓練體驗評分。獨立 Aggregate，唯一鍵為 評分者 ＋ 對象類型 ＋ 對象 ID。
   final List<ExperienceRating> experienceRatings = [];
 
+  /// 雲端的評分（`[BE-18]`）。**空值代表不同步** —— 既有測試走這條。
+  RatingSource? ratingSource;
+
+  /// 全平台的評分。**只有管理員讀得到**（安全規則擋在雲端那一側），
+  /// 所以一般使用者身上這份永遠是空的。
+  final List<ExperienceRating> adminRatings = [];
+
+  /// 以雲端為準對齊我自己那一份（登入時）。
+  ///
+  /// **整份換掉，不是併入。** 在另一台裝置改過的評分才不會被本機的舊值蓋回去。
+  void applyCloudRatings(List<ExperienceRating> cloud) {
+    experienceRatings
+      ..clear()
+      ..addAll(cloud);
+    notifyListeners();
+  }
+
+  /// 管理員讀全平台的評分，填進 [adminRatings]。
+  ///
+  /// 分析用途、規格明訂**延遲更新**，所以是進後台時抓一批，不做即時訂閱。
+  Future<void> loadAdminRatings({int limit = 500}) async {
+    final src = ratingSource;
+    if (src == null || !isPlatformAdmin) return;
+    try {
+      final rows = await src.all(limit: limit);
+      adminRatings
+        ..clear()
+        ..addAll(rows);
+      notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀 —— 彙總表會顯示「還沒讀到」而不是一張空表。
+    }
+  }
+
   ExperienceRating? ratingFor(RatingTarget target, String targetId) {
     for (final r in experienceRatings) {
       // **以 uid 為準，暱稱只是退路**（舊存檔沒有 uid）。
@@ -9170,9 +9205,16 @@ class AppState extends ChangeNotifier {
         at: now,
       ));
     }
+    // **即發即忘。** 這份資料的讀者是管理員、用途是分析，而規格明訂
+    // 延遲更新 —— 為了一次網路失敗擋住使用者按「送出評分」，
+    // 換來的是他乾脆跳過不評，那才是真正的損失。
+    _pushRating(ratingFor(target, targetId)!);
     notifyListeners();
     return true;
   }
+
+  void _pushRating(ExperienceRating r) =>
+      ratingSource?.put(r).catchError((_) {});
 
   /// 使用者已領取新手任務獎勵 → 新手任務獎勵已發放。
   ///
@@ -9625,7 +9667,25 @@ class AppState extends ChangeNotifier {
   /// 而那棵樹依 `firestore.rules` 只有本人讀得到。要讓管理員看得到，
   /// 評分必須獨立成自己的 collection（規格本來就說它是獨立 Aggregate，
   /// 理由正是「管理員評分彙總需要逐筆下鑽查詢」）。見 `[BE-18]`。
-  late List<RatingSummary> ratingSummaries = demo ? buildRatingSummaries() : [];
+  late final List<RatingSummary> _demoRatingSummaries =
+      demo ? buildRatingSummaries() : [];
+
+  /// 〈Read Model：管理員評分彙總〉。
+  ///
+  /// **讀到雲端資料就用雲端的**（`[BE-18]`）。在此之前這裡只有示範資料，
+  /// 真的管理員永遠看到一張空表 —— 而評分收集了卻沒有用途。
+  List<RatingSummary> get ratingSummaries => adminRatings.isEmpty
+      ? _demoRatingSummaries
+      : summarizeRatings(adminRatings, ratingTargetLabel);
+
+  /// 評分對象翻成看得懂的名字。查不到就退回 ID —— 課表被下架之後
+  /// 它的評分還在，那時候寫 ID 比寫「未知」有用（管理員查得回去）。
+  String ratingTargetLabel(RatingTarget target, String targetId) {
+    if (target == RatingTarget.noviceTask) return '新手任務';
+    return planSpecById[targetId]?.name ??
+        platformPlans.where((p) => p.id == targetId).firstOrNull?.name ??
+        targetId;
+  }
 
   void toggleAdminMode() {
     adminMode = !adminMode;

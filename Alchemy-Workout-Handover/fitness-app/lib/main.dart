@@ -28,7 +28,9 @@ import 'data/team_data_firestore.dart';
 import 'data/chat_data_firestore.dart';
 import 'data/post_data.dart';
 import 'data/photo_data.dart';
+import 'data/rating_data.dart';
 import 'data/photo_data_firestore.dart';
+import 'data/rating_data_firestore.dart';
 import 'data/post_data_firestore.dart';
 import 'data/public_profile.dart';
 import 'data/public_profile_firestore.dart';
@@ -99,6 +101,7 @@ Future<void> main() async {
     postsFor: (uid) => FirestorePosts(uid: uid),
     // 2026-09-28 使用者裁決：照片存 Firestore，不另外開 Cloudflare R2。
     photosFor: (uid) => FirestorePhotos(uid: uid),
+    ratingsFor: (uid) => FirestoreRatings(uid: uid),
     chatsFor: (uid) => FirestoreChats(uid: uid),
     teamsFor: (uid) => FirestoreTeams(uid: uid),
     mentorFor: (uid) => FirestoreMentor(uid: uid),
@@ -157,6 +160,7 @@ class FitnessApp extends StatefulWidget {
   /// **既有測試全部走這條**。
   final PostSource Function(String uid)? postsFor;
   final PhotoSource Function(String uid)? photosFor;
+  final RatingSource Function(String uid)? ratingsFor;
 
   /// 私訊的來源（[BE-14]）。空值代表不同步 —— **既有測試全部走這條**。
   final ChatSource Function(String uid)? chatsFor;
@@ -185,6 +189,7 @@ class FitnessApp extends StatefulWidget {
     this.followsFor,
     this.postsFor,
     this.photosFor,
+    this.ratingsFor,
     this.chatsFor,
     this.teamsFor,
     this.mentorFor,
@@ -264,6 +269,7 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                 followsFor: widget.followsFor,
                 postsFor: widget.postsFor,
                 photosFor: widget.photosFor,
+                ratingsFor: widget.ratingsFor,
                 chatsFor: widget.chatsFor,
                 teamsFor: widget.teamsFor,
                 mentorFor: widget.mentorFor,

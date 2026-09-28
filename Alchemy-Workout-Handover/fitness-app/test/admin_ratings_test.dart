@@ -16,6 +16,11 @@
 //
 // 真正接上要讓評分獨立成自己的 collection（規格本來就說它是獨立
 // Aggregate，理由正是「需要逐筆下鑽查詢」）。見 PROGRESS.md `[BE-18]`。
+//
+// **2026-09-28 `[BE-18]` 完成。** 這個檔案原本釘的兩件事都還成立，
+// 只有那句空狀態的文案換了 —— 「尚未接上後台」在今天之前是實話，
+// 現在不是了。空的原因變成兩種，而它們要講不一樣的話：
+// **沒接上雲端**（示範／測試）與**接上了但還沒有人評分**。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,7 +50,9 @@ void main() {
   testWidgets('空的時候說清楚為什麼空，而不是留一張空表', (t) async {
     await _pump(t, AppState(demo: false));
 
-    expect(find.textContaining('評分尚未接上後台'), findsOneWidget);
+    // 沒接雲端 —— 這裡看到的是示範資料的彙總那一句。
+    expect(find.textContaining('沒有接上雲端'), findsOneWidget);
+    expect(find.textContaining('還沒有人評分過'), findsNothing);
     // 「延遲更新　·　資料更新於 2 小時前」在沒有資料時是句假話。
     expect(find.textContaining('資料更新於'), findsNothing);
   });

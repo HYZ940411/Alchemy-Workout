@@ -9,8 +9,23 @@ import '../../widgets/common.dart';
 ///
 /// 無直接支撐的 Command —— 用途為平台優化自身提供的內容。
 /// 採延遲更新：本 Read Model 為分析用途，不支撐任何即時決策。
-class AdminRatingsScreen extends StatelessWidget {
+class AdminRatingsScreen extends StatefulWidget {
   const AdminRatingsScreen({super.key});
+
+  @override
+  State<AdminRatingsScreen> createState() => _AdminRatingsScreenState();
+}
+
+class _AdminRatingsScreenState extends State<AdminRatingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // 進來才讀。規格明訂這張表**延遲更新**、不支撐任何即時決策 ——
+    // 不值得為它掛一條即時訂閱。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppScope.of(context).loadAdminRatings();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,18 +40,17 @@ class AdminRatingsScreen extends StatelessWidget {
             const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
         children: [
           if (rows.isEmpty)
-            // **說實話比留一張空表好。** 使用者的評分目前存在他自己的
-            // `users/{uid}` 底下，而那棵樹依安全規則只有本人讀得到 ——
-            // 不是「還沒有人評分」，是這條路根本還沒接。
-            // 在此之前這裡畫的是一張編出來的假彙總表，而這張表的用途
-            // 正是回答「哪一份訓練計畫該改」。
+            // **「還沒有人評分」與「讀不到」是兩件事。**
+            // 在此之前這裡只有一句「尚未接上後台」—— 那時候是實話
+            // （評分存在各自的 `users/{uid}` 底下，管理端讀不到），
+            // `[BE-18]` 之後不是了。
             Panel(
-              color: C.statusWarning.withValues(alpha: 0.08),
-              border: C.statusWarning,
               child: Text(
-                '評分尚未接上後台。\n'
-                '使用者的評分目前存在各自的帳號資料裡，管理端讀不到 ——'
-                '這裡不會有資料，直到評分獨立成自己的集合（BE-18）。',
+                s.ratingSource == null
+                    ? '沒有接上雲端 —— 這裡看到的是示範資料的彙總。'
+                    : '還沒有人評分過。\n'
+                        '使用者在訓練結算與新手任務收尾會被問一次，'
+                        '而規格明訂可跳過、不阻擋任何後續動作。',
                 style: T.caption(),
               ),
             )

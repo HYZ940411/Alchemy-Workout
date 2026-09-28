@@ -89,6 +89,11 @@ const _ambiguous = <String, String>{
   'PlatformDataSource.put': '`AppState.pushPlatform()`（app_state.dart:9918）',
   'PlatformDataSource.remove': '`AppState._dropPlatform()`',
   'PhotoSource.put': '`AppState.uploadPhoto()`（app_state.dart:3019）',
+
+  // ── 2026-09-28 `[BE-18]`。三支都與別的介面撞名。
+  'RatingSource.put': '`AppState._pushRating()`，由 `rateExperience()` 呼叫',
+  'RatingSource.mine': '`AuthGate._syncProfile` 的「訓練體驗評分」那一塊',
+  'RatingSource.all': '`AppState.loadAdminRatings()`，評分彙總頁進來時',
   'PublicProfileSource.remove': '`AuthGate` 刪帳號那一段（auth_gate.dart:253）',
   'Store.load': '`AppState.hydrate()`',
   'TeamSource.requestsFor': '`refreshInbound()` 與 `AuthGate` 的「團隊請求」',

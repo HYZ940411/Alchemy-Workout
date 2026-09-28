@@ -1,3 +1,4 @@
+import 'novice_wrapup.dart';
 import 'review_deadline.dart';
 
 // 管理員（〈管理員 Aggregate〉）
@@ -309,6 +310,52 @@ const ratingTargetNames = <RatingTarget, String>{
   RatingTarget.noviceTask: '新手任務',
   RatingTarget.trainingPlan: '訓練計畫',
 };
+
+/// 把逐筆評分彙總成「每個評分對象一列」（〈Read Model：管理員評分彙總〉）。
+///
+/// [nameOf] 把對象翻成看得懂的名字 —— 訓練計畫的名稱、新手任務的範本名。
+/// 這一層不認得課表目錄，所以由呼叫端給。
+///
+/// **由差到好排。** 規格說這張表的用途是回答「哪一份訓練計畫該改」，
+/// 而管理員一打開就該看到最該改的那一份。平均相同時樣本多的在前 ——
+/// 兩份都是 2.5 星，一份 40 則一份 1 則，該先看哪一份沒有懸念。
+List<RatingSummary> summarizeRatings(
+  List<ExperienceRating> rows,
+  String Function(RatingTarget target, String targetId) nameOf,
+) {
+  final byTarget = <(RatingTarget, String), List<ExperienceRating>>{};
+  for (final r in rows) {
+    byTarget.putIfAbsent((r.target, r.targetId), () => []).add(r);
+  }
+
+  final out = <RatingSummary>[];
+  for (final e in byTarget.entries) {
+    final dist = List.filled(5, 0);
+    for (final r in e.value) {
+      // 星等超出 1–5 的資料不該存在，真的出現就略過 ——
+      // 算進去會讓平均值失真，而平均值正是這張表的主角。
+      if (r.stars < 1 || r.stars > 5) continue;
+      dist[r.stars - 1] += 1;
+    }
+    if (dist.every((n) => n == 0)) continue;
+    final entries = [
+      for (final r in e.value)
+        if (r.stars >= 1 && r.stars <= 5) (r.stars, r.feedback, r.at),
+    ]..sort((a, b) => b.$3.compareTo(a.$3)); // 新的在前
+    out.add(RatingSummary(
+      target: e.key.$1,
+      name: nameOf(e.key.$1, e.key.$2),
+      distribution: dist,
+      entries: entries,
+    ));
+  }
+
+  out.sort((a, b) {
+    final byAvg = a.average.compareTo(b.average);
+    return byAvg != 0 ? byAvg : b.count.compareTo(a.count);
+  });
+  return out;
+}
 
 class RatingSummary {
   final RatingTarget target;
