@@ -70,6 +70,22 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
     final filtered =
         equipment != null || experience != null || sessionLength != null;
 
+    // 推薦**排進同一份清單，不另開一區**。
+    //
+    // 第一版是在上面加一段「為你推薦」，但那會把同一張卡片畫兩次，
+    // 而且五張卡片把「選擇今天的課表」整個擠出畫面 ——
+    // 兩個既有測試當場抓到（`plan_filter_test`、`smoke_test`）。
+    //
+    // 排序 ＋ 標籤達到同一個目的：最適合的在最上面，而且講得出為什麼。
+    final order = {
+      for (final (i, r) in s.rankedPlans().indexed) r.plan.id: i,
+    };
+    plans.sort((a, b) =>
+        (order[a.id] ?? 1 << 30).compareTo(order[b.id] ?? 1 << 30));
+    final recommended = {
+      for (final r in s.recommendedPlans()) r.plan.id: r.match.reasons,
+    };
+
     // B 卡片列表型骨架：首屏約兩張課表卡。
     return LoadBoundary(
       id: 'plan-select',
@@ -110,7 +126,16 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
                 ),
               ),
             ),
-          for (final p in plans) _PlanCard(plan: p, userRank: s.rank),
+          // 2026-09-28 加入推薦標示（使用者裁決）。在此之前推薦只作用在
+          // 「當前計畫」那一份上，使用者的原話是「每次只會看到一個推薦
+          // 訓練，只能練到胸」—— 推薦是單向指派沒有錯，錯在沒有別的
+          // 東西可看。
+          for (final p in plans)
+            _PlanCard(
+              plan: p,
+              userRank: s.rank,
+              matchedOn: recommended[p.id] ?? const [],
+            ),
           // 自訂訓練與訓練計畫的課表內容結構完全一致，故同樣可選用於訓練。
           // 已儲存（未啟用）者不在此列 —— 要能練得先發布。
           if (customs.isNotEmpty) ...[
@@ -296,7 +321,18 @@ class _PlanCard extends StatelessWidget {
 
   /// 他人的自訂訓練才有值 —— 課表選擇頁要講得出這份是誰做的。
   final String? author;
-  const _PlanCard({required this.plan, required this.userRank, this.author});
+
+  /// 這一份為什麼被推薦（器材／經驗／目標／時長）。
+  /// 只有推薦區的卡片有值 —— **推薦要講得出理由**，
+  /// 否則使用者看到的只是「系統挑的」，無從判斷合不合用。
+  final List<String> matchedOn;
+
+  const _PlanCard({
+    required this.plan,
+    required this.userRank,
+    this.author,
+    this.matchedOn = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -343,6 +379,11 @@ class _PlanCard extends StatelessWidget {
                       spacing: 6,
                       runSpacing: 6,
                       children: [
+                        if (matchedOn.isNotEmpty)
+                          const Pill('推薦',
+                              color: AppColors.accentSoft, filled: true),
+                        for (final m in matchedOn)
+                          Pill('$m 符合', color: AppColors.accentSoft),
                         Pill(
                           planSourceNames[plan.source]!,
                           color: AppColors.textDim,

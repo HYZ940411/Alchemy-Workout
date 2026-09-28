@@ -275,24 +275,108 @@ class PlanMatch {
   final bool equipmentOk;
   final bool experienceOk;
   final bool goalOk;
+
+  /// 這份課表的預估時長，落在使用者回答的那個級距裡。
+  ///
+  /// **2026-09-28 加入，是規格偏離**（使用者裁決）：〈註冊流程〉明訂
+  /// 比對維度為器材、經驗、常見目標三項。加它的理由是使用者實測
+  /// 「每次只會看到一個推薦訓練」—— 而時長是他在問卷裡答過、
+  /// 卻從來沒被用來推薦的一題。
+  ///
+  /// 權重最低：時長不符仍然是一份他做得到的訓練，只是要分兩天練完
+  /// 或提早結束。估不出時長的課表（空白課表）**視為符合**，
+  /// 不因為算不出來而被推到最後。
+  final bool durationOk;
+
   const PlanMatch({
     required this.index,
     required this.equipmentOk,
     required this.experienceOk,
     required this.goalOk,
+    this.durationOk = true,
   });
 
-  /// 比對優先序：器材 → 經驗 → 常見目標，前一維度符合者優先，同層再比下一維度。
-  /// 依「違反後果的嚴重程度」排定：器材不符即完全無法執行；經驗不符有受傷風險；
-  /// 常見目標不符仍是一份有效訓練，僅不夠對症。
+  /// 比對優先序：器材 → 經驗 → 常見目標 → 時長，前一維度符合者優先，
+  /// 同層再比下一維度。依「違反後果的嚴重程度」排定：器材不符即完全
+  /// 無法執行；經驗不符有受傷風險；常見目標不符仍是一份有效訓練，
+  /// 僅不夠對症；時長不符只是時間排不進去。
+  ///
+  /// 權重刻意讓每一維度**壓過其後所有維度的總和**（8 > 4+2+1），
+  /// 所以這是嚴格的字典序，不是加權投票 —— 一份器材符合但其餘全不符的
+  /// 課表，永遠排在器材不符但其餘全符的前面。
   int get score =>
-      (equipmentOk ? 4 : 0) + (experienceOk ? 2 : 0) + (goalOk ? 1 : 0);
+      (equipmentOk ? 8 : 0) +
+      (experienceOk ? 4 : 0) +
+      (goalOk ? 2 : 0) +
+      (durationOk ? 1 : 0);
+
+  /// 符合的維度名稱，供畫面標示「為什麼推薦這一份」。
+  List<String> get reasons => [
+        if (equipmentOk) '器材',
+        if (experienceOk) '經驗',
+        if (goalOk) '目標',
+        if (durationOk) '時長',
+      ];
+}
+
+/// 一份計畫與它的比對結果。[recommendPlans] 回傳這個，
+/// 因為畫面要講得出「為什麼推薦這一份」。
+class RankedPlan<T> {
+  final T plan;
+  final PlanMatch match;
+  const RankedPlan(this.plan, this.match);
+}
+
+/// 依器材／經驗／目標／時長，把既有計畫由適合到不適合排序。
+///
+/// **不篩掉任何一份** —— 排序而非過濾。器材不符的課表排在最後，
+/// 但仍在清單裡：使用者可能正要去健身房。呼叫端要幾份自己取。
+///
+/// 同分者取建立時間最早 —— 不採隨機取一：同樣條件的兩個使用者
+/// 會拿到不同計畫，且無法重現與除錯。
+List<RankedPlan<T>> recommendPlans<T>(
+  List<T> plans, {
+  required String? equipment,
+  required String? experience,
+  required String? commonGoal,
+  required String Function(T) tierOf,
+  required Set<String> Function(T) experienceOf,
+  required Set<String> Function(T) goalsOf,
+  String? duration,
+  String? Function(T)? durationOf,
+}) {
+  final runnable = runnablePlanTiers(equipment);
+  final out = <RankedPlan<T>>[];
+  for (var i = 0; i < plans.length; i++) {
+    final p = plans[i];
+    // 沒問時長、或這一份估不出時長 → 視為符合，不因算不出來被推到最後。
+    final d = duration == null || durationOf == null ? null : durationOf(p);
+    out.add(RankedPlan(
+      p,
+      PlanMatch(
+        index: i,
+        equipmentOk: runnable == null || runnable.contains(tierOf(p)),
+        experienceOk:
+            experienceOf(p).isEmpty || experienceOf(p).contains(experience),
+        goalOk: goalsOf(p).isEmpty || goalsOf(p).contains(commonGoal),
+        durationOk: d == null || d == duration,
+      ),
+    ));
+  }
+  out.sort((a, b) {
+    final byScore = b.match.score.compareTo(a.match.score);
+    return byScore != 0 ? byScore : a.match.index.compareTo(b.match.index);
+  });
+  return out;
 }
 
 /// 依經驗／目標／器材，自既有計畫中推薦一份。
 ///
 /// 推薦為**單向指派**，使用者不可拒絕，無拒絕分支 —— 故只回傳一份。
 /// 找不到任何計畫時回傳空值（呼叫端須自行處理，不得假裝推薦成功）。
+///
+/// **與 [recommendPlans] 是同一套排序**，取第一名而已 ——
+/// 「當前計畫」與「推薦清單的第一份」不該是兩套算法。
 T? recommendPlan<T>(
   List<T> plans, {
   required String? equipment,
@@ -301,27 +385,19 @@ T? recommendPlan<T>(
   required String Function(T) tierOf,
   required Set<String> Function(T) experienceOf,
   required Set<String> Function(T) goalsOf,
+  String? duration,
+  String? Function(T)? durationOf,
 }) {
-  if (plans.isEmpty) return null;
-  final runnable = runnablePlanTiers(equipment);
-
-  T? best;
-  var bestScore = -1;
-  for (var i = 0; i < plans.length; i++) {
-    final p = plans[i];
-    final m = PlanMatch(
-      index: i,
-      equipmentOk: runnable == null || runnable.contains(tierOf(p)),
-      experienceOk:
-          experienceOf(p).isEmpty || experienceOf(p).contains(experience),
-      goalOk: goalsOf(p).isEmpty || goalsOf(p).contains(commonGoal),
-    );
-    // 同分者取建立時間最早 —— 不採隨機取一：同樣條件的兩個使用者
-    // 會拿到不同計畫，且無法重現與除錯。
-    if (m.score > bestScore) {
-      bestScore = m.score;
-      best = p;
-    }
-  }
-  return best;
+  final ranked = recommendPlans(
+    plans,
+    equipment: equipment,
+    experience: experience,
+    commonGoal: commonGoal,
+    tierOf: tierOf,
+    experienceOf: experienceOf,
+    goalsOf: goalsOf,
+    duration: duration,
+    durationOf: durationOf,
+  );
+  return ranked.isEmpty ? null : ranked.first.plan;
 }

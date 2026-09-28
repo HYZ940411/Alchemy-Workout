@@ -1017,22 +1017,51 @@ class AppState extends ChangeNotifier {
   /// 為空值時，首頁退回「解得開的第一份官方課表」。
   WorkoutPlan? currentPlan;
 
-  /// 依現在的器材、經驗與目標重新推薦一份官方計畫。
+  /// 推薦的取材範圍：解得開的官方計畫。
   ///
   /// 只從解得開的計畫裡挑 —— 自動替換成一份使用者按不下去的計畫，
   /// 等於把他的當前計畫拿走。
+  List<WorkoutPlan> get _recommendablePlans => platformPlans
+      .where((p) => p.source == PlanSource.official && planUnlocked(p))
+      .toList();
+
+  /// 依現在的器材、經驗、目標與時長，把解得開的官方計畫由適合到不適合排序。
+  ///
+  /// **2026-09-28 加入**（使用者裁決）。在此之前畫面上只看得到
+  /// **一份**推薦 —— 使用者實測的原話是「每次只會看到一個推薦訓練，
+  /// 只能練到胸」。推薦本身是單向指派沒有錯，錯在**沒有別的東西可看**。
+  ///
+  /// 所以單向指派那條規則不動（[recommendCurrentPlan] 仍只回一份，
+  /// 且仍是這份排序的第一名），另外開一條「還有哪些也適合」給畫面用。
+  List<RankedPlan<WorkoutPlan>> rankedPlans() => recommendPlans<WorkoutPlan>(
+        _recommendablePlans,
+        equipment: equipmentTier,
+        experience: experience,
+        commonGoal: commonGoal,
+        duration: duration,
+        tierOf: (p) => p.equipmentTier,
+        experienceOf: (p) => p.suitableExperience,
+        goalsOf: (p) => p.suitableGoals,
+        durationOf: (p) {
+          final d = estimatedDurationOf(p);
+          return d == null ? null : planDurationBucket(d, kDurations);
+        },
+      );
+
+  /// 推薦給使用者看的前幾份。
+  ///
+  /// **只收「器材做得到」的** —— 排序不篩掉器材不符的（使用者可能正要
+  /// 去健身房），但推薦清單要篩：推一份他今天做不到的課表沒有意義。
+  List<RankedPlan<WorkoutPlan>> recommendedPlans({int count = 5}) =>
+      rankedPlans()
+          .where((r) => r.match.equipmentOk)
+          .take(count)
+          .toList();
+
+  /// 依現在的器材、經驗與目標重新推薦一份官方計畫。
   WorkoutPlan? recommendCurrentPlan() {
-    return recommendPlan<WorkoutPlan>(
-      platformPlans
-          .where((p) => p.source == PlanSource.official && planUnlocked(p))
-          .toList(),
-      equipment: equipmentTier,
-      experience: experience,
-      commonGoal: commonGoal,
-      tierOf: (p) => p.equipmentTier,
-      experienceOf: (p) => p.suitableExperience,
-      goalsOf: (p) => p.suitableGoals,
-    );
+    final ranked = rankedPlans();
+    return ranked.isEmpty ? null : ranked.first.plan;
   }
 
   /// 跳過問卷：沿用原值，該詢問週期內不再詢問。同樣不得阻擋簽到。
