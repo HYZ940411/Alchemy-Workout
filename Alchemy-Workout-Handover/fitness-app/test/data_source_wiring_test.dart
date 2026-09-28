@@ -82,6 +82,14 @@ const _ambiguous = <String, String>{
   //    進入檢查範圍。全部逐一人工確認過（下面各自註明行號來源）。
   //    在那之前它們**從頭到尾沒有被檢查過**。
   'PlatformDataSource.load': '`AuthGate._loadPlatformData()` → `applyPlatformData`',
+
+  // ── 2026-09-28 `[BE-12]` 補上寫入那一半之後，`put`／`remove` 開始撞名。
+  //    **前兩支是新增的，後兩支是被連累的** —— 它們在此之前名字唯一，
+  //    這道檢查驗得到；多了同名的方法之後就驗不到了，所以一起具名承認。
+  'PlatformDataSource.put': '`AppState.pushPlatform()`（app_state.dart:9918）',
+  'PlatformDataSource.remove': '`AppState._dropPlatform()`',
+  'PhotoSource.put': '`AppState.uploadPhoto()`（app_state.dart:3019）',
+  'PublicProfileSource.remove': '`AuthGate` 刪帳號那一段（auth_gate.dart:253）',
   'Store.load': '`AppState.hydrate()`',
   'TeamSource.requestsFor': '`refreshInbound()` 與 `AuthGate` 的「團隊請求」',
   'MentorSource.requestsFor': '`refreshInbound()` 與 `AuthGate` 的「師徒申請」',

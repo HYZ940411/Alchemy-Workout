@@ -137,7 +137,15 @@ class _PlatformExercisesScreenState extends State<PlatformExercisesScreen> {
       relativeIntensity: v,
       restSeconds: r,
     );
-    showToast(context, failure ?? '已設定');
+    if (failure != null) {
+      showToast(context, failure);
+      return;
+    }
+    final now = s.platformExercises.firstWhere((x) => x.id == e.id,
+        orElse: () => e);
+    final cloud = await s.pushExercise(now);
+    if (!context.mounted) return;
+    showToast(context, cloud ?? '已設定');
     setState(() {});
   }
 }

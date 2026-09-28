@@ -17,6 +17,19 @@ import '../mock/platform_plans.g.dart';
 /// 與 `store.dart` 的 [Store] 是對等的兩條邊界：[Store] 管「使用者私有資料」，
 /// 本介面管「平台公用資料」。兩者都讓 [AppState] 不必知道資料放在哪。
 abstract class PlatformDataSource {
+  /// 管理端改了一筆，寫回去。
+  ///
+  /// **在此之前 `[BE-12]` 只做了讀的那一半** —— 後台改完只改記憶體，
+  /// 下次登入就從雲端重新載入、打回原形。使用者 2026-09-28 測 P123
+  /// 當場撞到（「改的值變回原本的」）。
+  ///
+  /// 失敗就讓它拋 —— 呼叫端要把「沒寫上去」講給管理員聽，
+  /// 而不是吞掉之後讓他以為存好了。
+  Future<void> put(String collection, String docId, Map<String, dynamic> data);
+
+  /// 管理端刪了一筆（目前只有每日任務池用得到）。
+  Future<void> remove(String collection, String docId);
+
   /// 載入六類平台資料的當前快照。
   ///
   /// 正式環境失敗（離線、權限、格式不符）時**不該讓 App 起不來** ——
@@ -54,6 +67,17 @@ class PlatformData {
 /// 與既有 `AppState` 建構時的種子完全一致，因此不注入任何來源的測試
 /// 行為一個位元都不變（比照 [BE-05] 的 mock 邊界）。
 class BundledPlatformData implements PlatformDataSource {
+  /// **後備來源是唯讀的。** 它就是打包在 App 裡的那份常數，寫不進去。
+  ///
+  /// 不拋例外而是靜靜什麼都不做：它同時是「沒接雲端」時的來源，
+  /// 而既有的一千多個測試都走這條 —— 在那裡拋例外等於把測試全部弄紅，
+  /// 而它們本來就不在驗雲端寫入。
+  @override
+  Future<void> put(String c, String id, Map<String, dynamic> d) async {}
+
+  @override
+  Future<void> remove(String c, String id) async {}
+
   const BundledPlatformData();
 
   @override

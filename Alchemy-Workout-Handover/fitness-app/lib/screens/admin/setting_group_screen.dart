@@ -52,7 +52,7 @@ class _SettingGroupScreenState extends State<SettingGroupScreen> {
     return out;
   }
 
-  void _save(AppState s) {
+  Future<void> _save(AppState s) async {
     final next = _parse();
     if (next == null) return;
     final failure = s.applySettings(group.id, next);
@@ -61,6 +61,14 @@ class _SettingGroupScreenState extends State<SettingGroupScreen> {
       return;
     }
     setState(() => error = null);
+    // **等雲端寫完再說「已設定」。** 後台不比社群互動 —— 管理員改完就走了，
+    // 而下次登入會從雲端重新載入，寫不上去的設定會靜靜打回原形。
+    final cloud = await s.pushConfigGroup(group.id);
+    if (!mounted) return;
+    if (cloud != null) {
+      setState(() => error = cloud);
+      return;
+    }
     showToast(context, '已設定');
     Navigator.of(context).pop();
   }

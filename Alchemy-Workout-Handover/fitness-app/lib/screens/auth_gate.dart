@@ -274,6 +274,9 @@ class _AuthGateState extends State<AuthGate> {
     if (_platformLoaded) return;
     final src = widget.platformData;
     if (src == null) return;
+    // **狀態層也要拿得到。** 讀完就丟的話，管理員改了什麼寫不回去
+    // —— 那正是 P123 的症狀（見 `AppState.platformSource`）。
+    widget.state.platformSource = src;
     _platformLoaded = true;
     try {
       widget.state.applyPlatformData(await src.load());

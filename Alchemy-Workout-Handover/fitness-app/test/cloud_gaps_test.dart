@@ -220,6 +220,18 @@ void main() {
       }
     });
 
+    test('平台資料的來源也要交給狀態層 —— 不然後台改了東西寫不回去', () {
+      final i = src.indexOf('Future<void> _loadPlatformData(');
+      expect(i, isNot(-1));
+      final body = src.substring(i, src.indexOf('\n  }', i));
+      expect(body, contains('state.platformSource = '),
+          reason: '在此之前 AuthGate 讀完就把來源丟了，'
+              '而 AppState 沒有任何寫回雲端的管道 —— 那正是 P123 的症狀');
+      expect(body.indexOf('state.platformSource = '),
+          lessThan(body.indexOf('await src.load()')),
+          reason: '載入失敗時來源仍要接著，否則連重試都寫不回去');
+    });
+
     // 即時訂閱的開關（`[BE-16]`）。這兩條與上面同一種寫法：讀原始碼。
     // 訂閱要接上 Firebase 才跑得起來，而這個專案的測試不連任何服務 ——
     // 所以至少釘住「這兩行有沒有在該在的位置」。

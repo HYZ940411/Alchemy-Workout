@@ -203,6 +203,10 @@ flutter build macos --release
       查詢條件逐字照抄既有的 `.get()`（已通過線上規則與索引）。
       400ms 防抖動；登出與 `dispose` 都收掉。
       **貼文與關注刻意不訂**，理由見第 5 節 0c
+- [ ] 【CC】`[BE-12b]` 後台改訓練計畫（`setPlanConfig`）寫不回雲端。
+      `unlockCoins` 在 `WorkoutPlan` 上而 `PlatformPlanSpec` 沒有這個欄位，
+      直接寫回去會靜靜把它丟掉 —— 要先改 spec 的形狀並重新上傳種子。
+      其餘四個集合的寫回已於 2026-09-28 完成（見第 5 節 1U）。
 - [ ] 【CC】`[BE-18]` 訓練體驗評分獨立成自己的 collection。
       **2026-09-28 起前置已備齊** —— `[BE-13]` 完成，管理員 claim 可用。
       另：同日暱稱重構階段二已為 `ExperienceRating` 補上 `raterUid`，
@@ -1361,6 +1365,42 @@ firebase deploy --only hosting
 
    671 筆上傳完成，逐類核對筆數 ＋ 抽驗內容一致。
    `tools/.venv` 補裝 `firebase-admin`。
+
+   ### P123 = B：上傳完才發現「只做了讀的那一半」
+
+   使用者實測「後台改一個參數 → 存 → 登出再登入」的結果是**變回原本的值**。
+
+   `applySettings()` 改的是記憶體裡的 `platformConfig`，而 `AuthGate` 每次
+   登入都 `applyPlatformData(await src.load())` 從雲端整份重新載入 ——
+   沒寫上去的設定於是靜靜打回原形。**而 `AuthGate` 讀完就把來源丟了，
+   `AppState` 根本沒有寫回去的管道。**
+
+   十二個後台寫入 Command，**沒有一個會寫回雲端**。
+
+   補上：`PlatformDataSource.put`／`remove`，`AppState.platformSource`
+   與 `pushConfigGroup`／`pushAchievement`／`pushExercise`／
+   `pushTaskPoolItem`／`dropTaskPoolItem`，以及四個後台畫面的接線。
+
+   ### 為什麼這一組不即發即忘
+
+   關注、貼文那些可以晚一點一致，因為使用者當下看得到自己按了什麼。
+   **後台不一樣** —— 管理員改完就走了，下次登入才發現沒生效，
+   而那時候他不會知道是哪一次沒存進去。所以**寫入要等，失敗要講**
+   （「已改在本機，但沒有寫上雲…重新整理後會打回原形」）。
+
+   ### `plans` 沒做，而且有理由
+
+   `setPlanConfig` 改的 `unlockCoins` 在 `WorkoutPlan` 上，
+   **`PlatformPlanSpec` 沒有這個欄位** —— 寫回去會靜靜把它丟掉，
+   比不寫更糟。要做得先改 spec 的形狀並重新上傳一次種子。**已列待辦。**
+
+   ### 一條檢查自己失效了，而它有講
+
+   `data_source_wiring_test` 靠「方法名有沒有呼叫端」檢查漏接，
+   新增的 `put`／`remove` 與 `PhotoSource.put`、
+   `PublicProfileSource.remove` 撞名 —— **後兩支是被連累的**，
+   它們原本驗得到，多了同名方法之後就驗不到了。
+   四支全部具名承認並註明呼叫端在哪一行。
 
 1T. **2026-09-28 暱稱重構階段五完成 —— 改名入口，整個重構結案**
 

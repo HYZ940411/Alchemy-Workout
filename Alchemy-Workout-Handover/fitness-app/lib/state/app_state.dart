@@ -9897,6 +9897,63 @@ class AppState extends ChangeNotifier {
   /// 平台設定。來源可能是打包在本地的後備，也可能是 Firestore 上管理員維護的
   /// 即時內容 —— [AppState] 不需要知道是哪個。平台設定沿用管理員編輯路徑
   /// （[applySettings]）的 `isInt` 取整慣例。
+  /// 雲端的平台資料。**空值代表不同步** —— 既有測試與示範走這條。
+  ///
+  /// 在此之前這個來源只有 `AuthGate` 握著（讀完就丟），所以「管理員改了
+  /// 什麼」寫不回去。使用者 2026-09-28 測 P123 當場撞到。
+  PlatformDataSource? platformSource;
+
+  /// 把管理端改過的一筆寫回雲端。**回傳失敗的說明；null 表示成功。**
+  ///
+  /// **不即發即忘。** 關注、貼文那些可以晚一點一致，因為使用者當下看得到
+  /// 自己按了什麼；後台不一樣 —— 管理員改完就走了，而下次登入會從雲端
+  /// 重新載入，寫不上去的設定會**靜靜地**打回原形。那正是 P123 的症狀。
+  ///
+  /// 沒接雲端（測試、示範）時回 null —— 記憶體已經改好了，那就是全部。
+  Future<String?> pushPlatform(
+      String collection, String docId, Map<String, dynamic> data) async {
+    final src = platformSource;
+    if (src == null) return null;
+    try {
+      await src.put(collection, docId, data);
+      return null;
+    } catch (e) {
+      return '已改在本機，但沒有寫上雲（$e）。重新整理後會打回原形。';
+    }
+  }
+
+  Future<String?> _dropPlatform(String collection, String docId) async {
+    final src = platformSource;
+    if (src == null) return null;
+    try {
+      await src.remove(collection, docId);
+      return null;
+    } catch (e) {
+      return '已在本機移除，但沒有寫上雲（$e）。重新整理後會回來。';
+    }
+  }
+
+  /// 一組平台參數的當前值，寫成雲端那一份的形狀。
+  Future<String?> pushConfigGroup(String groupId) {
+    final g = platformConfig.group(groupId);
+    return pushPlatform('platform_config', groupId, {'params': g.values});
+  }
+
+  /// 一枚成就定義。
+  Future<String?> pushAchievement(Achievement a) =>
+      pushPlatform('achievement_defs', achievementDocId(a), achievementToMap(a));
+
+  /// 一個平台動作。
+  Future<String?> pushExercise(Exercise e) =>
+      pushPlatform('exercises', e.id, exerciseToMap(e));
+
+  /// 一筆每日任務池項目。
+  Future<String?> pushTaskPoolItem(TaskPoolItem t) =>
+      pushPlatform('daily_task_pool', t.id, taskPoolItemToMap(t));
+
+  Future<String?> dropTaskPoolItem(TaskPoolItem t) =>
+      _dropPlatform('daily_task_pool', t.id);
+
   void applyPlatformData(PlatformData d) {
     platformExercises = List.of(d.exercises);
     planSpecById = {for (final s in d.planSpecs) s.id: s};
