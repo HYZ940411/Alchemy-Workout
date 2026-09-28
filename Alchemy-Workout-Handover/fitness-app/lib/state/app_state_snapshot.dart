@@ -501,8 +501,17 @@ extension AppStateSnapshot on AppState {
         a.claimed = e is Map && e['claimed'] == true;
         a.unlockedAt = e is Map ? _date(e['at']) : null;
       }
-      // 載入後再依真實進度補上該解的 —— 存檔沒記到的（如舊版存檔）不漏掉。
-      syncAchievementsAfterLoad();
+      // **補跑的解鎖判定不在這裡** —— 見 `applySnapshot` 結尾。
+      //
+      // 原本在這裡就呼叫 `syncAchievementsAfterLoad()`，而那時候
+      // **後面的欄位都還沒還原**：互動計數在第 520 行左右、
+      // 訓練天數在 `repairLoadedState()`。於是重算讀到的是建構子
+      // 留下的**示範種子**（`interactionTotals` 的 `{按讚:143, …}`）。
+      //
+      // 2026-09-28 使用者實測：一個讚都沒按過，卻有「按讚 1／10／25／
+      // 50／100 次」五個已解鎖成就 —— 就是這樣來的。
+      // 而且它**在計數被清空之後仍然留著**：成就是單調遞增的，
+      // 一旦被錯誤地解鎖就撤不回來。
     }
 
     final box = pick<List>('inbox');
@@ -517,13 +526,27 @@ extension AppStateSnapshot on AppState {
         ..clear()
         ..addAll(reqs.map((e) => '$e'));
     }
+    // **先清空再填。**
+    //
+    // 原本是直接覆寫存檔裡有的鍵 —— 而 `interactionTotals` 有一組示範用的
+    // 種子值（`{分享:26, 發文:18, 按讚:143, 留言:41}`）。新帳號在
+    // `resetToNewAccount()` 裡被清空，存進去的是 `{}`；讀回來時
+    // `{}` 不是 null，但**迴圈一圈都沒跑**，種子值原封不動留著。
+    //
+    // 2026-09-28 使用者實測：貼文 0、粉絲 0、關注 0、訓練 6 次，
+    // **按讚卻是 145**，而且「按讚 1／10／25／50／100 次」五個成就
+    // 一開始就已領取 —— 他一個讚都沒按過。
+    //
+    // 旁邊的 `interactCounts` 與 `snapshots` 本來就是先 clear 再 addAll，
+    // **這一處是唯一的例外**。
     final totals = pick<Map>('interactionTotals');
     if (totals != null) {
-      for (final e in totals.entries) {
-        if (e.value is num) {
-          interactionTotals['${e.key}'] = (e.value as num).round();
-        }
-      }
+      interactionTotals
+        ..clear()
+        ..addAll({
+          for (final e in totals.entries)
+            if (e.value is num) '${e.key}': (e.value as num).round(),
+        });
     }
 
     followTotal = intOf('followTotal', followTotal);
@@ -769,6 +792,14 @@ extension AppStateSnapshot on AppState {
 
     demoClockOffset = Duration(milliseconds: intOf('demoClockOffsetMs', 0));
     repairLoadedState();
+
+    // **最後才補跑解鎖判定。**
+    //
+    // 「依真實進度補上存檔沒記到的」要成立，前提是**真實進度已經全部
+    // 還原完**。擺在中間就會拿建構子的示範資料去解鎖（見上方
+    // `achievements` 那一段）。`repairLoadedState()` 之後也是刻意的 ——
+    // 它會補回累積訓練天數，而那是累積訓練成就的依據。
+    syncAchievementsAfterLoad();
     return true;
   }
 
