@@ -1,6 +1,7 @@
 import '../domain/clock.dart';
 import 'package:flutter/material.dart';
 
+import '../domain/ability.dart';
 import '../domain/models.dart';
 import '../domain/plan_duration.dart';
 import '../domain/registration.dart';
@@ -8,12 +9,25 @@ import '../domain/rewards.dart';
 import '../design/skeleton.dart';
 import '../state/app_state.dart';
 import '../widgets/load_boundary.dart';
+import '../widgets/part_filter.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'train/plan_detail_screen.dart';
 
 /// Read Model：課表選擇頁
 /// 支撐的 Command：選擇訓練課表、開始訓練、確認使用新訓練強度 / 拒絕調整
+/// 這份課表練得到哪些部位。
+///
+/// 依據是每個動作的**訓練部位**（`Exercise.tabs`，複選），不是課表名稱
+/// —— 名稱叫「無器材-全身」的課表，部位是它真的練到的那幾個。
+///
+/// 空白課表沒有動作，所以是空集合 —— 它**不因為部位篩選被藏起來**：
+/// 它要練什麼由使用者當場決定。
+Set<String> planParts(WorkoutPlan p) => {
+      for (final pe in p.exercises)
+        for (final d in pe.exercise.tabs) dimNames[d]!,
+    };
+
 class PlanSelectScreen extends StatefulWidget {
   const PlanSelectScreen({super.key});
 
@@ -29,6 +43,14 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
   /// 註冊問卷的答案已經在用了 —— 那是訓練計畫推薦的依據。
   String? equipment;
   String? experience;
+
+  /// 想練哪個部位。**2026-09-28 使用者要求**：
+  /// 「訓練頁可否加上『部位』的篩選」。
+  ///
+  /// 依據是課表裡每個動作的**訓練部位**（`Exercise.tabs`，複選），
+  /// 不是課表名稱 —— 名稱叫「無器材-全身」的課表，部位是它真的練到的
+  /// 那幾個，而不是「全身」兩個字。
+  String? part;
 
   /// 每次能練多久。值域與註冊問卷第 9 題同一份（[kDurations]）——
   /// 使用者在註冊時就是用這四個級距回答的，挑課表時要能用同一套說法篩。
@@ -49,6 +71,12 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
         !p.suitableExperience.contains(experience)) {
       return false;
     }
+    if (part != null) {
+      final parts = planParts(p);
+      // 沒有動作的課表（空白課表）不因為部位被篩掉 ——
+      // 與時長同一個原則：算不出來的不該被當成不符合。
+      if (parts.isNotEmpty && !parts.contains(part)) return false;
+    }
     if (sessionLength != null) {
       final d = AppScope.of(context).estimatedDurationOf(p);
       // 估不出時長的（空白課表）不因為時長被篩掉 —— 它多久由使用者決定。
@@ -67,8 +95,10 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
     // 選了「徒手」還是會看到一整排要器械的自訂課表。
     final customs =
         s.selectableCustomPlans.where((c) => _matches(c.toWorkoutPlan())).toList();
-    final filtered =
-        equipment != null || experience != null || sessionLength != null;
+    final filtered = equipment != null ||
+        experience != null ||
+        sessionLength != null ||
+        part != null;
 
     // 推薦**排進同一份清單，不另開一區**。
     //
@@ -103,6 +133,14 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
             onExperience: (v) => setState(() => experience = v),
             onSessionLength: (v) => setState(() => sessionLength = v),
           ),
+          // 部位篩選與動作庫共用同一個元件（`widgets/part_filter.dart`）——
+          // 鍵面與測試接縫兩處一致。
+          PartFilterBar(
+            parts: [for (final d in Dim.values) dimNames[d]!],
+            picked: part,
+            onPick: (v) => setState(() => part = v),
+          ),
+          const SizedBox(height: S.base),
           SectionLabel('選擇今天的課表',
               trailing: filtered
                   ? '${plans.length + customs.length} / '
@@ -122,6 +160,7 @@ class _PlanSelectScreenState extends State<PlanSelectScreen> {
                     equipment = null;
                     experience = null;
                     sessionLength = null;
+                    part = null;
                   }),
                 ),
               ),
@@ -379,11 +418,18 @@ class _PlanCard extends StatelessWidget {
                       spacing: 6,
                       runSpacing: 6,
                       children: [
+                        // 2026-09-28 使用者回報「標籤有點太多了」——
+                        // 一張卡片十三個。
+                        //
+                        // **那四個「XX 符合」是純重複**：器材、經驗、目標、
+                        // 時長的內容本來就都在下面（「器材：徒手」「新手」
+                        // 「減重」「約 40 分鐘」）。說第二次只是把卡片撐長。
+                        //
+                        // 改成把**對上的那幾個染成橘色**。資訊量一樣，
+                        // 少四個標籤，而且眼睛一掃就知道哪裡對上。
                         if (matchedOn.isNotEmpty)
                           const Pill('推薦',
-                              color: AppColors.accentSoft, filled: true),
-                        for (final m in matchedOn)
-                          Pill('$m 符合', color: AppColors.accentSoft),
+                              color: AppColors.accent, filled: true),
                         Pill(
                           planSourceNames[plan.source]!,
                           color: AppColors.textDim,
@@ -399,26 +445,41 @@ class _PlanCard extends StatelessWidget {
                         // 而在此之前整個 App 只有課表詳情頁有，
                         // 且顯示的是 CSV 那一欄格式不一的原文。
                         if (s.estimatedDurationOf(plan) case final d?)
-                          Pill(planDurationLabel(d), color: AppColors.cool),
+                          Pill(planDurationLabel(d),
+                              color: matchedOn.contains('時長')
+                                  ? AppColors.accent
+                                  : AppColors.cool),
                         Pill(
                           '器材：${plan.equipmentTier}',
-                          color: AppColors.textDim,
+                          color: matchedOn.contains('器材')
+                              ? AppColors.accent
+                              : AppColors.textDim,
                         ),
                         // 適用經驗與適用目標（`[QA-02l]`）。這兩欄原本是空集合，
                         // 而 recommendPlan 把空集合視為「全部符合」——
                         // 於是每一份課表都宣稱適合所有人，卡片上也無從標示。
+                        // 一份課表可以適用多種經驗／目標，**只染對上我的那一個**
+                        // —— 整排都染等於沒染。
                         for (final e in plan.suitableExperience)
-                          Pill(e, color: AppColors.textDim),
+                          Pill(e,
+                              color: e == s.experience
+                                  ? AppColors.accent
+                                  : AppColors.textDim),
                         for (final g in plan.suitableGoals)
-                          Pill(g, color: AppColors.accentSoft),
+                          Pill(g,
+                              color: g == s.commonGoal
+                                  ? AppColors.accent
+                                  : AppColors.textDim),
                         if (plan.disclaimer != null)
                           const Pill('使用者提供', color: AppColors.textDim),
-                        if (srcFactor != null)
+                        // **100% 是常態，不必每張卡都說一次。**
+                        // 值得講的是「打折了」與「完全不計入」那兩種。
+                        if (srcFactor != null && srcFactor != 1.0)
                           Pill(
                             '排行係數 ${(srcFactor * 100).round()}%',
-                            color: AppColors.accentSoft,
+                            color: AppColors.textDim,
                           )
-                        else
+                        else if (srcFactor == null)
                           const Pill('不計入排行榜', color: AppColors.textFaint),
                       ],
                     ),

@@ -16,24 +16,26 @@ import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/domain/registration.dart';
 import 'package:fitness_app/screens/plan_select_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
+import 'package:fitness_app/theme.dart';
+import 'package:fitness_app/widgets/common.dart';
 
-class _P {
+class TestPlan {
   final String name;
   final String tier;
   final Set<String> exp;
   final Set<String> goals;
   final String? dur;
-  const _P(this.name, {this.tier = '健身房', this.exp = const {},
+  const TestPlan(this.name, {this.tier = '健身房', this.exp = const {},
       this.goals = const {}, this.dur});
 }
 
-List<RankedPlan<_P>> rank(List<_P> plans, {
+List<RankedPlan<TestPlan>> rank(List<TestPlan> plans, {
   String? equipment = '健身房器材',
   String? experience = '新手',
   String? goal = '增肌',
   String? duration = '30–60 分鐘',
 }) =>
-    recommendPlans<_P>(
+    recommendPlans<TestPlan>(
       plans,
       equipment: equipment,
       experience: experience,
@@ -52,8 +54,8 @@ void main() {
   group('時長成為第四個比對維度', () {
     test('其餘條件相同時，時長符合的排前面', () {
       final got = rank(const [
-        _P('太長', dur: '90 分鐘以上'),
-        _P('剛好', dur: '30–60 分鐘'),
+        TestPlan('太長', dur: '90 分鐘以上'),
+        TestPlan('剛好', dur: '30–60 分鐘'),
       ]);
       expect(got.first.plan.name, '剛好');
       expect(got.first.match.durationOk, isTrue);
@@ -62,16 +64,16 @@ void main() {
 
     test('估不出時長的視為符合，不因為算不出來被推到最後', () {
       final got = rank(const [
-        _P('太長', dur: '90 分鐘以上'),
-        _P('空白課表', dur: null),
+        TestPlan('太長', dur: '90 分鐘以上'),
+        TestPlan('空白課表', dur: null),
       ]);
       expect(got.first.plan.name, '空白課表');
     });
 
     test('沒問時長時，行為與加這一維之前一致', () {
       final got = rank(const [
-        _P('甲', dur: '90 分鐘以上'),
-        _P('乙', dur: '30–60 分鐘'),
+        TestPlan('甲', dur: '90 分鐘以上'),
+        TestPlan('乙', dur: '30–60 分鐘'),
       ], duration: null);
       expect(got.map((r) => r.plan.name), ['甲', '乙'], reason: '同分取建立最早');
     });
@@ -82,9 +84,9 @@ void main() {
     // 所以要製造「器材不符」得反過來 —— 徒手的人做不了健身房課表。
     test('器材符合但其餘全不符，仍勝過器材不符但其餘全符', () {
       final got = rank(const [
-        _P('器材不符但其餘全符',
+        TestPlan('器材不符但其餘全符',
             tier: '健身房', exp: {'新手'}, goals: {'增肌'}, dur: '30–60 分鐘'),
-        _P('只有器材符合',
+        TestPlan('只有器材符合',
             tier: '徒手', exp: {'進階'}, goals: {'減脂'}, dur: '90 分鐘以上'),
       ], equipment: '徒手');
       expect(got.first.plan.name, '只有器材符合');
@@ -93,8 +95,8 @@ void main() {
 
     test('經驗勝過目標與時長的總和', () {
       final got = rank(const [
-        _P('經驗不符', exp: {'進階'}, goals: {'增肌'}, dur: '30–60 分鐘'),
-        _P('經驗符合', exp: {'新手'}, goals: {'減脂'}, dur: '90 分鐘以上'),
+        TestPlan('經驗不符', exp: {'進階'}, goals: {'增肌'}, dur: '30–60 分鐘'),
+        TestPlan('經驗符合', exp: {'新手'}, goals: {'減脂'}, dur: '90 分鐘以上'),
       ]);
       expect(got.first.plan.name, '經驗符合');
     });
@@ -102,7 +104,7 @@ void main() {
 
   test('講得出為什麼推薦這一份', () {
     final got = rank(const [
-      _P('全符', exp: {'新手'}, goals: {'增肌'}, dur: '30–60 分鐘'),
+      TestPlan('全符', exp: {'新手'}, goals: {'增肌'}, dur: '30–60 分鐘'),
     ]);
     expect(got.first.match.reasons, ['器材', '經驗', '目標', '時長']);
   });
@@ -110,11 +112,11 @@ void main() {
   group('當前計畫與推薦清單是同一套排序', () {
     test('recommendPlan 回的就是排序第一名', () {
       const plans = [
-        _P('乙', exp: {'進階'}),
-        _P('甲', exp: {'新手'}),
+        TestPlan('乙', exp: {'進階'}),
+        TestPlan('甲', exp: {'新手'}),
       ];
       final first = rank(plans).first.plan;
-      final one = recommendPlan<_P>(
+      final one = recommendPlan<TestPlan>(
         plans,
         equipment: '健身房器材',
         experience: '新手',
@@ -173,7 +175,13 @@ void main() {
       expect(find.text('為你推薦'), findsNothing);
       expect(find.text('選擇今天的課表'), findsOneWidget, reason: '不該被擠出畫面');
       expect(find.text('推薦'), findsWidgets, reason: '要標得出來哪幾份');
-      expect(find.textContaining('符合'), findsWidgets, reason: '要講得出理由');
+      // 2026-09-28 使用者回報標籤太多，「XX 符合」那四個是純重複
+      // （內容本來就在下面），改成把對上的那幾個染成橘色。
+      // 所以這裡驗的是**顏色**，不是多出來的標籤。
+      final orange = t
+          .widgetList<Pill>(find.byType(Pill))
+          .where((p) => p.color == AppColors.accent);
+      expect(orange, isNotEmpty, reason: '對上的維度要染色，那就是理由');
 
       // 同一份課表只出現一次。
       final top = s.recommendedPlans().first.plan;

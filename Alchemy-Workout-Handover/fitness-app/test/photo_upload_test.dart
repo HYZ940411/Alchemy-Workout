@@ -135,8 +135,8 @@ void main() {
       final s = AppState()..photoSource = FakePhotos();
       await t.pumpWidget(AppScope(
         state: s,
-        child: const MaterialApp(
-          home: Scaffold(body: AppImageView(id: '${kPhotoIdPrefix}沒這張')),
+        child: MaterialApp(
+          home: Scaffold(body: AppImageView(id: '${kPhotoIdPrefix}missing')),
         ),
       ));
       await t.pumpAndSettle();

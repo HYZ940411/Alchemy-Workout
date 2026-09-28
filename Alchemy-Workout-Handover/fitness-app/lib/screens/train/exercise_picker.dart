@@ -7,6 +7,7 @@ import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/equipment_filter.dart';
+import '../../widgets/part_filter.dart';
 
 /// 挑到這一項代表「先去建一個新動作」——
 /// 呼叫端負責導去建立自訂動作頁，本抽屜不認識那一頁。
@@ -173,7 +174,7 @@ class _ExercisePickerState extends State<_ExercisePicker> {
           }),
         ),
         const SizedBox(height: S.md),
-        _PartFilter(
+        PartFilterBar(
           parts: all.keys.toList(),
           picked: _part,
           onPick: (v) => setState(() => _part = v),
@@ -232,62 +233,3 @@ class _ExercisePickerState extends State<_ExercisePicker> {
 /// **不顯示每一區的筆數**（2026-09-27 使用者裁決）。第一版帶著筆數，
 /// 理由是「選下去之前就看得出那一區有沒有東西」—— 但那讓每一顆鍵變長、
 /// 一排變兩排，而且動作庫的分頁也沒有筆數。
-class _PartFilter extends StatelessWidget {
-  final List<String> parts;
-  final String? picked;
-  final ValueChanged<String?> onPick;
-  const _PartFilter({
-    required this.parts,
-    required this.picked,
-    required this.onPick,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.accessibility_new_rounded,
-                size: 15, color: AppColors.textDim),
-            const SizedBox(width: 6),
-            Text(picked == null ? '部位：全部' : '部位：$picked', style: T.caption()),
-          ],
-        ),
-        const SizedBox(height: S.sm),
-        Wrap(
-          spacing: S.sm,
-          runSpacing: S.sm,
-          children: [
-            // key 是測試接縫：鍵面文字在動作名稱裡也找得到
-            // （「腿」對上「俯臥屈腿 · 啞鈴」），用文字定位會一次命中十幾個。
-            _chip('全部', picked == null, () => onPick(null),
-                key: const ValueKey('part-all')),
-            for (final k in parts)
-              _chip(k, picked == k, () => onPick(k), key: ValueKey('part-$k')),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _chip(String text, bool on, VoidCallback onTap, {required Key key}) =>
-      GestureDetector(
-        key: key,
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: S.md, vertical: 6),
-          decoration: BoxDecoration(
-            color: on ? C.actionOutline : C.bgSurface,
-            borderRadius: BorderRadius.circular(R.child),
-            border:
-                Border.all(color: on ? C.actionOutline : C.lineDivider),
-          ),
-          child: Text(
-            text,
-            style: T.caption(color: on ? C.textOnDark : C.textPrimary),
-          ),
-        ),
-      );
-}
