@@ -158,6 +158,27 @@ PlatformPlanSpec planSpecFromDoc(String id, Map<String, dynamic> m) =>
 /// 用索引的話成就表一改順序，已解鎖紀錄就會套到別的成就上。
 String achievementDocId(Achievement a) => '${a.category}#${a.threshold}';
 
+/// 要上傳到 Firestore 的那一份種子：集合名 → (文件 ID → 內容)。
+///
+/// **匯出工具與測試共用這一份。** `tools/export_platform_defs.dart` 是
+/// `dart run` 的程式，測試 import 不了它的 `main`；各寫一份的話兩邊會
+/// 慢慢長歪，而測試就驗不到真正會被上傳的東西了。
+///
+/// 集合名要與 `FirestorePlatformData.load()` 讀的那五個一致。
+Map<String, Map<String, dynamic>> platformSeedMap(PlatformData d) => {
+      'exercises': {for (final e in d.exercises) e.id: exerciseToMap(e)},
+      'plans': {for (final s in d.planSpecs) s.id: planSpecToMap(s)},
+      'achievement_defs': {
+        for (final a in d.achievements) achievementDocId(a): achievementToMap(a),
+      },
+      'daily_task_pool': {
+        for (final t in d.taskPool) t.id: taskPoolItemToMap(t),
+      },
+      'platform_config': {
+        for (final e in d.config.entries) e.key: {'params': e.value},
+      },
+    };
+
 Map<String, dynamic> achievementToMap(Achievement a) => {
       'category': a.category,
       'name': a.name,
