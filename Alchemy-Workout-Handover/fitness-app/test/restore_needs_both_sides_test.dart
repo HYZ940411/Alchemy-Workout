@@ -20,6 +20,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/data/mentor_data.dart';
+import 'package:fitness_app/domain/clock.dart';
 import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/state/app_state.dart';
 
@@ -115,6 +116,9 @@ AppState _releasedApprentice() {
 }
 
 void main() {
+  // `advanceDemoClock` 動的是**全域**偏移量，不歸零會累積到後面每一條。
+  tearDown(resetAppClock);
+
   group('已解除期間不能再互動', () {
     // 教官那一側已經看不到這個人了（他不在 `apprentices` 裡），
     // 而學徒這邊原本照樣問得了 —— 問了沒有人收得到。
@@ -196,6 +200,62 @@ void main() {
     });
   });
 
+  group('恢復不了的時候，說得出原因', () {
+    // 那幾顆按鈕是 2026-09-30 深夜寫的，而且重蹈了當晚查了一整輪的
+    // 那個覆轍：**不管做了沒都跳「師徒關係已恢復」**。
+    // 於是使用者按下去、畫面說恢復了、雲端什麼也沒變，而重載之後
+    // 解除那一塊還在 —— 又分不出是沒生效還是沒同步。
+
+    test('可以恢復的時候，理由是空的', () {
+      final s = _releasedApprentice();
+      s.mentorRestoreProposedBy = 'u-對方';
+      expect(s.myRestoreBlockedReason, isNull);
+      expect(s.acceptRestore(), isTrue);
+    });
+
+    test('超過 3 天：理由說得出來，而且真的做不到', () {
+      final s = _releasedApprentice();
+      s.mentorRestoreProposedBy = 'u-對方';
+      s.advanceDemoClock(kMentorReleaseCooldown + const Duration(hours: 1));
+      expect(s.myRestoreBlockedReason, contains('3 天'));
+      expect(s.acceptRestore(), isFalse);
+    });
+
+    test('教官名額已滿：理由說得出來，而且真的做不到', () {
+      final s = _releasedApprentice();
+      final old = s.myInstructor!;
+      // `apprentices` 是唯讀的 —— 換一個滿編的教官物件。
+      s.myInstructor = Instructor(
+        name: old.name,
+        uid: old.uid,
+        rank: old.rank,
+        reputation: old.reputation,
+        apprentices: old.apprenticeCap,
+        apprenticeCap: old.apprenticeCap,
+        ability: old.ability,
+        specialties: old.specialties,
+        avgRating: old.avgRating,
+        ratingCount: old.ratingCount,
+      );
+      s.mentorRestoreProposedBy = 'u-對方';
+      expect(s.myRestoreBlockedReason, contains('名額已滿'));
+      expect(s.acceptRestore(), isFalse);
+    });
+
+    test('教官側：理由與做得到與否一致', () {
+      final m = _instructor();
+      m.s.applyCloudBonds([
+        _bond(
+            state: MentorBondState.released,
+            releasedAt: m.s.now,
+            proposedBy: _appUid),
+      ]);
+      final b = m.s.releasedBondOf(_appUid)!;
+      expect(m.s.restoreBlockedReasonOf(b), isNull);
+      expect(m.s.acceptRestoreFor(_appUid), isTrue);
+    });
+  });
+
   group('恢復需雙方同意', () {
     test('教官提出之後，自己同意不了', () {
       final m = _instructor();
@@ -255,6 +315,33 @@ void main() {
       ]);
       expect(m.s.proposeRestoreFor(_appUid), isFalse);
       expect(m.s.releasedBondOf(_appUid)!.restoreProposedBy, _appUid);
+    });
+  });
+
+  group('再解除一次，不該跳出上一輪的恢復請求', () {
+    // 真正會漏掉那一筆欄位的是 `FirestoreMentor.release()` ——
+    // 本機假物件各寫各的，驗不到它。
+    // **打在 Firestore 那一層的在 `release_clears_stale_restore_test`。**
+    // 這裡只留本機那一半：解除當下自己也要清乾淨。
+
+    test('學徒側：解除會清掉提議', () {
+      final s = _releasedApprentice();
+      s.mentorRestoreProposedBy = 'u-對方';
+      s.acceptRestore();
+      expect(s.mentorReleased, isFalse);
+
+      s.releaseMentor(MentorReleaseReason.byApprentice);
+      expect(s.mentorRestoreProposedBy, isNull,
+          reason: '解除當下就該清 —— 否則要等雲端讀回來才會正確');
+      expect(s.mentorRestorePending, isFalse);
+    });
+
+    test('教官側：解除之後那一筆不帶提議', () {
+      final m = _instructor();
+      m.s.applyCloudBonds([_bond()]);
+      m.s.releaseApprentice(_appUid, MentorReleaseReason.byInstructor);
+      expect(m.s.releasedApprentices, hasLength(1));
+      expect(m.s.releasedBondOf(_appUid)!.restoreProposedBy, isNull);
     });
   });
 

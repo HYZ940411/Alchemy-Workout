@@ -6113,6 +6113,20 @@ class AppState extends ChangeNotifier {
 
   bool get mentorReleased => mentorReleasedAt != null && myInstructor != null;
 
+  /// 我當學徒那一段，恢復不了的原因。**空值＝可以恢復。**
+  ///
+  /// 與教官側的 [restoreBlockedReasonOf] 同一組判準，只是主體不同。
+  String? get myRestoreBlockedReason {
+    if (!mentorReleased) return '這段關係沒有被解除。';
+    if (!canRestoreMentor) return '已經超過 3 天，這段關係不能再恢復了。';
+    final ins = myInstructor;
+    if (ins != null && ins.apprentices >= ins.apprenticeCap) {
+      return '${ins.name} 的帶徒名額已滿（${ins.apprentices} / '
+          '${ins.apprenticeCap}），現在恢復不了。';
+    }
+    return null;
+  }
+
   /// 使用者已提出恢復師徒關係（我當學徒那一段）。
   ///
   /// **提議要上雲**，否則對方看不到，「雙方同意」就無從成立。
@@ -6183,6 +6197,8 @@ class AppState extends ChangeNotifier {
     if (a == null) return false;
     final at = now;
     apprentices.removeWhere((x) => x.uid == apprenticeUid);
+    // 不帶 `restoreProposedBy` —— 新的一輪，舊提議不跨過來（雲端同理）。
+    releasedApprentices.removeWhere((x) => x.apprenticeUid == apprenticeUid);
     releasedApprentices.add(ReleasedBond(
       apprenticeUid: apprenticeUid,
       apprenticeName: a.name,

@@ -8,9 +8,26 @@ import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/state/app_state.dart';
 
+/// 把展示時鐘挪到當天正午。
+///
+/// **這幾條驗的是「推進幾小時會不會換日」，不是「現在幾點」。**
+/// 原本直接吃真實時鐘，而換日時點是當地 04:00 —— 於是
+/// 「同一天內推進 2 小時」這條在**凌晨 0 點到 4 點之間跑就會紅**，
+/// 其餘 20 小時都是綠的。2026-09-30 02:05 第一次撞到。
+void _atNoon() {
+  final n = appNow();
+  appClockOffset += Duration(hours: 12 - n.hour, minutes: -n.minute);
+}
+
 void main() {
-  setUp(platformConfig.reset);
-  tearDown(platformConfig.reset);
+  setUp(() {
+    resetAppClock();
+    platformConfig.reset();
+  });
+  tearDown(() {
+    resetAppClock();
+    platformConfig.reset();
+  });
 
   group('展示時鐘貫穿全域', () {
     test('推進時鐘後，簽到會換日', () {
@@ -28,6 +45,7 @@ void main() {
     });
 
     test('同一天內推進幾小時不換日', () {
+      _atNoon();
       final s = AppState();
       s.checkIn();
       s.advanceDemoClock(const Duration(hours: 2));

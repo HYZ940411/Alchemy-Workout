@@ -572,6 +572,7 @@ class _MyMentor extends StatelessWidget {
                           onPressed: () {
                             s.rejectRestore();
                             showToast(context, '已拒絕，3 天內可再次提出');
+
                           },
                         ),
                       ),
@@ -580,8 +581,16 @@ class _MyMentor extends StatelessWidget {
                         child: AppButton(
                           label: '同意恢復',
                           onPressed: () {
-                            s.acceptRestore();
-                            showToast(context, '師徒關係已恢復');
+                            // **做不到的時候不可以說做到了。**
+                            // 這一顆是 2026-09-30 深夜我自己寫的，
+                            // 而且重蹈當晚查了一整輪的那個覆轍。
+                            final ok = s.acceptRestore();
+                            showToast(
+                                context,
+                                ok
+                                    ? '師徒關係已恢復'
+                                    : s.myRestoreBlockedReason ?? '現在恢復不了。');
+
                           },
                         ),
                       ),
@@ -596,8 +605,14 @@ class _MyMentor extends StatelessWidget {
                       onPressed: !s.canRestoreMentor
                           ? null
                           : () {
-                              s.proposeRestore();
-                              showToast(context, '已提出，等對方同意');
+                              final ok = s.proposeRestore();
+                              showToast(
+                                  context,
+                                  ok
+                                      ? '已提出，等對方同意'
+                                      : s.myRestoreBlockedReason ??
+                                          '提不出來。');
+
                             },
                     ),
                   ),

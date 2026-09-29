@@ -121,6 +121,15 @@ class FirestoreMentor implements MentorSource {
       'state': MentorBondState.released.name,
       'releasedAt': Timestamp.fromDate(at),
       'releasedReason': reason.name,
+      // **上一輪的恢復提議要一起清掉。**
+      //
+      // 沒清的話，一段關係解除 → 對方提出恢復 → 沒被同意 → 又解除，
+      // 第二次解除的當下畫面就跳出「對方提出了恢復，等你回應」——
+      // 那是上一輪留下來的。使用者 2026-09-30 實測踩到。
+      //
+      // 一次解除開啟的是一個新的 3 天窗口，上一個窗口裡的提議
+      // 不該跨過來。
+      'restoreProposedBy': FieldValue.delete(),
     });
     for (final d in open.docs) {
       batch.update(d.reference, {'state': MentorTaskState.voided.name});

@@ -484,8 +484,8 @@ Future<void> _release(BuildContext context, AppState s, Apprentice a) async {
     confirmLabel: '確定解除',
   );
   if (second != true || !context.mounted) return;
-  s.releaseApprentice(a.uid ?? '', MentorReleaseReason.byInstructor);
-  showToast(context, '已解除，3 天內可挽回');
+  final ok = s.releaseApprentice(a.uid ?? '', MentorReleaseReason.byInstructor);
+  showToast(context, ok ? '已解除，3 天內可挽回' : '解除不了，這位學徒不在名單上。');
 }
 
 /// 一段已解除、還在挽回窗口內的關係。
@@ -546,8 +546,9 @@ class _ReleasedCardState extends State<_ReleasedCard> {
                       label: '拒絕恢復',
                       kind: BtnKind.secondary,
                       onPressed: () {
-                        s.rejectRestoreFor(b.apprenticeUid);
-                        showToast(context, '已拒絕，3 天內還能再提');
+                        final ok = s.rejectRestoreFor(b.apprenticeUid);
+                        showToast(context,
+                            ok ? '已拒絕，3 天內還能再提' : '現在拒絕不了。');
                         setState(() {});
                       },
                     ),
@@ -557,8 +558,17 @@ class _ReleasedCardState extends State<_ReleasedCard> {
                     child: AppButton(
                       label: '同意恢復',
                       onPressed: () {
-                        s.acceptRestoreFor(b.apprenticeUid);
-                        showToast(context, '師徒關係已恢復');
+                        // **做不到的時候不可以說做到了。**
+                        // 這一顆是 2026-09-30 深夜我自己寫的，
+                        // 而且重蹈當晚查了一整輪的那個覆轍 ——
+                        // 使用者按下去、畫面說恢復了、雲端什麼也沒變。
+                        final ok = s.acceptRestoreFor(b.apprenticeUid);
+                        showToast(
+                            context,
+                            ok
+                                ? '師徒關係已恢復'
+                                : s.restoreBlockedReasonOf(b) ??
+                                    '現在恢復不了。');
                         setState(() {});
                       },
                     ),
@@ -576,8 +586,12 @@ class _ReleasedCardState extends State<_ReleasedCard> {
                   label: '提出恢復師徒關係',
                   kind: BtnKind.secondary,
                   onPressed: () {
-                    s.proposeRestoreFor(b.apprenticeUid);
-                    showToast(context, '已提出，等對方同意');
+                    final ok = s.proposeRestoreFor(b.apprenticeUid);
+                    showToast(
+                        context,
+                        ok
+                            ? '已提出，等對方同意'
+                            : s.restoreBlockedReasonOf(b) ?? '提不出來。');
                     setState(() {});
                   },
                 ),
