@@ -104,7 +104,54 @@ CloudBond _bond({
   return (s: s, src: src);
 }
 
+/// 學徒那一台，關係已解除但還在挽回窗口內。
+AppState _releasedApprentice() {
+  final s = AppState()
+    ..myUid = _appUid
+    ..confirmMentorDisclaimer();
+  s.myInstructor = s.instructors.first;
+  s.releaseMentor(MentorReleaseReason.byInstructor);
+  return s;
+}
+
 void main() {
+  group('已解除期間不能再互動', () {
+    // 教官那一側已經看不到這個人了（他不在 `apprentices` 裡），
+    // 而學徒這邊原本照樣問得了 —— 問了沒有人收得到。
+    // 未完成的任務本來就都作廢了，提問自然也是。
+
+    test('前提：關係確實處於已解除', () {
+      final s = _releasedApprentice();
+      expect(s.mentorReleased, isTrue);
+      expect(s.canRestoreMentor, isTrue, reason: '還在 3 天窗口內');
+    });
+
+    test('提問送不出去，而且說得出為什麼', () {
+      final s = _releasedApprentice();
+      final before = s.questions.length;
+      expect(s.askQuestion('那我現在該練什麼'), isFalse);
+      expect(s.questions, hasLength(before));
+      expect(s.askBlockedReason, contains('已解除'));
+    });
+
+    test('任務也標記不了完成', () {
+      final s = _releasedApprentice();
+      final t = MentorTask(id: 'mt-1', title: '練腿', detail: '');
+      s.mentorTasks.add(t);
+      expect(s.completeMentorTask(t), isFalse);
+      expect(s.completeBlockedReason, contains('已解除'));
+      expect(t.state, MentorTaskState.assigned);
+    });
+
+    test('恢復之後就能繼續 —— 擋的是期間，不是永久', () {
+      final s = _releasedApprentice();
+      s.mentorRestoreProposedBy = 'u-對方';
+      expect(s.acceptRestore(), isTrue);
+      expect(s.mentorReleased, isFalse);
+      expect(s.askQuestion('那我現在該練什麼'), isTrue);
+    });
+  });
+
   group('教官看得到已解除的關係', () {
     test('解除之後，學徒不再消失 —— 進「已解除」那一欄', () {
       final m = _instructor();

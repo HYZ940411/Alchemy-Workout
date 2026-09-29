@@ -470,13 +470,16 @@ class _MyMentor extends StatelessWidget {
             onPressed: () => _release(context, s, ins),
           ),
         const SizedBox(height: S.md),
-        AppButton(
-          label: '與 ${ins.name} 對話',
-          kind: BtnKind.secondary,
-          icon: Icons.forum_outlined,
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => MentorChatScreen(instructor: ins))),
-        ),
+        // 已解除期間不給互動入口 —— 未完成的任務都作廢了，
+        // 而且教官那一側已經看不到這個人，問了也沒有人收得到。
+        if (!s.mentorReleased)
+          AppButton(
+            label: '與 ${ins.name} 對話',
+            kind: BtnKind.secondary,
+            icon: Icons.forum_outlined,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => MentorChatScreen(instructor: ins))),
+          ),
         const SectionLabel('本週互動摘要'),
         Panel(
           child: Column(
@@ -639,7 +642,15 @@ class _MyMentor extends StatelessWidget {
         const SectionLabel('提問'),
         for (final q in s.questions) _QuestionCard(q: q),
         const SizedBox(height: 10),
-        _AskBox(),
+        // 已解除期間只看得到舊的問答，問不了新的。
+        if (s.mentorReleased)
+          Text(
+            s.askBlockedReason,
+            style: const TextStyle(
+                color: AppColors.textFaint, fontSize: 11.5, height: 1.5),
+          )
+        else
+          _AskBox(),
       ],
     );
   }

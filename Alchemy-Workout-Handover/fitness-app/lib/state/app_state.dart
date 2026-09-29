@@ -5331,13 +5331,15 @@ class AppState extends ChangeNotifier {
   /// 提問送不出去的原因。理由同 [assignBlockedReason]。
   String get askBlockedReason {
     if (communityBlocked) return '社群功能已停權，不能提問。';
-    if (mentorDisclaimerNeeded) return '要先確認師徒免責聲明，才能提問。';
     if (myInstructor == null) return '你還沒有教官。';
+    if (mentorReleased) return '師徒關係已解除，恢復之後才能繼續提問。';
+    if (mentorDisclaimerNeeded) return '要先確認師徒免責聲明，才能提問。';
     return '送不出去。';
   }
 
   /// 標記完成失敗的原因。
   String get completeBlockedReason {
+    if (mentorReleased) return '師徒關係已解除，未完成的任務已經作廢了。';
     if (mentorDisclaimerNeeded) return '要先確認師徒免責聲明，才能完成任務。';
     return '這則任務現在不能標記完成。';
   }
@@ -5740,6 +5742,10 @@ class AppState extends ChangeNotifier {
     if (text.trim().isEmpty) return false;
     // 未確認免責聲明者不得提問。
     if (mentorDisclaimerNeeded) return false;
+    // **已解除的關係不能再互動。** 未完成的任務都作廢了，提問自然也是 ——
+    // 而且教官那一側已經看不到這個人，問了也沒有人收得到。
+    // 3 天內可挽回，恢復之後就能繼續。
+    if (mentorReleased) return false;
     // **本機與雲端用同一個 id。**
     //
     // 原本本機那筆用 `MentorQuestion` 的預設 id（`q${微秒}`），
@@ -5818,6 +5824,8 @@ class AppState extends ChangeNotifier {
     if (t.state != MentorTaskState.assigned) return false;
     // 未確認免責聲明者不得完成師徒任務。
     if (mentorDisclaimerNeeded) return false;
+    // 同上：已解除的關係不能再互動。未完成的任務本來就已作廢。
+    if (mentorReleased) return false;
     t.state = MentorTaskState.done;
     weeklyCompleted += 1;
     _pushTask(t);
