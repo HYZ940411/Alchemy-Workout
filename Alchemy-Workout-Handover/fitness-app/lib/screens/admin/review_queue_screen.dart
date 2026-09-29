@@ -524,6 +524,14 @@ class _InstructorTab extends StatelessWidget {
                     Text(q, style: T.body(weight: FontWeight.w600)),
                     const SizedBox(height: S.xs),
                     Text(a, style: T.body(color: C.textSecondary)),
+                    // **評分細則要出現在判分的人面前。**
+                    //
+                    // 2026-09-29 覆核意見要求「細則具體到兩位審核者依此評分
+                    // 會得到同一個結果」，於是題庫補上了通過要素、不通過條件
+                    // 與追問範例 —— 但它們一開始只存在資料裡，
+                    // 審核畫面照舊只顯示題目與作答。**細則沒送到審核者面前
+                    // 等於沒寫**，而人工審核會退回各憑印象。
+                    _Rubric(question: q, state: state),
                     const SizedBox(height: S.md),
                   ],
                   ButtonRow(
@@ -548,6 +556,53 @@ class _InstructorTab extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// 一題簡答題的評分細則。
+///
+/// **以題目全文回查題庫。** 作答紀錄存的是題目文字而非 ID
+/// （`InstructorCase.answers` 是 `(題目, 作答)`），改它的形狀會動到已經
+/// 落地的待審案件。題庫裡的題目被改寫之後回查不到，此時**不顯示**
+/// 而不是顯示錯的細則 —— 拿別題的標準判這一題比沒有標準更糟。
+class _Rubric extends StatelessWidget {
+  final String question;
+  final AppState state;
+  const _Rubric({required this.question, required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final q = state.examBank
+        .where((x) => x.text == question && x.rubricPass.trim().isNotEmpty)
+        .firstOrNull;
+    if (q == null) return const SizedBox.shrink();
+
+    Widget line(String label, String body, Color color) => Padding(
+          padding: const EdgeInsets.only(top: S.xs),
+          child: Text.rich(TextSpan(children: [
+            TextSpan(text: '$label：', style: T.caption(color: color)),
+            TextSpan(text: body, style: T.caption()),
+          ])),
+        );
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: S.sm),
+      padding: const EdgeInsets.all(S.md),
+      decoration: BoxDecoration(
+        color: C.bgPage,
+        borderRadius: BorderRadius.circular(R.child),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          line('通過要素', q.rubricPass, C.statusSuccess),
+          line('直接不通過', q.rubricFail, C.statusError),
+          if (q.followUp.trim().isNotEmpty)
+            line('可以這樣追問', q.followUp, C.textSecondary),
+        ],
+      ),
     );
   }
 }
