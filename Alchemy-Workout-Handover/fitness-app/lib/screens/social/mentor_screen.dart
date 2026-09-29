@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 
 import '../../domain/ability.dart';
 import '../../domain/community.dart';
+import '../../domain/inbound.dart';
 import '../../state/app_state.dart';
 import '../me/instructor_apply_screen.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
+import 'inbox_screen.dart';
 import 'mentor_chat_screen.dart';
 import 'mentor_interaction_screen.dart';
 
@@ -74,8 +76,54 @@ class MentorScreen extends StatelessWidget {
         ],
       );
     }
+    // **有人想拜我為師，這一頁要講出來。**
+    //
+    // 拜師申請進的是 `inbox`，而收件匣的入口在「我的 → 收件匣」——
+    // 師徒頁上**沒有任何跡象**。於是一位教官打開師徒頁，
+    // 看到的是「我的學徒（0）」與一份拜師清單，
+    // 而有人正在等他回應（使用者 2026-09-29 實測 T1 回報 C：
+    // 「重整也沒有」—— 他看的是師徒頁，而那裡本來就不會顯示）。
+    //
+    // 回應仍然在收件匣做，這裡只負責**讓他知道有這件事**：
+    // 接受／拒絕的判定（名額、停權、逾期）已經在那裡了，
+    // 複製第二份就會有兩份慢慢長不一樣的規則。
+    final applies = s.liveInbox
+        .where((r) => r.kind == InboundKind.apprenticeApply)
+        .toList();
+
     return Column(
       children: [
+        if (applies.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(S.base, S.base, S.base, 0),
+            child: Panel(
+              color: C.statusWarning.withValues(alpha: 0.08),
+              border: C.statusWarning,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('有 ${applies.length} 位想拜你為師',
+                      style: T.body(weight: FontWeight.w700)),
+                  const SizedBox(height: S.xs),
+                  Text(
+                    applies.map((r) => r.from).join('、'),
+                    style: T.caption(),
+                  ),
+                  const SizedBox(height: S.md),
+                  SizedBox(
+                    width: double.infinity,
+                    child: AppButton(
+                      label: '去收件匣回應',
+                      kind: BtnKind.secondary,
+                      onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => const InboxScreen())),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         // 教官身分者另有帶徒的一側
         if (s.isInstructor)
           Padding(
