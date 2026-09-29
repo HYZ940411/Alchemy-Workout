@@ -16,6 +16,20 @@ class CloudBond {
   final DateTime? releasedAt;
   final MentorReleaseReason? releasedReason;
 
+  /// 學徒對**該週互動**的評分。鍵為該週週一的 ISO 日期，值為星數。
+  ///
+  /// ## 為什麼放在關係文件上，而不是另開一個子集合
+  ///
+  /// 這個評分要動的是教官的聲望，而教官那一側本來就會重讀關係文件
+  /// （`bonds()`／`watchMentor()`）。放在子集合裡的話**寫入不會觸發
+  /// 父文件的訂閱**（2026-09-29 已經在提問那裡踩過一次），教官得多
+  /// 一趟讀才看得到。
+  ///
+  /// 一段關係每週至多一筆，所以這個對映長得很慢；留著整份而不只留
+  /// 最新一筆，是因為**教官可能一整個月沒開 App** —— 只留最新的話，
+  /// 中間那幾週的聲望就靜靜地不見了。
+  final Map<String, int> weeklyRatings;
+
   const CloudBond({
     required this.id,
     required this.mentorUid,
@@ -26,6 +40,7 @@ class CloudBond {
     this.state = MentorBondState.active,
     this.releasedAt,
     this.releasedReason,
+    this.weeklyRatings = const {},
   });
 
   bool get isActive => state == MentorBondState.active;
@@ -131,6 +146,14 @@ abstract class MentorSource {
 
   Future<List<CloudMentorTask>> tasks(String bondId);
   Future<void> putTask(String bondId, CloudMentorTask t);
+
+  /// 學徒已評分該週互動。[week] 為該週週一的 ISO 日期。
+  ///
+  /// **在此之前 `rateWeeklyInteraction()` 一個字都不寫上雲** ——
+  /// 它只改學徒裝置上那份教官副本的聲望，教官自己那一台什麼也沒發生。
+  /// 而週互動評分是幅度最大的一條（−2／0／+4／+8／+12），
+  /// 聲望又連動帶徒上限。
+  Future<void> rateWeek(String bondId, String week, int stars);
 
   Future<List<CloudQuestion>> questions(String bondId);
   Future<void> ask(String bondId, CloudQuestion q);

@@ -24,6 +24,14 @@ import 'package:fitness_app/state/app_state.dart';
 
 /// 假的雲端師徒層。只記下寫了什麼。
 class _FakeMentor implements MentorSource {
+
+  /// 週互動評分。這支測試不碰它 —— 記下來就好。
+  final List<(String bond, String week, int stars)> weekRatings = [];
+
+  @override
+  Future<void> rateWeek(String bondId, String week, int stars) async =>
+      weekRatings.add((bondId, week, stars));
+
   final List<CloudBond> bonded = [];
   final List<String> recovered = [];
   final List<(String bond, String text)> asked = [];

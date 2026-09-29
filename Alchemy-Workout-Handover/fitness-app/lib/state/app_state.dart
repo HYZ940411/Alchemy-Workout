@@ -4965,6 +4965,43 @@ class AppState extends ChangeNotifier {
   ///
   /// `data_source_wiring_test` 沒抓到這兩支：畫面上有個同名的
   /// `s.questions` 欄位，方法名撞到欄位名。
+  /// 讀回來的這則任務帶著還沒算過的評分，就算進我的聲望。
+  ///
+  /// **在此之前學徒的評分永遠動不了教官的聲望。** `apprenticeRatesMe()`
+  /// 是唯一會動到我自己聲望的入口，而它在 `lib/` 只有一個呼叫端 ——
+  /// 設計模擬頁。正式流程裡沒有人叫它，於是評分寫上了雲、星等也算得出來，
+  /// 只有聲望（以及它連動的帶徒上限）停在原地。
+  ///
+  /// 記帳只在**真的加成功**之後 —— 學徒還沒進 `apprentices` 時
+  /// `apprenticeRatesMe()` 會回否，這時不可記，否則這筆評分就永遠遺失了。
+  void _creditTaskRating(MentorTask t, String apprenticeUid) {
+    final stars = t.rating;
+    if (stars == null) return;
+    if (creditedTaskRatings.contains(t.id)) return;
+    final name = nameByUid[apprenticeUid] ??
+        apprentices.where((a) => a.uid == apprenticeUid).firstOrNull?.name;
+    if (name == null) return;
+    if (apprenticeRatesMe(name, stars, uid: apprenticeUid)) {
+      creditedTaskRatings.add(t.id);
+    }
+  }
+
+  /// 這段關係上還沒算過的週互動評分，就算進我的聲望。
+  ///
+  /// 幅度遠大於單次任務評分（−2／0／+4／+8／+12），所以更不能重複計。
+  void _creditWeeklyRatings(CloudBond b) {
+    for (final e in b.weeklyRatings.entries) {
+      final key = '${b.id}@${e.key}';
+      if (creditedWeeklyRatings.contains(key)) continue;
+      final name = nameByUid[b.apprenticeUid] ?? b.apprenticeName;
+      if (name.isEmpty) continue;
+      if (apprenticeRatesMe(name, e.value,
+          weekly: true, uid: b.apprenticeUid, forWeek: e.key)) {
+        creditedWeeklyRatings.add(key);
+      }
+    }
+  }
+
   Future<void> loadMentorSideOf(String apprenticeUid) async {
     final src = mentorSource;
     final bond = mentorBondIdFor(apprenticeUid);
@@ -4987,6 +5024,7 @@ class AppState extends ChangeNotifier {
         } else {
           mentorTasks.add(m);
         }
+        _creditTaskRating(m, apprenticeUid);
       }
       for (final q in await src.questions(bond)) {
         final at = questions.indexWhere((x) => x.id == q.id);
@@ -5118,6 +5156,9 @@ class AppState extends ChangeNotifier {
       } else {
         apprentices.add(a);
       }
+      // **要等這位學徒進了名單才算得動** —— `apprenticeRatesMe()`
+      // 找不到人就回否。順序不能顛倒。
+      _creditWeeklyRatings(b);
     }
 
     // --- 學徒側：我的教官 ---
@@ -5684,6 +5725,23 @@ class AppState extends ChangeNotifier {
   /// 本週已計入聲望的任務評分次數。每位學徒每週最多 2 次。
   int taskRatingsThisWeek = 0;
 
+  /// **已經計入我的聲望的任務評分。** 鍵為任務 id。
+  ///
+  /// 學徒的評分寫在雲端的任務文件上，我這一側從雲端讀回來才算數。
+  /// 而 `mentorTasks` 不進存檔 —— 重新整理之後它是空的，每一則評過的
+  /// 任務讀回來都會看起來像新的。**沒有這份清單，教官每重開一次
+  /// App 聲望就再加一次。**
+  ///
+  /// 所以它必須進存檔：它記的不是畫面上的東西，是「這筆帳已經算過了」。
+  final Set<String> creditedTaskRatings = {};
+
+  /// **已經計入我的聲望的週互動評分。** 鍵為 `關係 id@該週週一`。
+  ///
+  /// 與上面同理，但多一層：`apprenticeWeeklyRated` 每週會被清空
+  /// （那是「這週還能不能再評」的閘門），清空之後同一筆舊評分就會
+  /// 再次通過。這份清單不隨週重置，記的是永久的事實。
+  final Set<String> creditedWeeklyRatings = {};
+
   /// 我的聲望變動 —— 只有**我的學徒評我**才會走這裡。
   void _bumpReputation(int delta) {
     instructorReputation = applyReputation(instructorReputation, delta);
@@ -5704,8 +5762,13 @@ class AppState extends ChangeNotifier {
   ///
   /// [weekly] 為該週互動評分（每人每週一次、幅度較大）；
   /// 否則為單次師徒任務評分（每人每週最多 2 次計入聲望）。
+  /// [forWeek] 指定「這是哪一週的週互動評分」（該週週一的 ISO 日期）。
+  ///
+  /// 少了它，每週閘門是以**人**為鍵的：教官一次讀回兩週的評分時，
+  /// 第二週那筆會被第一週擋掉 —— 而那兩筆本來就分屬不同週，
+  /// 「每位學徒每週最多一次」對它們同時成立。
   bool apprenticeRatesMe(String who, int stars,
-      {bool weekly = false, String? uid}) {
+      {bool weekly = false, String? uid, String? forWeek}) {
     if (!isInstructor || !isValidStars(stars)) return false;
     final a = apprentices
         .where((a) => sameUser(a.name, a.uid, who, uid))
@@ -5716,7 +5779,10 @@ class AppState extends ChangeNotifier {
     final key = personKeyOf(a.name, a.uid);
 
     if (weekly) {
-      if (!apprenticeWeeklyRated.add(key)) return false;
+      if (!apprenticeWeeklyRated.add(
+          forWeek == null ? key : '$key@$forWeek')) {
+        return false;
+      }
       _bumpReputation(kWeeklyInteractionReputationDelta[stars - 1]);
     } else {
       final n = apprenticeTaskRatings[key] ?? 0;
@@ -5777,8 +5843,20 @@ class AppState extends ChangeNotifier {
     }
     ratedThisWeek = true;
     _bumpInstructorReputation(kWeeklyInteractionReputationDelta[stars - 1]);
+    // **送到教官那邊去。** 在此之前這一支一個字都不寫上雲 ——
+    // 它只改我裝置上那份教官副本的聲望，教官自己那一台什麼也沒發生。
+    _pushWeeklyRating(stars);
     notifyListeners();
     return true;
+  }
+
+  /// 該週互動評分寫上雲，掛在「我與我的教官」那段關係上。
+  void _pushWeeklyRating(int stars) {
+    final src = mentorSource;
+    final bond = _apprenticeBondId;
+    if (src == null || bond == null) return;
+    final (from, _) = periodOf(Board.personalWeekly, now);
+    src.rateWeek(bond, weekKeyOf(from), stars).catchError((_) {});
   }
 
   // --- 終止路徑：解除、恢復 ---

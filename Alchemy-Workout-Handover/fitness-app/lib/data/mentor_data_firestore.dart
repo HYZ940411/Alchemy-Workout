@@ -202,6 +202,21 @@ class FirestoreMentor implements MentorSource {
     await _touchBond(bondId);
   }
 
+  /// 學徒已評分該週互動 —— 寫在**關係文件本身**上。
+  ///
+  /// 用 `'weeklyRatings.$week'` 這種帶點的欄位路徑做部分更新，不整份
+  /// 覆寫 —— 否則兩位學徒（或同一位跨週）的評分會互相蓋掉。
+  ///
+  /// 這是少數不必 `_touchBond` 的寫入：它動的就是關係文件，
+  /// 教官那一側的 `watchMentor()` 本來就會被叫醒。
+  @override
+  Future<void> rateWeek(String bondId, String week, int stars) async {
+    await _col.doc(bondId).update({
+      'weeklyRatings.$week': stars,
+      'lastActivityAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   @override
   Future<List<CloudQuestion>> questions(String bondId) async {
     final snap =
@@ -322,6 +337,10 @@ class FirestoreMentor implements MentorSource {
           ? (j['releasedAt'] as Timestamp).toDate()
           : null,
       releasedReason: _reasonOf(j['releasedReason']),
+      weeklyRatings: {
+        for (final e in (j['weeklyRatings'] as Map? ?? const {}).entries)
+          if (e.value is num) '${e.key}': (e.value as num).toInt(),
+      },
     );
   }
 

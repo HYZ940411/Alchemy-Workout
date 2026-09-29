@@ -312,6 +312,12 @@ extension AppStateSnapshot on AppState {
         'peakReputation': peakReputation,
         'instructorSpecialties': instructorSpecialties.toList(),
 
+        // **這兩份記的是「這筆帳已經算過了」，不是畫面上的東西。**
+        // 學徒的評分存在雲端，我每次重讀都會再看到它一次；少了這兩份，
+        // 教官每重開一次 App 聲望就再加一次。
+        'creditedTaskRatings': creditedTaskRatings.toList(),
+        'creditedWeeklyRatings': creditedWeeklyRatings.toList(),
+
         // --- 師徒的週期計數器 ---
         // 一併存檔，否則重開 App 就等於過了一個新的週 ——
         // 「每週最多 N 次」的上限會從另一道門重新變成無上限。
@@ -810,6 +816,16 @@ extension AppStateSnapshot on AppState {
       instructorSpecialties
         ..clear()
         ..addAll(strs('instructorSpecialties'));
+    }
+    if (pick<List>('creditedTaskRatings') != null) {
+      creditedTaskRatings
+        ..clear()
+        ..addAll(strs('creditedTaskRatings'));
+    }
+    if (pick<List>('creditedWeeklyRatings') != null) {
+      creditedWeeklyRatings
+        ..clear()
+        ..addAll(strs('creditedWeeklyRatings'));
     }
 
     if (pick<List>('ownedEquipment') != null) {

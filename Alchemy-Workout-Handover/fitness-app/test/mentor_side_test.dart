@@ -22,6 +22,14 @@ import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 class _FakeMentor implements MentorSource {
+
+  /// 週互動評分。這支測試不碰它 —— 記下來就好。
+  final List<(String bond, String week, int stars)> weekRatings = [];
+
+  @override
+  Future<void> rateWeek(String bondId, String week, int stars) async =>
+      weekRatings.add((bondId, week, stars));
+
   final Map<String, List<CloudMentorTask>> cloudTasks = {};
   final Map<String, List<CloudQuestion>> cloudQuestions = {};
   final List<(String bond, String taskId)> putTasks = [];

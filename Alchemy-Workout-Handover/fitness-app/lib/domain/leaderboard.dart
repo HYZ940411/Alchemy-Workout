@@ -124,3 +124,15 @@ int? gapToPlace(List<int> scoresDesc, int myIndex, int targetPlace) {
   final end = DateTime(d.year, d.month + 1, 1, 4);
   return (start, end);
 }
+
+/// 一週的識別字串 —— 該週週一的 `YYYY-MM-DD`。
+///
+/// 給雲端當鍵用（週互動評分掛在關係文件上，一週一格）。**不含時分**：
+/// 週界是週一 04:00，但同一週的任何時刻都該算出同一個鍵，
+/// 帶上時分只會讓兩台裝置因為時鐘差一秒就寫出兩格。
+///
+/// 傳進來的應是 [periodOf] 算出的週起點。
+String weekKeyOf(DateTime weekStart) =>
+    '${weekStart.year.toString().padLeft(4, '0')}-'
+    '${weekStart.month.toString().padLeft(2, '0')}-'
+    '${weekStart.day.toString().padLeft(2, '0')}';

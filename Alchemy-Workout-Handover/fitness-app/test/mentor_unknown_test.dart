@@ -29,6 +29,14 @@ import 'package:fitness_app/screens/social/mentor_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 class _Src implements MentorSource {
+
+  /// 週互動評分。這支測試不碰它 —— 記下來就好。
+  final List<(String bond, String week, int stars)> weekRatings = [];
+
+  @override
+  Future<void> rateWeek(String bondId, String week, int stars) async =>
+      weekRatings.add((bondId, week, stars));
+
   @override
   Future<List<CloudBond>> bonds() async => const [];
   @override
