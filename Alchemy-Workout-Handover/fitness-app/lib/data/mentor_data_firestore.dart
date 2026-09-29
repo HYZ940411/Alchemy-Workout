@@ -140,30 +140,37 @@ class FirestoreMentor implements MentorSource {
   @override
   Future<void> recover(String bondId, DateTime now) async {
     final ref = _col.doc(bondId);
+
+    // **判斷留在交易裡，丟在交易外面。**
+    //
+    // 在 Web 上，從 `runTransaction` 內部丟出去的例外會被 JS interop
+    // 包起來，訊息整個不見 —— 使用者 2026-09-30 拿到的是
+    // 「Dart exception thrown from converted Future. Use the properties
+    // 'error' to fetch the boxed error…」，一個字的線索都沒有。
+    //
+    // 判斷本身仍在交易裡，避免「讀的時候還在期限內，寫的時候已經過期」。
+    String? problem;
+
     await _db.runTransaction((tx) async {
       final snap = await tx.get(ref);
       final b = _bondOf(bondId, snap.data() ?? const {});
-      // 過了三天就不能恢復了 —— 判斷放在 transaction 裡，
-      // 避免「讀的時候還在期限內，寫的時候已經過期」。
-      //
-      // **擋下來的時候要用丟的，不可以靜靜 return。**
-      // 原本是 `return;` —— 交易正常結束，呼叫端的
-      // `_write()` 於是記成「成功」，而雲端一個字都沒變。
-      // 使用者 2026-09-30 實測：教官按同意、畫面說已恢復、
-      // 學徒重載還是已解除。**一個什麼都沒做的成功。**
+
       if (b == null) {
-        throw StateError('recover: 關係文件不存在或缺 bondedAt（$bondId）');
+        problem = '關係文件不存在或缺 bondedAt（$bondId）';
+        return;
       }
       if (b.state != MentorBondState.released) {
-        throw StateError('recover: 這段關係不是已解除（state=${b.state.name}）');
+        problem = '這段關係不是已解除（state=${b.state.name}）';
+        return;
       }
       final rel = b.releasedAt;
       if (rel == null) {
-        throw StateError('recover: 已解除卻沒有 releasedAt');
+        problem = '已解除卻沒有 releasedAt';
+        return;
       }
       if (!b.recoverableAt(now)) {
-        throw StateError(
-            'recover: 已超過 3 天（解除於 $rel，現在 $now）');
+        problem = '已超過 3 天（解除於 $rel，現在 $now）';
+        return;
       }
 
       tx.update(ref, {
@@ -174,11 +181,11 @@ class FirestoreMentor implements MentorSource {
         'restoreProposedBy': FieldValue.delete(),
       });
     });
-  }
 
-  // ===========================================================================
-  // 任務與問答
-  // ===========================================================================
+    // **擋下來的時候要說得出來。** 原本是靜靜 `return;`，
+    // 交易正常結束、呼叫端的 `_write()` 記成「成功」，而雲端一個字都沒變。
+    if (problem != null) throw StateError('recover: $problem');
+  }
 
   @override
   Future<void> proposeRestore(String bondId, String byUid) async {

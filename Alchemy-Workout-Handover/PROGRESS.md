@@ -1442,8 +1442,28 @@ firebase deploy --only hosting
 
    ### 測試
 
-   `release_clears_stale_restore_test.dart` 增至 8 條，
-   突變（把守衛退回 `return;`）三條轉紅。2,642 passed。
+   `release_clears_stale_restore_test.dart` 增至 9 條，其中一條專門驗
+   **訊息帶著那個值**（`state=active`），而不是只說「失敗」。
+   兩次突變（訊息不帶值／擋下來時不丟）各打中對應的測試。2,643 passed。
+
+   ### 在 Web 上，交易裡丟出來的例外會失去訊息
+
+   改成丟例外之後，使用者拿到的是：
+
+   ```
+   師徒關係（教官側）　失敗：Error: Dart exception thrown from converted
+   Future. Use the properties 'error' to fetch the boxed error and
+   'stack' to recover the stack trace.
+   ```
+
+   **一個字的線索都沒有。** 從 `runTransaction` 內部丟出去的例外
+   在 Web 上會被 JS interop 包起來，`toString()` 只剩那句樣板話。
+
+   改成：**判斷留在交易裡，丟在交易外面**。判斷仍在交易內完成
+   （避免「讀的時候還在期限內，寫的時候已經過期」），只把原因記進
+   一個區域變數，交易結束後才丟。訊息帶著判斷不成立的那個值。
+
+   這一條對這個專案是通則：**例外要在能讀得到的地方丟。**
 
    ### 這一組「成功的假象」值得單獨記著
 

@@ -101,12 +101,25 @@ void main() {
     // 學徒重載還是已解除。**一個什麼都沒做的成功**，
     // 而那正是當晚查了一整輪的同一個形狀。
 
+    // **訊息要帶著判斷不成立的那個值。**
+    //
+    // 在 Web 上，從 `runTransaction` 內部丟出去的例外會被 JS interop
+    // 包起來、訊息整個不見（使用者 2026-09-30 拿到的是
+    // 「Dart exception thrown from converted Future…」，零線索）。
+    // 所以判斷留在交易裡、丟在交易外面 —— 這幾條驗的是丟出來的內容。
+    Matcher saying(String fragment) => throwsA(isA<StateError>()
+        .having((e) => e.message, '訊息', contains(fragment)));
+
     test('關係根本不是已解除', () async {
       final b = await _bonded();
       await expectLater(
-        b.src.recover(_bondId, DateTime.now()),
-        throwsA(isA<StateError>()),
-      );
+          b.src.recover(_bondId, DateTime.now()), saying('不是已解除'));
+    });
+
+    test('訊息帶著那個值，不是只說「失敗」', () async {
+      final b = await _bonded();
+      await expectLater(
+          b.src.recover(_bondId, DateTime.now()), saying('state=active'));
     });
 
     test('超過 3 天', () async {
@@ -116,7 +129,7 @@ void main() {
       await expectLater(
         b.src.recover(_bondId, t0.add(kMentorReleaseCooldown +
             const Duration(hours: 1))),
-        throwsA(isA<StateError>()),
+        saying('已超過 3 天'),
       );
       final bond = (await b.src.bonds()).single;
       expect(bond.state, MentorBondState.released, reason: '沒被改到');
@@ -126,9 +139,7 @@ void main() {
       final db = FakeFirebaseFirestore();
       final src = FirestoreMentor(uid: _mentorUid, firestore: db);
       await expectLater(
-        src.recover('沒有這一筆', DateTime.now()),
-        throwsA(isA<StateError>()),
-      );
+          src.recover('沒有這一筆', DateTime.now()), saying('不存在'));
     });
 
     test('該成功的時候照樣成功', () async {
