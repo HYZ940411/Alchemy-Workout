@@ -128,7 +128,12 @@ void main() {
     // 要讓推導值超過而儲存值沒超過，得是「我已經是他的學徒」，
     // 但那會被上一個條件（一次只能有一位教官）先擋掉。
     // **會被看見的差別在畫面上**：拜師成功後那行數字有沒有跟著動。
-    testWidgets('申請送出後，教官頁的「帶徒 N / M」就多一格', (t) async {
+    // **2026-09-29 標籤由「帶徒」改為「名額」。**
+    // 待回應的申請就佔一格，所以送出當下數字 +1 —— 那是防超收的設計。
+    // 但寫「帶徒 1 / 5」讀起來是「對方已經收了一個學徒」，而對方
+    // 還沒回應（使用者實測指出）。數字沒有錯，錯的是它說自己是什麼。
+    // 這條測試驗的「數字要跟著動」不變。
+    testWidgets('申請送出後，教官頁的「名額 N / M」就多一格', (t) async {
       t.view.physicalSize = const Size(393 * 3, 852 * 3);
       t.view.devicePixelRatio = 3.0;
       addTearDown(t.view.resetPhysicalSize);
@@ -136,8 +141,10 @@ void main() {
 
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-      final before = '帶徒 ${i.apprentices} / ${i.apprenticeCap}';
-      final after = '帶徒 ${i.apprentices + 1} / ${i.apprenticeCap}';
+      final before = '名額 ${i.apprentices} / ${i.apprenticeCap}';
+      // 送出之後那一格是我佔的，畫面要講出來。
+      final after =
+          '名額 ${i.apprentices + 1} / ${i.apprenticeCap}（含你的申請）';
 
       await t.pumpWidget(AppScope(
         state: s,

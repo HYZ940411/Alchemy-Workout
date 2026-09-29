@@ -84,6 +84,48 @@ void main() {
     expect(s.myInstructor, isNull);
   });
 
+  group('名額那個數字要說得出自己是什麼', () {
+    // 模型上待回應的申請就佔一格（避免超收）。原本的標籤寫「帶徒」——
+    // 使用者送出申請後看到「帶徒 1 / 5」，讀起來是「對方已經收了一個
+    // 學徒」，但對方根本還沒回應（2026-09-29 實測指出）。
+    //
+    // **數字沒有錯，錯的是它說自己是什麼。**
+
+    Future<String> slotTextOf(WidgetTester t, AppState s) async {
+      await open(t, s);
+      final f = find.textContaining('名額 ');
+      await t.scrollUntilVisible(f.first, 200,
+          scrollable: find.byType(Scrollable).first);
+      await t.pumpAndSettle();
+      return t.widget<Text>(f.first).data!;
+    }
+
+    testWidgets('還沒申請 —— 只講名額，不講「帶徒」', (t) async {
+      final s = AppState();
+      final text = await slotTextOf(t, s);
+      expect(text, startsWith('名額 '));
+      expect(text, isNot(contains('帶徒')),
+          reason: '待回應的申請也算在裡面，叫「帶徒」就是在說一件不是事實的事');
+      expect(text, isNot(contains('含你的申請')));
+    });
+
+    testWidgets('送出之後，要講出那一格是我佔的', (t) async {
+      final s = AppState();
+      s.applyMentor(s.instructors.first);
+      final text = await slotTextOf(t, s);
+      expect(text, contains('（含你的申請）'),
+          reason: '不講的話使用者無從分辨那一格是誰的');
+    });
+
+    testWidgets('數字本身沒變 —— 佔用的模型是對的', (t) async {
+      final s = AppState();
+      final before = s.slotsUsedOf(s.instructors.first);
+      s.applyMentor(s.instructors.first);
+      expect(s.slotsUsedOf(s.instructors.first), before + 1,
+          reason: '待回應的申請佔一格，那是防超收的設計，不是 bug');
+    });
+  });
+
   testWidgets('示範模式保留那個捷徑 —— 沒有第二個人可以按接受', (t) async {
     final s = AppState();
     s.applyMentor(s.instructors.first);
