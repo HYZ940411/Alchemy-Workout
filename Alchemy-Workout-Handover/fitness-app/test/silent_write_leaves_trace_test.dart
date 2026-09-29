@@ -102,6 +102,20 @@ void main() {
       expect(s.cloudWriteReport['師徒任務'], startsWith('沒送出'));
     });
 
+    test('寫到哪一段關係去，要跟寫成功一樣看得見', () async {
+      // Firestore 允許往**不存在的文件**底下建子集合 —— 關係 id 算錯的話
+      // 寫入照樣成功，而那些孤兒在列關係時根本不會出現。
+      // 2026-09-30 就是這樣：教官報「成功」，學徒在正確的關係底下讀到 0 則。
+      final src = _Mentor();
+      final s = _instructor(src);
+      s.assignMentorTask('練腿', '三組', apprenticeUid: 'u-學徒');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(s.cloudWriteReport['師徒任務 → '], 'u-教官_u-學徒');
+      expect(src.written.single, startsWith('u-教官_u-學徒/'),
+          reason: '報告上寫的，就要是真的寫進去的那一個');
+    });
+
     test('本機那一份照樣存在 —— 寫不上雲不該讓畫面也空了', () async {
       final src = _Mentor()..failing = true;
       final s = _instructor(src);

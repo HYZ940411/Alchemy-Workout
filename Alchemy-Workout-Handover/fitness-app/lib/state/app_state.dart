@@ -3217,7 +3217,13 @@ class AppState extends ChangeNotifier {
 
   /// 包一次即發即忘的寫入。[job] 為空值表示**這次根本沒送出**
   /// （來源或關係 id 是空的），那也要留下痕跡。
-  void _write(String what, Future<void>? job) {
+  void _write(String what, Future<void>? job, {String? into}) {
+    // **寫到哪裡去，要跟寫成功一樣看得見。**
+    //
+    // 2026-09-30：教官指派任務報「成功」，學徒在正確的關係底下卻讀到
+    // 0 則。Firestore **允許往不存在的文件底下建子集合** —— 關係 id
+    // 算錯的話寫入照樣成功，而那些孤兒在列關係時根本不會出現。
+    if (into != null) cloudWriteReport['$what → '] = into;
     if (job == null) {
       cloudWriteReport[what] = '沒送出 —— 來源或關係 id 是空的';
       notifyListeners();
@@ -5049,6 +5055,7 @@ class AppState extends ChangeNotifier {
       cloudReadReport['教官側'] = '沒讀 —— 來源或關係 id 是空的';
       return;
     }
+    cloudReadReport['我的 uid'] = myUid ?? '（空）';
     cloudReadReport['教官側關係'] = bond;
 
     // 兩種各自一個 `try` —— 理由見 [loadMyApprenticeSide]。
@@ -5142,6 +5149,7 @@ class AppState extends ChangeNotifier {
       return;
     }
     // 兩邊各自算出來的關係 id 必須一致，對不上就什麼都讀不到。
+    cloudReadReport['我的 uid'] = myUid ?? '（空）';
     cloudReadReport['學徒側關係'] = bond;
 
     // **提問與任務各自一個 `try`。** 共用一個的話，先讀的那種成功、
@@ -5315,7 +5323,8 @@ class AppState extends ChangeNotifier {
         ? _apprenticeBondId
         : mentorBondIdFor(t.apprenticeUid);
     _write('師徒任務',
-        src == null || bond == null ? null : src.putTask(bond, _asCloudTask(t)));
+        src == null || bond == null ? null : src.putTask(bond, _asCloudTask(t)),
+        into: bond);
   }
   late List<MentorQuestion> questions = demo ? buildQuestions() : [];
   late List<Apprentice> apprentices = demo ? buildApprentices() : [];
