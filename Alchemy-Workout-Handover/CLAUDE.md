@@ -65,7 +65,7 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 
 ```bash
 flutter analyze                          # 應該完全乾淨
-flutter test --timeout 90s               # 2,460 passed
+flutter test --timeout 90s               # 2,567 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                          # 17 passed，需要 Chrome
 flutter build macos --release

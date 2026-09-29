@@ -3421,6 +3421,27 @@ class AppState extends ChangeNotifier {
         .toList();
   }
 
+  /// 今天以外的推播 —— **紅點數得到，頁面原本列不出來的那些。**
+  ///
+  /// 紅點數的是 [notifications] 全部的未讀，而通知頁只列「今日推播」、
+  /// 「今日未送出」與「App 內通知」。昨天那則未讀的推播於是從畫面上
+  /// 消失，紅點卻還在數它：使用者看到紅點寫著 1，點進去一則未讀都沒有，
+  /// 而且怎麼點都消不掉。
+  ///
+  /// 不套同日總量上限 —— 那條上限管的是「今天打不打斷你」，
+  /// 已經過去的日子沒有這個問題，翻紀錄時該看得到全部。
+  ///
+  /// 由近至遠。翻舊通知的人先想看到的是最近那幾則。
+  List<AppNotification> get earlierPushes {
+    final t = now;
+    return notifications
+        .where((n) =>
+            n.kind == NotifyKind.push &&
+            !(n.at.year == t.year && n.at.month == t.month && n.at.day == t.day))
+        .toList()
+      ..sort((a, b) => b.at.compareTo(a.at));
+  }
+
   void markNotificationRead(AppNotification n) {
     if (n.read) return;
     n.read = true;
