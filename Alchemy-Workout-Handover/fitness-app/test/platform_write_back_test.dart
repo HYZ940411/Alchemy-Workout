@@ -48,7 +48,16 @@ void main() {
 
   setUp(() {
     db = FakeFirebaseFirestore();
-    s = AppState()..platformSource = FirestorePlatformData(firestore: db);
+    // **要帶管理員標記。**
+    //
+    // 2026-09-29 之前這裡沒有這一行，而這一整組測試照樣是綠的 ——
+    // 因為當時擋下寫入的條件是 `adminMode && !adminClaim`，
+    // 而 `adminMode` 全 App 沒有任何地方切換它，所以那個守衛從來沒生效。
+    // 也就是說：**這些測試驗的是一個沒有管理員也寫得進去的系統。**
+    // 守衛修好之後它們全部轉紅，那是對的。
+    s = AppState()
+      ..applyAdminClaim(true)
+      ..platformSource = FirestorePlatformData(firestore: db);
   });
 
   group('改完要寫得上去', () {
@@ -216,7 +225,9 @@ void main() {
 
   group('寫不上去要講出來，不能假裝成功', () {
     test('雲端壞掉時回傳說明，而且說得出會打回原形', () async {
-      final broken = AppState()..platformSource = _Broken();
+      final broken = AppState()
+        ..applyAdminClaim(true)
+        ..platformSource = _Broken();
       broken.applySettings('reward', {'trainCoin': 45});
 
       final why = await broken.pushConfigGroup('reward');
@@ -226,11 +237,13 @@ void main() {
           reason: '管理員要知道這次沒存進去，不然他下次登入才發現');
     });
 
-    test('開發者模式的管理員：當場說「寫不上雲」，不要等到下次登入才發現', () async {
+    test('沒有管理員標記：當場說「寫不上雲」，不要等到下次登入才發現', () async {
+      // **刻意不碰 `adminMode`。** 判準只有 `adminClaim` 一個 ——
+      // 原本還 and 了 `adminMode`，而那是 App 永遠不會設成 true 的旗標
+      // （見 `AppState._notReallyAdmin`）。
       final fake = AppState()
-        ..platformSource = FirestorePlatformData(firestore: db)
-        ..adminMode = true
-        ..adminClaim = false;
+        ..applyAdminClaim(false)
+        ..platformSource = FirestorePlatformData(firestore: db);
       fake.applySettings('reward', {'trainCoin': 45});
 
       final why = await fake.pushConfigGroup('reward');
@@ -243,9 +256,8 @@ void main() {
 
     test('帶著管理員標記就照常寫', () async {
       final boss = AppState()
-        ..platformSource = FirestorePlatformData(firestore: db)
-        ..adminMode = true
-        ..adminClaim = true;
+        ..applyAdminClaim(true)
+        ..platformSource = FirestorePlatformData(firestore: db);
       boss.applySettings('reward', {'trainCoin': 45});
       expect(await boss.pushConfigGroup('reward'), isNull);
     });
@@ -258,6 +270,7 @@ void main() {
 
     test('後備來源是唯讀的，寫進去不會爆', () async {
       final bundled = AppState()
+        ..applyAdminClaim(true)
         ..platformSource = const BundledPlatformData();
       expect(await bundled.pushConfigGroup('reward'), isNull);
     });

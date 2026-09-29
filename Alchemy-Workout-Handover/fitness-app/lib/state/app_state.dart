@@ -10084,10 +10084,16 @@ class AppState extends ChangeNotifier {
   ///
   /// **這個陷阱踩過兩次**（2026-09-28 審檢舉、2026-09-29 改成就門檻），
   /// 兩次都查了很久才發現 —— 所以現在由程式自己講出來。
-  String? get _notReallyAdmin => adminMode && !adminClaim
-      ? '這個帳號沒有管理員標記，改的東西只會留在本機 —— '
-          '雲端會擋下（開發者模式的管理員身分不是真的）。'
-      : null;
+  /// 這個帳號寫不寫得上雲 —— 寫不上就回一句話。
+  ///
+  /// **判準只有 `adminClaim` 一個。** 原本還 and 了 `adminMode`，
+  /// 而那個旗標全 App 沒有任何地方切換它（`toggleAdminMode()` 零個
+  /// 呼叫端），且 `applyAdminClaim(false)` 會把它強制設回 false ——
+  /// 兩個條件湊不齊，這整段判斷是死的。測試綠是因為它們直接
+  /// `..adminMode = true`，也就是從一個 App 不會進入的狀態出發。
+  String? get _notReallyAdmin => adminClaim
+      ? null
+      : '這個帳號沒有管理員標記，改的東西只會留在本機 —— 雲端會擋下。';
 
   Future<String?> _dropPlatform(String collection, String docId) async {
     final src = platformSource;
