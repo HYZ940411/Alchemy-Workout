@@ -9963,8 +9963,33 @@ class AppState extends ChangeNotifier {
       unlockCoins: unlockCoins,
       memberUnlockable: p.memberUnlockable,
     );
+    // **規格也要改。** `applyPlatformData` 會用 `planSpecById` 重建整份
+    // `platformPlans`（見該函式），只改上面那一份的話，下一次載入雲端資料
+    // 就把這次的設定洗掉了 —— 而那看起來會像「雲端沒寫進去」。
+    // 七份示範用假課表（`kPlans`）沒有對應的規格，那是正常的，跳過即可。
+    if (planSpecById[p.id] case final spec?) {
+      planSpecById[p.id] = spec.withConfig(
+          requiredRank: requiredRank, unlockCoins: unlockCoins);
+    }
     notifyListeners();
     return null;
+  }
+
+  /// 一份平台課表的規格。
+  ///
+  /// **`[BE-12b]`：這是第五個、也是最後一個補上寫回路徑的平台集合。**
+  /// 它比另外四個晚，因為後台改的 `unlockCoins` 原本不在
+  /// [PlatformPlanSpec] 上，寫回去會被靜靜丟掉。
+  ///
+  /// 示範用假課表（`kPlans`）沒有規格，也不該有 —— 它們不在雲端。
+  /// 回一句話而不是默默成功：後台看得到那七份，改了卻不會上雲，
+  /// 不講的話就是又一次「改了以為有效」。
+  Future<String?> pushPlanSpec(String planId) {
+    final spec = planSpecById[planId];
+    if (spec == null) {
+      return Future.value('這是示範用的課表，不在雲端 —— 改動只留在本機。');
+    }
+    return pushPlatform('plans', planId, planSpecToMap(spec));
   }
 
   /// 平台動作庫與平台訓練計畫的當前內容。

@@ -178,7 +178,19 @@ void showToast(BuildContext context, String message) {
         borderRadius: BorderRadius.circular(R.control),
       ),
       padding: const EdgeInsets.symmetric(horizontal: S.base, vertical: S.md),
-      margin: const EdgeInsets.fromLTRB(S.base, 0, S.base, S.md),
+      // **底部留出一整個底部按鈕列的高度**（`S.footerClear`）。
+      //
+      // 原本是 `S.md`，提示就貼在畫面最底 —— 而本專案的主按鈕一律在
+      // `_Footer` 裡，也在最底。兩者重疊的那兩秒，使用者按了沒反應
+      // （第 5 節 12c；註冊流程那一處 2026-09-17 是靠移除該提示繞過的，
+      // 但同一個陷阱在任何「動作完成 → 換頁 → 新頁底部有按鈕」的組合都在）。
+      //
+      // **為什麼不是讓提示不攔截點擊** —— 那才是根治，但 2026-09-29 實測過
+      // 兩條路都無效：`hitTestBehavior: translucent` 沒用，把 `content`
+      // 包進 `IgnorePointer` 也沒用，吃掉點擊的在 Flutter 的 SnackBar 內部。
+      // 真要根治得自己寫 OverlayEntry，那會動到全站 showToast 的計時器
+      // 生命週期（2,400 多個測試裡有大量間接呼叫它的）。留在 12c。
+      margin: const EdgeInsets.fromLTRB(S.base, 0, S.base, S.footerClear),
       width: null,
     ),
   );

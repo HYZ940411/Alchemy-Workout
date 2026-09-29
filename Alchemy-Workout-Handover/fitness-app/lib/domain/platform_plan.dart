@@ -48,6 +48,16 @@ class PlatformPlanSpec {
 
   /// 階級門檻。空值為不設限。
   final int? requiredRank;
+
+  /// 金幣解鎖價格。空值＝不提供這條解鎖方式。
+  ///
+  /// **2026-09-29 新增（`[BE-12b]`）。** 在此之前這個欄位只活在
+  /// [WorkoutPlan] 上，而後台的「設定訓練計畫」改的正是它 ——
+  /// 於是那個 Command 的改動無處可存，寫回雲端時會被靜靜丟掉。
+  /// 27 份 CSV 課表本身沒有這個資料（來源沒有這一欄），一律為空值；
+  /// 它存在的意義是**讓後台改得動的東西存得下來**。
+  final int? unlockCoins;
+
   final String equipmentTier;
 
   /// 適用經驗與適用目標 —— 訓練計畫推薦的兩個比對維度（`[QA-02l]`）。
@@ -81,6 +91,7 @@ class PlatformPlanSpec {
     required this.name,
     required this.level,
     required this.requiredRank,
+    this.unlockCoins,
     required this.equipmentTier,
     this.suitableExperience = const [],
     this.suitableGoals = const [],
@@ -93,4 +104,33 @@ class PlatformPlanSpec {
     required this.reference,
     required this.items,
   });
+
+  /// 套用後台「設定訓練計畫」改得動的那兩個欄位。
+  ///
+  /// **兩個都是必填的具名參數**，不是 `copyWith` 那種選填 ——
+  /// 這兩欄都可以被設成空值（階級留空＝不設限、價格留空＝不提供該解鎖
+  /// 方式），選填參數分不出「沒給」與「設成空值」，那正是會把
+  /// 「使用者把價格清掉」默默吃掉的寫法。
+  PlatformPlanSpec withConfig({
+    required int? requiredRank,
+    required int? unlockCoins,
+  }) =>
+      PlatformPlanSpec(
+        id: id,
+        name: name,
+        level: level,
+        requiredRank: requiredRank,
+        unlockCoins: unlockCoins,
+        equipmentTier: equipmentTier,
+        suitableExperience: suitableExperience,
+        suitableGoals: suitableGoals,
+        duration: duration,
+        intro: intro,
+        howTo: howTo,
+        load: load,
+        effect: effect,
+        technique: technique,
+        reference: reference,
+        items: items,
+      );
 }

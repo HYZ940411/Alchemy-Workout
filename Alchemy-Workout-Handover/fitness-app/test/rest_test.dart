@@ -141,10 +141,23 @@ void main() {
 
     testWidgets('數字用 Display 64／72 —— 全 App 唯一的例外用例', (t) async {
       await pumpRest(t, seconds: 88);
-      final n = t.widget<Text>(find.text('88'));
+      // **用 Key 定位，不用字面值。** 原本寫的是 `find.text('88')`，
+      // 而倒數讀的是真實時鐘 —— 從建構到 pump 之間只要超過一秒就變成 87，
+      // 整條測試隨機轉紅（2026-09-29 全量測試撞到，單獨重跑三次紅兩次）。
+      // 這條要驗的是字級，跟數字是幾無關。
+      final n = t.widget<Text>(find.byKey(restSecondsKey));
       expect(n.style!.fontSize, 64);
       expect(n.style!.height! * 64, 72);
       expect(n.style!.color, C.textPrimary);
+    });
+
+    testWidgets('倒數顯示的是剩餘秒數，且一開始就看得到完整秒數', (t) async {
+      await pumpRest(t, seconds: 88);
+      final shown = int.parse(t.widget<Text>(find.byKey(restSecondsKey)).data!);
+      // 進位而非捨去（見 `_remaining` 的註解），所以起始值就是 88；
+      // 容許慢一拍是因為這裡讀的是真實時鐘 —— 但**不容許差得更多**，
+      // 否則「顯示剩餘秒數」這件事就沒被驗到了。
+      expect(shown, anyOf(88, 87));
     });
 
     testWidgets('圓環直徑 240、跳過按鈕最小高 48', (t) async {

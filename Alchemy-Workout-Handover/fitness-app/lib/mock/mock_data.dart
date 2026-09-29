@@ -306,6 +306,9 @@ List<WorkoutPlan> buildCsvPlansFrom(
           name: s.name,
           source: PlanSource.official,
           requiredRank: s.requiredRank,
+          // 後台改得動的兩個欄位都要一路帶著走，否則「已設定」下次載入
+          // 就消失（`[BE-12b]`）。
+          unlockCoins: s.unlockCoins,
           equipmentTier: s.equipmentTier,
           suitableExperience: s.suitableExperience.toSet(),
           suitableGoals: s.suitableGoals.toSet(),

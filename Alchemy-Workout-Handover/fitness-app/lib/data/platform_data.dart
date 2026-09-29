@@ -132,6 +132,22 @@ Map<String, dynamic> planSpecToMap(PlatformPlanSpec s) => {
       'name': s.name,
       'level': s.level,
       'requiredRank': s.requiredRank,
+      // **2026-09-29 補上三個一直沒被序列化的欄位。**
+      //
+      // `unlockCoins` 是 `[BE-12b]`：後台「設定訓練計畫」改的就是它，
+      // 而它原本只活在 `WorkoutPlan` 上，寫回雲端時無處可放。
+      //
+      // `suitableExperience`／`suitableGoals` 更嚴重 —— 那是 `[QA-02l]`
+      // 補的兩欄（27 份課表逐一判定、使用者 2026-09-18 逐列審核通過），
+      // 而 `recommendPlan` **把空集合視為「全部符合」**。於是 2026-09-28
+      // 平台資料上雲之後，雲端那 27 筆兩欄皆空 → 每一份課表又重新宣稱
+      // 適合所有人，推薦退回只靠器材篩，`[QA-02l]` 等於被默默撤銷。
+      //
+      // 失敗方向是**寬鬆**的，所以不會有任何地方報錯。
+      // 舊的往返測試沒抓到，是因為它的夾具兩欄剛好都是預設空值。
+      'unlockCoins': s.unlockCoins,
+      'suitableExperience': s.suitableExperience,
+      'suitableGoals': s.suitableGoals,
       'equipmentTier': s.equipmentTier,
       'duration': s.duration,
       'intro': s.intro,
@@ -158,6 +174,16 @@ PlatformPlanSpec planSpecFromDoc(String id, Map<String, dynamic> m) =>
       name: m['name'] as String,
       level: m['level'] as String,
       requiredRank: (m['requiredRank'] as num?)?.toInt(),
+      unlockCoins: (m['unlockCoins'] as num?)?.toInt(),
+      // 缺鍵時退回空清單，與 `PlatformPlanSpec` 的預設一致 ——
+      // 舊文件（2026-09-29 之前上傳的那批）沒有這兩個鍵。
+      suitableExperience: [
+        for (final v in (m['suitableExperience'] as List? ?? const []))
+          v as String,
+      ],
+      suitableGoals: [
+        for (final v in (m['suitableGoals'] as List? ?? const [])) v as String,
+      ],
       equipmentTier: m['equipmentTier'] as String,
       duration: m['duration'] as String? ?? '',
       intro: m['intro'] as String? ?? '',

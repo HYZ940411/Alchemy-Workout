@@ -244,7 +244,15 @@ class _PlatformPlansScreenState extends State<PlatformPlansScreen> {
       return;
     }
     final failure = s.setPlanConfig(p, requiredRank: r, unlockCoins: u);
-    showToast(context, failure ?? '已設定');
+    if (failure != null) {
+      showToast(context, failure);
+      return;
+    }
+    // 沿用另外四類的寫法：本機先改（上面那一行），再把改完的樣子送上雲，
+    // 雲端那一趟的結果才是使用者看到的那句話（`[BE-12b]`）。
+    final cloud = await s.pushPlanSpec(p.id);
+    if (!context.mounted) return;
+    showToast(context, cloud ?? '已設定');
     setState(() {});
   }
 }

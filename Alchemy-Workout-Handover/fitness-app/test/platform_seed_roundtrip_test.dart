@@ -80,6 +80,54 @@ void main() {
     }
   });
 
+  // **上面那條測試曾經漏掉兩個欄位，而且是結構性的漏。**
+  //
+  // 它拿 `planSpecToMap(收到的)` 比 `planSpecToMap(想要的)` —— 兩邊都是
+  // 同一支序列化函式。函式少寫一個欄位的時候，**兩邊會一起少**，
+  // 於是它們仍然相等，測試照樣是綠的。
+  //
+  // 實際發生的事：`suitableExperience`／`suitableGoals`（`[QA-02l]` 補的
+  // 那兩欄，27 份課表逐一判定、使用者 2026-09-18 逐列審核）從來沒有被
+  // 序列化過。2026-09-28 平台資料上雲之後，雲端那 27 筆兩欄皆空，
+  // 而 `recommendPlan` **把空集合視為「全部符合」**，於是每一份課表
+  // 又重新宣稱適合所有人 —— 推薦退回只靠器材篩，`[QA-02l]` 被默默撤銷。
+  //
+  // 所以這一條不碰 `planSpecToMap`，直接比欄位。
+  test('課表的欄位逐一比對 —— 不經過序列化函式，它自己可能就是壞的', () async {
+    final got = {for (final s in (await fromCloud()).planSpecs) s.id: s};
+    for (final want in bundle.planSpecs) {
+      final g = got[want.id];
+      expect(g, isNotNull, reason: '${want.id} 上雲之後不見了');
+      final why = '${want.name}（${want.id}）';
+      expect(g!.name, want.name, reason: why);
+      expect(g.level, want.level, reason: why);
+      expect(g.requiredRank, want.requiredRank, reason: why);
+      expect(g.unlockCoins, want.unlockCoins, reason: why);
+      expect(g.equipmentTier, want.equipmentTier, reason: why);
+      expect(g.suitableExperience, want.suitableExperience, reason: why);
+      expect(g.suitableGoals, want.suitableGoals, reason: why);
+      expect(g.duration, want.duration, reason: why);
+      expect(g.intro, want.intro, reason: why);
+      expect(g.howTo, want.howTo, reason: why);
+      expect(g.load, want.load, reason: why);
+      expect(g.effect, want.effect, reason: why);
+      expect(g.technique, want.technique, reason: why);
+      expect(g.reference, want.reference, reason: why);
+      expect(g.items.length, want.items.length, reason: why);
+    }
+  });
+
+  // 上面那條只比得到「兩邊一樣」。這一條盯的是**內容本身不是空的** ——
+  // 如果哪天資料源頭把那兩欄清空了，兩邊仍然會一樣，而推薦仍然會壞。
+  test('適用經驗與適用目標真的有東西 —— 空集合等於不篩選', () async {
+    final got = (await fromCloud()).planSpecs;
+    expect(got.where((s) => s.suitableExperience.isNotEmpty).length,
+        got.length,
+        reason: '每一份課表都要有適用經驗，否則 recommendPlan 視為全部符合');
+    expect(got.where((s) => s.suitableGoals.isNotEmpty).length, got.length,
+        reason: '同上 —— 這兩欄是 [QA-02l] 的全部內容');
+  });
+
   test('成就定義逐筆一模一樣', () async {
     final got = {
       for (final a in (await fromCloud()).achievements) achievementDocId(a): a,

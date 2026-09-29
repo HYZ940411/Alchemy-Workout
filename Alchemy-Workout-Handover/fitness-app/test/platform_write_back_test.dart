@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/data/platform_data.dart';
 import 'package:fitness_app/data/platform_data_firestore.dart';
+import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/domain/task_pool.dart';
 import 'package:fitness_app/state/app_state.dart';
@@ -140,6 +141,76 @@ void main() {
       expect(await s.dropTaskPoolItem(item), isNull);
       expect((await db.collection('daily_task_pool').doc('tp-new').get()).exists,
           isFalse);
+    });
+
+    // ------------------------------------------------------------------
+    // [BE-12b]：第五個、也是最後一個補上寫回路徑的集合。
+    //
+    // 它比另外四個晚了一天，因為後台改的 `unlockCoins` 原本**不在**
+    // `PlatformPlanSpec` 上（只活在 `WorkoutPlan`），直接寫回去會被
+    // 靜靜丟掉 —— 存了、看起來成功、而那個欄位根本沒被送出去。
+    // ------------------------------------------------------------------
+
+    /// 一份真的雲端課表（27 份 CSV 課表之一），不是七份示範假課表。
+    WorkoutPlan cloudPlan(AppState s) =>
+        s.platformPlans.firstWhere((p) => s.planSpecById.containsKey(p.id));
+
+    test('訓練計畫：階級門檻與解鎖價格都進得了雲端', () async {
+      final p = cloudPlan(s);
+      expect(s.setPlanConfig(p, requiredRank: 40, unlockCoins: 300), isNull);
+      expect(await s.pushPlanSpec(p.id), isNull);
+
+      final doc = await db.collection('plans').doc(p.id).get();
+      expect(doc.data()!['requiredRank'], 40);
+      expect(doc.data()!['unlockCoins'], 300,
+          reason: '這一欄就是 [BE-12b] 卡住的原因 —— 它原本無處可存');
+    });
+
+    test('把價格清空也要寫得上去 —— 那與「沒改」是兩件事', () async {
+      final p = cloudPlan(s);
+      s.setPlanConfig(p, requiredRank: 40, unlockCoins: 300);
+      await s.pushPlanSpec(p.id);
+      final after = s.platformPlans.firstWhere((x) => x.id == p.id);
+
+      expect(s.setPlanConfig(after, requiredRank: null, unlockCoins: null),
+          isNull);
+      expect(await s.pushPlanSpec(p.id), isNull);
+
+      final doc = await db.collection('plans').doc(p.id).get();
+      expect(doc.data()!['unlockCoins'], isNull);
+      expect(doc.data()!['requiredRank'], isNull);
+    });
+
+    test('改完之後重新從雲端載入，設定還在', () async {
+      final p = cloudPlan(s);
+      s.setPlanConfig(p, requiredRank: 40, unlockCoins: 300);
+      await s.pushPlanSpec(p.id);
+
+      // 這正是登入時走的那條路 —— 之前就是它把後台的改動洗掉的。
+      s.applyPlatformData(
+          await FirestorePlatformData(firestore: db).load());
+
+      final back = s.platformPlans.firstWhere((x) => x.id == p.id);
+      expect(back.unlockCoins, 300);
+      expect(back.requiredRank, 40);
+    });
+
+    test('改一份課表不會動到別份的適用經驗與目標', () async {
+      final p = cloudPlan(s);
+      s.setPlanConfig(p, requiredRank: 40, unlockCoins: 300);
+      await s.pushPlanSpec(p.id);
+
+      final doc = await db.collection('plans').doc(p.id).get();
+      expect(doc.data()!['suitableGoals'], isNotEmpty,
+          reason: '寫回去的是整份規格，那兩欄要跟著走，不能被清掉');
+    });
+
+    test('示範用假課表沒有雲端對應，要講出來而不是默默成功', () async {
+      // 七份 kPlans 不在 planSpecById 裡 —— 它們不是平台資料。
+      final demo =
+          s.platformPlans.firstWhere((p) => !s.planSpecById.containsKey(p.id));
+      expect(await s.pushPlanSpec(demo.id), contains('示範'));
+      expect((await db.collection('plans').doc(demo.id).get()).exists, isFalse);
     });
   });
 
