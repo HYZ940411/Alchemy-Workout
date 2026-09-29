@@ -1410,6 +1410,40 @@ firebase deploy --only hosting
    在動作名稱裡也找得到（「俯臥屈腿 · 啞鈴」），用文字定位一次命中十幾個
    —— 第一版測試就是這樣紅的。
 
+2L. **2026-09-29 他當上了一個沒有人找得到的教官**
+
+   2K 修完，B 自己看得到「我是教官了」。**而 A 的拜師頁上還是沒有他。**
+
+   用 Admin SDK 查證：`instructor_cases` 那筆是 `state: passed`，
+   而 B 的 `public_profiles` 文件 **`isInstructor` 仍是 `false`**。
+
+   ### 狀態改對了，而改對的那件事沒有傳出去
+
+   `_becomeInstructor()` 只改本機三個欄位（`isInstructor`、
+   `instructorReputation`、`peakReputation`），**沒有重新發布公開檔案**。
+   而拜師頁跑的是 `instructors`，那份清單由**別人的公開檔案**建出來
+   （`_applyInstructor` 讀 `p.isInstructor`）。
+
+   `myPublicProfile()` 本來就帶 `isInstructor`／`reputation`／
+   `apprentices`／`apprenticeCap`／`specialties` —— 缺的只是那一次發布。
+
+   ### 順手補上自我修復
+
+   `_becomeInstructor()` 開頭是 `if (isInstructor) return;`，所以
+   **已經是教官的人下次登入不會再發布** —— 在這個修正之前就當上教官的人
+   （例如今天測到的那位），公開檔案會永遠停在 false。
+   所以 `loadMyInstructorVerdict()` 在 `passed` 時**無條件再發一次**，
+   下次登入自己補上。
+
+   ### 這是同一家族的第九次
+
+   2A 序列化漏欄位、2C 顏色被丟掉、2H 判斷湊不齊、2I 案件沒離開裝置、
+   2K 裁決沒回到申請人 —— 加上這一次。
+   **狀態改對了，而改對的那件事沒有傳到需要它的地方。**
+   六次都沒有紅燈，六次都是使用者用眼睛看出來的。
+
+   測試增 5 條，突變轉紅。
+
 2K. **2026-09-29 教官資格核准了，但申請人自己不知道**
 
    使用者實測步驟 1–3 全過（申請、作答、管理員在待審佇列看到並核准），

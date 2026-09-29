@@ -5955,6 +5955,19 @@ class AppState extends ChangeNotifier {
     isInstructor = true;
     instructorReputation = kInstructorInitialReputation;
     peakReputation = math.max(peakReputation, instructorReputation);
+    // **把教官身分發布到公開檔案上。**
+    //
+    // 拜師頁跑的是 `instructors`，而那份清單由別人的公開檔案建出來
+    // （`_applyInstructor` 讀 `p.isInstructor`）。不發布的話：
+    // 這個人自己看到「我是教官了」，而**其他人的拜師頁上沒有他** ——
+    // 也就是他當上了一個沒有人找得到的教官。
+    //
+    // 使用者 2026-09-29 實測撞到：B 通過審核（雲端 `state: passed`），
+    // 而 B 的公開檔案 `isInstructor` 仍是 false，A 的教官清單裡沒有他。
+    //
+    // `myPublicProfile()` 本來就帶 `isInstructor`／`reputation`／
+    // `apprentices`／`apprenticeCap`／`specialties` —— 缺的只是這一次發布。
+    publishMyProfile();
   }
 
   void advanceInstructorApplication() {
@@ -10520,6 +10533,16 @@ class AppState extends ChangeNotifier {
           instructorStage = InstructorStage.approved;
           instructorRejectStage = null;
           _becomeInstructor();
+          // **每次登入都重發一次，不只在成為教官的那一刻。**
+          //
+          // `_becomeInstructor()` 開頭是 `if (isInstructor) return;` ——
+          // 已經是教官的人不會再跑到裡面那句發布。於是一個在「發布」
+          // 這件事修好之前就當上教官的人，公開檔案會永遠停在
+          // `isInstructor: false`，而別人的拜師頁上永遠沒有他。
+          //
+          // 這一行讓它自我修復：下次登入就補上。即發即忘、吞掉錯誤，
+          // 多發一次的成本是一次寫入。
+          publishMyProfile();
         case InstructorVerdict.rejected:
           instructorStage = InstructorStage.rejected;
           instructorRejectStage = '管理員審核';
