@@ -161,6 +161,35 @@ class FirestoreMentor implements MentorSource {
     return out;
   }
 
+  /// 動一下 bond 文件，讓對方的即時訂閱收得到訊號。
+  ///
+  /// ## 為什麼非做不可
+  ///
+  /// 任務與問答都寫在 `mentor_bonds/{id}` 的**子集合**裡，而
+  /// [watchMentor] 監看的是 bond **文件本身** ——
+  /// **子集合的寫入不會改動父文件，所以那個訂閱一次都不會觸發。**
+  ///
+  /// 使用者 2026-09-29 實測 T3：A 提問、B 要重新整理才看得到。
+  /// 而 T1（接受拜師）是好的，因為接受會真的改到 bond 文件。
+  ///
+  /// ## 為什麼不改成監看子集合
+  ///
+  /// collection group 查詢要一個**不會自動建立**的索引，
+  /// 而那是「畫面成功、雲端無聲拒絕」那一類的錯（`bond()` 那次）。
+  /// 動一下父文件是同一個效果、零新索引，而且沿用已經驗過的那條訂閱。
+  ///
+  /// 失敗不擋主要動作 —— 問題本身已經寫進去了，少一次訊號的代價是
+  /// 對方要下拉重新整理，而不是問題不見了。
+  Future<void> _touchBond(String bondId) async {
+    try {
+      await _col.doc(bondId).update({
+        'lastActivityAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {
+      // 見上：訊號送不出去不該讓提問本身失敗。
+    }
+  }
+
   @override
   Future<void> putTask(String bondId, CloudMentorTask t) async {
     await _col.doc(bondId).collection('tasks').doc(t.id).set({
@@ -170,6 +199,7 @@ class FirestoreMentor implements MentorSource {
       'rewardCoins': t.rewardCoins,
       if (t.rating != null) 'rating': t.rating,
     });
+    await _touchBond(bondId);
   }
 
   @override
@@ -191,6 +221,7 @@ class FirestoreMentor implements MentorSource {
       'text': q.text,
       'at': Timestamp.fromDate(q.at),
     });
+    await _touchBond(bondId);
   }
 
   @override
@@ -200,6 +231,7 @@ class FirestoreMentor implements MentorSource {
       'answer': text,
       'answeredAt': Timestamp.fromDate(at),
     });
+    await _touchBond(bondId);
   }
 
   // ===========================================================================
