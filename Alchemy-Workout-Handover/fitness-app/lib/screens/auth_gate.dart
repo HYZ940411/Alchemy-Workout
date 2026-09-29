@@ -433,6 +433,10 @@ class _AuthGateState extends State<AuthGate> {
         // 於是拜師頁上那個星等永遠是 0。要排在 `applyCloudBonds`
         // 之後：學徒清單是它建出來的。
         await widget.state.loadMentorSide();
+        // **學徒那一側也要讀。** `loadMentorSide()` 跑的是「我帶的每位
+        // 學徒」，而一位學徒的那份清單是空的 —— 少了下面這一行，
+        // 教官的回答永遠到不了學徒手上（使用者 2026-09-29 實測）。
+        await widget.state.loadMyApprenticeSide();
         return '${got.length} 段關係';
       });
       // 待回應的師徒申請。**同樣在此之前沒有任何呼叫端** ——

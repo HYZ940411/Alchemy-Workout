@@ -3168,6 +3168,8 @@ class AppState extends ChangeNotifier {
       try {
         applyCloudBonds(await mentor.bonds());
         await loadMentorSide();
+        // **學徒那一側也要讀。** 少了它，教官的回答永遠到不了學徒手上。
+        await loadMyApprenticeSide();
       } catch (_) {/* 同上 */}
       try {
         applyCloudMentorRequests(await mentor.requestsFor(uid));
@@ -4997,6 +4999,69 @@ class AppState extends ChangeNotifier {
       final uid = a.uid;
       if (uid != null) await loadMentorSideOf(uid);
     }
+  }
+
+  /// 把**我當學徒**那一段讀回來（`[BE-15]` 漏掉的另一半）。
+  ///
+  /// ## 為什麼非有不可
+  ///
+  /// `loadMentorSide()` 跑的是「我帶的每位學徒」—— 一位學徒的
+  /// `apprentices` 是空的，所以它什麼都不做。於是**學徒從來不會重讀
+  /// 自己的問答**：他提的問題只有本機那一份，而教官的回答寫在雲端，
+  /// 兩者之間沒有橋。
+  ///
+  /// 使用者 2026-09-29 實測：B 收得到提問（訊號那一半修好了），
+  /// 而 **A 收不到回答** —— 重整幾次都一樣，因為沒有人去讀。
+  ///
+  /// 與 2K（教官資格的裁決回不到申請人）、2L（教官身分沒發布出去）
+  /// 同一家族：**一邊接上了，另一邊沒有。**
+  Future<void> loadMyApprenticeSide() async {
+    final src = mentorSource;
+    final bond = _apprenticeBondId;
+    if (src == null || bond == null) return;
+
+    try {
+      for (final q in await src.questions(bond)) {
+        final at = questions.indexWhere((x) => x.id == q.id);
+        final m = MentorQuestion(
+          id: q.id,
+          from: displayName,
+          // **空值＝這是我自己問的**（見 `isMyQuestion`）。
+          // 我是學徒那一側，這一段底下的提問都是我問的。
+          apprenticeUid: null,
+          text: q.text,
+          at: q.at,
+          answer: q.answer,
+        );
+        if (at >= 0) {
+          questions[at] = m;
+        } else {
+          questions.add(m);
+        }
+      }
+      for (final t in await src.tasks(bond)) {
+        final at = mentorTasks.indexWhere((x) => x.id == t.id);
+        final m = MentorTask(
+          id: t.id,
+          title: t.title,
+          detail: t.detail,
+          // 同上：這一段是「我與我的教官」，任務是指派給我的。
+          apprenticeUid: null,
+          state: t.state,
+          rewardCoins: t.rewardCoins,
+          rating: t.rating,
+        );
+        if (at >= 0) {
+          mentorTasks[at] = m;
+        } else {
+          mentorTasks.add(m);
+        }
+      }
+    } catch (_) {
+      // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的問答清空。
+      return;
+    }
+    notifyListeners();
   }
 
   /// 以雲端的師徒關係為準（[BE-14]／[BE-15]）。

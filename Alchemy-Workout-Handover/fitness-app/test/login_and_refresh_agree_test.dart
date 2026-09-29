@@ -27,11 +27,18 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  /// 從一段程式碼裡抓出所有 `applyXxx(` 的呼叫。
-  Set<String> applyCalls(String src) =>
-      RegExp(r'\b(apply[A-Z]\w*)\(')
+  /// 從一段程式碼裡抓出所有 `applyXxx(` 與 `loadXxx(` 的呼叫。
+  ///
+  /// **`load` 是 2026-09-29 補的。** 原本只看 `apply`，於是
+  /// `loadMyApprenticeSide()` 漏接在 `AuthGate` 那一條時它沒抓到 ——
+  /// 而那正是這道檢查存在的理由（教官的回答到不了學徒手上）。
+  Set<String> loadCalls(String src) =>
+      RegExp(r'\b((?:apply|load)[A-Z]\w*)\(')
           .allMatches(src)
           .map((m) => m.group(1)!)
+          // `loadMentorSideOf` 由 `loadMentorSide` 內部呼叫，
+          // 不需要 `AuthGate` 自己再叫一次。
+          .where((n) => n != 'loadMentorSideOf')
           .toSet();
 
   test('refreshInbound 做的每一件事，登入時也要做', () {
@@ -45,10 +52,10 @@ void main() {
     final end = rest.indexOf('\n  // ────');
     final body = end > 0 ? rest.substring(0, end) : rest.substring(0, 7000);
 
-    final onRefresh = applyCalls(body);
+    final onRefresh = loadCalls(body);
     expect(onRefresh, isNotEmpty, reason: '抓不到任何呼叫 —— 檢查本身壞了');
 
-    final onLogin = applyCalls(gate);
+    final onLogin = loadCalls(gate);
     final missing = onRefresh.difference(onLogin);
 
     expect(missing, isEmpty,
