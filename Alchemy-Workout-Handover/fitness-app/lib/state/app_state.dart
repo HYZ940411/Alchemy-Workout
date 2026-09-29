@@ -5939,20 +5939,39 @@ class AppState extends ChangeNotifier {
   ///
   /// 每位學徒每週最多 2 次任務評分計入聲望；超出者仍可評分並領獎，只是不計分。
   /// 該擋的是計分，不是行為 —— 教官為教學需要多指派屬正當行為。
-  bool rateMentorTask(MentorTask t, int stars) {
-    if (!isValidStars(stars)) return false;
+  /// 本週的任務評分是否已用完計分額度。
+  ///
+  /// `taskRatingsThisWeek` **只在有計分的那個分支裡加一**，所以它
+  /// 永遠不會超過上限 —— 畫面原本寫 `> 上限` 來判斷「額度用完了」，
+  /// 那個條件因此**永遠不會成立**，死在那裡。
+  /// 使用者 2026-09-30 問「評了好幾個任務，那個數字是不是該跟著變」，
+  /// 才翻出來：第三則之後聲望確實不再動，而 toast 照樣報一個沒變的數字。
+  bool get taskRatingCapReached =>
+      taskRatingsThisWeek >= kMentorTaskRatingWeeklyCap;
+
+  /// 評分的結果。**「評得下去」與「有沒有計進聲望」是兩件事** ——
+  /// 回 `bool` 的時候畫面分不出來，只好一律報一個數字。
+  RateResult rateMentorTask(MentorTask t, int stars) {
+    if (!isValidStars(stars)) return RateResult.rejected;
     // 沒有師徒關係就沒有可評的對象。
-    if (myInstructor == null) return false;
-    if (t.state == MentorTaskState.assigned) return false;
+    if (myInstructor == null) return RateResult.rejected;
+    if (t.state == MentorTaskState.assigned) return RateResult.rejected;
     final first = t.rating == null;
     t.rating = stars;
     _pushTask(t);
-    if (first && taskRatingsThisWeek < kMentorTaskRatingWeeklyCap) {
-      taskRatingsThisWeek += 1;
-      _bumpInstructorReputation(kMentorTaskReputationDelta[stars - 1]);
+    if (!first) {
+      notifyListeners();
+      // 改分數可以，但聲望不重複計算。
+      return RateResult.alreadyRated;
     }
+    if (taskRatingCapReached) {
+      notifyListeners();
+      return RateResult.capReached;
+    }
+    taskRatingsThisWeek += 1;
+    _bumpInstructorReputation(kMentorTaskReputationDelta[stars - 1]);
     notifyListeners();
-    return true;
+    return RateResult.counted;
   }
 
   /// 學徒已評分該週互動。每位學徒每週最多一次；**未評分時聲望無變動，

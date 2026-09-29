@@ -773,13 +773,22 @@ class _TaskCard extends StatelessWidget {
                   for (var i = 1; i <= 5; i++)
                     GestureDetector(
                       onTap: () {
-                        s.rateMentorTask(task, i);
-                        showToast(
-                            context,
-                            s.taskRatingsThisWeek > kMentorTaskRatingWeeklyCap
-                                ? '已評分，本週計入聲望的次數已用完'
-                                : '已評分，教官聲望 '
-                                    '${s.myInstructor?.reputation ?? 0}');
+                        // **說出真的發生了什麼。** 原本的條件寫
+                        // `taskRatingsThisWeek > 上限`，而那個計數器
+                        // 只在有計分時才加一、永遠不會超過上限 ——
+                        // 那個分支從來沒跑到過，於是第三則之後聲望
+                        // 不再動，畫面照樣報一個沒變的數字。
+                        showToast(context, switch (s.rateMentorTask(task, i)) {
+                          RateResult.counted =>
+                            '已評分，教官聲望 ${s.myInstructor?.reputation ?? 0}',
+                          RateResult.capReached =>
+                            '已評分。本週計入聲望的次數已用完（每週 '
+                                '$kMentorTaskRatingWeeklyCap 則），'
+                                '任務照樣算評過。',
+                          RateResult.alreadyRated =>
+                            '已改成 $i 星。同一則不重複計入聲望。',
+                          RateResult.rejected => '這則現在評不了。',
+                        });
                       },
                       child: Padding(
                         padding: const EdgeInsets.all(3),

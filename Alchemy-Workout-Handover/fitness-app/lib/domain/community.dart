@@ -486,6 +486,29 @@ const kWeeklyInteractionReputationDelta = <int>[-2, 0, 4, 8, 12];
 /// 每位學徒每週最多這麼多次**任務評分**計入聲望；超出者仍可完成並領獎，只是不計分。
 const int kMentorTaskRatingWeeklyCap = 2;
 
+/// 學徒評一則師徒任務之後，實際發生了什麼。
+///
+/// **「評得下去」與「有沒有計進教官的聲望」是兩件事。** 原本這一支
+/// 回 `bool`，畫面分不出來，於是不管有沒有計分都報一個聲望數字 ——
+/// 而超出每週上限之後那個數字根本不會動。
+enum RateResult {
+  /// 評了，而且計進聲望。
+  counted,
+
+  /// 評了，但本週計分額度已用完 —— 任務照樣算評過。
+  capReached,
+
+  /// 評了（改分數），但同一則不重複計分。
+  alreadyRated,
+
+  /// 評不下去（星數不合法、沒有教官、任務還沒完成）。
+  rejected,
+}
+
+extension RateResultX on RateResult {
+  bool get ok => this != RateResult.rejected;
+}
+
 /// 帶徒上限：初始 2 人，每達一個聲望門檻 +1，最大 5 人。
 /// 門檻採遞增（1 : 2 : 4）—— 帶徒愈多取得聲望愈快，等差會使後段升級失控。
 /// 教官初始聲望，於「使用者已成為教官」時給予。
