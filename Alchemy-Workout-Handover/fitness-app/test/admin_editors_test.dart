@@ -125,9 +125,29 @@ void main() {
       platformConfig.group('exam').param('mcCount').value = 999;
       expect(s.examBankWarning, isNotNull);
 
-      platformConfig.group('exam').param('mcCount').value = 2;
+      // **不能設成 2。** 2026-09-29 起題庫有 10 題必答題，而必答題一定
+      // 要出現在每一份考卷上 —— 一份 2 題的考卷裝不下它們，抽不出來。
+      platformConfig.group('exam').param('mcCount').value = 12;
       platformConfig.group('exam').param('saCount').value = 2;
       expect(s.examBankWarning, isNull);
+    });
+
+    test('必答題多於考卷題數時，後台也要講', () {
+      // 這一條與「題庫不足」是不同的原因，但同樣會讓抽題回空清單。
+      // 不講的話管理員只會看到作答被擋，而查不出為什麼。
+      final s = AppState();
+      platformConfig.group('exam').param('mcCount').value = 5;
+      expect(s.examBankWarning, contains('必答題'));
+    });
+
+    test('題庫剛好等於考卷時，後台要講「每個人拿到同一份」', () {
+      // 這是 1Z 那個缺陷的守門員：它不會拋錯，只會讓隨機性變成零。
+      final s = AppState();
+      final mc = s.examBank
+          .where((q) => q.type == ExamQuestionType.multipleChoice)
+          .length;
+      platformConfig.group('exam').param('mcCount').value = mc;
+      expect(s.examBankWarning, contains('剛好'));
     });
 
     test('選擇題至少要有兩個選項', () {

@@ -102,12 +102,45 @@ class ExamQuestion {
   List<String> options;
   int answerIndex;
 
+  /// 這一題在測什麼風險。**只給管理員看，不給應試者看。**
+  ///
+  /// 2026-09-29 新增。沒有這一欄的時候，題庫是一堆沒有出處的問句 ——
+  /// 沒有人說得出某一題為什麼在這裡，於是也沒有人敢刪。
+  String rationale;
+
+  /// 必答題：**答錯即不及格**，與百分比門檻並存。
+  ///
+  /// 這些是安全關鍵題 —— 答錯的後果不是「懂得少」而是「會出事」。
+  /// 百分比門檻擋不住它們：20 題錯 4 題仍是 80%，而那 4 題可能正好是
+  /// 「胸痛先休息一下」「未成年可以私下約」。
+  bool mustPass;
+
+  /// 簡答題的評分細則 —— 通過需涵蓋哪些要素。
+  ///
+  /// **細則要具體到兩位審核者依此評分會得到同一個結果。**
+  /// 沒有細則的人工審核等於各憑印象，而那正是「誰能帶別人訓練」
+  /// 最不該憑印象的地方。
+  String rubricPass;
+
+  /// 簡答題的細則 —— 出現這些內容**直接判定不通過**。
+  String rubricFail;
+
+  /// 簡答題的追問範例 —— 管理員讀完答案後可以拋出的後續情境。
+  ///
+  /// 用途是**辨識背稿者**：背下來的答案禁不起一個換了條件的追問。
+  String followUp;
+
   ExamQuestion({
     required this.id,
     required this.type,
     required this.text,
     List<String>? options,
     this.answerIndex = 0,
+    this.rationale = '',
+    this.mustPass = false,
+    this.rubricPass = '',
+    this.rubricFail = '',
+    this.followUp = '',
   }) : options = options ?? [];
 }
 
@@ -132,8 +165,40 @@ List<ExamQuestion> drawExamPaper(
       .where((q) => q.type == ExamQuestionType.multipleChoice)
       .toList();
   if (mc.length < mcCount) return const [];
-  mc.shuffle(rng ?? math.Random());
-  return mc.take(mcCount).toList();
+
+  // **必答題一定要出現在每一份考卷上。**
+  //
+  // 「答錯任一題即不及格」的前提是那一題有被問到。如果它只是題庫裡
+  // 的一員、抽到才算數，那它就從「一定要會」退化成「運氣不好才會被問」
+  // —— 而這些題目問的是胸痛、未成年界線、自傷念頭那一類，
+  // 答錯的後果不是分數難看。
+  final must = mc.where((q) => q.mustPass).toList();
+  final rest = mc.where((q) => !q.mustPass).toList();
+  final r = rng ?? math.Random();
+
+  // 必答題比考卷還多的時候不硬抽 —— 那張考卷已經不是設計出來的那一份，
+  // 與題庫不足同一個處理：回空清單，讓呼叫端擋下並講出原因。
+  if (must.length > mcCount) return const [];
+
+  must.shuffle(r);
+  rest.shuffle(r);
+  final paper = [...must, ...rest.take(mcCount - must.length)];
+  // 必答題不可以固定排在前面 —— 那等於告訴應試者哪幾題是關鍵題。
+  paper.shuffle(r);
+  return paper;
+}
+
+/// 這份考卷裡**答錯了幾題必答題**。
+///
+/// 與 [gradeExamPaper] 分開：答對幾題是分數，答錯必答題是**否決**。
+/// 混在一個數字裡的話，「80% 但錯了一題胸痛」與「80% 全對關鍵題」
+/// 會得到同一個結果。
+int missedMustPass(List<ExamQuestion> paper, Map<String, int> answers) {
+  var missed = 0;
+  for (final q in paper) {
+    if (q.mustPass && answers[q.id] != q.answerIndex) missed++;
+  }
+  return missed;
 }
 
 /// 抽簡答題 —— 自題庫隨機取 [saCount] 題。
@@ -178,5 +243,17 @@ String? examBankShortage(List<ExamQuestion> bank, int mcCount, int saCount) {
       .length;
   if (mc < mcCount) return '選擇題題庫只有 $mc 題，抽不出 $mcCount 題。';
   if (sa < saCount) return '簡答題題庫只有 $sa 題，抽不出 $saCount 題。';
+  final must = bank
+      .where((q) => q.type == ExamQuestionType.multipleChoice && q.mustPass)
+      .length;
+  if (must > mcCount) {
+    return '必答題有 $must 題，多於一份考卷的 $mcCount 題 —— 抽不出來。';
+  }
+  // **題庫等於考卷時，「隨機抽取」抽的是全部。**
+  // 那正是設計上想避免的情況（題庫外流即淪為背誦、重考等於重看同一份
+  // 考卷），而它不會拋任何錯誤 —— 只會安靜地讓隨機性變成零。
+  if (mc == mcCount) {
+    return '選擇題題庫剛好 $mc 題，等於每個人都拿到同一份考卷。';
+  }
   return null;
 }

@@ -5820,6 +5820,10 @@ class AppState extends ChangeNotifier {
   int gradeExam(List<ExamQuestion> paper, Map<String, int> answers) =>
       gradeExamPaper(paper, answers);
 
+  /// 這份考卷答錯了幾題必答題。
+  int gradeMustPass(List<ExamQuestion> paper, Map<String, int> answers) =>
+      missedMustPass(paper, answers);
+
   /// 使用者已作答教官測驗。
   ///
   /// 選擇題由系統即時判定，簡答題送管理員人工審核（時限 7 個工作天）——
@@ -5827,7 +5831,14 @@ class AppState extends ChangeNotifier {
   ///
   /// [correctCount] 由 [gradeExam] 算出來 —— **這支不自己判卷**，
   /// 因為既有測試直接給題數驗「答對 N 題會怎樣」，那一層與判卷無關。
-  bool submitExam(int correctCount, {List<(String, String)>? shortAnswers}) {
+  /// 這次作答**答錯了幾題必答題**。空值＝還沒考過。
+  ///
+  /// 與分數分開存：分數是程度，必答題是否決。混在一個數字裡的話，
+  /// 「80% 但胸痛那題答錯」與「80% 關鍵題全對」會得到同一個結果。
+  int? examMustPassMissed;
+
+  bool submitExam(int correctCount,
+      {int mustPassMissed = 0, List<(String, String)>? shortAnswers}) {
     if (instructorStage != InstructorStage.screenPassed &&
         instructorStage != InstructorStage.testing) {
       return false;
@@ -5836,6 +5847,7 @@ class AppState extends ChangeNotifier {
     lastExamAt = now;
     final total = platformConfig.i('exam', 'mcCount');
     examMcScore = (correctCount * 100 / total).round();
+    examMustPassMissed = mustPassMissed;
 
     // 及格採雙門檻：選擇題 ≥ 80% **且**簡答題全數通過。
     // 選擇題由系統即時判定 —— 這一關就沒過的，不必送人工審核。
@@ -5899,7 +5911,12 @@ class AppState extends ChangeNotifier {
   String? instructorRejectStage;
 
   int get examPassMark => platformConfig.i('exam', 'mcPass');
-  bool get examMcPassed => (examMcScore ?? 0) >= examPassMark;
+  /// 選擇題是否過關 —— **雙重條件**。
+  ///
+  /// 百分比擋不住必答題：20 題錯 4 題仍是 80%，而那 4 題可能正好是
+  /// 「胸痛先休息一下」「未成年可以私下約」。
+  bool get examMcPassed =>
+      (examMcScore ?? 0) >= examPassMark && (examMustPassMissed ?? 0) == 0;
 
   /// **已確認的指導責任聲明版本。** 未確認現行版本者不得回答提問、
   /// 不得指派師徒任務 —— 聲明會改版，而「誰確認了哪一版」是爭議發生時的判定依據。

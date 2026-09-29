@@ -393,6 +393,10 @@ Future<void> _takeExam(BuildContext context, AppState s) async {
   final correct = s.gradeExam(paper, done.choices);
   s.submitExam(
     correct,
+    // **必答題答錯即不及格**，與 80% 門檻並存（2026-09-29 覆核意見）。
+    // 百分比擋不住它們：20 題錯 4 題仍是 80%，而那 4 題可能正好是
+    // 「胸痛先休息一下」「未成年可以私下約」。
+    mustPassMissed: s.gradeMustPass(paper, done.choices),
     // **申請人真正寫的內容。** 在此之前送進待審佇列的是兩題寫死的
     // 範例答案 —— 管理員據此發教官資格，而那不是他寫的。
     shortAnswers: [
