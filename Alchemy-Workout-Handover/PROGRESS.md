@@ -1411,6 +1411,54 @@ firebase deploy --only hosting
    在動作名稱裡也找得到（「俯臥屈腿 · 啞鈴」），用文字定位一次命中十幾個
    —— 第一版測試就是這樣紅的。
 
+3G. **2026-09-30 儀器在報，報的內容等於沒報**
+
+   3F 把守衛改成丟例外之後，使用者拿到的是：
+
+   ```
+   師徒關係（教官側）　失敗：Error: Dart exception thrown from converted
+   Future. Use the properties 'error' to fetch the boxed error and
+   'stack' to recover the stack trace.
+   ```
+
+   把丟的位置從交易內移到交易外，**還是同一句**。
+
+   ### 那句話自己寫著怎麼辦，而我沒照做
+
+   `Use the properties 'error' to fetch the boxed error` ——
+   **真正的錯誤就裝在 `error` 這個屬性上。** 在 Web 上，Dart 的例外
+   穿過 JS 的 Promise 邊界就會被這樣裝箱，`toString()` 只剩樣板話。
+
+   新增 `describeError(Object e, {int depth = 5})`（`data/http_error.dart`），
+   動態取 `error` 屬性、逐層拆、取不到就退回 `toString()`。
+   `cloudWriteReport` 與 `cloudReadReport` 五處全部改用它。
+
+   ### 深度上限不是保險，是必要的
+
+   第一版靠 `boxed != e` 擋循環。**突變測不出來** ——
+   `a.error == b && b.error == a` 這種環仍會無限遞迴，
+   而遞迴呼叫在 `try` 裡，堆疊爆掉會被外層默默吞掉，
+   於是「無限遞迴」與「拆不開」在畫面上長得一樣。改成明確的層數上限。
+
+   ### 順帶：`timeout` 在 macOS 上不存在
+
+   兩輪突變驗證印不出任何東西，我一度當成「測試太弱」——
+   其實是 `timeout 90 flutter test` 這個指令根本沒跑（macOS 沒有
+   GNU `timeout`，shell 回 `command not found`）。
+   **「沒有輸出」不等於「測試沒紅」，要先確認指令真的跑過。**
+   拿掉之後兩次突變都乾淨轉紅。
+
+   ### 測試
+
+   `test/boxed_error_is_unwrapped_test.dart` 7 條（拆一層／兩層／
+   自指／互指的環／層數上限／取屬性會炸的東西）。
+   兩次突變（不拆箱／拿掉上限）各打中對應的測試。2,650 passed。
+
+   ### 還沒答出來的問題
+
+   **`recover()` 到底為什麼失敗，仍然不知道。** 這一節修的是
+   「看得到原因」，下一次實測才會拿到那句中文。
+
 3F. **2026-09-30 一個什麼都沒做的「成功」**
 
    3E 把按鈕改誠實之後，使用者重測：教官按同意，toast 說

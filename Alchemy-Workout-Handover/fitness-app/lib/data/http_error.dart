@@ -29,3 +29,39 @@ String httpFailureReason(String what, http.Response res) {
   if (detail.length > 300) detail = '${detail.substring(0, 300)}…';
   return '$what ${res.statusCode}${detail.isEmpty ? '' : '：$detail'}';
 }
+
+/// 把一個例外變成**人看得懂的一行**。
+///
+/// ## 為什麼需要這一支
+///
+/// 在 Web 上，Dart 的例外一旦穿過 JS 的 Promise 邊界（Firestore 的
+/// `runTransaction` 內部就是這樣做的），`toString()` 會變成一句樣板話：
+///
+/// > Error: Dart exception thrown from converted Future. Use the
+/// > properties 'error' to fetch the boxed error and 'stack' to
+/// > recover the stack trace.
+///
+/// **真正的錯誤被裝在 `error` 這個屬性裡**，而那句話自己就寫著怎麼拿。
+/// 使用者 2026-09-30 連續兩輪拿到的都是這句 —— 儀器有在報，
+/// 報的內容卻等於沒報。
+///
+/// 用動態存取取那個屬性，取不到就退回 `toString()`；
+/// 整段包在 try 裡，任何平台上都不會因為這支而炸。
+/// [depth] 是**明確的拆箱層數上限**，不靠身分比對擋循環。
+///
+/// 靠 `boxed != e` 擋的話，`a.error == b && b.error == a` 這種環仍會
+/// 無限遞迴；而遞迴呼叫在 `try` 裡，堆疊爆掉會被外層默默吞掉，
+/// 於是「無限遞迴」與「拆不開」在畫面上長得一樣。上限是看得見的。
+String describeError(Object e, {int depth = 5}) {
+  if (depth <= 0) return '$e';
+  try {
+    final boxed = (e as dynamic).error;
+    if (boxed != null && !identical(boxed, e)) {
+      // 裝箱可能不只一層。
+      return describeError(boxed as Object, depth: depth - 1);
+    }
+  } catch (_) {
+    // 沒有那個屬性 —— 這是最常見的情況，不是錯誤。
+  }
+  return '$e';
+}

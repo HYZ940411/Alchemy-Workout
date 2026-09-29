@@ -9,6 +9,7 @@ import '../domain/clock.dart';
 // 換日規則已移入 clock.dart（假資料產生器也要用同一套）。
 // 轉出以維持既有呼叫端不變 —— 19 處在本檔、5 個測試檔。
 export '../domain/clock.dart' show businessDate;
+import '../data/http_error.dart';
 import '../data/ai_suggestion.dart';
 import '../data/instructor_case_data.dart';
 import '../data/report_data.dart';
@@ -3237,7 +3238,7 @@ class AppState extends ChangeNotifier {
           '${t.minute.toString().padLeft(2, '0')}';
       notifyListeners();
     }).catchError((Object e) {
-      cloudWriteReport[what] = '失敗：$e';
+      cloudWriteReport[what] = '失敗：${describeError(e)}';
       notifyListeners();
     });
   }
@@ -5085,7 +5086,7 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的任務清空。
-      cloudReadReport['教官側任務'] = '失敗：$e';
+      cloudReadReport['教官側任務'] = '失敗：${describeError(e)}';
     }
 
     try {
@@ -5109,7 +5110,7 @@ class AppState extends ChangeNotifier {
         }
       }
     } catch (e) {
-      cloudReadReport['教官側提問'] = '失敗：$e';
+      cloudReadReport['教官側提問'] = '失敗：${describeError(e)}';
     }
 
     if (!changed) return;
@@ -5181,7 +5182,7 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的問答清空。
-      cloudReadReport['學徒側提問'] = '失敗：$e';
+      cloudReadReport['學徒側提問'] = '失敗：${describeError(e)}';
     }
 
     try {
@@ -5207,7 +5208,7 @@ class AppState extends ChangeNotifier {
         }
       }
     } catch (e) {
-      cloudReadReport['學徒側任務'] = '失敗：$e';
+      cloudReadReport['學徒側任務'] = '失敗：${describeError(e)}';
     }
 
     if (changed) notifyListeners();
