@@ -65,6 +65,12 @@ const _allowed = <String, String>{
 /// **每一筆都要寫「怎麼人工確認的」。** 這張表的用途不是讓測試變綠，
 /// 是讓「這幾支沒被真正檢查」這件事**看得見**。
 const _ambiguous = <String, String>{
+  // [BE-20]，2026-09-29。與 `ReportSource` 同名，所以這道檢查對它們無效。
+  // 逐一確認過呼叫端：
+  'InstructorCaseSource.file':
+      '`AppState._pushInstructorCase()`，由 `submitExam()` 呼叫',
+  'InstructorCaseSource.queue':
+      '`AppState.loadInstructorQueue()`，由 `AuthGate` 在管理員登入時呼叫',
   'MentorSource.dropRequest':
       '2026-09-24 接上：`_dropCloudRequest()` 的師徒分支',
   'TeamSource.dropRequest': '拒絕申請、取消邀請、撤回申請、`_dropCloudRequest()`',

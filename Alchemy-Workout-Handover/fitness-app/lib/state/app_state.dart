@@ -10,6 +10,7 @@ import '../domain/clock.dart';
 // 轉出以維持既有呼叫端不變 —— 19 處在本檔、5 個測試檔。
 export '../domain/clock.dart' show businessDate;
 import '../data/ai_suggestion.dart';
+import '../data/instructor_case_data.dart';
 import '../data/report_data.dart';
 import '../data/appeal_data.dart';
 import '../data/punishment_data.dart';
@@ -5878,9 +5879,11 @@ class AppState extends ChangeNotifier {
         // 管理員看到的是申請人從來沒寫過的答案，然後據此發教官資格。
         // 空值＝沒有作答紀錄（既有測試直接叫 `submitExam(18)` 走這條）。
         answers: shortAnswers ?? const [],
+        // ↓ 這一筆同時送上雲，見本函式末尾的 `_pushInstructorCase`。
         enteredAt: now,
       ),
     );
+    _pushInstructorCase(instructorCases.first);
     notifyListeners();
     return true;
   }
@@ -8369,6 +8372,13 @@ class AppState extends ChangeNotifier {
   /// 佇列本身（裡面有別人的違規內容與檢舉者身分）。
   ReportSource? reportSource;
 
+  /// 教官申請案的雲端來源（`[BE-20]`）。
+  ///
+  /// **在此之前沒有這個東西**：`submitExam` 把案件放進申請人自己的
+  /// `instructorCases`，而那份清單從來沒有離開過他的裝置 ——
+  /// 管理員在另一台裝置上永遠看不到（見 PROGRESS 第 5 節 2I）。
+  InstructorCaseSource? instructorCaseSource;
+
   /// 把一筆檢舉送上雲。即發即忘，但**失敗要留下痕跡** ——
   /// 使用者以為自己回報了，實際上沒有人收到，是這裡最糟的結果。
   void _pushReport({
@@ -10454,6 +10464,76 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// 把一筆申請案送上雲。**即發即忘** —— 送出測驗這個動作不該被
+  /// 一次網路失敗擋住，申請人重考要等 14 天。失敗留在
+  /// [instructorCaseError]，畫面說得出來。
+  void _pushInstructorCase(InstructorCase c) {
+    final src = instructorCaseSource;
+    final uid = c.applicantUid;
+    if (src == null || uid == null) return;
+    src
+        .file(CloudInstructorCase(
+          applicantUid: uid,
+          applicant: c.applicant,
+          aiScores: c.aiScores,
+          weighted: c.weighted,
+          concerns: c.concerns,
+          answers: c.answers,
+          at: c.enteredAt,
+        ))
+        .then((_) => instructorCaseError = null)
+        .catchError((Object e) {
+      instructorCaseError = '$e';
+      notifyListeners();
+    });
+  }
+
+  /// 申請案沒送上去時的原因。**空值＝沒問題。**
+  ///
+  /// 不留這一欄的話，失敗就完全無聲：申請人以為送出了，
+  /// 管理員的佇列裡沒有他，而兩邊都不會知道。
+  String? instructorCaseError;
+
+  /// 把雲端的教官申請佇列讀進來。**只有管理員叫得動。**
+  Future<void> loadInstructorQueue() async {
+    final src = instructorCaseSource;
+    if (src == null || !isPlatformAdmin || !canReview) return;
+    try {
+      applyCloudInstructorCases(await src.queue(limit: 100));
+    } catch (_) {
+      // 讀不到就維持現狀。**不清空** —— 空佇列與讀取失敗長得一模一樣，
+      // 而後者不該被畫成「沒有待審案件」。
+    }
+  }
+
+  /// 把雲端的申請案併進本機佇列。
+  ///
+  /// **以 uid 對齊。** 同一個人只會有一筆（文件 ID 就是 uid），
+  /// 所以雲端那一份直接取代同 uid 的本機那一份 —— 包括我自己剛送出的
+  /// 那一筆，那樣管理員看到的與申請人送出的是同一份內容。
+  void applyCloudInstructorCases(List<CloudInstructorCase> cloud) {
+    for (final c in cloud) {
+      final i =
+          instructorCases.indexWhere((x) => x.applicantUid == c.applicantUid);
+      final built = InstructorCase(
+        id: 'IC-${c.applicantUid}',
+        applicant: c.applicant,
+        applicantUid: c.applicantUid,
+        aiScores: c.aiScores,
+        weighted: c.weighted,
+        concerns: c.concerns,
+        answers: c.answers,
+        enteredAt: c.at,
+      );
+      if (i >= 0) {
+        instructorCases[i] = built;
+      } else {
+        instructorCases.insert(0, built);
+      }
+    }
+    notifyListeners();
+  }
+
   void decideInstructor(InstructorCase c, bool pass) {
     if (!canReview) return;
     if (c.state == CaseState.upheld || c.state == CaseState.dismissed) return;
@@ -10474,6 +10554,16 @@ class AppState extends ChangeNotifier {
         instructorStage = InstructorStage.rejected;
         instructorRejectStage = '管理員審核';
       }
+    }
+    // 裁決也要寫回雲端 —— 否則這筆案件會永遠留在別人的待審佇列裡，
+    // 而下一位管理員會重審一次已經判過的案子。
+    if (c.applicantUid case final uid?) {
+      instructorCaseSource
+          ?.decide(uid, passed: pass, handlerName: admin.name)
+          .catchError((Object e) {
+        instructorCaseError = '$e';
+        notifyListeners();
+      });
     }
     notifyListeners();
   }

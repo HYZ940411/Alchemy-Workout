@@ -14,6 +14,8 @@ import 'data/chat_data.dart';
 import 'data/mentor_data.dart';
 import 'data/mentor_data_firestore.dart';
 import 'data/report_data.dart';
+import 'data/instructor_case_data.dart';
+import 'data/instructor_case_data_firestore.dart';
 import 'data/report_data_firestore.dart';
 import 'data/appeal_data.dart';
 import 'data/appeal_data_firestore.dart';
@@ -106,6 +108,7 @@ Future<void> main() async {
     teamsFor: (uid) => FirestoreTeams(uid: uid),
     mentorFor: (uid) => FirestoreMentor(uid: uid),
     reportsFor: (uid) => FirestoreReports(uid: uid),
+    instructorCasesFor: (uid) => FirestoreInstructorCases(uid: uid),
     violationsFor: FirestoreViolations.new,
     punishmentsFor: FirestorePunishments.new,
     appealsFor: FirestoreAppeals.new,
@@ -173,6 +176,7 @@ class FitnessApp extends StatefulWidget {
 
   /// 檢舉的來源。空值代表不送上雲 —— **既有測試全部走這條**。
   final ReportSource Function(String uid)? reportsFor;
+  final InstructorCaseSource Function(String uid)? instructorCasesFor;
   final ViolationSource Function()? violationsFor;
   final PunishmentSource Function()? punishmentsFor;
   final QualityScoreSource? qualitySource;
@@ -194,6 +198,7 @@ class FitnessApp extends StatefulWidget {
     this.teamsFor,
     this.mentorFor,
     this.reportsFor,
+    this.instructorCasesFor,
     this.violationsFor,
     this.punishmentsFor,
     this.qualitySource,
@@ -274,6 +279,7 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                 teamsFor: widget.teamsFor,
                 mentorFor: widget.mentorFor,
                 reportsFor: widget.reportsFor,
+                instructorCasesFor: widget.instructorCasesFor,
                 violationsFor: widget.violationsFor,
                 punishmentsFor: widget.punishmentsFor,
                 appealsFor: widget.appealsFor,

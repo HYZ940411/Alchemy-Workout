@@ -267,6 +267,30 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // --- 教官資格申請的待審案件（[BE-20]）---
+    //
+    // 在此之前**沒有這個集合**：申請案只進申請人自己的記憶體，
+    // 管理員在另一台裝置上永遠看不到（見 PROGRESS 第 5 節 2I）。
+    //
+    // 文件 ID ＝ 申請人的 uid，所以「只寫得了自己那一筆」是結構性的，
+    // 不必靠欄位比對。仍然比對 `applicantUid`，因為那是判定教官資格時
+    // 真正會被讀的欄位 —— 讓它與文件 ID 對不上就是一條偽造路徑。
+    //
+    // **讀取一律限管理員。** 裡面有申請人的簡答作答與 AI 評分，
+    // 那不是其他使用者該看得到的東西 —— 連申請人自己也不必回頭讀，
+    // 他的階段狀態存在自己的使用者文件裡。
+    match /instructor_cases/{applicantUid} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+                    || (request.auth != null
+                        && applicantUid == request.auth.uid
+                        && request.resource.data.applicantUid
+                             == request.auth.uid
+                        // 申請人自己不得寫裁決結果 —— 送出時一律是待審。
+                        && request.resource.data.state == 'pending');
+      allow delete: if isAdmin();
+    }
+
     // --- 貼文、留言、按讚（[BE-11] 批次 3）---
     //
     // 這裡有一個規則設計上的難處：**按讚的人不是作者，卻必須能改貼文**

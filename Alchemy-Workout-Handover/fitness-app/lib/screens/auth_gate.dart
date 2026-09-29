@@ -14,6 +14,7 @@ import '../data/post_data.dart';
 import '../data/chat_data.dart';
 import '../data/team_data.dart';
 import '../data/mentor_data.dart';
+import '../data/instructor_case_data.dart';
 import '../data/report_data.dart';
 import '../data/appeal_data.dart';
 import '../data/punishment_data.dart';
@@ -80,6 +81,7 @@ class AuthGate extends StatefulWidget {
   /// 檢舉的來源。空值代表不送上雲（既有測試走這條）。
   /// **只有寫、沒有讀** —— 檢舉佇列是管理端的東西。
   final ReportSource Function(String uid)? reportsFor;
+  final InstructorCaseSource Function(String uid)? instructorCasesFor;
 
   /// 累計違規次數。與 uid 無關（一份服務讀所有人的），但與其他來源
   /// 同一個形狀，保持呼叫端一致。
@@ -105,6 +107,7 @@ class AuthGate extends StatefulWidget {
     this.teamsFor,
     this.mentorFor,
     this.reportsFor,
+    this.instructorCasesFor,
     this.violationsFor,
     this.punishmentsFor,
     this.appealsFor,
@@ -340,6 +343,8 @@ class _AuthGateState extends State<AuthGate> {
     widget.state.teamSource = widget.teamsFor?.call(uid);
     widget.state.mentorSource = widget.mentorFor?.call(uid);
     widget.state.reportSource = widget.reportsFor?.call(uid);
+    widget.state.instructorCaseSource =
+        widget.instructorCasesFor?.call(uid);
     widget.state.violationSource = widget.violationsFor?.call();
     widget.state.punishmentSource = widget.punishmentsFor?.call();
     widget.state.appealSource = widget.appealsFor?.call();
@@ -507,6 +512,12 @@ class _AuthGateState extends State<AuthGate> {
       await step('申訴佇列', () async {
         await widget.state.loadAppealQueue();
         return '${widget.state.appeals.length} 案';
+      });
+      // 教官申請（`[BE-20]`）。同樣自己成敗 —— 在此之前這一整個佇列
+      // 在正式環境對每一個人都是空的（見 PROGRESS 第 5 節 2I）。
+      await step('教官申請', () async {
+        await widget.state.loadInstructorQueue();
+        return '${widget.state.instructorCases.length} 案';
       });
     }
 
