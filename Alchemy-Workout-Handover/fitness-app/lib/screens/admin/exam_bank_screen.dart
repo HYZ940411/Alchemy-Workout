@@ -97,6 +97,15 @@ class _ExamBankScreenState extends State<ExamBankScreen> {
                   '本頁維護的是題庫本身。簡答題的及格標準為全數通過，不設百分比。',
                   style: T.caption(),
                 ),
+                const SizedBox(height: S.sm),
+                // 及格條件有三重，而參數頁只看得到其中一重（百分比）。
+                // 少講的那兩重正好是最容易讓管理員答不出「他為什麼沒過」的。
+                Text(
+                  '及格採三重門檻：選擇題達上列百分比、'
+                  '標示「必答題」者不得答錯任何一題（共 ${mustCount(s)} 題，'
+                  '一定會出現在每一份考卷上）、且簡答題全數通過。',
+                  style: T.caption(),
+                ),
               ],
             ),
           ),
@@ -129,6 +138,12 @@ class _ExamBankScreenState extends State<ExamBankScreen> {
     );
   }
 
+  /// 題庫裡有幾題必答題。
+  int mustCount(AppState s) => s.examBank
+      .where((q) =>
+          q.type == ExamQuestionType.multipleChoice && q.mustPass)
+      .length;
+
   Widget _bank(BuildContext context, AppState s, List<ExamQuestion> list) {
     if (list.isEmpty) {
       return AppCard(child: Text('題庫是空的。', style: T.caption()));
@@ -137,8 +152,12 @@ class _ExamBankScreenState extends State<ExamBankScreen> {
       for (var i = 0; i < list.length; i++)
         ListRow(
           title: list[i].text,
+          // **必答題要看得出來。** 管理員手上如果沒有這個資訊，
+          // 就無從判斷「某人 95% 卻不及格」是不是對的 ——
+          // 而那正是他要向被駁回者說明的事。
           subtitle: list[i].type == ExamQuestionType.multipleChoice
-              ? '正解：${list[i].options[list[i].answerIndex]}'
+              ? '${list[i].mustPass ? "必答題（答錯即不及格）　·　" : ""}'
+                  '正解：${list[i].options[list[i].answerIndex]}'
               : '由管理員人工審核，無標準答案',
           trailing: s.canConfigure
               ? GestureDetector(
