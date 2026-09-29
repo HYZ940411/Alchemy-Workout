@@ -670,6 +670,32 @@ class SettingsScreen extends StatelessWidget {
                     ),
             ),
             const SizedBox(height: 10),
+            // 雲端讀取。**「雲端本來就沒有」與「這一趟讀失敗了」
+            // 在畫面上長得一模一樣** —— 兩者都是空的。
+            if (s.cloudReadReport.isNotEmpty)
+              Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('雲端讀取',
+                        style: TextStyle(
+                            fontSize: 12.5, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    for (final e in s.cloudReadReport.entries)
+                      Text(
+                        '${e.key}　${e.value}',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: e.value.startsWith('失敗') ||
+                                  e.value.startsWith('沒讀')
+                              ? C.statusError
+                              : AppColors.textFaint,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 10),
             // 即發即忘的寫入。**「沒送出」原本與「成功」長得一模一樣** ——
             // 2026-09-30 教官指派的任務到不了學徒，畫面上跳「已指派」、
             // 雲端連子集合都沒有，而沒有任何地方看得出來。

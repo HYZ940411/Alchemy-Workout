@@ -3207,6 +3207,14 @@ class AppState extends ChangeNotifier {
   /// 「根本沒送出」。最後那種最要命，它原本與「成功」長得一模一樣。
   final Map<String, String> cloudWriteReport = {};
 
+  /// 雲端**讀取**留下的痕跡。與 [cloudWriteReport] 同一個用途。
+  ///
+  /// 2026-09-30：學徒讀得到提問卻讀不到任務。兩者在同一支函式、
+  /// 同一段關係下，**共用一個 `try`** —— 提問先讀、任務後讀，
+  /// 任務那一趟丟例外就靜靜結束，而畫面上與「雲端本來就沒有任務」
+  /// 長得一模一樣。
+  final Map<String, String> cloudReadReport = {};
+
   /// 包一次即發即忘的寫入。[job] 為空值表示**這次根本沒送出**
   /// （來源或關係 id 是空的），那也要留下痕跡。
   void _write(String what, Future<void>? job) {
@@ -5037,10 +5045,20 @@ class AppState extends ChangeNotifier {
   Future<void> loadMentorSideOf(String apprenticeUid) async {
     final src = mentorSource;
     final bond = mentorBondIdFor(apprenticeUid);
-    if (src == null || bond == null) return;
+    if (src == null || bond == null) {
+      cloudReadReport['教官側'] = '沒讀 —— 來源或關係 id 是空的';
+      return;
+    }
+    cloudReadReport['教官側關係'] = bond;
+
+    // 兩種各自一個 `try` —— 理由見 [loadMyApprenticeSide]。
+    var changed = false;
 
     try {
-      for (final t in await src.tasks(bond)) {
+      final ts = await src.tasks(bond);
+      cloudReadReport['教官側任務'] = '讀到 ${ts.length} 則';
+      changed = true;
+      for (final t in ts) {
         final at = mentorTasks.indexWhere((x) => x.id == t.id);
         final m = MentorTask(
           id: t.id,
@@ -5058,7 +5076,16 @@ class AppState extends ChangeNotifier {
         }
         _creditTaskRating(m, apprenticeUid);
       }
-      for (final q in await src.questions(bond)) {
+    } catch (e) {
+      // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的任務清空。
+      cloudReadReport['教官側任務'] = '失敗：$e';
+    }
+
+    try {
+      final qs = await src.questions(bond);
+      cloudReadReport['教官側提問'] = '讀到 ${qs.length} 則';
+      changed = true;
+      for (final q in qs) {
         final at = questions.indexWhere((x) => x.id == q.id);
         final m = MentorQuestion(
           id: q.id,
@@ -5074,10 +5101,11 @@ class AppState extends ChangeNotifier {
           questions.add(m);
         }
       }
-    } catch (_) {
-      // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的任務清空。
-      return;
+    } catch (e) {
+      cloudReadReport['教官側提問'] = '失敗：$e';
     }
+
+    if (!changed) return;
     notifyListeners();
 
     // 讀回來之後星等才算得出來，這時要把它發布出去。
@@ -5109,10 +5137,23 @@ class AppState extends ChangeNotifier {
   Future<void> loadMyApprenticeSide() async {
     final src = mentorSource;
     final bond = _apprenticeBondId;
-    if (src == null || bond == null) return;
+    if (src == null || bond == null) {
+      cloudReadReport['學徒側'] = '沒讀 —— 來源或關係 id 是空的';
+      return;
+    }
+    // 兩邊各自算出來的關係 id 必須一致，對不上就什麼都讀不到。
+    cloudReadReport['學徒側關係'] = bond;
+
+    // **提問與任務各自一個 `try`。** 共用一個的話，先讀的那種成功、
+    // 後讀的那種失敗，整段就靜靜結束 —— 使用者看到的是
+    // 「問答都在，任務一則都沒有」，而雲端明明有。
+    var changed = false;
 
     try {
-      for (final q in await src.questions(bond)) {
+      final qs = await src.questions(bond);
+      cloudReadReport['學徒側提問'] = '讀到 ${qs.length} 則';
+      changed = true;
+      for (final q in qs) {
         final at = questions.indexWhere((x) => x.id == q.id);
         final m = MentorQuestion(
           id: q.id,
@@ -5130,7 +5171,16 @@ class AppState extends ChangeNotifier {
           questions.add(m);
         }
       }
-      for (final t in await src.tasks(bond)) {
+    } catch (e) {
+      // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的問答清空。
+      cloudReadReport['學徒側提問'] = '失敗：$e';
+    }
+
+    try {
+      final ts = await src.tasks(bond);
+      cloudReadReport['學徒側任務'] = '讀到 ${ts.length} 則';
+      changed = true;
+      for (final t in ts) {
         final at = mentorTasks.indexWhere((x) => x.id == t.id);
         final m = MentorTask(
           id: t.id,
@@ -5148,11 +5198,11 @@ class AppState extends ChangeNotifier {
           mentorTasks.add(m);
         }
       }
-    } catch (_) {
-      // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的問答清空。
-      return;
+    } catch (e) {
+      cloudReadReport['學徒側任務'] = '失敗：$e';
     }
-    notifyListeners();
+
+    if (changed) notifyListeners();
   }
 
   /// 以雲端的師徒關係為準（[BE-14]／[BE-15]）。
