@@ -84,45 +84,51 @@ void main() {
     expect(s.myInstructor, isNull);
   });
 
-  group('名額那個數字要說得出自己是什麼', () {
-    // 模型上待回應的申請就佔一格（避免超收）。原本的標籤寫「帶徒」——
-    // 使用者送出申請後看到「帶徒 1 / 5」，讀起來是「對方已經收了一個
-    // 學徒」，但對方根本還沒回應（2026-09-29 實測指出）。
+  group('那個數字要說得出自己是什麼', () {
+    // 使用者 2026-09-29：「按下去當下，對方尚未同意，教官的帶徒就已經
+    // +1 了」。原模型是待回應的申請也佔一格（防超收），而標籤寫「帶徒」
+    // —— 讀起來是「對方已經收了一個學徒」，那不是事實。
     //
-    // **數字沒有錯，錯的是它說自己是什麼。**
+    // 使用者裁決：**申請不再佔名額**，標籤改為「學徒 N / M」。
+    // 超收由教官接受當下擋下（同團隊那一套）。
 
-    Future<String> slotTextOf(WidgetTester t, AppState s) async {
+    Future<String> countTextOf(WidgetTester t, AppState s) async {
       await open(t, s);
-      final f = find.textContaining('名額 ');
+      final f = find.textContaining('學徒 ');
       await t.scrollUntilVisible(f.first, 200,
           scrollable: find.byType(Scrollable).first);
       await t.pumpAndSettle();
       return t.widget<Text>(f.first).data!;
     }
 
-    testWidgets('還沒申請 —— 只講名額，不講「帶徒」', (t) async {
+    testWidgets('講的是「學徒」，不是含申請在內的「名額」', (t) async {
       final s = AppState();
-      final text = await slotTextOf(t, s);
-      expect(text, startsWith('名額 '));
-      expect(text, isNot(contains('帶徒')),
-          reason: '待回應的申請也算在裡面，叫「帶徒」就是在說一件不是事實的事');
-      expect(text, isNot(contains('含你的申請')));
+      final text = await countTextOf(t, s);
+      expect(text, startsWith('學徒 '));
+      expect(text, isNot(contains('名額')));
+      expect(text, isNot(contains('含你的申請')),
+          reason: '申請不再佔名額，也就不需要解釋那一格是誰的');
     });
 
-    testWidgets('送出之後，要講出那一格是我佔的', (t) async {
+    testWidgets('送出申請之後，數字不動', (t) async {
       final s = AppState();
-      s.applyMentor(s.instructors.first);
-      final text = await slotTextOf(t, s);
-      expect(text, contains('（含你的申請）'),
-          reason: '不講的話使用者無從分辨那一格是誰的');
+      final i = s.instructors.first;
+      final before = s.apprenticeCountOf(i);
+      s.applyMentor(i);
+      expect(s.apprenticeCountOf(i), before,
+          reason: '對方還沒答應，他的學徒數就不該變');
+
+      final text = await countTextOf(t, s);
+      expect(text, '學徒 $before / ${i.apprenticeCap}');
     });
 
-    testWidgets('數字本身沒變 —— 佔用的模型是對的', (t) async {
-      final s = AppState();
-      final before = s.slotsUsedOf(s.instructors.first);
-      s.applyMentor(s.instructors.first);
-      expect(s.slotsUsedOf(s.instructors.first), before + 1,
-          reason: '待回應的申請佔一格，那是防超收的設計，不是 bug');
+    testWidgets('超收仍然擋得住 —— 只是擋在接受的那一刻', (t) async {
+      // 名額滿了的教官，申請鍵本來就按不下去。
+      final s = AppState()..myInstructor = null;
+      final full =
+          s.instructors.firstWhere((x) => x.apprentices >= x.apprenticeCap);
+      expect(s.mentorApplyBlockedReason(full), contains('名額已滿'));
+      expect(s.applyMentor(full), isFalse);
     });
   });
 

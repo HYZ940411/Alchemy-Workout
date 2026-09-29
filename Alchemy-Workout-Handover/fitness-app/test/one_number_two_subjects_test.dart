@@ -17,25 +17,31 @@ import 'package:fitness_app/state/app_state.dart';
 
 void main() {
   group('教官的帶徒名額', () {
-    // 模型：名額佔用數 ＝ 已建立的師徒關係數 ＋ 狀態為申請中的師徒申請數。
+    // **2026-09-29 使用者裁決：待回應的申請不再佔名額。**
+    //
+    // 原模型是「已建立的關係數 ＋ 申請中的申請數」。它讓一位申請人被
+    // 別人尚未被回應的申請擋在門外，而那些申請可能全部會被拒絕。
+    // 現在的模型：名額佔用數 ＝ **已建立的師徒關係數**。
+    // 超收由教官接受當下的 Precondition 擋下（同團隊那一套）。
+    //
     // [Instructor.apprentices] 只是那位教官與**別人**的關係數。
 
-    test('送出申請即佔用一格', () {
+    test('送出申請不佔名額 —— 對方還沒答應', () {
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-      final before = s.slotsUsedOf(i);
+      final before = s.apprenticeCountOf(i);
       expect(s.applyMentor(i), isTrue);
-      expect(s.slotsUsedOf(i), before + 1,
-          reason: '「待回應的申請佔名額」是這個專案明寫的裁決');
+      expect(s.apprenticeCountOf(i), before,
+          reason: '數字要等關係真的建立才動');
     });
 
     test('拜師成功後，他的帶徒人數要真的多一個', () {
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-      final before = s.slotsUsedOf(i);
+      final before = s.apprenticeCountOf(i);
       s.applyMentor(i);
       s.acceptMentorApplication(i);
-      expect(s.slotsUsedOf(i), before + 1,
+      expect(s.apprenticeCountOf(i), before + 1,
           reason: '我已經是他的學徒了，畫面上不該還寫著原本的數字');
       expect(s.myInstructor?.name, i.name);
     });
@@ -43,10 +49,10 @@ void main() {
     test('接受不會把申請與關係重複算成兩格', () {
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-      final before = s.slotsUsedOf(i);
+      final before = s.apprenticeCountOf(i);
       s.applyMentor(i);
       s.acceptMentorApplication(i);
-      expect(s.slotsUsedOf(i), before + 1, reason: '同一個人只佔一格');
+      expect(s.apprenticeCountOf(i), before + 1, reason: '同一個人只佔一格');
     });
 
     test('拒絕與逾期都釋放名額', () {
@@ -54,10 +60,10 @@ void main() {
         final s = AppState()..myInstructor = null;
         final i =
             s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-        final before = s.slotsUsedOf(i);
+        final before = s.apprenticeCountOf(i);
         s.applyMentor(i);
         s.resolveMentorApplication(i.name, verdict);
-        expect(s.slotsUsedOf(i), before,
+        expect(s.apprenticeCountOf(i), before,
             reason: '三個終止狀態皆釋放所佔用的帶徒名額（$verdict）');
       }
     });
@@ -66,14 +72,14 @@ void main() {
       final s = AppState()..myInstructor = null;
       final full =
           s.instructors.firstWhere((x) => x.apprentices >= x.apprenticeCap);
-      expect(s.slotsUsedOf(full), greaterThanOrEqualTo(full.apprenticeCap));
+      expect(s.apprenticeCountOf(full), greaterThanOrEqualTo(full.apprenticeCap));
       expect(s.mentorApplyBlockedReason(full), contains('名額已滿'));
       expect(s.applyMentor(full), isFalse);
     });
 
-    test('送出申請之後，看到的是「等對方回應」，不是「名額已滿」', () {
+    test('送出申請之後，看到的是「等對方回應」', () {
       final s = AppState()..myInstructor = null;
-      // 只差一格就滿：我的申請會填掉最後一格。
+      // 只差一格就滿。申請不再佔名額，所以送出之後那一格仍是空的。
       final i = Instructor(
         name: '快滿了的教官',
         rank: 40,
@@ -88,9 +94,10 @@ void main() {
       s.instructors.insert(0, i);
       expect(s.mentorApplyBlockedReason(i), isNull);
       expect(s.applyMentor(i), isTrue);
-      expect(s.slotsUsedOf(i), i.apprenticeCap, reason: '我佔掉了最後一格');
+      expect(s.apprenticeCountOf(i), i.apprenticeCap - 1,
+          reason: '申請不佔名額，最後那一格還在');
       expect(s.mentorApplyBlockedReason(i), contains('等對方回應'),
-          reason: '那一格是我自己佔的，不該回頭跟我說對方滿了');
+          reason: '已經送出的人該看到的是「等回應」，不是「再送一次」');
     });
 
     test('別人把名額佔滿時才說滿了', () {
@@ -111,14 +118,18 @@ void main() {
       expect(s.applyMentor(i), isFalse);
     });
 
-    test('擋人的判定讀的是推導出來的佔用數，不是那個假資料數字', () {
+    test('拜師成功之後，推導值才動 —— 而那個儲存欄位永遠不該被我改動', () {
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
       final stored = i.apprentices;
+
       s.applyMentor(i);
+      expect(s.apprenticeCountOf(i), stored, reason: '只是申請，還沒成立');
+
+      s.acceptMentorApplication(i);
       expect(i.apprentices, stored,
           reason: '那個欄位是「他與別人的關係數」，本來就不該被我改動');
-      expect(s.slotsUsedOf(i), stored + 1,
+      expect(s.apprenticeCountOf(i), stored + 1,
           reason: '會動的是推導值 —— 兩者分開，主體才不會混在一起');
     });
   });
@@ -128,12 +139,11 @@ void main() {
     // 要讓推導值超過而儲存值沒超過，得是「我已經是他的學徒」，
     // 但那會被上一個條件（一次只能有一位教官）先擋掉。
     // **會被看見的差別在畫面上**：拜師成功後那行數字有沒有跟著動。
-    // **2026-09-29 標籤由「帶徒」改為「名額」。**
-    // 待回應的申請就佔一格，所以送出當下數字 +1 —— 那是防超收的設計。
-    // 但寫「帶徒 1 / 5」讀起來是「對方已經收了一個學徒」，而對方
-    // 還沒回應（使用者實測指出）。數字沒有錯，錯的是它說自己是什麼。
-    // 這條測試驗的「數字要跟著動」不變。
-    testWidgets('申請送出後，教官頁的「名額 N / M」就多一格', (t) async {
+    // **2026-09-29 使用者裁決：申請不再佔名額，標籤改為「學徒 N / M」。**
+    //
+    // 原本送出申請當下數字就 +1，而對方還沒答應 —— 那行字在說一件
+    // 不是事實的事。現在它要等關係真的建立才動。
+    testWidgets('送出申請時數字不動，拜師成功才動', (t) async {
       t.view.physicalSize = const Size(393 * 3, 852 * 3);
       t.view.devicePixelRatio = 3.0;
       addTearDown(t.view.resetPhysicalSize);
@@ -141,10 +151,8 @@ void main() {
 
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-      final before = '名額 ${i.apprentices} / ${i.apprenticeCap}';
-      // 送出之後那一格是我佔的，畫面要講出來。
-      final after =
-          '名額 ${i.apprentices + 1} / ${i.apprenticeCap}（含你的申請）';
+      final before = '學徒 ${i.apprentices} / ${i.apprenticeCap}';
+      final after = '學徒 ${i.apprentices + 1} / ${i.apprenticeCap}';
 
       await t.pumpWidget(AppScope(
         state: s,
@@ -153,14 +161,12 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text(before), findsWidgets, reason: '前提：這行字要真的畫得出來');
 
-      // 只送出申請，不接受 —— 拜師成功後畫面會換成「我的教官」視圖，
-      // 這一行就不在了。看得見這條規則的時機正是「待回應」這一段。
+      // 只送出申請 —— 數字不該動。
       s.applyMentor(i);
       await t.pumpAndSettle();
-
-      expect(find.text(after), findsWidgets,
-          reason: '待回應的申請佔名額 —— 這行數字不該還停在原本的值');
-      expect(find.text(before), findsNothing);
+      expect(find.text(before), findsWidgets,
+          reason: '對方還沒答應，這行字不該說他多了一位學徒');
+      expect(find.text(after), findsNothing);
     });
   });
 

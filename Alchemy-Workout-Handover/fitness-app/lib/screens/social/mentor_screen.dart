@@ -311,19 +311,15 @@ class _InstructorCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  // **這個數字是「名額佔用」，不是「他有幾個學徒」。**
+                  // **這個數字就是「他實際帶著幾位學徒」。**
                   //
-                  // 模型上待回應的申請就佔一格（避免超收，見
-                  // `AppState.slotsUsedOf`），所以送出申請的當下它就 +1。
-                  // 而標籤原本寫「帶徒」—— 使用者送出申請後看到
-                  // 「帶徒 1 / 5」，讀起來是「對方已經收了一個學徒」，
-                  // 但對方根本還沒回應（2026-09-29 實測指出）。
-                  //
-                  // 數字沒有錯，錯的是它說自己是什麼。佔用裡含我自己那一格
-                  // 的時候要講出來，否則使用者無從分辨那一格是誰的。
+                  // 2026-09-29 使用者裁決：待回應的申請不再佔名額
+                  // （見 `AppState.apprenticeCountOf`）。在那之前送出申請的
+                  // 當下數字就 +1，而對方還沒答應 —— 那行字在說一件
+                  // 不是事實的事。
                   child: Text(
-                    '名額 ${s.slotsUsedOf(instructor)} / ${instructor.apprenticeCap}'
-                    '${s.mentorApplications.any((a) => a.name == instructor.name) ? '（含你的申請）' : ''}',
+                    '學徒 ${s.apprenticeCountOf(instructor)} / '
+                    '${instructor.apprenticeCap}',
                     style: const TextStyle(
                         color: AppColors.textDim, fontSize: 12),
                   ),
