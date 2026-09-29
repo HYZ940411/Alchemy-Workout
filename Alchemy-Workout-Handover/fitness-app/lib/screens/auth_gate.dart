@@ -438,9 +438,20 @@ class _AuthGateState extends State<AuthGate> {
       // 待回應的師徒申請。**同樣在此之前沒有任何呼叫端** ——
       // 送出的拜師申請寫進了 Firestore，教官永遠看不到。
       await step('師徒申請', () async {
+        // **兩個方向都要讀。**
+        //
+        // `requestsFor` 是「別人送給我的」，`sentRequests` 是
+        // 「我送出去的」。少了後者，拜師申請送出之後重新整理就不見了 ——
+        // 按鈕退回「申請師徒關係」，而雲端那筆還在
+        // （使用者 2026-09-29 實測，見 PROGRESS 第 5 節 2M／2N）。
+        //
+        // **不能合成一條查詢** —— Firestore 不會過濾結果、只會整個拒絕，
+        // 而 or 條件證明不了自己（`bond()` 那次的教訓）。
         final got = await mentor.requestsFor(uid);
         widget.state.applyCloudMentorRequests(got);
-        return '${got.length} 筆';
+        final sent = await mentor.sentRequests();
+        widget.state.applyMySentMentorRequests(sent);
+        return '收到 ${got.length} 筆　送出 ${sent.length} 筆';
       });
     }
 
