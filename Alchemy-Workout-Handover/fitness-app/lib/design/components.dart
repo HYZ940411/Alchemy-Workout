@@ -467,7 +467,16 @@ class TagBadge extends StatelessWidget {
   final String text;
   final Color? borderColor;
   final Color? fill;
-  const TagBadge(this.text, {super.key, this.borderColor, this.fill});
+
+  /// 不填色時的字色。空值時沿用 `C.textSecondary`。
+  ///
+  /// **2026-09-29 新增。** 在此之前只有邊框上得了色，而只染邊框在一排
+  /// 徽章裡幾乎看不出來 —— 課表卡片上「符合我的那一個」就是這樣從頭到尾
+  /// 沒有被看見過（見 `Pill` 的說明）。
+  final Color? textColor;
+
+  const TagBadge(this.text,
+      {super.key, this.borderColor, this.fill, this.textColor});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -481,7 +490,10 @@ class TagBadge extends StatelessWidget {
       text,
       // 填色可能是深藍也可能是橘黃，前景依實測對比擇一 ——
       // 一律用墨字會讓深底徽章整個看不見。
-      style: T.caption(color: fill != null ? C.onFill(fill!) : C.textSecondary),
+      style: T.caption(
+          color: fill != null
+              ? C.onFill(fill!)
+              : (textColor ?? C.textSecondary)),
     ),
   );
 }

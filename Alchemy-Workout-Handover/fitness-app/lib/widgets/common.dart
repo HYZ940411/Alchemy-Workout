@@ -86,17 +86,40 @@ class ProgressBar extends StatelessWidget {
 }
 
 /// 文字標籤（§8.14）—— 圓角 8、內距 2／8、Caption、1px 外框。
+/// 小標籤。
+///
+/// ## 2026-09-29：`color` 以前是被丟掉的
+///
+/// 原本寫成 `borderColor: filled ? color : C.lineDivider` —— 也就是
+/// **沒有 `filled: true` 的時候，傳進來的 `color` 完全不影響任何像素**。
+///
+/// 全 App 用了 57 次 `Pill`，其中 25 次傳了 `color` 而沒有 `filled`，
+/// 那 25 個顏色一個都沒有畫出來。最明顯的後果是課表卡片上
+/// 「適用經驗／適用目標裡**符合我的那一個**要染亮色」（`[QA-02l]`）——
+/// 那段程式算得好好的，算完就被扔了，使用者 2026-09-29 的截圖裡
+/// 一整排標籤全是灰的。
+///
+/// **為什麼不是一開始就改成 `filled`**：填色是實心底，一張卡片上三四個
+/// 實心標籤會蓋過「推薦」本身。現在改成不填色時**邊框與文字都上色**，
+/// 分得出來又不吵。
+///
+/// `color` 改為可空：**沒傳就跟以前一模一樣**（31 處），
+/// 傳了才上色。而 `AppColors.textDim`／`textFaint` 本來就等於
+/// `C.textSecondary`，所以那 13 處的外觀也不變 ——
+/// 真正會變的是 accent／cool／bronze／blue 那 12 處，
+/// 而那正是作者本來就想要的。
 class Pill extends StatelessWidget {
   final String text;
-  final Color color;
+  final Color? color;
   final bool filled;
-  const Pill(this.text, {super.key, this.color = C.actionOutline, this.filled = false});
+  const Pill(this.text, {super.key, this.color, this.filled = false});
 
   @override
   Widget build(BuildContext context) => TagBadge(
         text,
-        borderColor: filled ? color : C.lineDivider,
-        fill: filled ? color : null,
+        borderColor: filled ? (color ?? C.actionOutline) : color,
+        fill: filled ? (color ?? C.actionOutline) : null,
+        textColor: filled ? null : color,
       );
 }
 

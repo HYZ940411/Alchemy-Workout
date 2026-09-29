@@ -193,12 +193,7 @@ class _PlatformPlansScreenState extends State<PlatformPlansScreen> {
               for (var i = 0; i < s.platformPlans.length; i++)
                 ListRow(
                   title: s.platformPlans[i].name,
-                  subtitle:
-                      '所需階級 '
-                      '${s.platformPlans[i].requiredRank ?? "初階"}　·　'
-                      '解鎖價格 '
-                      '${s.platformPlans[i].unlockCoins == null ? "不販售" : "${s.platformPlans[i].unlockCoins} 金幣"}　·　'
-                      '${s.platformPlans[i].totalSets} 組',
+                  subtitle: _rowSubtitle(s, s.platformPlans[i]),
                   chevron: true,
                   showDivider: i != s.platformPlans.length - 1,
                   onTap: () => _edit(context, s, s.platformPlans[i]),
@@ -208,6 +203,24 @@ class _PlatformPlansScreenState extends State<PlatformPlansScreen> {
         ],
       ),
     );
+  }
+
+  /// 清單上每一列的第二行。
+  ///
+  /// **「示範」那兩個字是重點。** `platformPlans` 是七份示範用假課表
+  /// （`kPlans`）加上 27 份真的平台課表，而**假的排在前面** ——
+  /// 管理員打開這一頁，前七筆全是改了存不住的。
+  ///
+  /// 那七份在雲端沒有文件（它們不屬於平台資料，是撐著 AI 優化、會員鎖定
+  /// 那幾條流程示範用的），所以寫回去無處可寫。程式在存檔時會講
+  /// （`pushPlanSpec` 回一句話），但**那時候人已經改完了**。
+  /// 要在他點進去之前就看得出來。
+  String _rowSubtitle(AppState s, WorkoutPlan p) {
+    final rank = p.requiredRank ?? '初階';
+    final price = p.unlockCoins == null ? '不販售' : '${p.unlockCoins} 金幣';
+    final demo = !s.planSpecById.containsKey(p.id);
+    return '${demo ? "示範課表 · 改動不上雲　·　" : ""}'
+        '所需階級 $rank　·　解鎖價格 $price　·　${p.totalSets} 組';
   }
 
   Future<void> _edit(BuildContext context, AppState s, WorkoutPlan p) async {
