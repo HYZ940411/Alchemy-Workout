@@ -10001,7 +10001,13 @@ class AppState extends ChangeNotifier {
   /// 那 27 份真的、有學理依據的課表。兩份並存 ——
   /// 假課表撐著 AI 優化、會員鎖定、自訂課表那幾條流程的示範，
   /// 真課表是使用者真的會照著練的內容。
-  late List<WorkoutPlan> platformPlans = [...kPlans, ...buildCsvPlans()];
+  /// 順序：平台課表（四份官方 ＋ 27 份 CSV）→ 示範課表 → 空白課表。
+  /// 空白課表**固定在最後** —— 它是入口不是內容，排在前面會擋住真的課表。
+  late List<WorkoutPlan> platformPlans = [
+    ...buildCsvPlans(),
+    if (demo) ...kDemoPlans,
+    ...kPlans,
+  ];
 
   /// 課表 ID → 詳情頁的說明性內容。由平台資料維護，故為狀態而非常數。
   late Map<String, PlatformPlanSpec> planSpecById = kPlanSpecById;
@@ -10102,7 +10108,11 @@ class AppState extends ChangeNotifier {
   void applyPlatformData(PlatformData d) {
     platformExercises = List.of(d.exercises);
     planSpecById = {for (final s in d.planSpecs) s.id: s};
-    platformPlans = [...kPlans, ...buildCsvPlansFrom(d.planSpecs, d.exercises)];
+    platformPlans = [
+      ...buildCsvPlansFrom(d.planSpecs, d.exercises),
+      if (demo) ...kDemoPlans,
+      ...kPlans,
+    ];
     // **整份重建會把優化建議的記號洗掉。** 它是使用者的資料，
     // 不屬於這份目錄 —— 重建完貼回去。
     applyOptimizationMark();

@@ -97,7 +97,7 @@ void main() {
 
     Future<AppState> proposed() async {
       final s = AppState();
-      s.startWorkout(kPlans.firstWhere((p) => p.id == 'p_push'));
+      s.startWorkout(kAllPlans.firstWhere((p) => p.id == 'p_push'));
       s.aiRequest(src, '今天狀況不太好');
       await s.aiConfirmDemand(src, '整體降強度');
       s.aiProduceSuggestion(src);

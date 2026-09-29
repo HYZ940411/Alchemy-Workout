@@ -16,9 +16,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/domain/registration.dart';
 import 'package:fitness_app/mock/mock_data.dart';
+import 'package:fitness_app/mock/platform_exercises.g.dart';
+import 'package:fitness_app/mock/platform_plans.g.dart';
 
 void main() {
-  final plans = buildCsvPlans();
+  // 只驗《健身計劃.csv》那 27 份 —— 2026-09-29 起 `buildCsvPlans()` 還含
+  // 四份從 `kPlans` 搬上雲的官方課表，而「級別 → 適用經驗」那條機械對應
+  // 是 `gen_platform_plans.py` 對 CSV 做的，那四份不適用。
+  final plans = buildCsvPlansFrom(kPlatformPlans, kPlatformExercises);
   final byId = {for (final p in plans) p.id: p};
 
   group('每一份課表都標得出適用對象', () {

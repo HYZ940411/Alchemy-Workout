@@ -5,7 +5,6 @@ import '../domain/platform_plan.dart';
 import '../domain/task_pool.dart';
 import '../mock/mock_data.dart';
 import '../mock/mock_extra.dart';
-import '../mock/platform_plans.g.dart';
 
 /// 平台公用唯讀資料的來源。
 ///
@@ -83,7 +82,7 @@ class BundledPlatformData implements PlatformDataSource {
   @override
   Future<PlatformData> load() async => PlatformData(
         exercises: List.of(kExercises),
-        planSpecs: List.of(kPlatformPlans),
+        planSpecs: List.of(kAllPlanSpecs),
         achievements: buildAchievements(),
         taskPool: buildTaskPool(),
         config: {
@@ -146,6 +145,7 @@ Map<String, dynamic> planSpecToMap(PlatformPlanSpec s) => {
       // 失敗方向是**寬鬆**的，所以不會有任何地方報錯。
       // 舊的往返測試沒抓到，是因為它的夾具兩欄剛好都是預設空值。
       'unlockCoins': s.unlockCoins,
+      'memberUnlockable': s.memberUnlockable,
       'suitableExperience': s.suitableExperience,
       'suitableGoals': s.suitableGoals,
       'equipmentTier': s.equipmentTier,
@@ -164,6 +164,7 @@ Map<String, dynamic> planSpecToMap(PlatformPlanSpec s) => {
             'amount': it.amount,
             'unit': it.unit.name,
             'restSeconds': it.restSeconds,
+            'weight': it.weight,
           },
       ],
     };
@@ -175,6 +176,7 @@ PlatformPlanSpec planSpecFromDoc(String id, Map<String, dynamic> m) =>
       level: m['level'] as String,
       requiredRank: (m['requiredRank'] as num?)?.toInt(),
       unlockCoins: (m['unlockCoins'] as num?)?.toInt(),
+      memberUnlockable: m['memberUnlockable'] as bool? ?? false,
       // 缺鍵時退回空清單，與 `PlatformPlanSpec` 的預設一致 ——
       // 舊文件（2026-09-29 之前上傳的那批）沒有這兩個鍵。
       suitableExperience: [
@@ -200,6 +202,7 @@ PlatformPlanSpec planSpecFromDoc(String id, Map<String, dynamic> m) =>
             (it['amount'] as num).toInt(),
             PlanUnit.values.byName(it['unit'] as String? ?? 'reps'),
             (it['restSeconds'] as num).toInt(),
+            weight: (it['weight'] as num?)?.toDouble() ?? 0,
           ),
       ],
     );

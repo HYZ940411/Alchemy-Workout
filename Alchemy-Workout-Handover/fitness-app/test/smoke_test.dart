@@ -492,16 +492,16 @@ void main() {
     expect(t.takeException(), isNull);
   });
 
-  testWidgets('計畫詳情：AI 已替換動作以刪除線呈現原動作', (t) async {
+  // 「AI 已替換動作以刪除線呈現原動作」原本也在這裡，靠的是「推日」那份
+  // 課表身上**寫死的** `replacedFrom` —— 一份沒有人跑過 AI 卻已經標著
+  // 「AI 已替換」的課表，而真使用者看得到。2026-09-29 把那四份官方課表
+  // 搬上雲時一併清掉了，該測試改由 `swap_exercise_test` 以真的替換造狀態。
+  testWidgets('計畫詳情：課表指定的休息秒數蓋過動作預設', (t) async {
     await _boot(t);
     await t.tap(find.byIcon(Icons.fitness_center).last);
     await t.pumpAndSettle();
     await t.tap(find.text('推日：胸肩三頭').first);
     await t.pumpAndSettle();
-    expect(find.text('AI 已替換：'), findsOneWidget);
-    final orig = t.widget<Text>(find.text('上斜板凳臥推 · 槓鈴'));
-    expect(orig.style!.decoration, TextDecoration.lineThrough);
-    // 課表指定值蓋過動作預設（臥推動作預設 150，課表指定 120）。
     // 臥推動作預設 150 秒，本課表指定 120 —— 課表指定值為第一順位。
     expect(find.descendant(
       of: find.ancestor(

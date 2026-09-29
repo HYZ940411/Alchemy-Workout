@@ -32,7 +32,7 @@ import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/mock/mock_data.dart';
 import 'package:fitness_app/state/app_state.dart';
 
-WorkoutPlan get _plan => kPlans.firstWhere((p) => p.source != PlanSource.blank);
+WorkoutPlan get _plan => kAllPlans.firstWhere((p) => p.source != PlanSource.blank);
 
 /// 練 [n] 場，每場完成一組、時長足夠。
 AppState _trained(int n) {

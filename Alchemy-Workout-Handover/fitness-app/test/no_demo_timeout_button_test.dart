@@ -25,7 +25,7 @@ void main() {
 
   testWidgets('分析中的畫面沒有「模擬逾時」', (t) async {
     final s = AppState();
-    s.startWorkout(kPlans.firstWhere((p) => p.id == 'p_push'));
+    s.startWorkout(kAllPlans.firstWhere((p) => p.id == 'p_push'));
     s.aiRequest(src, '今天狀況不太好');
     await s.aiConfirmDemand(src, '整體降強度');
     expect(s.aiStage[src], AiStage.analyzing, reason: '前提：要停在分析中');

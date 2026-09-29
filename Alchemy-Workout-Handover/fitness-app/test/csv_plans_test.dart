@@ -10,11 +10,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_app/screens/train/plan_detail_screen.dart';
 
 import 'package:fitness_app/domain/rewards.dart';
-import 'package:fitness_app/domain/platform_plan.dart';
+import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/mock/mock_data.dart';
 import 'package:fitness_app/mock/platform_exercises.g.dart';
 import 'package:fitness_app/mock/platform_plans.g.dart';
 import 'package:fitness_app/state/app_state.dart';
+
+/// 只取《健身計劃.csv》產生的那 27 份。
+///
+/// 2026-09-29 起 `buildCsvPlans()` 還包含四份從 `kPlans` 搬上雲的官方課表
+/// （見 `kLegacyPlanSpecs`），而本檔驗的是 **CSV 這個來源**的性質 ——
+/// 「目標重量一律為 0」「不設階級門檻」那些只對 CSV 成立，
+/// 搬過來的四份本來就帶著重量與階級。
+List<WorkoutPlan> csvOnly() =>
+    buildCsvPlansFrom(kPlatformPlans, kPlatformExercises);
 
 void main() {
   group('資料本身', () {
@@ -129,11 +138,14 @@ void main() {
           reason: '${spec.name} 沒進到 platformPlans',
         );
       }
-      expect(s.platformPlans.length, kPlans.length + 27);
+      // 目錄 = 31 份平台課表（27 CSV ＋ 4 份 2026-09-29 搬上雲的官方課表）
+      // ＋ 示範課表 ＋ 空白課表。
+      expect(s.platformPlans.length,
+          kAllPlanSpecs.length + kDemoPlans.length + kPlans.length);
     });
 
     test('組數展開成同樣多的 PlannedSet', () {
-      final plans = buildCsvPlans();
+      final plans = csvOnly();
       for (var i = 0; i < plans.length; i++) {
         final spec = kPlatformPlans[i];
         for (var j = 0; j < spec.items.length; j++) {
@@ -147,7 +159,7 @@ void main() {
     });
 
     test('目標重量一律為 0 —— 這份資料以 RPE 開處方，不指定公斤', () {
-      for (final p in buildCsvPlans()) {
+      for (final p in csvOnly()) {
         for (final e in p.exercises) {
           for (final st in e.planned) {
             expect(st.targetWeight, 0, reason: '${p.name} 出現了一個憑空指定的重量');
@@ -157,7 +169,7 @@ void main() {
     });
 
     test('組間休息帶過去了 —— 課表指定值是取值優先序的第一順位', () {
-      final plans = buildCsvPlans();
+      final plans = csvOnly();
       for (var i = 0; i < plans.length; i++) {
         for (var j = 0; j < plans[i].exercises.length; j++) {
           expect(

@@ -6,6 +6,7 @@ import '../../domain/commerce.dart';
 import '../../domain/community.dart';
 import '../../domain/novice_wrapup.dart';
 import '../../domain/plan_duration.dart';
+import '../../domain/platform_plan.dart';
 import '../../domain/rewards.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
@@ -154,10 +155,19 @@ class PlanDetailScreen extends StatelessWidget {
           // 課表的說明性內容。**只有《健身計劃.csv》那 27 份有** ——
           // 七份示範用假課表沒有這些欄位，所以整段是條件呈現，
           // 不是每份課表都硬擠出一塊空白。
-          if (s.planSpecById[plan.id] case final spec?) ...[
+          // **內容全空的規格不呈現這一整段。**
+          //
+          // 2026-09-29 把四份官方課表從 `kPlans` 搬上雲之後，它們有了規格
+          // （後台才改得動），但**沒有那六段說明性內容** —— 它們從來沒有過，
+          // 而那不是編得出來的東西（尤其「學理依據」，見 `kLegacyPlanSpecs`）。
+          //
+          // 不加這個判斷的話，畫面會出現一張空白卡片加一個空的「依據」欄，
+          // 那比沒有更糟：它看起來像壞掉，而不是像「還沒寫」。
+          if (s.planSpecById[plan.id] case final spec? when _hasProse(spec)) ...[
             const SizedBox(height: S.lg),
             const SectionTitle('這份課表在做什麼'),
-            AppCard(child: Text(spec.intro, style: T.body())),
+            if (spec.intro.trim().isNotEmpty)
+              AppCard(child: Text(spec.intro, style: T.body())),
             for (final (title, text) in [
               ('怎麼練', spec.howTo),
               ('負荷大小', spec.load),
@@ -257,6 +267,17 @@ class PlanDetailScreen extends StatelessWidget {
       ),
     );
   }
+
+  /// 這份規格帶不帶得出課表詳情頁要的說明性內容。
+  ///
+  /// 只看那六段，不看依據 —— 依據單獨呈現，也單獨判斷。
+  static bool _hasProse(PlatformPlanSpec s) =>
+      s.intro.trim().isNotEmpty ||
+      s.howTo.trim().isNotEmpty ||
+      s.load.trim().isNotEmpty ||
+      s.effect.trim().isNotEmpty ||
+      s.technique.trim().isNotEmpty ||
+      s.reference.trim().isNotEmpty;
 
   static String _ago(DateTime d) {
     final n = appNow().difference(d).inDays;

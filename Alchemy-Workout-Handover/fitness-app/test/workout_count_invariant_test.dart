@@ -13,7 +13,7 @@ import 'package:fitness_app/state/app_state.dart';
 /// 2026-09-26 使用者裁決：**一組都沒完成的訓練不在任何地方被記錄**。
 /// 現在兩者讀同一個旗標，這一份測試釘住「它們不會再漂開」。
 void main() {
-  final plan = kPlans.firstWhere((p) => p.id == 'p_push');
+  final plan = kAllPlans.firstWhere((p) => p.id == 'p_push');
 
   /// 練一場，回傳（次數變化，歷史筆數變化）。
   (int, int) run(AppState s,

@@ -274,10 +274,15 @@ void main() {
   });
 
   group('BundledPlatformData 與 App 既有種子一致（mock 邊界）', () {
-    test('bundle 動作庫即 kExercises，課表即 kPlatformPlans', () async {
+    test('bundle 動作庫即 kExercises，課表即 kAllPlanSpecs', () async {
       final bundle = await const BundledPlatformData().load();
       expect(bundle.exercises.length, kExercises.length);
-      expect(bundle.planSpecs.length, kPlatformPlans.length);
+      // **不是 `kPlatformPlans`。** 2026-09-29 起平台課表是 27 份 CSV
+      // 加上四份從 `kPlans` 搬上雲的官方課表（`kLegacyPlanSpecs`）——
+      // 少算那四份的話，它們就不會被匯出、不會被上傳，
+      // 後台改它們又會回到「存不住」。
+      expect(bundle.planSpecs.length, kAllPlanSpecs.length);
+      expect(kAllPlanSpecs.length, kPlatformPlans.length + 4);
       // 平台設定涵蓋所有群組。
       expect(bundle.config.keys.toSet(),
           platformConfig.groups.map((g) => g.id).toSet());

@@ -10,12 +10,15 @@
 //   · 還原的三個 Precondition：該動作為替換結果、尚無已完成的組、尚未結算
 //   · 逐個還原，非整批
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/data/ai_suggestion.dart';
 import 'package:fitness_app/domain/ability.dart';
 import 'package:fitness_app/domain/ai_adjust.dart';
 import 'package:fitness_app/domain/models.dart';
+import 'package:fitness_app/domain/rewards.dart';
+import 'package:fitness_app/screens/train/plan_detail_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 void main() {
@@ -222,4 +225,46 @@ void main() {
     expect(got.changes.every((c) => c.replacement == null), isTrue);
     expect(got.isEmpty, isTrue, reason: '沒有模型時這個方向產不出建議');
   });
+
+  group('畫面：被替換的動作要看得出原本是什麼', () {
+    // 這一條原本在 `smoke_test`，靠的是「推日」那份課表身上**寫死的**
+    // `replacedFrom: ex('incline')` —— 一份沒有人跑過 AI 卻已經標著
+    // 「AI 已替換」的課表，而真使用者看得到。2026-09-29 把那四份官方課表
+    // 搬上雲時一併清掉了假狀態，所以改由真的替換造出來，並搬到這裡
+    // （`replacedFrom` 的家）。
+    testWidgets('原動作以刪除線呈現', (t) async {
+      final s = AppState();
+      final base = s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty);
+      final origin = base.exercises.first.exercise;
+      final cand = s.swapCandidatesFor(origin).first;
+
+      // 直接組一份「已被替換過」的課表 —— 那正是 AI 調整落地成自訂訓練
+      // 之後的樣子（見 `AppState._landAdjustedPlan`）。
+      final plan = WorkoutPlan(
+        id: 'swapped_plan',
+        name: '替換過的課表',
+        source: PlanSource.privateCustom,
+        equipmentTier: base.equipmentTier,
+        exercises: [
+          PlanExercise(
+            exercise: cand,
+            planned: [...base.exercises.first.planned],
+            replacedFrom: origin,
+          ),
+        ],
+      );
+
+      await t.pumpWidget(AppScope(
+        state: s,
+        child: MaterialApp(home: PlanDetailScreen(plan: plan)),
+      ));
+      await t.pumpAndSettle();
+
+      expect(find.text('AI 已替換：'), findsOneWidget);
+      final orig = t.widget<Text>(find.text(origin.name));
+      expect(orig.style!.decoration, TextDecoration.lineThrough,
+          reason: '刪除線是「這不是你原本要練的」唯一的視覺線索');
+    });
+  });
+
 }

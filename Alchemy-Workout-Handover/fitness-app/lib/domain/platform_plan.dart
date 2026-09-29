@@ -29,13 +29,23 @@ class PlanItemSpec {
   final PlanUnit unit;
   final int restSeconds;
 
+  /// 目標重量（公斤）。0 代表「不指定」——《健身計劃.csv》那 27 份全部是 0，
+  /// 由使用者自己填。
+  ///
+  /// **2026-09-29 新增。** 原本沒有這一欄，而四份寫死在 `kPlans` 裡的官方
+  /// 課表帶著目標重量（臥推 60、深蹲 80…）。要把它們搬上雲、讓後台改得動，
+  /// 規格就得裝得下它們現有的內容 —— 否則搬家等於把處方改掉，
+  /// 而**訓練處方不是我該替使用者決定的東西**（CLAUDE.md 第 7 條）。
+  final double weight;
+
   const PlanItemSpec(
     this.exerciseId,
     this.sets,
     this.amount,
     this.unit,
-    this.restSeconds,
-  );
+    this.restSeconds, {
+    this.weight = 0,
+  });
 }
 
 /// 一份平台課表。
@@ -48,6 +58,13 @@ class PlatformPlanSpec {
 
   /// 階級門檻。空值為不設限。
   final int? requiredRank;
+
+  /// 會員權益是否解得開。
+  ///
+  /// **2026-09-29 新增**，理由同 [unlockCoins]：四份官方課表裡
+  /// 「進階：爆發力週期」帶著這個旗標，規格裝不下就等於搬家時弄丟一條
+  /// 解鎖途徑。
+  final bool memberUnlockable;
 
   /// 金幣解鎖價格。空值＝不提供這條解鎖方式。
   ///
@@ -92,6 +109,7 @@ class PlatformPlanSpec {
     required this.level,
     required this.requiredRank,
     this.unlockCoins,
+    this.memberUnlockable = false,
     required this.equipmentTier,
     this.suitableExperience = const [],
     this.suitableGoals = const [],
@@ -121,6 +139,7 @@ class PlatformPlanSpec {
         level: level,
         requiredRank: requiredRank,
         unlockCoins: unlockCoins,
+        memberUnlockable: memberUnlockable,
         equipmentTier: equipmentTier,
         suitableExperience: suitableExperience,
         suitableGoals: suitableGoals,

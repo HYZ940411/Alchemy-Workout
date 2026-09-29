@@ -25,7 +25,7 @@ import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/mock/mock_data.dart';
 import 'package:fitness_app/state/app_state.dart';
 
-WorkoutPlan get _plan => kPlans.firstWhere((p) => p.source != PlanSource.blank);
+WorkoutPlan get _plan => kAllPlans.firstWhere((p) => p.source != PlanSource.blank);
 
 /// 開始一場訓練，完成 [done] 組，經過 [minutes] 分鐘後結算。
 ({AppState s, SettlementResult r}) _workout({
