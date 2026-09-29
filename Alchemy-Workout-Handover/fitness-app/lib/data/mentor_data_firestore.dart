@@ -129,7 +129,9 @@ class FirestoreMentor implements MentorSource {
       //
       // 一次解除開啟的是一個新的 3 天窗口，上一個窗口裡的提議
       // 不該跨過來。
-      'restoreProposedBy': FieldValue.delete(),
+      //
+      // 與 `recover()` 一致寫 `null` 而不是 `FieldValue.delete()`。
+      'restoreProposedBy': null,
     });
     for (final d in open.docs) {
       batch.update(d.reference, {'state': MentorTaskState.voided.name});
@@ -173,12 +175,22 @@ class FirestoreMentor implements MentorSource {
         return;
       }
 
+      // **寫 `null`，不用 `FieldValue.delete()`。**
+      //
+      // 2026-09-30：教官按同意，寫入報告只給得出
+      // 「Dart exception thrown from converted Future」——
+      // 例外是**交易自己丟的**（我的守衛已經改成在交易外面丟）。
+      // 交易裡唯一會炸的就是這一行，而先前每一輪守衛都提早 return，
+      // 所以它從來沒真正執行過。
+      //
+      // 讀那一側本來就把「不是 Timestamp／不是 String」當成空值，
+      // 所以 `null` 與欄位不存在對 `_bondOf` 完全等價。
       tx.update(ref, {
         'state': MentorBondState.active.name,
-        'releasedAt': FieldValue.delete(),
-        'releasedReason': FieldValue.delete(),
+        'releasedAt': null,
+        'releasedReason': null,
         // 提議已經被接受了 —— 留著下次解除時會看到上一輪的殘留。
-        'restoreProposedBy': FieldValue.delete(),
+        'restoreProposedBy': null,
       });
     });
 
@@ -198,7 +210,7 @@ class FirestoreMentor implements MentorSource {
   @override
   Future<void> dropRestore(String bondId) async {
     await _col.doc(bondId).update({
-      'restoreProposedBy': FieldValue.delete(),
+      'restoreProposedBy': null,
       'lastActivityAt': FieldValue.serverTimestamp(),
     });
   }

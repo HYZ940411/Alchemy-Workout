@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'boxed_error_stub.dart'
+    if (dart.library.js_interop) 'boxed_error_web.dart';
+
 import 'package:http/http.dart' as http;
 
 /// 把非 200 的回應轉成**說得出原因**的一句話。
@@ -54,6 +57,15 @@ String httpFailureReason(String what, http.Response res) {
 /// 於是「無限遞迴」與「拆不開」在畫面上長得一樣。上限是看得見的。
 String describeError(Object e, {int depth = 5}) {
   if (depth <= 0) return '$e';
+
+  // **JS 物件要用平台專屬的取值。** Dart 的動態存取只對 Dart 物件有效，
+  // 而從 JS Promise 拒絕回來的那個東西是 JS 物件 —— 動態存取會
+  // `NoSuchMethodError`，於是永遠退回那句樣板話。
+  final js = jsBoxedError(e);
+  if (js != null && !identical(js, e)) {
+    return describeError(js, depth: depth - 1);
+  }
+
   try {
     final boxed = (e as dynamic).error;
     if (boxed != null && !identical(boxed, e)) {

@@ -1454,10 +1454,35 @@ firebase deploy --only hosting
    自指／互指的環／層數上限／取屬性會炸的東西）。
    兩次突變（不拆箱／拿掉上限）各打中對應的測試。2,650 passed。
 
+   ### 第三輪還是同一句 —— 而那一句本身就是線索
+
+   部署之後使用者再按一次，**還是**「Dart exception thrown from
+   converted Future」。這代表兩件事：
+
+   1. `describeError` 沒拆開它 —— 那是個 **JS 物件**，
+      `(e as dynamic).error` 這種 Dart 動態存取對它無效，
+      會直接 `NoSuchMethodError` 然後被 `catch` 吞掉
+   2. **例外是交易自己丟的** —— 我的守衛已經改成在交易外面丟，
+      走到那裡的話會是可讀的中文
+
+   交易裡唯一會炸的就是 `tx.update`，而它帶著三個 `FieldValue.delete()`。
+   **先前每一輪守衛都提早 return，所以那一行從來沒真正執行過** ——
+   一旦守衛通過，它第一次跑到，就炸了。
+
+   兩邊都修：
+
+   | 修什麼 | 怎麼修 |
+   |---|---|
+   | 交易裡的 `FieldValue.delete()` | 改寫 `null`。讀那側本來就把「不是 Timestamp／不是 String」當空值，兩者對 `_bondOf` 等價 |
+   | 拆不開 JS 物件 | 新增 `boxed_error_web.dart`（條件匯入），用 `dart:js_interop_unsafe` 的屬性取值，並以 `isA<JSObject>()` 做型別判斷 |
+
+   `release()` 與 `dropRestore()` 的 `FieldValue.delete()` 一併改成 `null`
+   —— 同一個寫法不要兩套。
+
    ### 還沒答出來的問題
 
    **`recover()` 到底為什麼失敗，仍然不知道。** 這一節修的是
-   「看得到原因」，下一次實測才會拿到那句中文。
+   「看得到原因」與「拿掉最可疑的那一行」，下一次實測才會知道。
 
 3F. **2026-09-30 一個什麼都沒做的「成功」**
 
