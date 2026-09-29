@@ -520,9 +520,13 @@ class _MyMentor extends StatelessWidget {
               const SizedBox(height: 8),
               // 未評分時聲望無變動，不視為差評。
               Text(
+                // **這裡說的是「我的教官」，不是我。**
+                // 原本取 `s.instructorReputation`／`s.apprenticeCap` ——
+                // 那是**我自己**當教官時的欄位。學徒不是教官，
+                // 所以它永遠是 0，而標籤寫著「教官聲望」。
                 '每週最多評一次，且該週雙方要有互動才評得了。'
-                '不評不算差評 —— 教官聲望目前 ${s.instructorReputation}，'
-                '帶徒上限 ${s.apprenticeCap} 人。',
+                '不評不算差評 —— 教官聲望目前 ${ins.reputation}，'
+                '帶徒上限 ${ins.apprenticeCap} 人。',
                 style: const TextStyle(
                     color: AppColors.textFaint, fontSize: 11, height: 1.5),
               ),
@@ -670,7 +674,8 @@ Future<void> _rateWeek(BuildContext context, AppState s) async {
   );
   if (ok != true || !context.mounted) return;
   s.rateWeeklyInteraction(stars);
-  showToast(context, '已評分，教官聲望 ${s.instructorReputation}');
+  // 同上：要說的是對方的聲望。
+  showToast(context, '已評分，教官聲望 ${s.myInstructor?.reputation ?? 0}');
 }
 
 /// 師徒關係已解除。**需經多次確認，避免誤觸**；任一方皆可單方面解除。
@@ -773,7 +778,8 @@ class _TaskCard extends StatelessWidget {
                             context,
                             s.taskRatingsThisWeek > kMentorTaskRatingWeeklyCap
                                 ? '已評分，本週計入聲望的次數已用完'
-                                : '已評分，教官聲望 ${s.instructorReputation}');
+                                : '已評分，教官聲望 '
+                                    '${s.myInstructor?.reputation ?? 0}');
                       },
                       child: Padding(
                         padding: const EdgeInsets.all(3),
