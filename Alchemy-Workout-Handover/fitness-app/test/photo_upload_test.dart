@@ -16,6 +16,7 @@ import 'package:fitness_app/data/photo_data.dart';
 import 'package:fitness_app/design/image_library.dart';
 import 'package:fitness_app/domain/photo.dart';
 import 'package:fitness_app/domain/platform_config.dart';
+import 'package:fitness_app/screens/social/compose_post_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
 import 'package:fitness_app/widgets/image_picker_sheet.dart';
 
@@ -151,7 +152,8 @@ void main() {
           home: Builder(
             builder: (c) => Scaffold(
               body: ElevatedButton(
-                onPressed: () => pickImages(c, title: '選圖', selected: const []),
+                onPressed: () => pickImages(c,
+                    title: '選圖', selected: const [], showLibrary: true),
                 child: const Text('開'),
               ),
             ),
@@ -171,7 +173,8 @@ void main() {
           home: Builder(
             builder: (c) => Scaffold(
               body: ElevatedButton(
-                onPressed: () => pickImages(c, title: '選圖', selected: const []),
+                onPressed: () => pickImages(c,
+                    title: '選圖', selected: const [], showLibrary: true),
                 child: const Text('開'),
               ),
             ),
@@ -181,6 +184,82 @@ void main() {
       await t.tap(find.text('開'));
       await t.pumpAndSettle();
       expect(find.text('從裝置選擇照片'), findsOneWidget);
+    });
+  });
+
+  group('內建圖庫只留在後台（1G，2026-09-29 使用者裁決 A）', () {
+    /// 開一個只有一顆按鈕的畫面，按下去打開選圖抽屜。
+    ///
+    /// 不直接建 `_ImagePicker` —— 那是私有的，而且真正要驗的是
+    /// **呼叫端傳什麼、抽屜就長什麼樣**。
+    Future<void> openSheet(
+      WidgetTester t,
+      AppState s, {
+      required bool showLibrary,
+    }) async {
+      await t.pumpWidget(AppScope(
+        state: s,
+        child: MaterialApp(
+          home: Builder(
+            builder: (c) => Scaffold(
+              body: ElevatedButton(
+                onPressed: () => pickImages(c,
+                    title: '選圖', selected: const [], showLibrary: showLibrary),
+                child: const Text('開'),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await t.tap(find.text('開'));
+      await t.pumpAndSettle();
+    }
+
+    // 拿第一張圖的標籤當標記。用標籤而不是 ID：ID 是內部的，
+    // 而使用者看到的是「訓練上衣」這四個字。
+    final firstLabel = kImageLibrary.first.label;
+
+    testWidgets('showLibrary: false —— 內建的假照片一張都不出現', (t) async {
+      await openSheet(t, AppState()..photoSource = FakePhotos(),
+          showLibrary: false);
+      expect(find.text(firstLabel), findsNothing);
+      expect(find.text('或從下面的內建圖片挑：'), findsNothing);
+      // 真的上傳那條路還在。
+      expect(find.text('從裝置選擇照片'), findsOneWidget);
+    });
+
+    testWidgets('showLibrary: true —— 後台仍挑得到', (t) async {
+      await openSheet(t, AppState(), showLibrary: true);
+      expect(find.text(firstLabel), findsOneWidget);
+    });
+
+    testWidgets('兩條路都沒有時，抽屜要說得出話 —— 不留一個空白面板', (t) async {
+      await openSheet(t, AppState(), showLibrary: false);
+      expect(find.text(firstLabel), findsNothing);
+      expect(find.textContaining('目前無法加入圖片'), findsOneWidget);
+    });
+
+    testWidgets('發文頁：沒接雲端就不放那顆按鈕', (t) async {
+      await t.pumpWidget(AppScope(
+        state: AppState(),
+        child: const MaterialApp(home: ComposePostScreen()),
+      ));
+      await t.pumpAndSettle();
+      expect(find.text('加入圖片'), findsNothing,
+          reason: '打開來是空的按鈕不如不放');
+    });
+
+    testWidgets('發文頁：接了雲端才放，而且打開沒有假照片', (t) async {
+      await t.pumpWidget(AppScope(
+        state: AppState()..photoSource = FakePhotos(),
+        child: const MaterialApp(home: ComposePostScreen()),
+      ));
+      await t.pumpAndSettle();
+      expect(find.text('加入圖片'), findsOneWidget);
+      await t.tap(find.text('加入圖片'));
+      await t.pumpAndSettle();
+      expect(find.text(firstLabel), findsNothing,
+          reason: '這一條是使用者 2026-09-28 指出的那件事');
     });
   });
 

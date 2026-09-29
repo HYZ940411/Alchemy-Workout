@@ -147,20 +147,26 @@ class _ComposePostScreenState extends State<ComposePostScreen> {
                   ),
                   const SizedBox(height: S.base),
                 ],
-                AppButton(
-                  label: images.isEmpty ? '加入圖片' : '更換圖片（${images.length} 張）',
-                  kind: BtnKind.secondary,
-                  icon: Icons.image_outlined,
-                  onPressed: () async {
-                    final picked = await pickImages(
-                      context,
-                      title: '加入圖片',
-                      selected: images,
-                    );
-                    if (picked == null) return;
-                    setState(() => images = picked);
-                  },
-                ),
+                // 沒接雲端就沒有任何加圖片的方式（內建圖庫已於 2026-09-29
+                // 自前台移除），那就不要放一顆打開來是空的按鈕。
+                if (s.canUploadPhoto)
+                  AppButton(
+                    label: images.isEmpty ? '加入圖片' : '更換圖片（${images.length} 張）',
+                    kind: BtnKind.secondary,
+                    icon: Icons.image_outlined,
+                    onPressed: () async {
+                      final picked = await pickImages(
+                        context,
+                        title: '加入圖片',
+                        selected: images,
+                        // 前台**不列**內建圖庫 —— 那十二張是程式繪製的假照片
+                        // （2026-09-29 使用者裁決 A）。
+                        showLibrary: false,
+                      );
+                      if (picked == null) return;
+                      setState(() => images = picked);
+                    },
+                  ),
 
 
               ],

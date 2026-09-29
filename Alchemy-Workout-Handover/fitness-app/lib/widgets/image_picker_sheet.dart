@@ -8,26 +8,46 @@ import 'common.dart';
 
 /// 選圖抽屜（商品圖片與貼文圖片共用）
 ///
-/// 兩處要的東西一模一樣：從圖庫挑一組圖、可複選、可取消選取、按確定才生效。
-/// 故為同一個抽屜 —— 差別只在標題與初始選取。
+/// 兩處要的東西幾乎一模一樣：從某處挑一組圖、可複選、可取消選取、
+/// 按確定才生效。故為同一個抽屜 —— 差別只在標題、初始選取，
+/// 以及**要不要列出內建圖庫**（[showLibrary]）。
 ///
 /// 回傳 null 代表使用者取消，與「選了空集合」不同：前者不改動原本的圖片，
 /// 後者是把圖片清空。
+///
+/// ## [showLibrary]：為什麼是參數，不是抽屜自己判斷
+///
+/// `kImageLibrary` 那十二張是**程式繪製**的替身，當初是為了「真機上這裡
+/// 會接系統相簿」而存在。2026-09-28 接上真的上傳之後，它在前台就只剩下
+/// 假的部分（使用者：「還有一些假照片沒有拿掉」）。
+///
+/// 但**後台的商品編輯只有這個抽屜**，直接拿掉它就沒有任何選圖方式了
+/// （商品圖屬於平台資料而非使用者資料，`post_photos` 那條
+/// `ownerUid == request.auth.uid` 不適用，要另開規則才接得上傳）。
+///
+/// 所以 2026-09-29 使用者裁決 A：**前台關掉、後台留著**。
+/// 判準沿用專案裡本來就在用的那一個 —— 後台的讀者是我們自己
+/// （同 `ui_jargon_test` 不掃 `screens/admin/`）。
+///
+/// 做成參數而不是讓抽屜去問「我是被誰打開的」：呼叫端只有兩個，
+/// 各自講一句比抽屜猜一次清楚，而且加第三個呼叫端時它非表態不可。
 Future<List<String>?> pickImages(
   BuildContext context, {
   required String title,
   required List<String> selected,
+  required bool showLibrary,
 }) {
   return showAppSheet<List<String>>(
     context,
     title: title,
-    child: _ImagePicker(initial: selected),
+    child: _ImagePicker(initial: selected, showLibrary: showLibrary),
   );
 }
 
 class _ImagePicker extends StatefulWidget {
   final List<String> initial;
-  const _ImagePicker({required this.initial});
+  final bool showLibrary;
+  const _ImagePicker({required this.initial, required this.showLibrary});
 
   @override
   State<_ImagePicker> createState() => _ImagePickerState();
@@ -70,16 +90,24 @@ class _ImagePickerState extends State<_ImagePicker> {
   @override
   Widget build(BuildContext context) {
     final groups = <String, List<AppImage>>{};
-    for (final img in kImageLibrary) {
-      groups.putIfAbsent(img.group, () => []).add(img);
+    if (widget.showLibrary) {
+      for (final img in kImageLibrary) {
+        groups.putIfAbsent(img.group, () => []).add(img);
+      }
     }
+    final canUpload = AppScope.of(context).canUploadPhoto;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 兩條路都沒有的時候要講出來。呼叫端已經盡量不讓人走到這裡
+        // （見 `compose_post_screen` 的入口判斷），但抽屜自己也要說得出話
+        // —— 空白的抽屜看起來像壞了。
+        if (!canUpload && !widget.showLibrary)
+          Text('目前無法加入圖片 —— 這個裝置還沒有連上雲端。', style: T.caption()),
         // 2026-09-28 起可以選裝置上的照片（使用者裁決：存 Firestore）。
         // 沒接雲端時（既有測試）這一顆不出現，行為與加功能之前一樣。
-        if (AppScope.of(context).canUploadPhoto) ...[
+        if (canUpload) ...[
           AppButton(
             label: busy ? '處理中…' : '從裝置選擇照片',
             kind: BtnKind.secondary,
@@ -99,9 +127,11 @@ class _ImagePickerState extends State<_ImagePicker> {
               onRemove: (id) => setState(() => picked.remove(id)),
             ),
           ],
-          const SizedBox(height: S.md),
-          Text('或從下面的內建圖片挑：', style: T.caption()),
-        ] else
+          if (widget.showLibrary) ...[
+            const SizedBox(height: S.md),
+            Text('或從下面的內建圖片挑：', style: T.caption()),
+          ],
+        ] else if (widget.showLibrary)
           Text('圖庫為程式繪製的內建圖片。', style: T.caption()),
         for (final g in groups.entries) ...[
           SectionTitle(g.key, trailing: '${g.value.length} 張'),

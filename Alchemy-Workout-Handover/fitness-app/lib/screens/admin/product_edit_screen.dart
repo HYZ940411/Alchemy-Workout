@@ -51,6 +51,10 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
       context,
       title: '商品圖片',
       selected: images,
+      // 後台**留著**內建圖庫：商品圖還沒有真的上傳路徑（那要另開一條
+      // 安全規則，見 `image_picker_sheet.dart` 的說明），拿掉的話這裡
+      // 就沒有任何選圖方式了。後台的讀者是我們自己。
+      showLibrary: true,
     );
     if (picked == null) return;
     setState(() => images = picked);

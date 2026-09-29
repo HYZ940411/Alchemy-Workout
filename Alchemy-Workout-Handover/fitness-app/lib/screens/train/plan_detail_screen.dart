@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../domain/models.dart';
 import '../../domain/commerce.dart';
 import '../../domain/community.dart';
+import '../../domain/novice_wrapup.dart';
 import '../../domain/plan_duration.dart';
 import '../../domain/rewards.dart';
 import '../../state/app_state.dart';
@@ -12,6 +13,7 @@ import '../../widgets/common.dart';
 import '../ai/ai_adjust_screen.dart';
 import '../workout_screen.dart';
 import 'exercise_detail_screen.dart';
+import 'rate_experience_screen.dart';
 
 /// 訓練計畫詳情 —— 〈Read Model：課表選擇頁〉每份課表的欄位，
 /// 加上清單卡放不下的「課表內容」本身（逐動作 × 組數 × 目標重量與次數）。
@@ -218,6 +220,7 @@ class PlanDetailScreen extends StatelessWidget {
               const SizedBox(height: S.md),
             ],
           const SizedBox(height: S.xs),
+          _RatingSection(plan: plan),
           if (!locked) ...[
             if (plan.exercises.isNotEmpty) ...[
               AppButton(
@@ -258,6 +261,93 @@ class PlanDetailScreen extends StatelessWidget {
   static String _ago(DateTime d) {
     final n = appNow().difference(d).inDays;
     return n == 0 ? '今天' : '$n 天前';
+  }
+}
+
+/// 我對這份課表的評分。
+///
+/// **這一段存在的理由是「評完就不見了」。** 結算頁那張評分卡的條件是
+/// 「還沒評過才顯示」，所以評完之後整個 App 沒有任何地方看得到自己評了
+/// 什麼、更沒有地方改 —— 而 `RateExperienceScreen` 從第一天起就支援
+/// 讀回既有評分並修改，缺的只是一個入口（同「經驗值只有刪帳號頁看得到」）。
+///
+/// 三種狀態：
+/// - **評過** → 顯示星等與評語，可以改
+/// - **沒評過、但練過這份** → 給一個補評的入口
+/// - **沒評過也沒練過** → 什麼都不顯示
+///
+/// 最後一條是刻意的：沒做過的課表評不出「做起來如何」，而這份資料的
+/// 唯一讀者（管理員的評分彙總）要回答的是「哪一份課表該改」。
+/// 讓人評沒做過的課表，等於往那張表裡倒雜訊。
+///
+/// **練過與否以課表名稱比對** —— `HistoryEntry` 存的是 `planName` 而非
+/// 課表 ID。同名的自訂課表會被算成練過，那是可接受的誤差（方向是讓人
+/// 多評得到，而不是少）；真要修得先給訓練歷史加上課表 ID。
+class _RatingSection extends StatelessWidget {
+  final WorkoutPlan plan;
+  const _RatingSection({required this.plan});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    final mine = s.ratingFor(RatingTarget.trainingPlan, plan.id);
+    final trained = s.history.any((h) => h.planName == plan.name);
+    if (mine == null && !trained) return const SizedBox.shrink();
+
+    void open() => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RateExperienceScreen(
+              target: RatingTarget.trainingPlan,
+              targetId: plan.id,
+              targetName: plan.name,
+            ),
+          ),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: S.lg),
+        const SectionTitle('我的評分'),
+        Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (mine == null)
+                Text('你練過這份課表，但還沒評分過。',
+                    style: T.body(color: C.textSecondary))
+              else ...[
+                Row(
+                  children: [
+                    for (var i = 1; i <= 5; i++)
+                      Icon(
+                        i <= mine.stars ? Icons.star : Icons.star_border,
+                        size: Sz.iconDense,
+                        color: C.accentDeep,
+                      ),
+                    const SizedBox(width: S.sm),
+                    Text('${mine.stars} 星', style: T.caption()),
+                  ],
+                ),
+                if (mine.feedback case final f? when f.trim().isNotEmpty) ...[
+                  const SizedBox(height: S.sm),
+                  Text(f, style: T.body()),
+                ],
+              ],
+              const SizedBox(height: S.md),
+              SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  label: mine == null ? '評分這份課表' : '修改評分',
+                  kind: BtnKind.secondary,
+                  onPressed: open,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
