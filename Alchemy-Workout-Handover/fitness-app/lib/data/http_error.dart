@@ -67,6 +67,15 @@ String describeError(Object e, {int depth = 5}) {
   final js = jsErrorText(e);
   if (js != null) return js;
 
+  // 讀不出 JS 欄位時，把裝在裡面的東西**原樣交回 Dart 這一側** ——
+  // 它很可能本來就是個 Dart 物件，只是從 JS 那一側看不到內容
+  // （`{}`、`[object Object]`）。交回來之後字串插值就會呼叫到
+  // 它真正的 `toString()`。
+  final boxed = jsBoxedValue(e);
+  if (boxed != null && !identical(boxed, e)) {
+    return describeError(boxed, depth: depth - 1);
+  }
+
   try {
     final boxed = (e as dynamic).error;
     if (boxed != null && !identical(boxed, e)) {

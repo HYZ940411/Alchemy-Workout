@@ -33,10 +33,12 @@ String? jsErrorText(Object e) {
     }
     if (parts.isNotEmpty) return parts.join('　');
 
-    // 什麼都讀不到時，至少給出它自己的字串形式 ——
-    // **但不要再給那句樣板話**，那等於沒說。
+    // 什麼都讀不到時回空值，讓 [describeError] 去走 Dart 那一側 ——
+    // **不要回那句樣板話，也不要回 `[object Object]`**，
+    // 那兩種都等於沒說。使用者 2026-09-30 第五輪拿到的就是後者。
     final raw = target.toString();
     if (raw.contains('converted Future')) return null;
+    if (raw == '[object Object]' || raw == '{}') return null;
     return raw.isEmpty ? null : raw;
   } catch (_) {
     return null;
@@ -57,4 +59,25 @@ String? _readString(JSObject o, String key) {
   if (v == null) return null;
   final s = v.toString();
   return (s == 'null' || s == 'undefined') ? null : s;
+}
+
+/// 取出被裝箱的那個值，**原樣交回 Dart 這一側**。
+///
+/// 裝在裡面的很可能就是一個 Dart 物件（例如 `FirebaseException` 或我們
+/// 自己丟的 `StateError`）。從 JS 那一側看它是個沒有屬性的物件，
+/// `toString()` 給出 `[object Object]` —— 但只要交回 Dart，
+/// 字串插值就會呼叫到它真正的 `toString()`。
+///
+/// 使用者 2026-09-30 第四、五輪分別拿到 `{}` 與 `[object Object]`，
+/// 兩次都是因為我一直用 JS 的方式去讀一個 Dart 物件。
+Object? jsBoxedValue(Object e) {
+  try {
+    final obj = _asObject(e);
+    if (obj == null || !obj.has('error')) return null;
+    final v = obj['error'];
+    if (v == null) return null;
+    return v as Object;
+  } catch (_) {
+    return null;
+  }
 }

@@ -48,7 +48,19 @@ void main() {
     expect(describeError(e), contains('最裡面那一句'));
   });
 
-  test('非 Web 平台走 Dart 那一套 —— jsErrorText 一律回空值', () {
+  test('沒有內容的字串形式等於沒說 —— 不可以拿它當答案', () {
+    // 2026-09-30 第四、五輪分別拿到 `{}` 與 `[object Object]`。
+    // 兩者都「有回傳值」，但都沒有內容 —— 而有回傳值就會短路掉
+    // 後面真正拆得開的那一步。
+    for (final useless in ['{}', '[object Object]']) {
+      expect(describeError(_Boxed(StateError('真正的原因'))),
+          contains('真正的原因'),
+          reason: '$useless 這種回傳不該擋住後面的拆箱');
+    }
+  });
+
+  test('非 Web 平台走 Dart 那一套 —— 兩支都回空值', () {
+    expect(jsBoxedValue(StateError('一句話')), isNull);
     // Web 版另有實作（`boxed_error_web.dart`），這裡驗的是條件匯入
     // 沒有把兩邊接反：在測試（VM）上它必須什麼都不做，
     // 否則所有 Dart 例外的訊息都會被它吃掉。

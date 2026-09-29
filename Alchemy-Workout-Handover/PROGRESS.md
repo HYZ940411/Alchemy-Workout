@@ -1493,7 +1493,18 @@ firebase deploy --only hosting
    什麼都讀不到才退回它的字串形式 —— 但**不再回那句樣板話**，
    那等於沒說。
 
-   ### 四輪下來，儀器本身修了三次
+   ### 第五輪：`[object Object]`
+
+   與 `{}` 是同一件事的另一個面向：**裝在裡面的本來就是個 Dart 物件**
+   （很可能是 `FirebaseException`），而我一直用 JS 的方式去讀它。
+   從 JS 那一側看，Dart 物件沒有任何屬性、`toString()` 給 `[object Object]`。
+
+   只要把它**原樣交回 Dart 這一側**，字串插值就會呼叫到它真正的
+   `toString()`。新增 `jsBoxedValue()`，並讓 `jsErrorText()` 在只讀得到
+   `{}` 或 `[object Object]` 時回空值 —— **有回傳值就會短路掉
+   後面真正拆得開的那一步**，這是第五輪卡住的直接原因。
+
+   ### 五輪下來，儀器本身修了四次
 
    | 輪 | 拿到什麼 | 儀器的問題 |
    |---|---|---|
@@ -1501,9 +1512,11 @@ firebase deploy --only hosting
    | 2 | `Dart exception thrown…` | 例外穿過 JS 邊界，訊息被包起來（3G） |
    | 3 | `Dart exception thrown…` | 用 Dart 的動態存取去取 JS 物件的屬性，取不到 |
    | 4 | `{}` | `dartify()` 讀不到 `Error` 的非列舉屬性 |
+   | 5 | `[object Object]` | 裡面是 Dart 物件，卻用 JS 的方式讀；而「有回傳值」短路掉了正確的那條路 |
 
    **每一輪都不是在修 bug，是在修「看得到 bug 的能力」。**
    這件事本身值得記著：儀器沒驗證過，就等於沒有儀器。
+   而且**「有內容」與「有回傳值」是兩回事** —— 後三輪都栽在這裡。
 
    ### 還沒答出來的問題
 
