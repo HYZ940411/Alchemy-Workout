@@ -14,6 +14,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/data/http_error.dart';
+import 'package:fitness_app/data/boxed_error_stub.dart'
+    if (dart.library.js_interop) 'package:fitness_app/data/boxed_error_web.dart';
 
 /// 模擬 JS interop 那一層的包裝：`toString()` 沒有內容，
 /// 真正的錯誤在 `error` 屬性上。
@@ -44,6 +46,14 @@ void main() {
   test('拆得開兩層', () {
     final e = _Boxed(_Boxed(StateError('最裡面那一句')));
     expect(describeError(e), contains('最裡面那一句'));
+  });
+
+  test('非 Web 平台走 Dart 那一套 —— jsErrorText 一律回空值', () {
+    // Web 版另有實作（`boxed_error_web.dart`），這裡驗的是條件匯入
+    // 沒有把兩邊接反：在測試（VM）上它必須什麼都不做，
+    // 否則所有 Dart 例外的訊息都會被它吃掉。
+    expect(jsErrorText(StateError('一句話')), isNull);
+    expect(jsErrorText(_Boxed(StateError('一句話'))), isNull);
   });
 
   test('自己指向自己不會無窮遞迴', () {

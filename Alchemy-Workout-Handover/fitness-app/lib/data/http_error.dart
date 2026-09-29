@@ -61,10 +61,11 @@ String describeError(Object e, {int depth = 5}) {
   // **JS 物件要用平台專屬的取值。** Dart 的動態存取只對 Dart 物件有效，
   // 而從 JS Promise 拒絕回來的那個東西是 JS 物件 —— 動態存取會
   // `NoSuchMethodError`，於是永遠退回那句樣板話。
-  final js = jsBoxedError(e);
-  if (js != null && !identical(js, e)) {
-    return describeError(js, depth: depth - 1);
-  }
+  //
+  // 而且要**點名去讀** `code`／`name`／`message`：JS `Error` 的這些
+  // 欄位不是可列舉屬性，通用的 `dartify()` 只會給出一個空物件。
+  final js = jsErrorText(e);
+  if (js != null) return js;
 
   try {
     final boxed = (e as dynamic).error;

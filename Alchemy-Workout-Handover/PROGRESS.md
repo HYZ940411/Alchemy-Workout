@@ -1479,10 +1479,37 @@ firebase deploy --only hosting
    `release()` 與 `dropRestore()` 的 `FieldValue.delete()` 一併改成 `null`
    —— 同一個寫法不要兩套。
 
+   ### 第四輪：`失敗：{}`
+
+   拆是拆開了，拆出來的東西還是沒有內容。
+
+   照那句樣板話取出 `error` 之後，裡面是一個 JS `Error` ——
+   而 `Error` 的 `message` 與 `stack` **不是可列舉屬性**，
+   所以 `dartify()` 只給出一個空物件 `{}`。
+
+   改成**點名去讀** `code`／`name`／`message`
+   （Firestore 的錯誤帶 `code`，例如 `permission-denied`、
+   `resource-exhausted`；JS 的 `Error` 帶 `name` 與 `message`），
+   什麼都讀不到才退回它的字串形式 —— 但**不再回那句樣板話**，
+   那等於沒說。
+
+   ### 四輪下來，儀器本身修了三次
+
+   | 輪 | 拿到什麼 | 儀器的問題 |
+   |---|---|---|
+   | 1 | `成功` | 守衛靜靜 `return`，交易正常結束（3F） |
+   | 2 | `Dart exception thrown…` | 例外穿過 JS 邊界，訊息被包起來（3G） |
+   | 3 | `Dart exception thrown…` | 用 Dart 的動態存取去取 JS 物件的屬性，取不到 |
+   | 4 | `{}` | `dartify()` 讀不到 `Error` 的非列舉屬性 |
+
+   **每一輪都不是在修 bug，是在修「看得到 bug 的能力」。**
+   這件事本身值得記著：儀器沒驗證過，就等於沒有儀器。
+
    ### 還沒答出來的問題
 
    **`recover()` 到底為什麼失敗，仍然不知道。** 這一節修的是
-   「看得到原因」與「拿掉最可疑的那一行」，下一次實測才會知道。
+   「看得到原因」與「拿掉最可疑的那一行」（交易裡的
+   `FieldValue.delete()`），下一次實測才會知道。
 
 3F. **2026-09-30 一個什麼都沒做的「成功」**
 
