@@ -549,7 +549,17 @@ class _MyMentor extends StatelessWidget {
                   style: const TextStyle(fontSize: 12.5, height: 1.6),
                 ),
                 const SizedBox(height: 12),
-                if (s.mentorRestorePending)
+                // **提出的人看不到「同意」那一顆。**
+                // 原本這裡只問「有沒有人提出」，而提議只活在本機 ——
+                // 於是同一個人先按「提出」再按「同意」就恢復了，
+                // 直接違反 `[決策]`「恢復需雙方同意，不採單方面恢復」。
+                if (s.mentorRestoreByMe)
+                  Text(
+                    '已提出恢復，等 ${ins.name} 回應。',
+                    style: const TextStyle(
+                        color: AppColors.textFaint, fontSize: 12.5),
+                  )
+                else if (s.mentorRestoreAwaitingMe)
                   Row(
                     children: [
                       Expanded(

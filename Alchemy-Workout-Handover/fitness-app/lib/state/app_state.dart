@@ -5228,8 +5228,27 @@ class AppState extends ChangeNotifier {
       // 已解除的關係不該讓學徒繼續留在名單上。
       if (b.state != MentorBondState.active) {
         apprentices.removeWhere((a) => a.uid == b.apprenticeUid);
+        // **但關係還在。** 3 天內可挽回，教官要看得到 ——
+        // 在此之前這裡只有上面那一行，學徒就此從畫面上消失，
+        // 而規格說「教官與學徒任一方皆可提出恢復」。
+        final rb = ReleasedBond(
+          apprenticeUid: b.apprenticeUid,
+          apprenticeName: nameByUid[b.apprenticeUid] ?? b.apprenticeName,
+          releasedAt: b.releasedAt ?? now,
+          reason: b.releasedReason,
+          restoreProposedBy: b.restoreProposedBy,
+        );
+        final rat =
+            releasedApprentices.indexWhere((x) => x.apprenticeUid == b.apprenticeUid);
+        if (rat >= 0) {
+          releasedApprentices[rat] = rb;
+        } else {
+          releasedApprentices.add(rb);
+        }
         continue;
       }
+      // 轉回生效中的，就不該還留在「已解除」那一欄。
+      releasedApprentices.removeWhere((x) => x.apprenticeUid == b.apprenticeUid);
       final name = nameByUid[b.apprenticeUid] ?? b.apprenticeName;
       final at = apprentices.indexWhere((a) => a.uid == b.apprenticeUid);
       final a = Apprentice(
@@ -5282,6 +5301,9 @@ class AppState extends ChangeNotifier {
           );
       mentorReleasedAt = b.releasedAt;
       mentorReleaseReason = b.releasedReason;
+      // **以雲端為準。** 在此之前這是一個本機布林值，於是
+      // 「提出」與「同意」出現在同一台裝置上。
+      mentorRestoreProposedBy = b.restoreProposedBy;
       break;
     }
     // **空清單也算載到了。** 「雲端確實沒有關係」是一個答案，
@@ -6010,8 +6032,43 @@ class AppState extends ChangeNotifier {
   DateTime? mentorReleasedAt;
   MentorReleaseReason? mentorReleaseReason;
 
-  /// 對方（或我）提出的恢復提議尚待回應。
-  bool mentorRestorePending = false;
+  /// **誰提出了恢復**（我當學徒那一段）。空值＝還沒有人提出。
+  ///
+  /// 在此之前這是 `bool mentorRestorePending`，而且**只活在本機** ——
+  /// 於是「提出恢復」與「同意恢復」在同一台裝置、同一個人面前
+  /// 先後出現，自己按兩下就恢復了。規格的 `[決策]`：
+  /// **恢復需雙方同意，不採單方面恢復。**
+  String? mentorRestoreProposedBy;
+
+  /// 有人提出了恢復，還沒被回應。
+  bool get mentorRestorePending => mentorRestoreProposedBy != null;
+
+  /// 提出的人是我 —— 我只能等，不能自己同意。
+  bool get mentorRestoreByMe =>
+      mentorRestoreProposedBy != null && mentorRestoreProposedBy == myUid;
+
+  /// 對方提出的，等我回應。
+  bool get mentorRestoreAwaitingMe =>
+      mentorRestoreProposedBy != null && mentorRestoreProposedBy != myUid;
+
+  /// 我帶的學徒裡，**已解除但還在挽回窗口內**的那些。
+  ///
+  /// 教官那一側在此之前沒有這個東西 —— 見 [ReleasedBond]。
+  final List<ReleasedBond> releasedApprentices = [];
+
+  /// 這一段還能不能恢復（含帶徒上限）。
+  ///
+  /// 規格 `師徒互動流程.md` 108 行：
+  /// `[Rule] Precondition：教官的名額佔用數未達帶徒上限，方可發生
+  /// 「師徒關係已恢復」`。`acceptRestore()` 原本沒有這個檢查。
+  String? restoreBlockedReasonOf(ReleasedBond b) {
+    if (!b.recoverableAt(now)) return '已經超過 3 天，這段關係不能再恢復了。';
+    if (apprentices.length >= apprenticeCap) {
+      return '帶徒名額已滿（${apprentices.length} / $apprenticeCap），'
+          '要先讓出一個名額才能恢復。';
+    }
+    return null;
+  }
 
   /// 解除後 3 天內雙方皆不得與其他對象建立師徒關係，也是可挽回的窗口。
   Duration get mentorCooldownLeft {
@@ -6032,7 +6089,7 @@ class AppState extends ChangeNotifier {
     if (myInstructor == null) return;
     mentorReleasedAt = now;
     mentorReleaseReason = reason;
-    mentorRestorePending = false;
+    mentorRestoreProposedBy = null;
     // 未完成的師徒任務作廢（終止狀態）。
     for (final t in mentorTasks) {
       if (t.state == MentorTaskState.assigned) {
@@ -6048,10 +6105,17 @@ class AppState extends ChangeNotifier {
 
   bool get mentorReleased => mentorReleasedAt != null && myInstructor != null;
 
-  /// 使用者已提出恢復師徒關係。
+  /// 使用者已提出恢復師徒關係（我當學徒那一段）。
+  ///
+  /// **提議要上雲**，否則對方看不到，「雙方同意」就無從成立。
   bool proposeRestore() {
     if (!mentorReleased || !canRestoreMentor) return false;
-    mentorRestorePending = true;
+    // 已經有人提出了就不再提一次 —— 重複提出會把對方的提議蓋掉。
+    if (mentorRestorePending) return false;
+    final me = myUid;
+    if (me == null) return false;
+    mentorRestoreProposedBy = me;
+    _pushMentor((src, bond) => src.proposeRestore(bond, me));
     notifyListeners();
     return true;
   }
@@ -6061,10 +6125,17 @@ class AppState extends ChangeNotifier {
   /// **同一筆關係轉回生效中，不新建一筆** —— 既有任務與問答的關係 ID
   /// 仍指向原筆，那些紀錄屬同一段關係。
   bool acceptRestore() {
-    if (!mentorRestorePending || !canRestoreMentor) return false;
+    if (!canRestoreMentor) return false;
+    // **同意的必須是另一方。** 在此之前只看「有沒有人提出」，
+    // 而提議只活在本機 —— 於是提出的人自己按下一顆就恢復了，
+    // 直接違反 `[決策]`「恢復需雙方同意，不採單方面恢復」。
+    if (!mentorRestoreAwaitingMe) return false;
+    // 規格 108 行：教官的名額佔用數未達帶徒上限，方可恢復。
+    final ins = myInstructor;
+    if (ins != null && ins.apprentices >= ins.apprenticeCap) return false;
     mentorReleasedAt = null;
     mentorReleaseReason = null;
-    mentorRestorePending = false;
+    mentorRestoreProposedBy = null;
     // 雲端那一筆轉回生效中。**同一筆，不新建** —— 既有任務與問答的
     // 關係 ID 仍指向原筆。在此之前這行不存在，恢復只在本機生效：
     // 我這邊回到生效中，對方重整之後那段關係還是已解除。
@@ -6075,9 +6146,115 @@ class AppState extends ChangeNotifier {
   }
 
   /// 對方已拒絕恢復。該筆提議失效，3 天內可再次提出。
+  ///
+  /// **也要上雲** —— 否則提出的人那一側永遠停在「等對方回應」。
   void rejectRestore() {
-    mentorRestorePending = false;
+    if (!mentorRestorePending) return;
+    mentorRestoreProposedBy = null;
+    _pushMentor((src, bond) => src.dropRestore(bond));
     notifyListeners();
+  }
+
+  // --- 終止路徑：教官那一側 ---
+  //
+  // 規格：解除為單方面（任一方皆可），恢復需雙方同意（任一方皆可提出）。
+  // 在此之前這四支只有學徒那一側存在，教官連關係被解除了都看不到。
+
+  /// 把這位學徒那一段送上雲。教官側的四支共用。
+  void _pushApprenticeBond(
+      String apprenticeUid, Future<void> Function(MentorSource, String) job) {
+    final src = mentorSource;
+    final bond = mentorBondIdFor(apprenticeUid);
+    _write('師徒關係（教官側）',
+        src == null || bond == null ? null : job(src, bond), into: bond);
+  }
+
+  /// 教官解除與這位學徒的關係。**單方面，不需對方同意。**
+  bool releaseApprentice(String apprenticeUid, MentorReleaseReason reason) {
+    final a = apprentices.where((x) => x.uid == apprenticeUid).firstOrNull;
+    if (a == null) return false;
+    final at = now;
+    apprentices.removeWhere((x) => x.uid == apprenticeUid);
+    releasedApprentices.add(ReleasedBond(
+      apprenticeUid: apprenticeUid,
+      apprenticeName: a.name,
+      releasedAt: at,
+      reason: reason,
+    ));
+    // 未完成的師徒任務作廢 —— 與學徒那一側同一條規則。
+    for (final t in mentorTasks) {
+      if (t.apprenticeUid == apprenticeUid &&
+          t.state == MentorTaskState.assigned) {
+        t.state = MentorTaskState.voided;
+      }
+    }
+    _pushApprenticeBond(
+        apprenticeUid, (src, bond) => src.release(bond, reason, at));
+    notifyListeners();
+    return true;
+  }
+
+  ReleasedBond? releasedBondOf(String apprenticeUid) => releasedApprentices
+      .where((x) => x.apprenticeUid == apprenticeUid)
+      .firstOrNull;
+
+  /// 教官提出恢復。
+  bool proposeRestoreFor(String apprenticeUid) {
+    final b = releasedBondOf(apprenticeUid);
+    final me = myUid;
+    if (b == null || me == null) return false;
+    if (b.restoreProposedBy != null) return false;
+    if (restoreBlockedReasonOf(b) != null) return false;
+    _replaceReleased(b, restoreProposedBy: me);
+    _pushApprenticeBond(
+        apprenticeUid, (src, bond) => src.proposeRestore(bond, me));
+    notifyListeners();
+    return true;
+  }
+
+  /// 教官同意學徒提出的恢復。**提出的必須是另一方。**
+  bool acceptRestoreFor(String apprenticeUid) {
+    final b = releasedBondOf(apprenticeUid);
+    if (b == null) return false;
+    if (b.restoreProposedBy == null || b.restoreProposedBy == myUid) {
+      return false;
+    }
+    if (restoreBlockedReasonOf(b) != null) return false;
+    final at = now;
+    releasedApprentices.removeWhere((x) => x.apprenticeUid == apprenticeUid);
+    apprentices.add(Apprentice(
+      name: b.apprenticeName,
+      uid: apprenticeUid,
+      rank: rankOf(b.apprenticeName, uid: apprenticeUid),
+      ability: abilityOf(b.apprenticeName, uid: apprenticeUid) ?? const {},
+      recentWorkouts: const [],
+    ));
+    _pushApprenticeBond(apprenticeUid, (src, bond) => src.recover(bond, at));
+    notifyListeners();
+    return true;
+  }
+
+  /// 教官拒絕恢復。提議失效，3 天內可再次提出。
+  bool rejectRestoreFor(String apprenticeUid) {
+    final b = releasedBondOf(apprenticeUid);
+    if (b == null || b.restoreProposedBy == null) return false;
+    _replaceReleased(b, restoreProposedBy: null);
+    _pushApprenticeBond(apprenticeUid, (src, bond) => src.dropRestore(bond));
+    notifyListeners();
+    return true;
+  }
+
+  void _replaceReleased(ReleasedBond b, {required String? restoreProposedBy}) {
+    final at =
+        releasedApprentices.indexWhere((x) => x.apprenticeUid == b.apprenticeUid);
+    if (at < 0) return;
+    releasedApprentices[at] = ReleasedBond(
+      apprenticeUid: b.apprenticeUid,
+      apprenticeName: b.apprenticeName,
+      releasedAt: b.releasedAt,
+      reason: b.reason,
+      restoreProposedBy: restoreProposedBy,
+    );
   }
 
   /// 冷卻期滿仍未恢復 —— 關係就此結束，教官欄位清空。
@@ -6086,6 +6263,7 @@ class AppState extends ChangeNotifier {
     myInstructor = null;
     mentorReleasedAt = null;
     mentorReleaseReason = null;
+    mentorRestoreProposedBy = null;
     notifyListeners();
   }
 

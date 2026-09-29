@@ -25,6 +25,18 @@ import 'package:fitness_app/state/app_state.dart';
 /// 假的雲端師徒層。只記下寫了什麼。
 class _FakeMentor implements MentorSource {
 
+  /// 恢復提議。只記下來，需要的測試自己讀。
+  final List<(String bond, String? by)> restoreCalls = [];
+
+  @override
+  Future<void> proposeRestore(String bondId, String byUid) async =>
+      restoreCalls.add((bondId, byUid));
+
+  @override
+  Future<void> dropRestore(String bondId) async =>
+      restoreCalls.add((bondId, null));
+
+
   /// 週互動評分。這支測試不碰它 —— 記下來就好。
   final List<(String bond, String week, int stars)> weekRatings = [];
 
@@ -330,6 +342,9 @@ void main() {
 
       s.releaseMentor(MentorReleaseReason.byApprentice);
       expect(s.proposeRestore(), isTrue);
+      // 提出的是我，所以同意不了 —— 換成對方提出的那一筆。
+      expect(s.acceptRestore(), isFalse);
+      s.mentorRestoreProposedBy = 'u-老王';
       expect(s.acceptRestore(), isTrue);
 
       // 少了這行，恢復只在本機生效 —— 我這邊回到生效中，

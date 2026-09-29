@@ -21,7 +21,7 @@ AppState withApprentice() {
 }
 
 AppState withMentor() {
-  final s = AppState();
+  final s = AppState()..myUid = 'u-me';
   final ins = s.instructors.first;
   s.applyMentor(ins);
   s.acceptMentorApplication(ins);
@@ -127,20 +127,41 @@ void main() {
       );
     });
 
-    test('恢復需雙方同意 —— 提出不等於恢復', () {
+    test('恢復需雙方同意 —— 我不能自己同意自己提出的', () {
+      // 2026-09-30：在此之前 `mentorRestorePending` 是本機布林值，
+      // 「提出」與「同意」出現在同一台裝置上，自己按兩下就恢復了。
       final s = withMentor()..releaseMentor(MentorReleaseReason.byApprentice);
       expect(s.proposeRestore(), isTrue);
       expect(s.mentorReleased, isTrue, reason: '還沒同意就還沒恢復');
+
+      expect(s.acceptRestore(), isFalse,
+          reason: '提出的是我 —— 這一顆不該按得動，否則就是單方面恢復');
+      expect(s.mentorReleased, isTrue);
+    });
+
+    test('對方提出，我才同意得了', () {
+      final s = withMentor()..releaseMentor(MentorReleaseReason.byApprentice);
+      // 雲端讀回來：提出的是對方。
+      s.mentorRestoreProposedBy = s.myInstructor!.uid ?? 'u-對方';
+      expect(s.mentorRestoreAwaitingMe, isTrue);
+
       expect(s.acceptRestore(), isTrue);
       expect(s.mentorReleased, isFalse);
     });
 
+    test('已經有人提出了就不重複提 —— 否則會蓋掉對方那筆', () {
+      final s = withMentor()..releaseMentor(MentorReleaseReason.byApprentice);
+      s.mentorRestoreProposedBy = 'u-對方';
+      expect(s.proposeRestore(), isFalse);
+      expect(s.mentorRestoreProposedBy, 'u-對方');
+    });
+
     test('拒絕後該筆提議失效，3 天內可再次提出', () {
       final s = withMentor()..releaseMentor(MentorReleaseReason.byApprentice);
-      s.proposeRestore();
+      s.mentorRestoreProposedBy = 'u-對方';
       s.rejectRestore();
       expect(s.mentorRestorePending, isFalse);
-      expect(s.proposeRestore(), isTrue);
+      expect(s.proposeRestore(), isTrue, reason: '失效的是那筆提議，不是整段關係');
     });
 
     test('冷卻期滿即不可恢復，關係就此結束', () {
@@ -156,7 +177,7 @@ void main() {
       final s = withMentor();
       final ins = s.myInstructor;
       s.releaseMentor(MentorReleaseReason.byApprentice);
-      s.proposeRestore();
+      s.mentorRestoreProposedBy = 'u-對方';
       s.acceptRestore();
       expect(s.myInstructor, same(ins));
       expect(s.mentorReleaseReason, isNull, reason: '清空解除時戳與原因');

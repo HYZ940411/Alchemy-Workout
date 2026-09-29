@@ -1462,7 +1462,39 @@ firebase deploy --only hosting
    `CloudBond` 增一個欄位、`applyCloudBonds` 兩側都讀、教官側畫面新增
    「已解除的學徒」區塊（含提出／同意／拒絕），以及恢復時的帶徒上限檢查。
 
-   **尚未動工，待使用者裁決。** 這是 2U 清單唯一沒過的一項。
+   ### 使用者裁決 A：一次做完整
+
+   | 做了什麼 | 在哪 |
+   |---|---|
+   | 關係文件上新增 `restoreProposedBy`（**存 uid 不存布林值**） | `CloudBond` |
+   | `MentorSource.proposeRestore()`／`dropRestore()` | 介面＋Firestore |
+   | `recover()` 一併清掉提議 | Firestore |
+   | `ReleasedBond`：已解除但還在挽回窗口內的關係 | `domain/community.dart` |
+   | `applyCloudBonds` 教官側改為**留下**已解除的關係 | `AppState` |
+   | 教官側四支 Command：解除／提出／同意／拒絕 | `AppState` |
+   | `restoreBlockedReasonOf()`：3 天窗口＋帶徒上限 | `AppState` |
+   | 教官那一頁新增「已解除的學徒」區塊與解除按鈕 | `mentor_interaction_screen` |
+   | 學徒那一頁：提出的人看不到「同意」那一顆 | `mentor_screen` |
+
+   **存 uid 而不是布林值**，「同意」那一顆才知道該給誰看 ——
+   與 `CloudQuestion.fromUid` 同一個理由。
+
+   ### 兩條舊測試原本釘著錯的行為
+
+   `gaps_test` 的「恢復需雙方同意 —— 提出不等於恢復」與
+   `mentor_cloud_test` 的「同一筆轉回生效中」，兩條都是
+   `proposeRestore(); acceptRestore();` **在同一個 `AppState` 上**。
+   名字寫著「雙方同意」，做的卻是單方面恢復。已改為由對方提出。
+
+   **測試會跟著錯誤的實作一起長歪。** 名字對不代表驗的是對的事。
+
+   ### 測試
+
+   `test/restore_needs_both_sides_test.dart` 9 條，五次突變
+   （教官側仍讓學徒消失／兩側各自可以同意自己提出的／不檢查帶徒上限／
+   提議不上雲）各打中對應的測試。2,624 passed。
+
+   **2U 測試清單七項全數做完**，剩最後一步實測。
 
 3C. **2026-09-30 一個永遠不可能成立的條件（第二次）**
 
@@ -1563,7 +1595,7 @@ firebase deploy --only hosting
    | 4 學徒評任務 | ✅（3B 修好顯示） |
    | 5 教官聲望跟著動 | ✅ 跨裝置真的動了（2W 那條路的第一次完整驗證） |
    | 6 週互動評分 | ✅ |
-   | 7 解除 → 恢復 | ❌ 見 3D —— 教官側不存在，且恢復違反 `[決策]` |
+   | 7 解除 → 恢復 | 🔧 見 3D —— 已補齊教官側與雙方同意，待實測 |
 
 3A. **2026-09-30 根因：確認過的聲明不進存檔，而做不到的 Command 說自己做到了**
 

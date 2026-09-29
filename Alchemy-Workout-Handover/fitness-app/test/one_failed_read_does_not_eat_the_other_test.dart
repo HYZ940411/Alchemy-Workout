@@ -19,6 +19,18 @@ const _appUid = 'u-學徒';
 const _bondId = '${_mentorUid}_$_appUid';
 
 class _Mentor implements MentorSource {
+
+  /// 恢復提議。只記下來，需要的測試自己讀。
+  final List<(String bond, String? by)> restoreCalls = [];
+
+  @override
+  Future<void> proposeRestore(String bondId, String byUid) async =>
+      restoreCalls.add((bondId, byUid));
+
+  @override
+  Future<void> dropRestore(String bondId) async =>
+      restoreCalls.add((bondId, null));
+
   bool tasksFail = false;
   bool questionsFail = false;
   List<CloudMentorTask> cloudTasks = const [];

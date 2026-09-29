@@ -65,6 +65,18 @@ class _FakeTeams implements TeamSource {
 
 class _FakeMentor implements MentorSource {
 
+  /// 恢復提議。只記下來，需要的測試自己讀。
+  final List<(String bond, String? by)> restoreCalls = [];
+
+  @override
+  Future<void> proposeRestore(String bondId, String byUid) async =>
+      restoreCalls.add((bondId, byUid));
+
+  @override
+  Future<void> dropRestore(String bondId) async =>
+      restoreCalls.add((bondId, null));
+
+
   /// 週互動評分。這支測試不碰它 —— 記下來就好。
   final List<(String bond, String week, int stars)> weekRatings = [];
 

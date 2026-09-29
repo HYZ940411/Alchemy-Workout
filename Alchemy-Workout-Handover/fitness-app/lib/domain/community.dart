@@ -486,6 +486,42 @@ const kWeeklyInteractionReputationDelta = <int>[-2, 0, 4, 8, 12];
 /// 每位學徒每週最多這麼多次**任務評分**計入聲望；超出者仍可完成並領獎，只是不計分。
 const int kMentorTaskRatingWeeklyCap = 2;
 
+/// 一段**已解除、還在 3 天挽回窗口內**的關係，從教官那一側看到的樣子。
+///
+/// 在此之前教官那一側根本沒有這個東西：`applyCloudBonds` 對非生效中的
+/// 關係做的是 `apprentices.removeWhere(...)`，**學徒直接從名單上消失**。
+/// 而整套解除／恢復的畫面都掛在學徒那一頁上、以 `myInstructor` 為鍵。
+///
+/// 後果：教官看不到關係被解除了、看不到挽回窗口、提不出恢復、
+/// 也回應不了對方提出的恢復 —— 而規格寫的是
+/// 「教官與學徒**任一方**皆可提出」。
+class ReleasedBond {
+  final String apprenticeUid;
+  final String apprenticeName;
+  final DateTime releasedAt;
+  final MentorReleaseReason? reason;
+
+  /// 誰提出了恢復。空值＝還沒有人提出。
+  final String? restoreProposedBy;
+
+  const ReleasedBond({
+    required this.apprenticeUid,
+    required this.apprenticeName,
+    required this.releasedAt,
+    this.reason,
+    this.restoreProposedBy,
+  });
+
+  /// 還能不能挽回。滿三天就不能了。
+  bool recoverableAt(DateTime now) =>
+      now.difference(releasedAt) <= kMentorReleaseCooldown;
+
+  Duration cooldownLeftAt(DateTime now) {
+    final left = kMentorReleaseCooldown - now.difference(releasedAt);
+    return left.isNegative ? Duration.zero : left;
+  }
+}
+
 /// 學徒評一則師徒任務之後，實際發生了什麼。
 ///
 /// **「評得下去」與「有沒有計進教官的聲望」是兩件事。** 原本這一支

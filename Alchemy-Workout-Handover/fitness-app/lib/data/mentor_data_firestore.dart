@@ -142,6 +142,8 @@ class FirestoreMentor implements MentorSource {
         'state': MentorBondState.active.name,
         'releasedAt': FieldValue.delete(),
         'releasedReason': FieldValue.delete(),
+        // 提議已經被接受了 —— 留著下次解除時會看到上一輪的殘留。
+        'restoreProposedBy': FieldValue.delete(),
       });
     });
   }
@@ -149,6 +151,22 @@ class FirestoreMentor implements MentorSource {
   // ===========================================================================
   // 任務與問答
   // ===========================================================================
+
+  @override
+  Future<void> proposeRestore(String bondId, String byUid) async {
+    await _col.doc(bondId).update({
+      'restoreProposedBy': byUid,
+      'lastActivityAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  @override
+  Future<void> dropRestore(String bondId) async {
+    await _col.doc(bondId).update({
+      'restoreProposedBy': FieldValue.delete(),
+      'lastActivityAt': FieldValue.serverTimestamp(),
+    });
+  }
 
   @override
   Future<List<CloudMentorTask>> tasks(String bondId) async {
@@ -337,6 +355,9 @@ class FirestoreMentor implements MentorSource {
           ? (j['releasedAt'] as Timestamp).toDate()
           : null,
       releasedReason: _reasonOf(j['releasedReason']),
+      restoreProposedBy: j['restoreProposedBy'] is String
+          ? j['restoreProposedBy'] as String
+          : null,
       weeklyRatings: {
         for (final e in (j['weeklyRatings'] as Map? ?? const {}).entries)
           if (e.value is num) '${e.key}': (e.value as num).toInt(),

@@ -30,6 +30,20 @@ class CloudBond {
   /// 中間那幾週的聲望就靜靜地不見了。
   final Map<String, int> weeklyRatings;
 
+  /// **誰提出了恢復。** 空值＝還沒有人提出。
+  ///
+  /// 在此之前這是一個**本機布林值**（`AppState.mentorRestorePending`），
+  /// 一個字都不上雲 —— 於是「提出恢復」與「同意恢復」會在同一台裝置、
+  /// 同一個人面前先後出現，自己按兩下就恢復了。
+  ///
+  /// 而〈師徒互動流程〉的 `[決策]` 寫著：**恢復需雙方同意，不採單方面
+  /// 恢復；解除為單方面、恢復需雙方同意，兩者刻意不對稱，避免一方
+  /// 反覆解除又拉回。**
+  ///
+  /// 存 uid 而不是布林值，「同意」那一顆才知道該給誰看 ——
+  /// 與 `CloudQuestion.fromUid` 同一個理由。
+  final String? restoreProposedBy;
+
   const CloudBond({
     required this.id,
     required this.mentorUid,
@@ -41,6 +55,7 @@ class CloudBond {
     this.releasedAt,
     this.releasedReason,
     this.weeklyRatings = const {},
+    this.restoreProposedBy,
   });
 
   bool get isActive => state == MentorBondState.active;
@@ -142,7 +157,19 @@ abstract class MentorSource {
   Future<void> release(String bondId, MentorReleaseReason reason, DateTime at);
 
   /// 恢復。同一筆轉回生效中；超過三天的不處理。
+  ///
+  /// **一併清掉恢復提議** —— 提議已經被接受了，留著只會讓下一次
+  /// 解除時看到上一輪的殘留。
   Future<void> recover(String bondId, DateTime now);
+
+  /// 提出恢復。[byUid] 是提出的人 —— 另一方才看得到「同意／拒絕」。
+  Future<void> proposeRestore(String bondId, String byUid);
+
+  /// 撤掉恢復提議（對方拒絕，或提出的人自己收回）。
+  ///
+  /// 規格：拒絕後該筆提議失效，**3 天內可再次提出** ——
+  /// 所以這裡清掉的是提議，不是整段關係。
+  Future<void> dropRestore(String bondId);
 
   Future<List<CloudMentorTask>> tasks(String bondId);
   Future<void> putTask(String bondId, CloudMentorTask t);
