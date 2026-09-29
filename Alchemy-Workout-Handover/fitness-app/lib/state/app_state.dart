@@ -5298,10 +5298,41 @@ class AppState extends ChangeNotifier {
   /// [apprenticeUid] **指派給哪位學徒**。在此之前沒有這個參數 ——
   /// 任務進一份共用清單，誰都不知道是給誰的，也就寫不上雲端
   /// （雲端的任務掛在特定師徒關係下）。
-  void assignMentorTask(String title, String detail, {String? apprenticeUid}) {
+  /// 指派不出去的原因。**畫面要說得出來** —— 原本一律跳「已指派」，
+  /// 使用者因此以為成功了，而兩道守衛靜靜把它擋掉。
+  String get assignBlockedReason {
+    if (communityBlocked) return '社群功能已停權，不能指派任務。';
+    if (instructorDutyNeeded) return '要先確認指導責任聲明，才能指派任務。';
+    return '指派不出去。';
+  }
+
+  /// 提問送不出去的原因。理由同 [assignBlockedReason]。
+  String get askBlockedReason {
+    if (communityBlocked) return '社群功能已停權，不能提問。';
+    if (mentorDisclaimerNeeded) return '要先確認師徒免責聲明，才能提問。';
+    if (myInstructor == null) return '你還沒有教官。';
+    return '送不出去。';
+  }
+
+  /// 標記完成失敗的原因。
+  String get completeBlockedReason {
+    if (mentorDisclaimerNeeded) return '要先確認師徒免責聲明，才能完成任務。';
+    return '這則任務現在不能標記完成。';
+  }
+
+  /// 回傳**有沒有真的指派出去**。
+  ///
+  /// 在此之前這一支回 `void` —— 兩道守衛靜靜 `return`，而畫面
+  /// 不管做了沒都跳「已指派『◯◯』」。2026-09-30 教官指派任務，
+  /// toast 跳了、雲端什麼都沒有、寫入報告連一行都沒有 ——
+  /// 因為 `instructorDutyVersion` 不進存檔，重新整理之後
+  /// `instructorDutyNeeded` 就回到 true。
+  ///
+  /// **能失敗的 Command 就要說得出失敗。** 呼叫端才有辦法誠實。
+  bool assignMentorTask(String title, String detail, {String? apprenticeUid}) {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
-    if (communityBlocked) return;
-    if (instructorDutyNeeded) return;
+    if (communityBlocked) return false;
+    if (instructorDutyNeeded) return false;
     final t = MentorTask(
       id: newId('mt'),
       title: title,
@@ -5311,6 +5342,7 @@ class AppState extends ChangeNotifier {
     mentorTasks.insert(0, t);
     _pushMentorTask(t);
     notifyListeners();
+    return true;
   }
 
   /// 把一則任務寫上雲端，掛在**它所屬的那段關係**下。
@@ -5679,12 +5711,13 @@ class AppState extends ChangeNotifier {
   bool get mentorDisclaimerNeeded =>
       myInstructor != null && mentorDisclaimerVersion == null;
 
-  void askQuestion(String text) {
+  /// 回傳**有沒有真的送出**。理由同 [assignMentorTask]。
+  bool askQuestion(String text) {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
-    if (communityBlocked) return;
-    if (text.trim().isEmpty) return;
+    if (communityBlocked) return false;
+    if (text.trim().isEmpty) return false;
     // 未確認免責聲明者不得提問。
-    if (mentorDisclaimerNeeded) return;
+    if (mentorDisclaimerNeeded) return false;
     // **本機與雲端用同一個 id。**
     //
     // 原本本機那筆用 `MentorQuestion` 的預設 id（`q${微秒}`），
@@ -5711,6 +5744,7 @@ class AppState extends ChangeNotifier {
           ),
         ));
     notifyListeners();
+    return true;
   }
 
   /// 教官已回答提問。
@@ -5757,14 +5791,16 @@ class AppState extends ChangeNotifier {
     return (exp: kMentorTaskExp, coins: kMentorTaskCoin);
   }
 
-  void completeMentorTask(MentorTask t) {
-    if (t.state != MentorTaskState.assigned) return;
+  /// 回傳**有沒有真的完成**。理由同 [assignMentorTask]。
+  bool completeMentorTask(MentorTask t) {
+    if (t.state != MentorTaskState.assigned) return false;
     // 未確認免責聲明者不得完成師徒任務。
-    if (mentorDisclaimerNeeded) return;
+    if (mentorDisclaimerNeeded) return false;
     t.state = MentorTaskState.done;
     weeklyCompleted += 1;
     _pushTask(t);
     notifyListeners();
+    return true;
   }
 
   /// 師徒的週期計數器上次歸零所屬的週。空值表示尚未定基準。

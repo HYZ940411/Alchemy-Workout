@@ -432,8 +432,11 @@ class _Tasks extends StatelessWidget {
     if (t.isEmpty) return;
     // **指派給哪位學徒要講清楚。** 不帶的話任務進一份共用清單，
     // 誰都不知道是給誰的，也就寫不到正確的師徒關係下。
-    state.assignMentorTask(t, detail.text.trim(),
+    final ok2 = state.assignMentorTask(t, detail.text.trim(),
         apprenticeUid: apprenticeUid);
-    showToast(context, '已指派「$t」');
+    // **做不到的時候不可以說做到了。** 這裡原本不管結果一律跳
+    // 「已指派」—— 而 `assignMentorTask` 有兩道守衛會靜靜 return。
+    if (!context.mounted) return;
+    showToast(context, ok2 ? '已指派「$t」' : state.assignBlockedReason);
   }
 }

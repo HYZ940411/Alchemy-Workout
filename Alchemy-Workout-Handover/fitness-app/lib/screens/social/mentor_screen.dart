@@ -736,7 +736,11 @@ class _TaskCard extends StatelessWidget {
                   )
                 else
                   GestureDetector(
-                    onTap: () => s.completeMentorTask(task),
+                    onTap: () {
+                      if (!s.completeMentorTask(task)) {
+                        showToast(context, s.completeBlockedReason);
+                      }
+                    },
                     child: const Pill('標記完成', color: AppColors.accent),
                   ),
               ],
@@ -889,8 +893,11 @@ class _AskBoxState extends State<_AskBox> {
         const SizedBox(width: 8),
         IconButton(
           onPressed: () {
-            s.askQuestion(ctrl.text);
-            ctrl.clear();
+            if (s.askQuestion(ctrl.text)) {
+              ctrl.clear();
+            } else {
+              showToast(context, s.askBlockedReason);
+            }
           },
           icon: const Icon(Icons.send_rounded, color: AppColors.accent),
         ),

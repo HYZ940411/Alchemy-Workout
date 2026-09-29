@@ -166,9 +166,10 @@ class _MentorChatScreenState extends State<MentorChatScreen> {
                     onPressed: ctrl.text.trim().isEmpty
                         ? null
                         : () {
-                            s.askQuestion(ctrl.text);
-                            ctrl.clear();
-                            showToast(context, '已送出提問');
+                            final ok = s.askQuestion(ctrl.text);
+                            if (ok) ctrl.clear();
+                            showToast(context,
+                                ok ? '已送出提問' : s.askBlockedReason);
                             setState(() {});
                           },
                   ),

@@ -312,6 +312,13 @@ extension AppStateSnapshot on AppState {
         'peakReputation': peakReputation,
         'instructorSpecialties': instructorSpecialties.toList(),
 
+        // **這兩個不進存檔的話，每次重新整理就退回「還沒確認」。**
+        // 而它們守的是 Command：教官不能指派任務、學徒不能提問 ——
+        // 兩者都是靜靜地不做事，畫面照樣說成功了。
+        // 2026-09-30：教官指派任務，toast 跳「已指派」、雲端什麼都沒有。
+        'instructorDutyVersion': instructorDutyVersion,
+        'mentorDisclaimerVersion': mentorDisclaimerVersion,
+
         // **這兩份記的是「這筆帳已經算過了」，不是畫面上的東西。**
         // 學徒的評分存在雲端，我每次重讀都會再看到它一次；少了這兩份，
         // 教官每重開一次 App 聲望就再加一次。
@@ -800,6 +807,10 @@ extension AppStateSnapshot on AppState {
     }
 
     isInstructor = boolOf('isInstructor', isInstructor);
+    instructorDutyVersion =
+        pick<String>('instructorDutyVersion') ?? instructorDutyVersion;
+    mentorDisclaimerVersion =
+        pick<String>('mentorDisclaimerVersion') ?? mentorDisclaimerVersion;
     instructorReputation = intOf('instructorReputation', instructorReputation);
     peakReputation = intOf('peakReputation', peakReputation);
     _mentorWeek = _date(j['mentorWeek']) ?? _mentorWeek;

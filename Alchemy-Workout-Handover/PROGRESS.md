@@ -1411,6 +1411,52 @@ firebase deploy --only hosting
    在動作名稱裡也找得到（「俯臥屈腿 · 啞鈴」），用文字定位一次命中十幾個
    —— 第一版測試就是這樣紅的。
 
+3A. **2026-09-30 根因：確認過的聲明不進存檔，而做不到的 Command 說自己做到了**
+
+   找了四輪。使用者回報「指派完之後，雲端寫入裡沒有師徒任務那兩行」——
+   而 `_write()` **不管哪一種結果都會留下一行**。沒有那一行，
+   只有一個意思：`assignMentorTask()` 根本沒跑到 `_pushMentorTask()`。
+
+   ### 連環
+
+   ```
+   instructorDutyVersion 不進存檔
+     → 每次重新整理，instructorDutyNeeded 回到 true
+       → assignMentorTask() 撞上守衛，靜靜 return
+         → 本機沒東西、雲端沒東西、寫入報告也沒有一行
+           → 而畫面照樣跳「已指派『◯◯』」
+   ```
+
+   **四個地方同時沉默，第五個地方說成功了。**
+
+   `mentorDisclaimerVersion` 是同一個形狀（守的是學徒端提問與完成任務）。
+   兩個都補進存檔。
+
+   ### 為什麼前面幾輪查不到
+
+   2X 補的寫入報告、2Y 補的讀取報告都對，而且各自修掉了真的缺陷 ——
+   但它們都在 `_pushMentorTask()` **裡面**。守衛擋在更前面，
+   所有儀器都還沒開始記就已經結束了。
+
+   **「沒有任何一行」本身才是線索。** 我先前把它讀成「還沒指派過」，
+   多花了一輪。
+
+   ### `void` 讓畫面無從誠實
+
+   `assignMentorTask`／`askQuestion`／`completeMentorTask` 都回 `void`，
+   呼叫端拿不到結果，於是一律 `showToast('已指派…')`。
+   三支都改回 `bool`，並加上 `assignBlockedReason`／`askBlockedReason`／
+   `completeBlockedReason` 讓畫面說得出為什麼。
+
+   **能失敗的 Command 就要說得出失敗。** 這條值得推廣到其餘同型的
+   `void` Command，但不在這一次。
+
+   ### 測試
+
+   `test/duty_survives_reload_test.dart` 10 條，四次突變
+   （兩個欄位各自不存／不讀回、指派撞守衛仍回真、完成撞守衛仍改狀態）
+   各打中對應的測試。2,605 passed。
+
 2Z. **2026-09-30 寫入報「成功」，而那是往一個不存在的關係底下寫的**
 
    2Y 修完之後重測，學徒那台的開發者模式回報：
