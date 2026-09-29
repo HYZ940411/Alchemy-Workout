@@ -2546,7 +2546,7 @@ class AppState extends ChangeNotifier {
     final src = profileSource;
     final uid = myUid;
     if (src == null || uid == null) return;
-    src.publish(myPublicProfile(uid)).catchError((_) {});
+    _write('公開檔案', src.publish(myPublicProfile(uid)));
   }
 
   /// 把雲端讀到的其他使用者併進來（[BE-11] 批次 1）。
@@ -3195,6 +3195,38 @@ class AppState extends ChangeNotifier {
   /// 這個專案查過三輪的那種 bug 就是這樣 —— 即發即忘、吞掉錯誤、
   /// 出事時毫無跡象。所以至少把「掛上了沒、醒過幾次」記下來。
   final Map<String, String> cloudWatchReport = {};
+
+  /// 即發即忘的雲端寫入留下的痕跡。**開發者模式的同步報告會顯示它。**
+  ///
+  /// 本專案已經因為 `catchError((_) {})` 犯過四次同一個錯
+  /// （`quotaHint`、`inboundFailure`、評分寫不上雲，以及 2026-09-30
+  /// 教官指派的任務到不了學徒）。共通的形狀是：**畫面說成功了，
+  /// 雲端什麼也沒發生，而沒有任何地方看得出來。**
+  ///
+  /// 所以這裡三種結果都記：送出中、成功、失敗，外加第四種 ——
+  /// 「根本沒送出」。最後那種最要命，它原本與「成功」長得一模一樣。
+  final Map<String, String> cloudWriteReport = {};
+
+  /// 包一次即發即忘的寫入。[job] 為空值表示**這次根本沒送出**
+  /// （來源或關係 id 是空的），那也要留下痕跡。
+  void _write(String what, Future<void>? job) {
+    if (job == null) {
+      cloudWriteReport[what] = '沒送出 —— 來源或關係 id 是空的';
+      notifyListeners();
+      return;
+    }
+    cloudWriteReport[what] = '送出中…';
+    job.then((_) {
+      final t = now;
+      cloudWriteReport[what] = '成功　'
+          '${t.hour.toString().padLeft(2, '0')}:'
+          '${t.minute.toString().padLeft(2, '0')}';
+      notifyListeners();
+    }).catchError((Object e) {
+      cloudWriteReport[what] = '失敗：$e';
+      notifyListeners();
+    });
+  }
 
   /// 兩次重讀之間的最短間隔。
   ///
@@ -4918,8 +4950,8 @@ class AppState extends ChangeNotifier {
   void _pushMentor(Future<void> Function(MentorSource src, String bondId) job) {
     final src = mentorSource;
     final bond = _apprenticeBondId;
-    if (src == null || bond == null) return;
-    job(src, bond).catchError((_) {});
+    _write('師徒（學徒側）',
+        src == null || bond == null ? null : job(src, bond));
   }
 
   /// 我作為**教官**時，與這位學徒那一段關係在雲端的 ID。
@@ -5232,8 +5264,8 @@ class AppState extends ChangeNotifier {
     final bond = t.apprenticeUid == null
         ? _apprenticeBondId
         : mentorBondIdFor(t.apprenticeUid);
-    if (src == null || bond == null) return;
-    src.putTask(bond, _asCloudTask(t)).catchError((_) {});
+    _write('師徒任務',
+        src == null || bond == null ? null : src.putTask(bond, _asCloudTask(t)));
   }
   late List<MentorQuestion> questions = demo ? buildQuestions() : [];
   late List<Apprentice> apprentices = demo ? buildApprentices() : [];
@@ -5856,7 +5888,7 @@ class AppState extends ChangeNotifier {
     final bond = _apprenticeBondId;
     if (src == null || bond == null) return;
     final (from, _) = periodOf(Board.personalWeekly, now);
-    src.rateWeek(bond, weekKeyOf(from), stars).catchError((_) {});
+    _write('週互動評分', src.rateWeek(bond, weekKeyOf(from), stars));
   }
 
   // --- 終止路徑：解除、恢復 ---
