@@ -91,4 +91,54 @@ void main() {
     expect(bond.state, MentorBondState.released,
         reason: '失效的是那筆提議，不是整段關係');
   });
+
+
+  group('恢復不了的時候要用丟的，不可以靜靜成功', () {
+    // 原本 `recover()` 的守衛失敗時是 `return;` —— 交易正常結束，
+    // 呼叫端的 `_write()` 於是記成「成功」，而雲端一個字都沒變。
+    //
+    // 使用者 2026-09-30 實測：教官按同意、畫面說「師徒關係已恢復」、
+    // 學徒重載還是已解除。**一個什麼都沒做的成功**，
+    // 而那正是當晚查了一整輪的同一個形狀。
+
+    test('關係根本不是已解除', () async {
+      final b = await _bonded();
+      await expectLater(
+        b.src.recover(_bondId, DateTime.now()),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('超過 3 天', () async {
+      final b = await _bonded();
+      final t0 = DateTime(2026, 9, 1);
+      await b.src.release(_bondId, MentorReleaseReason.byInstructor, t0);
+      await expectLater(
+        b.src.recover(_bondId, t0.add(kMentorReleaseCooldown +
+            const Duration(hours: 1))),
+        throwsA(isA<StateError>()),
+      );
+      final bond = (await b.src.bonds()).single;
+      expect(bond.state, MentorBondState.released, reason: '沒被改到');
+    });
+
+    test('關係文件不存在', () async {
+      final db = FakeFirebaseFirestore();
+      final src = FirestoreMentor(uid: _mentorUid, firestore: db);
+      await expectLater(
+        src.recover('沒有這一筆', DateTime.now()),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('該成功的時候照樣成功', () async {
+      final b = await _bonded();
+      final t0 = DateTime.now();
+      await b.src.release(_bondId, MentorReleaseReason.byInstructor, t0);
+      await b.src.recover(_bondId, t0);
+      final bond = (await b.src.bonds()).single;
+      expect(bond.state, MentorBondState.active);
+      expect(bond.releasedAt, isNull);
+    });
+  });
 }

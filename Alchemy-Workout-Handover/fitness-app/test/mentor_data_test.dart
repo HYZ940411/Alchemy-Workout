@@ -143,18 +143,29 @@ void main() {
       expect((await as('m').bonds()).first.state, MentorBondState.active);
     });
 
-    test('超過三天就不能恢復', () async {
+    // **擋下來要用丟的，不可以靜靜結束。**
+    // 這兩條原本只驗「狀態沒被改到」—— 而靜靜 return 的交易會正常結束，
+    // 呼叫端的 `_write()` 因此記成「成功」，雲端卻一個字都沒變。
+    // 使用者 2026-09-30 實測踩到：教官按同意、畫面說已恢復、
+    // 學徒重載還是已解除。
+    test('超過三天就不能恢復 —— 而且要說得出來', () async {
       await as('m').bond(bond());
       await as('m').release(
           'm_a', MentorReleaseReason.byApprentice, DateTime(2026, 9, 10));
-      await as('m').recover('m_a', DateTime(2026, 9, 20));
 
+      await expectLater(
+        as('m').recover('m_a', DateTime(2026, 9, 20)),
+        throwsA(isA<StateError>()),
+      );
       expect((await as('m').bonds()).first.state, MentorBondState.released);
     });
 
-    test('生效中的關係呼叫恢復不會有事', () async {
+    test('生效中的關係呼叫恢復會被擋下 —— 狀態不變', () async {
       await as('m').bond(bond());
-      await as('m').recover('m_a', DateTime(2026, 9, 5));
+      await expectLater(
+        as('m').recover('m_a', DateTime(2026, 9, 5)),
+        throwsA(isA<StateError>()),
+      );
       expect((await as('m').bonds()).first.state, MentorBondState.active);
     });
   });
