@@ -500,6 +500,16 @@ class _AuthGateState extends State<AuthGate> {
       });
     }
 
+    // 我自己那一筆教官申請的裁決。**每個人都要跑，不只管理員。**
+    //
+    // `instructorStage` 不進存檔，而裁決只寫在雲端那份文件上 ——
+    // 少了這一步，管理員按了「通過」，申請人重新整理之後看到的是
+    // 「你還沒申請」（使用者 2026-09-29 實測撞到）。
+    await step('教官申請狀態', () async {
+      await widget.state.loadMyInstructorVerdict();
+      return widget.state.isInstructor ? '已是教官' : '無或待審';
+    });
+
     // 檢舉佇列。**只有管理員讀得動** —— 一般帳號連查都會被規則拒絕，
     // 所以這一塊自己判斷、自己成敗，不要讓它的失敗影響別人。
     if (widget.state.isPlatformAdmin) {

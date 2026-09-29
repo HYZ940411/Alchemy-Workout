@@ -276,11 +276,20 @@ service cloud.firestore {
     // 不必靠欄位比對。仍然比對 `applicantUid`，因為那是判定教官資格時
     // 真正會被讀的欄位 —— 讓它與文件 ID 對不上就是一條偽造路徑。
     //
-    // **讀取一律限管理員。** 裡面有申請人的簡答作答與 AI 評分，
-    // 那不是其他使用者該看得到的東西 —— 連申請人自己也不必回頭讀，
-    // 他的階段狀態存在自己的使用者文件裡。
+    // **讀取限管理員 —— 以及申請人本人那一筆。**
+    //
+    // 原本只有管理員讀得到，註解還寫著「申請人自己也不必回頭讀，
+    // 他的階段狀態存在自己的使用者文件裡」。**那句話是錯的**：
+    // `instructorStage` 根本不進存檔，而裁決只寫在這份文件上 ——
+    // 於是管理員按了「通過」，申請人那一側沒有任何東西會去讀它，
+    // 重新整理之後連「待人工審核」都不見了。
+    // 使用者 2026-09-29 實測撞到（見 PROGRESS 第 5 節 2K）。
+    //
+    // 讓本人讀自己那一筆沒有代價：裡面本來就是他自己寫的答案。
     match /instructor_cases/{applicantUid} {
-      allow read: if isAdmin();
+      allow read: if isAdmin()
+                  || (request.auth != null
+                      && applicantUid == request.auth.uid);
       allow create, update: if isAdmin()
                     || (request.auth != null
                         && applicantUid == request.auth.uid

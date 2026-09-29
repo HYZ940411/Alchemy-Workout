@@ -29,6 +29,8 @@ class _Broken implements InstructorCaseSource {
   @override
   Future<void> file(CloudInstructorCase c) async => throw StateError('雲端壞了');
   @override
+  Future<InstructorVerdict?> mine() async => throw StateError('雲端壞了');
+  @override
   Future<List<CloudInstructorCase>> queue({int limit = 100}) async =>
       throw StateError('雲端壞了');
   @override
@@ -187,6 +189,104 @@ void main() {
     });
   });
 
+  group('裁決要回得到申請人身上', () {
+    // 使用者 2026-09-29 實測：B 通過測驗、管理員也核准了，
+    // **重新整理之後沒看到自己成為教官**。
+    //
+    // 兩個缺口：`instructorStage` 不進存檔，而安全規則原本只讓管理員讀
+    // 那份文件 —— 申請人連自己那一筆都讀不到。裁決寫進了雲端，
+    // 然後停在那裡。
+
+    /// 跑完一次「B 申請 → A 核准」，回傳 B 的 uid。
+    Future<String> approvedApplicant() async {
+      applicant().submitExam(18, shortAnswers: [('題目一', '我的回答')]);
+      await Future<void>.delayed(Duration.zero);
+      final a = AppState()
+        ..myUid = 'u-admin'
+        ..applyAdminClaim(true)
+        ..instructorCaseSource =
+            FirestoreInstructorCases(uid: 'u-admin', firestore: db);
+      await a.loadInstructorQueue();
+      a.decideInstructor(
+          a.instructorCases.firstWhere((x) => x.applicantUid == 'u-applicant'),
+          true);
+      await Future<void>.delayed(Duration.zero);
+      return 'u-applicant';
+    }
+
+    test('核准之後，申請人重新登入就是教官了', () async {
+      await approvedApplicant();
+
+      // **全新的 AppState** —— 模擬重新整理瀏覽器。
+      final b = AppState()
+        ..myUid = 'u-applicant'
+        ..instructorCaseSource =
+            FirestoreInstructorCases(uid: 'u-applicant', firestore: db);
+      expect(b.isInstructor, isFalse, reason: '前提：本機什麼都沒留');
+
+      await b.loadMyInstructorVerdict();
+      expect(b.isInstructor, isTrue);
+      expect(b.instructorStage, InstructorStage.approved);
+    });
+
+    test('駁回也要傳得回去，而且說得出是卡在哪一關', () async {
+      applicant().submitExam(18, shortAnswers: [('題目一', '我的回答')]);
+      await Future<void>.delayed(Duration.zero);
+      final a = AppState()
+        ..myUid = 'u-admin'
+        ..applyAdminClaim(true)
+        ..instructorCaseSource =
+            FirestoreInstructorCases(uid: 'u-admin', firestore: db);
+      await a.loadInstructorQueue();
+      a.decideInstructor(
+          a.instructorCases.firstWhere((x) => x.applicantUid == 'u-applicant'),
+          false);
+      await Future<void>.delayed(Duration.zero);
+
+      final b = AppState()
+        ..myUid = 'u-applicant'
+        ..instructorCaseSource =
+            FirestoreInstructorCases(uid: 'u-applicant', firestore: db);
+      await b.loadMyInstructorVerdict();
+      expect(b.isInstructor, isFalse);
+      expect(b.instructorStage, InstructorStage.rejected);
+      expect(b.instructorRejectStage, '管理員審核');
+    });
+
+    test('還沒判的時候，階段要補回「待人工審核」而不是「還沒申請」', () async {
+      applicant().submitExam(18, shortAnswers: [('題目一', '我的回答')]);
+      await Future<void>.delayed(Duration.zero);
+
+      final b = AppState()
+        ..myUid = 'u-applicant'
+        ..instructorCaseSource =
+            FirestoreInstructorCases(uid: 'u-applicant', firestore: db);
+      await b.loadMyInstructorVerdict();
+      expect(b.instructorStage, InstructorStage.pendingReview,
+          reason: '他在等，畫面不該說他還沒申請');
+      expect(b.isInstructor, isFalse);
+    });
+
+    test('沒申請過的人不受影響', () async {
+      final c = AppState()
+        ..myUid = 'u-nobody'
+        ..instructorCaseSource =
+            FirestoreInstructorCases(uid: 'u-nobody', firestore: db);
+      await c.loadMyInstructorVerdict();
+      expect(c.instructorStage, InstructorStage.notApplied);
+      expect(c.isInstructor, isFalse);
+    });
+
+    test('讀不到的時候維持現狀 —— 不要把「不知道」畫成「沒申請」', () async {
+      final b = AppState()
+        ..myUid = 'u-applicant'
+        ..instructorStage = InstructorStage.pendingReview
+        ..instructorCaseSource = _Broken();
+      await b.loadMyInstructorVerdict();
+      expect(b.instructorStage, InstructorStage.pendingReview);
+    });
+  });
+
   group('安全規則有這個集合', () {
     test('firestore.rules 涵蓋 instructor_cases，且讀取限管理員', () {
       // 安全規則是改不掉的那一道，客戶端的程式碼改得掉
@@ -195,6 +295,8 @@ void main() {
       expect(rules, contains('match /instructor_cases/'));
       // 申請人只寫得了自己那一筆，而且不能自己寫裁決結果。
       expect(rules, contains("request.resource.data.state == 'pending'"));
+      // 申請人讀得到自己那一筆 —— 少了它，裁決永遠回不到他身上。
+      expect(rules, contains('applicantUid == request.auth.uid'));
     });
   });
 }

@@ -48,6 +48,17 @@ class FirestoreInstructorCases implements InstructorCaseSource {
   }
 
   @override
+  Future<InstructorVerdict?> mine() async {
+    final d = await _col.doc(uid).get();
+    if (!d.exists) return null;
+    return switch (d.data()?['state']) {
+      'passed' => InstructorVerdict.passed,
+      'rejected' => InstructorVerdict.rejected,
+      _ => InstructorVerdict.pending,
+    };
+  }
+
+  @override
   Future<List<CloudInstructorCase>> queue({int limit = 100}) async {
     final snap =
         await _col.where('state', isEqualTo: 'pending').limit(limit).get();

@@ -71,6 +71,8 @@ const _ambiguous = <String, String>{
       '`AppState._pushInstructorCase()`，由 `submitExam()` 呼叫',
   'InstructorCaseSource.queue':
       '`AppState.loadInstructorQueue()`，由 `AuthGate` 在管理員登入時呼叫',
+  'InstructorCaseSource.mine':
+      '`AppState.loadMyInstructorVerdict()`，由 `AuthGate` 對每位登入者呼叫',
   'MentorSource.dropRequest':
       '2026-09-24 接上：`_dropCloudRequest()` 的師徒分支',
   'TeamSource.dropRequest': '拒絕申請、取消邀請、撤回申請、`_dropCloudRequest()`',

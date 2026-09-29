@@ -10494,6 +10494,46 @@ class AppState extends ChangeNotifier {
   /// 管理員的佇列裡沒有他，而兩邊都不會知道。
   String? instructorCaseError;
 
+  /// 把**我自己那一筆**申請的裁決讀回來。
+  ///
+  /// 這一支與 [loadInstructorQueue] 的差別是「誰叫得動」：
+  /// 佇列只有管理員讀得到，而這一支**每個人都要跑** ——
+  /// 它回答的是「我的申請怎麼了」。
+  ///
+  /// ## 為什麼非有不可
+  ///
+  /// `instructorStage` **不進存檔**（`app_state_snapshot.dart` 零筆引用），
+  /// 而裁決只寫在雲端那份文件上。在此之前兩者之間沒有任何橋 ——
+  /// 管理員按了「通過」，申請人重新整理之後看到的是「你還沒申請」。
+  /// 使用者 2026-09-29 實測撞到。
+  ///
+  /// **不進存檔是刻意的**（雲端是唯一事實，不寫第二份會漂移的副本，
+  /// 同師徒關係的取捨），但那個取捨要成立，就必須有人去讀雲端。
+  Future<void> loadMyInstructorVerdict() async {
+    final src = instructorCaseSource;
+    if (src == null) return;
+    try {
+      final v = await src.mine();
+      if (v == null) return; // 沒申請過，維持現狀
+      switch (v) {
+        case InstructorVerdict.passed:
+          instructorStage = InstructorStage.approved;
+          instructorRejectStage = null;
+          _becomeInstructor();
+        case InstructorVerdict.rejected:
+          instructorStage = InstructorStage.rejected;
+          instructorRejectStage = '管理員審核';
+        case InstructorVerdict.pending:
+          // 還沒判。**要把階段補回來** —— 不補的話畫面會說「你還沒申請」，
+          // 而他其實在等。
+          instructorStage = InstructorStage.pendingReview;
+      }
+      notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀，不要把「不知道」畫成「沒申請」。
+    }
+  }
+
   /// 把雲端的教官申請佇列讀進來。**只有管理員叫得動。**
   Future<void> loadInstructorQueue() async {
     final src = instructorCaseSource;

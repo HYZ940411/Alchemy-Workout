@@ -57,9 +57,24 @@ class CloudInstructorCase {
   });
 }
 
+/// 一筆申請案的裁決結果。
+enum InstructorVerdict { pending, passed, rejected }
+
 abstract class InstructorCaseSource {
   /// 送出自己的申請案。
   Future<void> file(CloudInstructorCase c);
+
+  /// **我自己那一筆的裁決。** 沒有申請過就回空值。
+  ///
+  /// 在此之前沒有這一支，於是裁決從來沒有回到申請人身上：
+  /// 管理員按了「通過」，雲端寫了 `state: passed`，而申請人那一側
+  /// **沒有任何東西會去讀它** —— 安全規則也只讓管理員讀。
+  /// 加上 `instructorStage` 不進存檔，申請人重新整理之後
+  /// 連「待人工審核」都不見了，畫面退回「你還沒申請」。
+  ///
+  /// 使用者 2026-09-29 實測：通過測驗、管理員也核准了，
+  /// 重新整理之後沒看到自己成為教官。
+  Future<InstructorVerdict?> mine();
 
   /// 待處理的申請案。**只有管理員叫得動。**
   Future<List<CloudInstructorCase>> queue({int limit});
