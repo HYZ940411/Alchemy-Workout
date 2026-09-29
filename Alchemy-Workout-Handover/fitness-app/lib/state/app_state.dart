@@ -5532,7 +5532,18 @@ class AppState extends ChangeNotifier {
     if (text.trim().isEmpty) return;
     // 未確認免責聲明者不得提問。
     if (mentorDisclaimerNeeded) return;
-    final q = MentorQuestion(from: displayName, text: text.trim(), at: now);
+    // **本機與雲端用同一個 id。**
+    //
+    // 原本本機那筆用 `MentorQuestion` 的預設 id（`q${微秒}`），
+    // 而送上雲的那筆另外叫一次 `newId('q')` —— 同一則提問在兩邊
+    // 是兩個不同的識別碼。
+    //
+    // 在 `loadMyApprenticeSide()` 出現之前這不會被看見，因為學徒那側
+    // 從來不重讀。一旦重讀，雲端那筆就會因為 id 對不上而被當成新的一則
+    // 加進來 —— **每問一次就變成兩則**。
+    final id = newId('q');
+    final q = MentorQuestion(
+        id: id, from: displayName, text: text.trim(), at: now);
     questions.add(q);
     weeklyQuestionCount += 1;
     // **送到教官那邊去。** 在此之前提問只進本機清單 —— 學徒看得到自己
@@ -5540,7 +5551,7 @@ class AppState extends ChangeNotifier {
     _pushMentor((src, bond) => src.ask(
           bond,
           CloudQuestion(
-            id: newId('q'),
+            id: id,
             fromUid: myUid ?? '',
             text: q.text,
             at: q.at,

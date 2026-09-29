@@ -127,6 +127,21 @@ void main() {
     expect(s.questions, hasLength(1));
   });
 
+  test('自己問的那一則，重讀之後不會變成兩則', () async {
+    // 本機那筆與送上雲那筆原本用**兩個不同的 id**
+    // （`MentorQuestion` 的預設 `q${微秒}` vs `newId('q')`）。
+    // 在學徒那側從來不重讀的時候看不出來；一旦重讀，
+    // 雲端那筆就會因為 id 對不上而被當成新的一則加進來。
+    final s = me()..confirmMentorDisclaimer();
+    s.askQuestion('我剛問的');
+    await Future<void>.delayed(Duration.zero);
+    expect(s.questions, hasLength(1));
+
+    await s.loadMyApprenticeSide();
+    expect(s.questions, hasLength(1), reason: '每問一次就變成兩則');
+    expect(s.questions.single.text, '我剛問的');
+  });
+
   test('沒有教官的人不受影響', () async {
     final s = AppState(demo: false)
       ..myUid = myUid
