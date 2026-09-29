@@ -143,60 +143,50 @@ class FirestoreMentor implements MentorSource {
   Future<void> recover(String bondId, DateTime now) async {
     final ref = _col.doc(bondId);
 
-    // **判斷留在交易裡，丟在交易外面。**
+    // ## 為什麼這裡不用交易
     //
-    // 在 Web 上，從 `runTransaction` 內部丟出去的例外會被 JS interop
-    // 包起來，訊息整個不見 —— 使用者 2026-09-30 拿到的是
-    // 「Dart exception thrown from converted Future. Use the properties
-    // 'error' to fetch the boxed error…」，一個字的線索都沒有。
+    // 原本用 `runTransaction`，理由是避免「讀的時候還在期限內，
+    // 寫的時候已經過期」。那個顧慮對一個**三天**的窗口而言微乎其微，
+    // 而代價很大：**在 Web 上，任何從交易裡冒出來的錯誤都會穿過
+    // JS 的 Promise 邊界**，變成一句沒有內容的
+    // 「Dart exception thrown from converted Future」。
     //
-    // 判斷本身仍在交易裡，避免「讀的時候還在期限內，寫的時候已經過期」。
-    String? problem;
+    // 2026-09-30 為了讀出那句話底下的原因，連續改了五輪儀器
+    // （拆 `error` 屬性、點名讀 `code`／`name`／`message`、
+    // 把值交回 Dart 那一側）—— 每一輪拿到的都是 `{}` 或
+    // `[object Object]`，一次都沒有讀到真正的原因。
+    //
+    // 換成單純的讀＋寫之後，錯誤就是正常的 `FirebaseException`
+    // （帶 `code`，例如 `permission-denied`、`resource-exhausted`），
+    // 而我們自己的守衛丟的就是看得懂的 `StateError`。
+    //
+    // **看不見的正確，不如看得見的近似。**
+    final snap = await ref.get();
+    final b = _bondOf(bondId, snap.data() ?? const {});
 
-    await _db.runTransaction((tx) async {
-      final snap = await tx.get(ref);
-      final b = _bondOf(bondId, snap.data() ?? const {});
+    if (b == null) {
+      throw StateError('recover: 關係文件不存在或缺 bondedAt（$bondId）');
+    }
+    if (b.state != MentorBondState.released) {
+      throw StateError('recover: 這段關係不是已解除（state=${b.state.name}）');
+    }
+    final rel = b.releasedAt;
+    if (rel == null) {
+      throw StateError('recover: 已解除卻沒有 releasedAt');
+    }
+    if (!b.recoverableAt(now)) {
+      throw StateError('recover: 已超過 3 天（解除於 $rel，現在 $now）');
+    }
 
-      if (b == null) {
-        problem = '關係文件不存在或缺 bondedAt（$bondId）';
-        return;
-      }
-      if (b.state != MentorBondState.released) {
-        problem = '這段關係不是已解除（state=${b.state.name}）';
-        return;
-      }
-      final rel = b.releasedAt;
-      if (rel == null) {
-        problem = '已解除卻沒有 releasedAt';
-        return;
-      }
-      if (!b.recoverableAt(now)) {
-        problem = '已超過 3 天（解除於 $rel，現在 $now）';
-        return;
-      }
-
-      // **寫 `null`，不用 `FieldValue.delete()`。**
-      //
-      // 2026-09-30：教官按同意，寫入報告只給得出
-      // 「Dart exception thrown from converted Future」——
-      // 例外是**交易自己丟的**（我的守衛已經改成在交易外面丟）。
-      // 交易裡唯一會炸的就是這一行，而先前每一輪守衛都提早 return，
-      // 所以它從來沒真正執行過。
-      //
-      // 讀那一側本來就把「不是 Timestamp／不是 String」當成空值，
-      // 所以 `null` 與欄位不存在對 `_bondOf` 完全等價。
-      tx.update(ref, {
-        'state': MentorBondState.active.name,
-        'releasedAt': null,
-        'releasedReason': null,
-        // 提議已經被接受了 —— 留著下次解除時會看到上一輪的殘留。
-        'restoreProposedBy': null,
-      });
+    // 寫 `null` 而不是 `FieldValue.delete()` —— 讀那一側本來就把
+    // 「不是 Timestamp／不是 String」當成空值，兩者等價。
+    await ref.update({
+      'state': MentorBondState.active.name,
+      'releasedAt': null,
+      'releasedReason': null,
+      // 提議已經被接受了 —— 留著下次解除時會看到上一輪的殘留。
+      'restoreProposedBy': null,
     });
-
-    // **擋下來的時候要說得出來。** 原本是靜靜 `return;`，
-    // 交易正常結束、呼叫端的 `_write()` 記成「成功」，而雲端一個字都沒變。
-    if (problem != null) throw StateError('recover: $problem');
   }
 
   @override
