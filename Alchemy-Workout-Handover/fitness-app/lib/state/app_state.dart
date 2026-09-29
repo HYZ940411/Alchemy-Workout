@@ -3172,6 +3172,11 @@ class AppState extends ChangeNotifier {
       try {
         applyCloudMentorRequests(await mentor.requestsFor(uid));
       } catch (_) {/* 同上 */}
+      try {
+        // **我自己送出去的**申請。與上面那一條是不同的方向，
+        // 不能合成一條（安全規則證明不了 or 條件）。
+        applyMySentMentorRequests(await mentor.sentRequests());
+      } catch (_) {/* 同上 */}
     }
   }
 
@@ -6831,6 +6836,44 @@ class AppState extends ChangeNotifier {
   ///
   /// 方向由 `fromMentor` 決定：教官發起＝他邀我當學徒；學徒發起＝
   /// 有人想拜我為師。兩者在模型裡是不同的 [InboundKind]。
+  /// 把**我自己送出去的**拜師申請讀回本機。
+  ///
+  /// ## 為什麼非有不可
+  ///
+  /// `applyMentor()` 把申請寫進了雲端，也把一筆放進 `mentorApplications`
+  /// —— 但那份清單**不進存檔**，而登入時只讀「別人送給我的」
+  /// （`requestsFor` 查 `toUid`）。於是重新整理之後：
+  ///
+  /// - 按鈕從「已申請」退回「申請師徒關係」
+  /// - `mentorApplyBlockedReason()` 的「已送出」守衛跟著失效
+  /// - 再按一次就再送一筆
+  ///
+  /// 使用者 2026-09-29 按了四次，雲端四筆。
+  ///
+  /// **整份取代而不是併入**：雲端是這件事的唯一事實。逾期的略過 ——
+  /// 那一筆在對方那側也已經沒有效力了。
+  void applyMySentMentorRequests(List<MentorRequest> cloud) {
+    // **要顯示的是對方的名字，不是 `fromName`** —— 那是我自己
+    // （我是送出的一方）。教官清單是唯一查得到對方階級的地方。
+    PendingRequest toPending(MentorRequest r) {
+      final ins = instructors.where((i) => i.uid == r.toUid).firstOrNull;
+      return PendingRequest(
+        ins?.name ?? nameByUid[r.toUid] ?? '（資料載入中）',
+        ins?.rank ?? 0,
+        r.expiresAt,
+        uid: r.toUid,
+      );
+    }
+
+    mentorApplications
+      ..clear()
+      ..addAll([
+        for (final r in cloud)
+          if (!r.fromMentor && !r.expiresAt.isBefore(now)) toPending(r),
+      ]);
+    notifyListeners();
+  }
+
   void applyCloudMentorRequests(List<MentorRequest> cloud) {
     for (final r in cloud) {
       if (r.expiresAt.isBefore(now)) continue;

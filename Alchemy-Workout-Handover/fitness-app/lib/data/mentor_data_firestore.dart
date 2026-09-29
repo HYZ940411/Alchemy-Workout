@@ -207,6 +207,24 @@ class FirestoreMentor implements MentorSource {
   // ===========================================================================
 
   @override
+  Future<List<MentorRequest>> sentRequests() async {
+    // **`fromUid` 這個方向從來沒有被查過。** `requestsFor` 查的是
+    // 「別人送給我的」，於是我自己送出去的申請永遠回不來 ——
+    // 重新整理之後按鈕退回「申請師徒關係」，而雲端那筆還在。
+    //
+    // 安全規則允許 `toUid == uid || fromUid == uid`，所以這條查得動；
+    // 但**不能與 `requestsFor` 合成一條** —— Firestore 不會過濾結果、
+    // 只會整個拒絕查詢，而 or 條件證明不了自己（`bond()` 那次的教訓）。
+    final snap = await _reqCol.where('fromUid', isEqualTo: uid).get();
+    final out = <MentorRequest>[];
+    for (final d in snap.docs) {
+      final r = _requestOf(d.id, d.data());
+      if (r != null) out.add(r);
+    }
+    return out;
+  }
+
+  @override
   Future<List<MentorRequest>> requestsFor(String forUid) async {
     final snap = await _reqCol.where('toUid', isEqualTo: forUid).get();
     final out = <MentorRequest>[];
@@ -217,9 +235,21 @@ class FirestoreMentor implements MentorSource {
     return out;
   }
 
+  /// 申請的文件 ID ＝「誰送給誰」。
+  ///
+  /// **在此之前用的是 `newId('mr')`（帶時間戳的流水號）**，
+  /// 於是同一個人對同一位教官按幾次就寫幾筆 —— 使用者 2026-09-29
+  /// 實測按了四次，雲端就有四筆。本機的「已送出」守衛擋不住，
+  /// 因為那份清單重新整理之後是空的（見 `sentRequests`）。
+  ///
+  /// 用主鍵保證比先查再寫可靠：後者在連按兩下時仍會寫出兩筆。
+  /// 同檢舉（`targetKey__reporterUid`）與教官申請（uid）的取捨。
+  static String reqDocId(String fromUid, String toUid) =>
+      '${fromUid}__$toUid';
+
   @override
   Future<void> sendRequest(MentorRequest r) async {
-    await _reqCol.doc(r.id).set({
+    await _reqCol.doc(reqDocId(r.fromUid, r.toUid)).set({
       'fromUid': r.fromUid,
       'toUid': r.toUid,
       'fromName': r.fromName,

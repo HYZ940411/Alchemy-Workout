@@ -57,6 +57,11 @@ class _FakeMentor implements MentorSource {
   Future<void> ask(String bondId, CloudQuestion q) async {}
   @override
   Future<List<MentorRequest>> requestsFor(String uid) async => const [];
+
+  /// 我自己送出去的申請。預設沒有 —— 需要的測試自己覆寫。
+  @override
+  Future<List<MentorRequest>> sentRequests() async => sent;
+  List<MentorRequest> sent = const [];
   @override
   Future<void> sendRequest(MentorRequest r) async {}
   @override

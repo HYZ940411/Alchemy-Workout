@@ -279,8 +279,17 @@ void main() {
 
     test('處理完就消失', () async {
       await as('a').sendRequest(req());
-      await as('m').dropRequest('r1');
+      // **文件 ID 是「誰送給誰」，不是送出時那個流水號。**
+      // 2026-09-29 改的：原本用 `newId('mr')`，於是同一個人對同一位教官
+      // 按幾次就寫幾筆（使用者按了四次，雲端四筆）。
+      await as('m').dropRequest(FirestoreMentor.reqDocId('a', 'm'));
       expect(await as('m').requestsFor('m'), isEmpty);
+    });
+
+    test('同一個人對同一位教官送兩次，只會有一筆', () async {
+      await as('a').sendRequest(req());
+      await as('a').sendRequest(req());
+      expect(await as('m').requestsFor('m'), hasLength(1));
     });
   });
 }

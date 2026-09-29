@@ -92,6 +92,9 @@ class _FakeMentor implements MentorSource {
       String bondId, String questionId, String text, DateTime at) async {}
   @override
   Future<List<MentorRequest>> requestsFor(String uid) async => const [];
+
+  @override
+  Future<List<MentorRequest>> sentRequests() async => const [];
   @override
   Future<void> sendRequest(MentorRequest r) async {}
   @override

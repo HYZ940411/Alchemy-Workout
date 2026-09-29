@@ -321,19 +321,34 @@ class _InstructorCard extends StatelessWidget {
                   final blocked = s.mentorApplyBlockedReason(instructor);
                   final sent = s.mentorApplications
                       .any((a) => a.name == instructor.name);
+                  // **送出之後這顆不再是主要動作。**
+                  //
+                  // 原本送出後仍是 `BtnKind.primary`（亮色），而且**按得下去**
+                  // —— 按下去跑的是 `acceptMentorApplication()`，也就是
+                  // 「對方已接受」。那是**示範用的捷徑接在正式畫面上**：
+                  // 真使用者按一下，師徒關係就單方面建立了，教官那側
+                  // 從頭到尾沒有同意過。使用者 2026-09-29 指出顏色不對，
+                  // 查下去發現顏色只是表層。
+                  //
+                  // 示範模式保留那個捷徑 —— 沒有第二個人可以按「接受」，
+                  // 拿掉的話那條流程在示範裡走不完。
+                  if (sent) {
+                    return AppButton(
+                      label: '已申請',
+                      kind: BtnKind.secondary,
+                      onPressed: s.demo
+                          ? () => s.acceptMentorApplication(instructor)
+                          : null,
+                    );
+                  }
                   return AppButton(
-                    label: sent
-                        ? '已申請'
-                        : (blocked != null ? '不可申請' : '申請師徒關係'),
-                    onPressed: sent
-                        // Demo：對方已接受申請 → 師徒關係已建立。
-                        ? () => s.acceptMentorApplication(instructor)
-                        : (blocked != null
-                            ? null
-                            : () {
-                                s.applyMentor(instructor);
-                                showToast(context, '已送出申請，7 天內未回應即逾期');
-                              }),
+                    label: blocked != null ? '不可申請' : '申請師徒關係',
+                    onPressed: blocked != null
+                        ? null
+                        : () {
+                            s.applyMentor(instructor);
+                            showToast(context, '已送出申請，7 天內未回應即逾期');
+                          },
                     kind: BtnKind.primary,
                   );
                 }),

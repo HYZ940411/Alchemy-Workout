@@ -149,7 +149,16 @@ abstract class MentorSource {
   Stream<void> watchMentor();
 
   /// 等我回應的師徒申請。
+  /// 別人送給我的申請／邀請。
   Future<List<MentorRequest>> requestsFor(String uid);
+
+  /// **我自己送出去的**申請。
+  ///
+  /// 在此之前沒有這一支，於是拜師申請送出之後就查不回來了：
+  /// 雲端那筆在，而本機重新整理之後 `mentorApplications` 是空的 ——
+  /// 按鈕退回「申請師徒關係」，重複申請的守衛也跟著失效
+  /// （使用者 2026-09-29 按了四次，雲端四筆）。
+  Future<List<MentorRequest>> sentRequests();
   Future<void> sendRequest(MentorRequest r);
   Future<void> dropRequest(String requestId);
 }

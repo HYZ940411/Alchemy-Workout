@@ -141,6 +141,9 @@ class _FakeMentor implements MentorSource {
 
   @override
   Future<List<MentorRequest>> requestsFor(String uid) async => const [];
+
+  @override
+  Future<List<MentorRequest>> sentRequests() async => const [];
   @override
   Future<void> bond(CloudBond b) async {}
   @override
