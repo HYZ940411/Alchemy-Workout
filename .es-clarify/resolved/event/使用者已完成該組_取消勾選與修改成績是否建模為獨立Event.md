@@ -43,7 +43,7 @@ Medium
 
 # 回寫位置
 
-- `Event-Storming_事件風暴/訓練紀錄流程（循環：使用者已完成該組 > 組間休息已結束）.md` 第 32–38 行
+- `Event-Storming_事件風暴/訓練紀錄流程（循環：使用者已完成該組 - 組間休息已結束）.md` 第 32–38 行
   — 新增 1 個 Event、1 條串聯句、1 條 Precondition、1 條統一語言註記、2 條決策；Event 改名
 - `Event-Storming_事件風暴/00_全域規範.md`〈Command 清單〉訓練紀錄流程表 — 新增「取消該組」，「增加訓練進度條」改為「變動訓練進度條」
 - `Event-Storming_事件風暴/00_全域規範.md`〈訓練進度條 Aggregate〉— 新增〈進度條變動的 Event〉小節（5 條規則）
