@@ -37,6 +37,101 @@ class FirestorePublicProfile implements PublicProfileSource {
   @override
   Future<void> remove() => _col.doc(uid).delete();
 
+  /// 排行榜視窗（使用者裁決 B，2026-09-28）。
+  ///
+  /// ## 三次查詢，不是一次
+  ///
+  /// Firestore 沒有「我第幾名」這種東西。所以：
+  ///
+  /// 1. `count()` 算「同組裡分數比我高的有幾個」→ 名次 ＝ 那個數字 ＋ 1。
+  ///    **聚合查詢**，不是把人抓回來數 —— 計費是每 1000 筆索引項算一次讀取。
+  /// 2. 往上取 [window] 位（分數比我高，升冪，取最接近我的那幾位）
+  /// 3. 往下取 [window] ＋ 1 位（分數不高於我的，降冪，含我自己）
+  ///
+  /// 兩次視窗查詢各讀 10–11 筆文件，一天開幾十次排行榜也還在
+  /// 免費方案的 50,000 讀之內。
+  ///
+  /// ## 已知限制
+  ///
+  /// 視窗最上面那一列如果剛好切在**同分群的中間**，它上面那幾位的
+  /// 名次會算得比實際低。要完全正確得為每一列各跑一次 `count()`，
+  /// 那是 21 次聚合查詢 —— 不值得。我自己那一列永遠是對的。
+  @override
+  Future<LeaderboardPage?> leaderboard({
+    required bool weekly,
+    required int group,
+    required int myScore,
+    int window = 10,
+  }) async {
+    final scoreField = weekly ? 'weeklyScore' : 'monthlyScore';
+    final groupField = weekly ? 'weeklyGroup' : 'monthlyGroup';
+    final sameGroup = _col.where(groupField, isEqualTo: group);
+
+    try {
+      final results = await Future.wait([
+        sameGroup.where(scoreField, isGreaterThan: myScore).count().get(),
+        sameGroup
+            .where(scoreField, isGreaterThan: myScore)
+            .orderBy(scoreField) // 升冪：最接近我的那幾位
+            .limit(window)
+            .get(),
+        sameGroup
+            .where(scoreField, isLessThanOrEqualTo: myScore)
+            .orderBy(scoreField, descending: true)
+            .limit(window + 1)
+            .get(),
+      ]);
+
+      final ahead = (results[0] as AggregateQuerySnapshot).count ?? 0;
+      final above = (results[1] as QuerySnapshot<Map<String, dynamic>>).docs;
+      final below = (results[2] as QuerySnapshot<Map<String, dynamic>>).docs;
+
+      final rows = <PublicProfile>[
+        for (final d in above) ?PublicProfile.fromJson(d.id, d.data()),
+        for (final d in below) ?PublicProfile.fromJson(d.id, d.data()),
+      ];
+      // **在這一側再排一次，不依賴後端回來的順序。**
+      //
+      // `orderBy` 是用來決定「取哪幾個」的（限 [window] 筆，要離我最近的
+      // 那幾位）—— 那一半非它不可。但「回來之後怎麼排」只有 21 筆，
+      // 自己排一次的成本是零，而且少一個對後端行為的假設：
+      // `fake_cloud_firestore` 的 `descending` 是把自然順序反過來，
+      // 不是依欄位排，測試因此看到升冪。正式環境不會，但那正是重點 ——
+      // **一個只在正式環境才成立的假設，測試驗不到。**
+      int scoreOf(PublicProfile p) => weekly ? p.weeklyScore : p.monthlyScore;
+      rows.sort((a, b) => scoreOf(b).compareTo(scoreOf(a)));
+
+      return LeaderboardPage(place: ahead + 1, rows: rows);
+    } catch (_) {
+      // 查不到就說查不到。**回一個空的視窗等於宣稱「我是第 1 名」**，
+      // 而那正是要避免的事（見 `AppState.myPlace`）。
+      return null;
+    }
+  }
+
+  @override
+  Future<List<PublicProfile>> byUids(List<String> uids) async {
+    // 自己不必查 —— 自己的階級與六維是即時算的，繞一趟雲端只會拿到舊值。
+    final want = uids.where((u) => u != uid).toSet().toList();
+    if (want.isEmpty) return const [];
+
+    // `whereIn` 一次最多 30 個值，切批後平行查。
+    final chunks = <List<String>>[
+      for (var i = 0; i < want.length; i += kProfileByUidChunk)
+        want.sublist(i, (i + kProfileByUidChunk).clamp(0, want.length)),
+    ];
+
+    final snaps = await Future.wait([
+      for (final c in chunks)
+        _col.where(FieldPath.documentId, whereIn: c).get(),
+    ]);
+
+    return [
+      for (final snap in snaps)
+        for (final d in snap.docs) ?PublicProfile.fromJson(d.id, d.data()),
+    ];
+  }
+
   @override
   Future<List<PublicProfile>> others({int limit = kProfileFetchLimit}) async {
     // **依最近活躍排序，不是依階級。**
@@ -47,8 +142,9 @@ class FirestorePublicProfile implements PublicProfileSource {
     // 於是使用者一多，**新來的人在整個 App 裡是隱形的** ——
     // 找不到、私訊不了，他的貼文還會顯示錯的階級（讀不到就取預設）。
     //
-    // 活躍排序至少讓「現在在用的人」彼此看得到。真正的解法是按 uid
-    // 隨用隨取，那要動到每一個呼叫端，不在這次的範圍。
+    // 活躍排序讓「現在在用的人」彼此看得到，而畫面上真正會出現的人
+    // 由 [byUids] 隨用隨取補齊 —— 所以這個 limit 現在只影響「找人」頁的
+    // 初始名單，不再是整個 App 認得幾個人的上限。
     final out = <PublicProfile>[];
     final seen = <String>{};
 

@@ -1,7 +1,28 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import 'tokens.dart';
 import 'typography.dart';
+
+/// 上傳照片的位元組從哪裡來。
+///
+/// [AppImageView] 只拿得到一個 ID，而上傳的照片在雲端。**用
+/// InheritedWidget 傳而不是直接 import `AppState`**：這一層是設計層，
+/// 它不該知道有 Firestore 這件事，而測試也要能塞一個假的進來。
+///
+/// 沒有安裝這個 scope 時（例如只畫內建圖庫的測試）行為不變 ——
+/// [AppImageView] 找不到載入器就顯示佔位，不會爆。
+class PhotoScope extends InheritedWidget {
+  final Future<Uint8List?> Function(String id) load;
+  const PhotoScope({super.key, required this.load, required super.child});
+
+  static PhotoScope? maybeOf(BuildContext c) =>
+      c.dependOnInheritedWidgetOfExactType<PhotoScope>();
+
+  @override
+  bool updateShouldNotify(PhotoScope old) => old.load != load;
+}
 
 /// 內建圖庫
 ///
@@ -42,6 +63,15 @@ const kImageLibrary = <AppImage>[
   AppImage(id: 'im_fire', label: '連續達成', glyph: '🔥', group: '訓練', hue: 16),
 ];
 
+/// 這個 ID 是使用者上傳的照片嗎。
+///
+/// **與 `domain/photo.dart` 的 `kPhotoIdPrefix` 是同一個約定。**
+/// 設計層不 import domain（那會把相依方向反過來），所以這裡各寫一次 ——
+/// 兩邊都只認這三個字元，而 `photo_id_prefix_test.dart` 釘住它們一致。
+const kPhotoIdPrefixInUi = 'ph_';
+
+bool isUploadedPhotoId(String id) => id.startsWith(kPhotoIdPrefixInUi);
+
 AppImage? imageOf(String id) {
   for (final i in kImageLibrary) {
     if (i.id == id) return i;
@@ -68,8 +98,59 @@ class AppImageView extends StatelessWidget {
     this.width,
   });
 
+  /// 破圖佔位。照片被刪、讀不到、或 ID 根本不認得時都走這裡 ——
+  /// **不留一塊看不出意義的空白**。
+  Widget _placeholder({Widget? child}) => Container(
+        width: width ?? size,
+        height: size,
+        decoration: BoxDecoration(
+          color: C.bgPage,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: C.lineDivider),
+        ),
+        alignment: Alignment.center,
+        child: child ??
+            const Icon(Icons.broken_image_outlined,
+                size: Sz.iconDense, color: C.textSecondary),
+      );
+
   @override
   Widget build(BuildContext context) {
+    // 使用者上傳的照片 —— 位元組在雲端，得等它回來。
+    if (isUploadedPhotoId(id)) {
+      final scope = PhotoScope.maybeOf(context);
+      if (scope == null) return _placeholder();
+      return FutureBuilder<Uint8List?>(
+        future: scope.load(id),
+        builder: (context, snap) {
+          final bytes = snap.data;
+          if (bytes == null) {
+            // 還在載入時不要先閃一次破圖 —— 那會讓人以為壞了。
+            return _placeholder(
+              child: snap.connectionState == ConnectionState.done
+                  ? null
+                  : const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+            );
+          }
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: Image.memory(
+              bytes,
+              width: width ?? size,
+              height: size,
+              fit: BoxFit.cover,
+              // 位元組壞掉時不要整棵樹炸掉。
+              errorBuilder: (_, _, _) => _placeholder(),
+            ),
+          );
+        },
+      );
+    }
+
     final img = imageOf(id);
     if (img == null) {
       return Container(

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../domain/community.dart';
+import '../../domain/social.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -28,8 +29,14 @@ class _MyTeam extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    final isLeader =
-        team.members.any((m) => m.name == '你' && m.role == TeamRole.leader);
+    // **走 `AppState.iAmLeader`，不在這裡自己判一次。**
+    //
+    // 原本是 `m.name == '你'` —— `'你'` 是示範帳號的預設暱稱，**寫死的**。
+    // 真的登入的使用者有自己的暱稱，所以這個條件對他**永遠是假**：
+    // 隊長看不到「待審申請」那一區，也看不到任何隊長專屬的操作。
+    // 使用者回報「B 申請加入團隊，A 隊長還是沒看到」—— 雲端讀到了那一筆
+    // （開發者模式顯示「1 筆（邀請 0／申請 1）」），是這一行把它藏起來的。
+    final isLeader = s.iAmLeader;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 50),
@@ -137,6 +144,9 @@ class _MyTeam extends StatelessWidget {
           child: Column(
             children: [
               for (final m in team.members)
+                // 隊友現在的名字。名冊上那份是他加入當下存的 ——
+                // 與旁邊的階級同一套。
+                if (s.nameOf(m.name, uid: m.uid) case final who)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 11),
                   child: Row(
@@ -144,7 +154,7 @@ class _MyTeam extends StatelessWidget {
                       CircleAvatar(
                         radius: 16,
                         backgroundColor: AppColors.surfaceAlt,
-                        child: Text(m.name.characters.first,
+                        child: Text(who.characters.first,
                             style: const TextStyle(
                                 color: AppColors.accent,
                                 fontWeight: FontWeight.w800,
@@ -155,7 +165,7 @@ class _MyTeam extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(m.name,
+                            Text(who,
                                 style: const TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600)),
@@ -163,8 +173,9 @@ class _MyTeam extends StatelessWidget {
                             // 各成員的本隊已貢獻分數。加總即為月累計日常分數 ——
                             // 沒有這一列，團隊分數就是個查不回去的孤兒數字。
                             Text(
-                              '${m.rank} 階　·　本隊已貢獻 '
-                              '${team.contributions[m.name] ?? 0} 分',
+                              // 隊友現在的階級。名冊上那份是他加入當下存的。
+                              '${s.rankOf(m.name, uid: m.uid, fallback: m.rank)} 階　·　本隊已貢獻 '
+                              '${team.contributions[s.personKeyOf(m.name, m.uid)] ?? 0} 分',
                               style: const TextStyle(
                                   color: AppColors.textDim, fontSize: 11.5),
                             ),
@@ -274,21 +285,21 @@ class _MyTeam extends StatelessWidget {
       BuildContext context, AppState s, TeamMember m) async {
     final ok = await showAppDialog(
       context,
-      title: '把隊長轉讓給「${m.name}」？',
+      title: '把隊長轉讓給「${s.nameOf(m.name, uid: m.uid)}」？',
       message: '轉讓後你成為一般成員，核准申請、邀請成員、指派與踢人都改由他負責。'
           '團隊不會進入無隊長狀態。',
       confirmLabel: '轉讓',
     );
     if (ok != true || !context.mounted) return;
     s.transferLeader(m);
-    showToast(context, '已轉讓給 ${m.name}');
+    showToast(context, '已轉讓給 ${s.nameOf(m.name, uid: m.uid)}');
   }
 
   /// 隊長已踢除成員。被踢除者不適用 12 小時換隊冷卻期。
   Future<void> _kick(BuildContext context, AppState s, TeamMember m) async {
     final ok = await showAppDialog(
       context,
-      title: '踢除「${m.name}」？',
+      title: '踢除「${s.nameOf(m.name, uid: m.uid)}」？',
       message: '團隊人數 −1。對方可立即加入或建立其他團隊，不受 12 小時換隊冷卻期限制'
           '——該次離隊非其本人所為。他已貢獻的團隊分數留在本隊。',
       confirmLabel: '踢除',
@@ -374,23 +385,27 @@ class _TimedTaskCard extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(
-                    tally.credited.contains(m.name)
+                    tally.credited.contains(personKey(m.name, m.uid))
                         ? Icons.check_circle
                         : Icons.radio_button_unchecked,
                     size: Sz.iconDense,
-                    color: tally.credited.contains(m.name)
+                    color: tally.credited.contains(personKey(m.name, m.uid))
                         ? C.statusSuccess
                         : C.textSecondary,
                   ),
                   const SizedBox(width: S.sm),
-                  Expanded(child: Text(m.name, style: T.body())),
+                  Expanded(
+                      child: Text(state.nameOf(m.name, uid: m.uid),
+                          style: T.body())),
                   // 「提醒」是催隊友的，自己那一列不該有 —— 催自己沒有意義。
                   // 自己還沒做的話，該做的是去把它做完，不是按提醒。
-                  if (!tally.credited.contains(m.name) &&
+                  if (!tally.credited.contains(personKey(m.name, m.uid)) &&
                       !expired &&
-                      m.name != state.displayName)
+                      !AppState.sameUser(
+                          m.name, m.uid, state.displayName, state.myUid))
                     GestureDetector(
-                      onTap: () => showToast(context, '已提醒 ${m.name}'),
+                      onTap: () => showToast(
+                          context, '已提醒 ${state.nameOf(m.name, uid: m.uid)}'),
                       child: const TagBadge('提醒'),
                     ),
                 ],
@@ -439,7 +454,8 @@ class _TimedTaskCard extends StatelessWidget {
             const SizedBox(height: S.md),
             Text('本日獎勵已領取。', style: T.caption()),
           ],
-          if (!expired && !t.doneBy(state.displayName)) ...[
+          if (!expired &&
+              !t.doneBy(state.displayName, uid: state.myUid)) ...[
             const SizedBox(height: S.md),
             AppButton(
               label: '開始限時任務',
@@ -482,7 +498,8 @@ class _RequestRow extends StatelessWidget {
                     gone
                         // 逾期後該筆失效，對方可再次申請、隊長可再次邀請。
                         ? '已逾期，${isInvite ? '可再次邀請' : '對方可再次申請'}'
-                        : '階級 ${req.rank}　·　'
+                        // 申請／受邀者現在的階級，不是送出當下那個。
+                        : '階級 ${s.rankOf(req.name, uid: req.uid, fallback: req.rank)}　·　'
                             '${left.inDays} 天 ${left.inHours % 24} 小時後逾期',
                     style: const TextStyle(
                         color: AppColors.textFaint, fontSize: 11.5),

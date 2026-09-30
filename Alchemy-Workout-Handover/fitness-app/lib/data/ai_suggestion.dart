@@ -41,7 +41,43 @@ class RemoteSuggestion {
   const RemoteSuggestion(this.origin, this.suggestion, {this.error});
 }
 
+/// 一次自動優化的結果。
+///
+/// **[intent] 為空值是合法結果**：模型看不出這個人該升該降時就該這樣回
+/// （多半是還沒有歷來成績）。呼叫端不掛建議，下次再說 ——
+/// **不要用一條 ×0.9 假裝成教練的判斷**。
+class RemoteAutoAdjust {
+  final AdjustIntent? intent;
+
+  /// 為什麼判斷成這個方向。空值代表模型沒講。
+  final String? why;
+
+  /// [intent] 為空時必為空的建議。
+  final AdjustSuggestion? suggestion;
+
+  const RemoteAutoAdjust({this.intent, this.why, this.suggestion});
+}
+
+/// 一次意圖分類的結果。
+///
+/// **[intent] 為空值是合法結果，不是失敗** —— 模型判不出來時就該這樣回，
+/// 由呼叫端再問一次。真的失敗是擲例外。
+class RemoteIntent {
+  final AdjustIntent? intent;
+  const RemoteIntent(this.intent);
+}
+
 abstract class AiSuggestionSource {
+  /// 把使用者自己打的那句話分類成四個方向之一。
+  ///
+  /// 2026-09-27 使用者裁決：**一律先給 AI 判斷**，端內的
+  /// `AppState.parseIntent` 只當這一支掛掉時的備援。
+  ///
+  /// 擲出例外代表這一次分類失敗（沒登入、逾時、模型錯誤）——
+  /// 呼叫端退回端內規則，**而且要把退回這件事顯示得出來**：
+  /// 靜默退回在這個專案咬過五次。
+  Future<RemoteIntent> classify(String say);
+
   /// 依這份課表與方向取得建議。
   ///
   /// [onlyFrom] 之前的動作已經練完了，不送上去也不調整。
@@ -50,6 +86,21 @@ abstract class AiSuggestionSource {
   /// [note] 是**使用者自己打的那幾句話**。原樣送給模型當作額外脈絡，
   /// 但它**不能推翻任何驗證規則** —— 伺服器端的逐項驗證在模型回話之後
   /// 才跑，使用者寫什麼都越不過去。
+  /// 自動優化：**方向由模型自己判斷**，不是使用者挑的。
+  ///
+  /// 規格（`01_Command清單.md`〈AI 自動優化訓練流程〉）把「優化訓練強度」
+  /// 的 Actor 寫成**系統** —— 流程裡沒有「使用者挑方向」這一步，
+  /// 使用者只負責確認或拒絕。
+  ///
+  /// **沒有規則退路。** [suggest] 的退路存在是因為使用者在等、不能空手
+  /// 而回；這裡沒有人在等（建議是每三次訓練後默默掛上的），
+  /// 擲出例外就讓呼叫端說「這次沒能產出」，下次再試。
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  });
+
   Future<RemoteSuggestion> suggest({
     required List<PlanExercise> exercises,
     required AdjustIntent intent,
@@ -84,6 +135,18 @@ class AdjustContext {
   /// 動作名稱 → 這個人練它的歷來成績（舊→新，最多取最近幾次）。
   final Map<String, List<({double weight, int reps})>> recent;
 
+  /// 最近幾場訓練的**完成度**（新→舊）。
+  ///
+  /// **這是判斷「該升該降」最強的訊號，而在 2026-09-28 之前根本沒送。**
+  ///
+  /// 使用者實測：他練了一份 16 組的課表只完成 2 組（13%），
+  /// 然後自動優化回「這次看不出該往哪個方向調」—— 因為送過去的只有
+  /// 每個動作的（重量, 次數），模型**完全不知道他做到一半就走了**。
+  /// 一個做了 13% 的人需要的是減量，那件事寫在完成度裡，不在重量裡。
+  ///
+  /// `completion` 為空值代表空白課表（沒有計畫組數，算不出完成度）。
+  final List<({String plan, double? completion, int minutes})> sessions;
+
   /// 動作名稱 → 可用來替換它的候選動作名稱。
   ///
   /// **候選由前端算好再送**，不把 527 筆動作庫塞進 prompt。模型只能
@@ -97,6 +160,7 @@ class AdjustContext {
     required this.goal,
     this.equipment = const [],
     this.recent = const {},
+    this.sessions = const [],
     this.candidates = const {},
   });
 
@@ -112,6 +176,15 @@ class AdjustContext {
               for (final r in e.value) {'weight': r.weight, 'reps': r.reps},
             ],
         },
+        if (sessions.isNotEmpty)
+          'sessions': [
+            for (final s in sessions)
+              {
+                'plan': s.plan,
+                if (s.completion != null) 'completion': s.completion,
+                'minutes': s.minutes,
+              },
+          ],
         if (candidates.isNotEmpty) 'candidates': candidates,
       };
 }

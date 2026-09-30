@@ -31,35 +31,18 @@ class _DecayScreenState extends State<DecayScreen> {
         padding:
             const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
         children: [
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '六維各自獨立計時，自該維最後訓練日的日界（次日 04:00）起算，'
-                  '滿 ${kDecayIntervalHours ~/ 24} 天未訓練該維即退 '
-                  '${(kDecayRatio * 100).round()}%。',
-                  style: T.caption(),
-                ),
-                const SizedBox(height: S.sm),
-                Text(
-                  '退步下限為「本次中斷前所處節點的主階降 $kFloorMajorDrop 階、'
-                  '小節點保留」之下緣，不低於該維初始值 —— '
-                  '練到 A 級者停練夠久也不會退回註冊起點。',
-                  style: T.caption(),
-                ),
-              ],
-            ),
-          ),
-
-          const SectionTitle('六個計時器', trailing: '24 / 36 / 96 / 240 小時'),
+          // 開頭原本有一張說明卡，把退步公式與下限規則整段寫出來。移除
+          // （使用者裁決 2026-09-24）：每一列自己就寫著「距下次退步 X 天」
+          // 與「下限 C+ 40 點」，公式是推導這兩個數字的過程，不是使用者
+          // 需要讀的東西。
+          const SectionTitle('六個計時器'),
           ListGroup(rows: [
             for (var i = 0; i < Dim.values.length; i++)
               _row(s, Dim.values[i], t, i != Dim.values.length - 1),
           ]),
 
           if (s.decayLog.isNotEmpty) ...[
-            const SectionTitle('能力值已退步', trailing: '攜帶資訊：肌群維度'),
+            const SectionTitle('能力值已退步'),
             AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

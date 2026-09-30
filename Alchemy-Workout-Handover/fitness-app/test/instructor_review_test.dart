@@ -12,9 +12,24 @@ import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 /// 作答完、停在待人工審核的狀態。
+///
+/// **簡答作答由呼叫端傳入**（2026-09-25）—— 在此之前 `submitExam()` 裡
+/// 寫死兩題兩答，所以這裡什麼都不傳也會有內容可審。那正是問題：
+/// 管理員看到的是申請人從來沒寫過的答案。作答畫面現在真的收簡答，
+/// 這個輔助函式跟著照做。
 AppState submitted() {
   final s = AppState()..instructorStage = InstructorStage.screenPassed;
-  expect(s.submitExam(18), isTrue, reason: '前提：選擇題要真的過');
+  expect(
+      s.submitExam(18, shortAnswers: const [
+        ('請說明你會如何為一位久坐上班族安排第一個月的課表，並說明理由。',
+            '前兩週以動作學習與活動度為主，每週兩次全身…'),
+        ('學徒要求你開立飲食與補劑處方，你會怎麼回應？',
+            '那超出教官的執業範圍，我會轉介營養師。'),
+        ('學徒反覆抱怨同一部位不適，但動作沒有明顯問題。請說明處理步驟。',
+            '先降量並記錄誘發情境，持續不改善就請他就醫。'),
+      ]),
+      isTrue,
+      reason: '前提：選擇題要真的過');
   expect(s.instructorStage, InstructorStage.pendingReview);
   return s;
 }
@@ -84,8 +99,17 @@ void main() {
       expect(s.reapplyInstructor(), isFalse, reason: '14 天內不得再申請');
       s.advanceDemoClock(const Duration(days: 15));
       expect(s.reapplyInstructor(), isTrue);
-      expect(s.instructorStage, InstructorStage.screening,
-          reason: '重試產生新的一筆申請，並重跑 AI 品質評分');
+      // **重跑初審之後就有結果了。**
+      //
+      // 2026-09-27 之前「初審中 → 初審通過／駁回」這個自動判定根本沒有
+      // 實作，申請人停在「初審中」，唯一的出路是畫面上那顆
+      // 「推進到下一階段（Demo）」。所以這條測試原本斷言的是
+      // `screening` —— 那是缺陷的形狀，不是規格的形狀。
+      //
+      // 規格：「初審教官資格」的 Actor 是**系統**（自動依門檻判定，
+      // 無人工介入）。這個帳號達標，所以重跑之後是「待作答測驗」。
+      expect(s.instructorStage, InstructorStage.screenPassed,
+          reason: '重試產生新的一筆申請、重跑評分，達標就直接進測驗');
       expect(s.instructorRejectStage, isNull);
     });
 

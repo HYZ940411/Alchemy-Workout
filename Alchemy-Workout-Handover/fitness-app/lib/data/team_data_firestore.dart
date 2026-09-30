@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../domain/community.dart';
 import 'team_data.dart';
+import 'cloud_watch.dart';
 
 /// Firestore 上的團隊（[BE-11] 批次 4）。
 ///
@@ -10,6 +11,9 @@ import 'team_data.dart';
 ///   name, isPublic, capacity, peakSize, disbanded,
 ///   memberUids[]            ← 供「我在哪一隊」查詢
 ///   members: { uid: {name, rank, role, joinedAt} }
+///   contributions: { uid: int }   ← 各成員對本隊的日常貢獻
+///   timedCredited: [uid]          ← 今日限時任務記在本隊帳上的成員
+///   timedDay: 'yyyy-MM-dd'        ← 上面那份名單屬於哪一天（04:00 換日）
 /// teams/{teamId}/requests/{uid}
 ///   邀請與申請共用，isInvite 區分方向
 /// ```
@@ -37,6 +41,42 @@ class FirestoreTeams implements TeamSource {
   // 讀取
   // ===========================================================================
 
+  /// 三條監聽，每一條都照抄一支既有查詢的條件 ——
+  /// 那組條件已通過線上的安全規則與 `firestore.indexes.json`。
+  ///
+  /// 兩條 collection group 監聽刻意**不合併成只查 `uid`**：
+  /// 線上那個索引是 `(uid, isInvite)` 的 COLLECTION_GROUP 複合索引，
+  /// 只查 `uid` 需要另一個「集合群組範圍的單欄位索引」，
+  /// 而那種索引不會自動建立 —— 查詢會直接失敗。
+  ///
+  /// 解散是把 `disbanded` 改成 true，那會讓隊伍**離開**這個結果集，
+  /// 監聽一樣收得到（移除也是變動）。
+  @override
+  Stream<void> watchTeams({String? myTeamId}) => mergeWatches([
+        _col
+            .where('memberUids', arrayContains: uid)
+            .where('disbanded', isEqualTo: false)
+            .snapshots(),
+        _db
+            .collectionGroup('requests')
+            .where('uid', isEqualTo: uid)
+            .where('isInvite', isEqualTo: true)
+            .snapshots(),
+        _db
+            .collectionGroup('requests')
+            .where('uid', isEqualTo: uid)
+            .where('isInvite', isEqualTo: false)
+            .snapshots(),
+        // 別人申請加入我的隊：掛在隊伍底下，不掛在我身上。
+        if (myTeamId != null)
+          _col
+              .doc(myTeamId)
+              .collection('requests')
+              .where('isInvite', isEqualTo: false)
+              .snapshots(),
+      ]);
+
+  /// 我在哪一隊。**0 人的隊伍當作沒有** —— 理由同 [openTeams]。
   @override
   Future<CloudTeam?> myTeam() async {
     final snap = await _col
@@ -59,8 +99,16 @@ class FirestoreTeams implements TeamSource {
     final out = <CloudTeam>[];
     for (final d in snap.docs) {
       final t = _teamOf(d.id, d.data());
+      if (t == null) continue;
       // 已滿的隊伍不列出來 —— 申請了也進不去。
-      if (t != null && !t.isFull) out.add(t);
+      if (t.isFull) continue;
+      // **0 人的隊伍當作不存在。**
+      //
+      // 上面那個 `removeMember` 從此不會再產生這種東西，但
+      // 2026-09-27 之前留下的殘留還在雲端，而它們沒有任何人會去清 ——
+      // 申請加入一支沒有隊長的隊伍，永遠不會有人核准。
+      if (t.members.isEmpty) continue;
+      out.add(t);
     }
     return out;
   }
@@ -153,6 +201,10 @@ class FirestoreTeams implements TeamSource {
       'members': {
         for (final e in t.members.entries) e.key: _memberJson(e.value),
       },
+      // 新隊從 0 起算 —— 你在上一支隊伍的貢獻留在上一支隊伍。
+      'contributions': <String, int>{},
+      'timedCredited': <String>[],
+      'timedDay': '',
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
@@ -210,6 +262,18 @@ class FirestoreTeams implements TeamSource {
         'members.$memberUid': FieldValue.delete(),
         'memberUids': members.keys.toList(),
         // peakSize **不減** —— 它是「曾經達到過」，不是「現在有幾人」。
+
+        // **最後一人離開就是解散，在這一層守住。**
+        //
+        // 「隊長退出即解散」原本只寫在 `AppState.leaveTeamOutcome()` 裡，
+        // 而它的判斷依賴 `iAmLeader` —— 那個在 2026-09-27 之前比對的是
+        // 暱稱（而畫面上甚至是寫死的「你」）。判成不是隊長，就不會解散：
+        // 成員被移光、`disbanded` 仍是 false，於是一支 0 人的隊伍
+        // 繼續出現在公開團隊清單裡。使用者回報「0 人的團隊沒有被移除」。
+        //
+        // 呼叫端算錯過一次，就不能只靠呼叫端。這裡是所有離隊路徑
+        // （自己退、被踢、轉讓後退）的共同出口。
+        if (members.isEmpty) 'disbanded': true,
       });
     });
   }
@@ -287,7 +351,54 @@ class FirestoreTeams implements TeamSource {
       members: members,
       peakSize: j['peakSize'] is num ? (j['peakSize'] as num).round() : 0,
       disbanded: j['disbanded'] == true,
+      contributions: {
+        for (final e in ((j['contributions'] as Map?) ?? const {}).entries)
+          if (e.key is String && e.value is num)
+            e.key as String: (e.value as num).round(),
+      },
+      timedCredited: {
+        for (final v in (j['timedCredited'] as List? ?? const []))
+          if (v is String) v,
+      },
+      timedDay: j['timedDay'] is String ? j['timedDay'] as String : '',
     );
+  }
+
+  /// **`FieldValue.increment` 而不是讀出來加一加再寫回去。**
+  ///
+  /// 後者是「讀—改—寫」，兩台裝置同時練完會丟掉一次；而且安全規則
+  /// 只放行「自己那一格、而且往上」，整份覆寫寫不過去。
+  @override
+  Future<void> addScore(String teamId, String memberUid, int delta) async {
+    if (delta == 0) return;
+    await _col.doc(teamId).set({
+      'contributions': {memberUid: FieldValue.increment(delta)},
+    }, SetOptions(merge: true));
+  }
+
+  /// 換日清空由**第一個在新的一天完成的人**順手做（見 `CloudTeam.timedDay`）。
+  ///
+  /// 用 transaction：判斷「雲端那份是不是今天的」與「把自己加進去」
+  /// 必須是同一件事，分開做的話同一秒完成的兩個人會互相蓋掉。
+  @override
+  Future<void> creditTimed(String teamId, String memberUid, String day) async {
+    final ref = _col.doc(teamId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final cloudDay = snap.data()?['timedDay'];
+      if (cloudDay == day) {
+        tx.update(ref, {
+          'timedCredited': FieldValue.arrayUnion([memberUid]),
+        });
+      } else {
+        // 新的一天：整份換掉，不是疊上去。
+        tx.update(ref, {
+          'timedCredited': [memberUid],
+          'timedDay': day,
+        });
+      }
+    });
   }
 
   TeamRequest? _requestOf(Map<String, dynamic> j) {

@@ -11,3 +11,12 @@ FIREBASE_PROJECT_ID = "alchemy-workout"
 
 # 金鑰**不寫在這個檔案裡**。用底下這個指令設，它只存在 Cloudflare：
 #   npx wrangler secret put GEMINI_API_KEY
+
+# 每人每日 Gemini 呼叫次數的計數器（2026-09-28 使用者裁決 A）。
+#
+# **這個綁定是可有可無的** —— 拿掉就不擋（`limit.ts` 的 `consume`
+# 沒收到 KV 就一律放行）。它防的是帳單，不是安全；
+# 安全邊界是上面那一關 `verifyIdToken`。
+[[kv_namespaces]]
+binding = "AI_USAGE"
+id = "9676eb48bcea4d9aacf1c59caa4c4002"

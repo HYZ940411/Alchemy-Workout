@@ -75,12 +75,12 @@ class ConversationsScreen extends StatelessWidget {
               children: [
                 _List(
                   items: s.visibleConversations
-                      .where((c) => c.bucket == MessageCategory.normal)
+                      .where((c) => s.bucketOf(c) == MessageCategory.normal)
                       .toList(),
                 ),
                 _List(
                   items: s.visibleConversations
-                      .where((c) => c.bucket == MessageCategory.stranger)
+                      .where((c) => s.bucketOf(c) == MessageCategory.stranger)
                       .toList(),
                 ),
               ],
@@ -98,7 +98,7 @@ Future<void> _delete(BuildContext context, Conversation c) async {
   final s = AppScope.of(context);
   final ok = await showAppDialog(
     context,
-    title: '刪除與「${c.peer}」的對話？',
+    title: '刪除與「${s.nameOf(c.peer, uid: c.peerUid)}」的對話？',
     message: '只會從你這一側消失，對方仍看得到這段對話。'
         '訊息本身不會被刪除。',
     confirmLabel: '刪除',
@@ -138,6 +138,10 @@ class _List extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         for (final c in sorted)
+          // 對方現在的名字。`c.peer` 是開這個對話當下存下來的 ——
+          // 與旁邊的階級、教官徽章同一套。
+          if (AppScope.of(context).nameOf(c.peer, uid: c.peerUid)
+              case final peer)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Panel(
@@ -156,7 +160,7 @@ class _List extends StatelessWidget {
                       radius: 20,
                       backgroundColor: AppColors.surfaceAlt,
                       child: Text(
-                        c.peer.characters.first,
+                        peer.characters.first,
                         style: const TextStyle(
                           color: AppColors.accent,
                           fontWeight: FontWeight.w800,
@@ -171,13 +175,17 @@ class _List extends StatelessWidget {
                           Row(
                             children: [
                               Text(
-                                c.peer,
+                                peer,
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              if (c.peerIsInstructor) ...[
+                              // 對方**現在**是不是教官。`c.peerIsInstructor`
+                              // 是開這個對話當下存的 —— 教官身分會被撤銷。
+                              if (AppScope.of(context).isInstructorOf(c.peer,
+                                  uid: c.peerUid,
+                                  fallback: c.peerIsInstructor)) ...[
                                 const SizedBox(width: 6),
                                 const Pill('教官'),
                               ],
@@ -241,8 +249,53 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) AppScope.of(context).markRead(widget.conversation);
+      if (!mounted) return;
+      final s = AppScope.of(context);
+      s.markRead(widget.conversation);
+      _offerFollow(s);
     });
+  }
+
+  /// 陌生訊息：問一次要不要追蹤對方。
+  ///
+  /// 使用者要求（2026-09-27）：「如果 A 沒追蹤 B，B 私訊 A 會被丟到
+  /// 陌生訊息，如果 A 看訊息當下還沒追蹤 B，會跳出是否要追蹤對方。」
+  ///
+  /// **同一個對象在同一次開啟期間只問一次**（使用者裁決）。
+  /// 每次開都問的話，同一個人傳十則訊息就會被問十次 —— 那是騷擾。
+  /// 「一次開啟期間」＝這個 State 的生命週期：退出去再進來會再問一次，
+  /// 那是他自己又點進來的，不算打擾。
+  bool _asked = false;
+
+  Future<void> _offerFollow(AppState s) async {
+    if (_asked) return;
+    _asked = true;
+    // 已經追蹤了就沒事；不是陌生訊息也沒事。
+    if (s.bucketOf(widget.conversation) != MessageCategory.stranger) return;
+    if (s.isFollowing(widget.conversation.peer,
+        uid: widget.conversation.peerUid)) {
+      return;
+    }
+
+    final ok = await showAppDialog(
+      context,
+      title: '要追蹤 ${s.nameOf(widget.conversation.peer, uid: widget.conversation.peerUid)} 嗎？',
+      // **不要承諾「追蹤之後就會進一般訊息」** —— 那是假的。
+      // 規格：一般訊息要的是**互相關注**（或師徒、同隊），
+      // 我單方追蹤不夠。承諾了而它沒發生，使用者只會以為功能壞了。
+      message: '他不在你的關注名單裡，所以這段對話在「陌生訊息」。\n\n'
+          '追蹤之後你會在動態牆看到他的貼文；'
+          '等他也追蹤你（或你們成為師徒、隊友），這段對話才會移到一般訊息。',
+      confirmLabel: '追蹤',
+      cancelLabel: '先不要',
+    );
+    if (ok != true || !mounted) return;
+    s.toggleFollow(widget.conversation.peer,
+        uid: widget.conversation.peerUid);
+    if (mounted) {
+      showToast(context,
+          '已追蹤 ${s.nameOf(widget.conversation.peer, uid: widget.conversation.peerUid)}');
+    }
   }
 
   @override
@@ -264,15 +317,19 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Row(
           children: [
             Text(
-              c.peer,
+              // 對方現在的名字。`c.peer` 是開這個對話當下存下來的。
+              s.nameOf(c.peer, uid: c.peerUid),
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
             const SizedBox(width: 8),
             Text(
-              '${c.peerRank} 階',
+              // 對方現在的階級。`c.peerRank` 是開這個對話當下存下來的，
+              // 只在查不到他的公開檔案時墊底。
+              '${s.rankOf(c.peer, uid: c.peerUid, fallback: c.peerRank)} 階',
               style: const TextStyle(color: AppColors.textDim, fontSize: 11.5),
             ),
-            if (c.peerIsInstructor) ...[
+            if (s.isInstructorOf(c.peer,
+                uid: c.peerUid, fallback: c.peerIsInstructor)) ...[
               const SizedBox(width: 6),
               const Pill('教官'),
             ],
@@ -286,6 +343,7 @@ class _ChatScreenState extends State<ChatScreen> {
               targetKey: reportKey(ReportTarget.message, c.id),
               content: c.messages.isEmpty ? '（無訊息）' : c.messages.last.text,
               accused: c.peer,
+              accusedUid: c.peerUid,
             ),
             icon: const Icon(Icons.flag_outlined, size: 18),
           ),

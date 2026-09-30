@@ -179,11 +179,33 @@ void main() {
 
     test('帳號類檢舉成立不走下架路徑', () {
       final s = AppState();
-      final c = s.reports.firstWhere((r) => r.target == ReportTarget.account);
+      final demo = s.reports.firstWhere((r) => r.target == ReportTarget.account);
+      // **示範案件沒有 uid**，而 2026-09-28（暱稱重構階段二）起
+      // 沒有 uid 就不記點 —— 記到暱稱底下等於記到「叫那個名字的人」身上。
+      // 這一條要驗的是「帳號類不下架但照樣記次」，所以給它一個有 uid 的案件。
+      final c = ReportCase(
+        id: demo.id,
+        targetKey: demo.targetKey,
+        reporters: demo.reporters,
+        target: ReportTarget.account,
+        origin: demo.origin,
+        content: demo.content,
+        reason: demo.reason,
+        reporterCount: demo.reporterCount,
+        accused: demo.accused,
+        accusedUid: 'u-被檢舉的人',
+        accusedViolations: demo.accusedViolations,
+        enteredAt: demo.enteredAt,
+      );
+      s.reports
+        ..remove(demo)
+        ..add(c);
+
       s.reviewReport(c);
       s.upholdReport(c);
       expect(s.posts.any((p) => p.deleted), isFalse);
-      expect(s.violationsOf(c.accused), c.accusedViolations + 1,
+      expect(s.violationsOf(c.accusedUid, name: c.accused),
+          c.accusedViolations + 1,
           reason: '不下架，但照樣記次並觸發處罰');
     });
 

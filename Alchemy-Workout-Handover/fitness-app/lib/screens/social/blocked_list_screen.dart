@@ -77,16 +77,18 @@ class _BlockedListScreenState extends State<BlockedListScreen> {
   }
 
   Future<void> _unblock(BuildContext context, AppState s, int i) async {
-    final name = s.blockedUsers[i].name;
+    final b = s.blockedUsers[i];
+    final name = b.name;
     final ok = await showAppDialog(
       context,
-      title: '解除封鎖 $name？',
+      // 對方現在的名字。封鎖清單上那份是封鎖當下存的。
+      title: '解除封鎖 ${s.nameOf(name, uid: b.uid)}？',
       message: '解除後對方可以再看到你的貼文，也能傳私訊給你。',
       confirmLabel: '解除封鎖',
       destructive: true,
     );
     if (ok != true || !context.mounted) return;
-    s.unblockUser(name);
+    s.unblockUser(name, uid: b.uid);
     showToast(context, '已解除封鎖');
     setState(() {});
   }

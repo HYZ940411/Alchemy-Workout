@@ -107,6 +107,10 @@ class _RestCountdownScreenState extends State<RestCountdownScreen> {
                   child: Center(
                     child: Text(
                       '$remaining',
+                      // 比照 `restRingKey` —— 測試要驗的是**這個字級**，
+                      // 而不是「畫面上有沒有『88』這三個字」。用字面值去找
+                      // 會綁死真實時鐘：倒數慢一拍就變成 87，測試隨機轉紅。
+                      key: restSecondsKey,
                       // 全 App 唯一的 Display 用例。
                       style: T.display(color: C.textPrimary),
                     ),
@@ -133,6 +137,9 @@ class _RestCountdownScreenState extends State<RestCountdownScreen> {
 
 /// 圓環的量測點 —— 直徑受規格書約束，由測試把關。
 const Key restRingKey = Key('rest-ring');
+
+/// 倒數的大數字。見上方註解：不可用字面值定位。
+const Key restSecondsKey = Key('rest-seconds');
 
 /// 圓環直徑 240px、線寬 8px（§8.10）。
 const double _ringDiameter = 240.0;

@@ -45,12 +45,21 @@ const allowed = <String, String>{
   'isMale': '生理性別',
   'registeredOn': '註冊日',
   'signUpCompleted': '已完成註冊',
+  // 合規紀錄，不是進度 —— 新帳號在註冊流程裡剛按過同意，本來就該有值。
+  // `completeSignUp()` 刻意排在 `resetToNewAccount()` 之後寫入它。
+  'agreedTermsVersion': '已同意的條款版本',
   'daysPerWeek': '問卷：每週訓練天數',
   'duration': '問卷：單次時長',
   'commonGoal': '問卷：目標',
   'experience': '問卷：經驗',
   'equipmentTier': '問卷：器材等級',
   'ownedEquipment': '問卷：持有器材',
+
+  // `PreferredTimes` 是**固定七格**的骨架（索引 0–6 對應週一到週日），
+  // 空的樣子就是七個空清單，不是 `[]`。`resetToNewAccount()` 確實把它
+  // 設回 `PreferredTimes.empty()` 了 —— 這裡放行的是那個形狀，
+  // 不是放行「沒清掉」。內容有沒有真的清掉，由 `persistence_test` 釘。
+  'preferredTimes': '七格骨架，空的樣子就是七個空清單',
 
   // 能力值 Aggregate 的初始態。六維各 10 點是起點，不是殘留。
   'points': '六維初始值 10',

@@ -43,6 +43,16 @@ class InboundRequest {
 
   /// 送件方。團隊邀請為**隊長的名字**，[subject] 才是團隊名。
   final String from;
+
+  /// 送件方的雲端身分。**示範資料的假請求沒有 uid，所以可以是空值。**
+  ///
+  /// 雲端的 `MentorRequest.fromUid` 與 `TeamRequest.uid` 本來就有這個值，
+  /// 轉成本機這筆時不該丟掉 —— 少了它，畫面只能拿暱稱去查對方的階級，
+  /// 而暱稱可以改。
+  final String? fromUid;
+
+  /// 送件當下對方的階級。**這不是要顯示的值**，只在查不到他的公開檔案
+  /// 時墊底 —— 顯示的是現值（見 `AppState.rankOf`）。
   final int fromRank;
 
   /// 這筆請求談的對象。團隊邀請為團隊名；師徒兩向皆與 [from] 同值。
@@ -57,6 +67,7 @@ class InboundRequest {
     required this.fromRank,
     required this.subject,
     required this.sentAt,
+    this.fromUid,
   });
 
   DateTime get expiresAt => sentAt.add(kInboundTtl);
@@ -75,6 +86,7 @@ class InboundRequest {
     'id': id,
     'kind': kind.name,
     'from': from,
+    if (fromUid != null) 'fromUid': fromUid,
     'fromRank': fromRank,
     'subject': subject,
     'sentAt': sentAt.toIso8601String(),
@@ -91,6 +103,7 @@ class InboundRequest {
       id: '${e['id']}',
       kind: kind,
       from: '${e['from']}',
+      fromUid: e['fromUid'] is String ? e['fromUid'] as String : null,
       fromRank: (e['fromRank'] as num?)?.toInt() ?? 1,
       subject: '${e['subject']}',
       sentAt: sentAt,

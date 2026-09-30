@@ -31,6 +31,10 @@ class FirestorePosts implements PostSource {
       // 一頁 20 篇就是 20 次額外查詢。作者事後改暱稱時舊貼文仍顯示當時的
       // 名字 —— 那與〈訓練紀錄〉凍結歷史值是同一個取捨。
       'authorName': p.author,
+      // **階級跟著存，但它不是顯示值。** 上面那個取捨只適用於暱稱：
+      // 暱稱是歷史紀錄，階級是「這個人現在多強」。讀回來之後
+      // `AppState.rankOf` 會以公開檔案上的現值為準，這一份只在查不到時
+      // 墊底（見 `Post.authorRank`）。
       'authorRank': p.authorRank,
       if (p.authorReputation != null) 'authorReputation': p.authorReputation,
       'text': p.text,
@@ -91,6 +95,26 @@ class FirestorePosts implements PostSource {
     await _col.doc(postId).update({'deleted': true});
   }
 
+  @override
+  Future<void> updateCommentText(String postId, Comment c) async {
+    await _col.doc(postId).collection('comments').doc(c.id).update({
+      'text': c.text,
+      'edits': [
+        for (final e in c.edits)
+          {'before': e.$1, 'at': Timestamp.fromDate(e.$2)},
+      ],
+    });
+  }
+
+  @override
+  Future<void> markCommentDeleted(String postId, String commentId) async {
+    await _col
+        .doc(postId)
+        .collection('comments')
+        .doc(commentId)
+        .update({'deleted': true});
+  }
+
   // ===========================================================================
   // 讀取
   // ===========================================================================
@@ -105,17 +129,28 @@ class FirestorePosts implements PostSource {
       if (p != null) posts.add(p);
     }
 
-    // 留言與「我按過讚沒有」各自平行查，不要一篇一篇等。
+    // **這裡不補留言與讚了。** 那兩樣各是一篇一次查詢，30 篇就是
+    // 60 趟往返 —— 全部等完才回傳的話，動態牆要等最慢的那一趟。
+    // 改由呼叫端先畫出來，再呼叫 [fillDetails]。
+    return posts;
+  }
+
+  @override
+  Future<void> fillDetails(List<Post> posts) async {
+    // 各自平行查，不要一篇一篇等。
     await Future.wait([
       for (final p in posts) _fillComments(p),
       for (final p in posts) _fillLiked(p),
     ]);
-    return posts;
   }
 
   Future<void> _fillComments(Post p) async {
     final snap =
         await _col.doc(p.id).collection('comments').orderBy('at').get();
+    // **先清空**：這幾個物件可能已經帶著上一輪的留言（見
+    // `AppState.applyCloudPosts` 為了避免閃動而做的沿用）。
+    // 不清的話，重新整理一次留言就多一份。
+    p.comments.clear();
     for (final d in snap.docs) {
       final c = _commentOf(d.id, d.data());
       if (c != null) p.comments.add(c);
@@ -141,6 +176,9 @@ class FirestorePosts implements PostSource {
     return Post(
       id: id,
       author: author,
+      // **這個值一直都存在雲端，只是以前讀回來時被丟掉。** 沒有它，
+      // 畫面上就只剩暱稱可以拿去查作者的階級 —— 而暱稱可以改。
+      authorUid: j['authorUid'] is String ? j['authorUid'] as String : null,
       authorRank: j['authorRank'] is num ? (j['authorRank'] as num).round() : 1,
       authorReputation: j['authorReputation'] is num
           ? (j['authorReputation'] as num).round()
@@ -174,6 +212,9 @@ class FirestorePosts implements PostSource {
       j['text'] is String ? j['text'] as String : '',
       at.toDate(),
       id: id,
+      // **這一行原本沒有。** 寫入時存了 `authorUid`，讀回來卻丟掉 ——
+      // 於是「這則留言是不是我的」只剩暱稱可比。
+      authorUid: j['authorUid'] is String ? j['authorUid'] as String : null,
       deleted: j['deleted'] == true,
       edits: _editsOf(j['edits']),
     );

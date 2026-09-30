@@ -7,6 +7,23 @@ import '../../domain/custom_plan.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 
+/// 這個人**現在**叫什麼，以及案件建立當下叫什麼（兩者不同才寫）。
+///
+/// **管理員是靠名字認人的** —— `02_Aggregate定義.md` 把顯示名稱列為
+/// 「供待審佇列與稽核呈現」。使用者 2026-09-28 裁決 A 開放改名之後，
+/// 被檢舉的人可以在案件審完之前換一張臉；30 天的冷卻期擋掉大部分，
+/// 這一列擋掉剩下的。
+///
+/// 曾用名**只在這裡呈現，不對一般使用者公開** —— 那等於替一個人做了
+/// 一次他沒同意的揭露，而規格說暱稱是顯示名稱不是識別碼。
+///
+/// 不必另存一份曾用名清單：案件本來就凍結著建立當下的名字
+/// （`ReportCase.accused` 等），那正好就是這裡要的那一個。
+String _withFormerName(AppState s, String frozen, String? uid) {
+  final now = s.nameOf(frozen, uid: uid);
+  return now == frozen ? now : '$now（案件建立時：$frozen）';
+}
+
 /// Read Model：管理員待審佇列
 ///
 /// 分四個分頁，不採單一混合佇列 —— 混合後管理員每點一筆須切換心智模式；
@@ -166,9 +183,12 @@ class _ReportCard extends StatelessWidget {
     final waited = appNow().difference(c.enteredAt);
     // 級距一律依**當下的**累計違規次數決定；同一人的前一案成立後，
     // 後續案件的預告級距要跟著變。
-    final after = state.violationsOf(c.accused) + 1;
+    final after = state.violationsForCase(c) + 1;
     final tier = tierForViolations(after);
     final mine = c.handlerName == state.admin.name;
+    // 被檢舉者**現在**的名字，後面括號補上開案當下那個。
+    // 判定與記點靠的是 `accusedUid`，這裡只是顯示。
+    final accused = _withFormerName(state, c.accused, c.accusedUid);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: S.md),
@@ -207,7 +227,7 @@ class _ReportCard extends StatelessWidget {
                 value: c.reason),
             if (c.origin == CaseOrigin.userReport)
               _Row(label: '檢舉者人數', value: '${c.reporterCount}'),
-            _Row(label: '被檢舉者', value: c.accused),
+            _Row(label: '被檢舉者', value: accused),
             _Row(label: '累計違規次數', value: '${c.accusedViolations}'),
             if (c.handlerName != null)
               _Row(label: '處理中的管理員', value: c.handlerName!),
@@ -273,15 +293,21 @@ class _ReportCard extends StatelessWidget {
                     final ok = await showAppDialog(
                       context,
                       title: '確認處罰',
-                      message: '${c.accused} 的累計違規將成為 '
+                      message: '$accused 的累計違規將成為 '
                           '$after 次，處以「${tier.label}」。'
                           '${c.target == ReportTarget.account ? '' : '違規內容一併下架。'}',
                       confirmLabel: '處罰',
                       destructive: true,
                     );
                     if (ok != true || !context.mounted) return;
-                    state.upholdReport(c);
-                    showToast(context, '已處罰：${tier.label}');
+                    // **說實際發生的事，不說級距的名字。**
+                    //
+                    // 原本固定印「已處罰：警告」之類 —— 那是照著級距算出來
+                    // 的字，不是照著結果印的。2026-09-28 使用者雙人實測 T8：
+                    // 判成立之後貼文兩邊都還在、對方也沒有收到處罰，
+                    // 而畫面照樣說「已處罰」。
+                    final out = state.upholdReport(c);
+                    showToast(context, '${tier.label}　·　${out.summary}');
                   },
                 ),
               ),
@@ -341,7 +367,10 @@ class _AppealTab extends StatelessWidget {
                   ),
                   const SizedBox(height: S.md),
                   _Row(label: '已等待', value: '${c.waited} 小時'),
-                  _Row(label: '申訴者', value: c.appellant),
+                  _Row(
+                      label: '申訴者',
+                      value: _withFormerName(AppScope.of(context), c.appellant,
+                          c.appellantUid)),
                   _Row(label: '所申訴的對象', value: c.subject),
                   _Row(label: '距事發天數', value: '${c.daysSinceIncident} 天'),
                   if (c.handlerName != null)
@@ -434,7 +463,11 @@ class _InstructorTab extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Expanded(child: Text(c.applicant, style: T.h3())),
+                      Expanded(
+                          child: Text(
+                              _withFormerName(AppScope.of(context), c.applicant,
+                                  c.applicantUid),
+                              style: T.h3())),
                       _DeadlineTag(overdue: c.overdue, left: c.timeLeft),
                       const SizedBox(width: S.sm),
                       Container(
@@ -491,6 +524,14 @@ class _InstructorTab extends StatelessWidget {
                     Text(q, style: T.body(weight: FontWeight.w600)),
                     const SizedBox(height: S.xs),
                     Text(a, style: T.body(color: C.textSecondary)),
+                    // **評分細則要出現在判分的人面前。**
+                    //
+                    // 2026-09-29 覆核意見要求「細則具體到兩位審核者依此評分
+                    // 會得到同一個結果」，於是題庫補上了通過要素、不通過條件
+                    // 與追問範例 —— 但它們一開始只存在資料裡，
+                    // 審核畫面照舊只顯示題目與作答。**細則沒送到審核者面前
+                    // 等於沒寫**，而人工審核會退回各憑印象。
+                    _Rubric(question: q, state: state),
                     const SizedBox(height: S.md),
                   ],
                   ButtonRow(
@@ -515,6 +556,53 @@ class _InstructorTab extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// 一題簡答題的評分細則。
+///
+/// **以題目全文回查題庫。** 作答紀錄存的是題目文字而非 ID
+/// （`InstructorCase.answers` 是 `(題目, 作答)`），改它的形狀會動到已經
+/// 落地的待審案件。題庫裡的題目被改寫之後回查不到，此時**不顯示**
+/// 而不是顯示錯的細則 —— 拿別題的標準判這一題比沒有標準更糟。
+class _Rubric extends StatelessWidget {
+  final String question;
+  final AppState state;
+  const _Rubric({required this.question, required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final q = state.examBank
+        .where((x) => x.text == question && x.rubricPass.trim().isNotEmpty)
+        .firstOrNull;
+    if (q == null) return const SizedBox.shrink();
+
+    Widget line(String label, String body, Color color) => Padding(
+          padding: const EdgeInsets.only(top: S.xs),
+          child: Text.rich(TextSpan(children: [
+            TextSpan(text: '$label：', style: T.caption(color: color)),
+            TextSpan(text: body, style: T.caption()),
+          ])),
+        );
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: S.sm),
+      padding: const EdgeInsets.all(S.md),
+      decoration: BoxDecoration(
+        color: C.bgPage,
+        borderRadius: BorderRadius.circular(R.child),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          line('通過要素', q.rubricPass, C.statusSuccess),
+          line('直接不通過', q.rubricFail, C.statusError),
+          if (q.followUp.trim().isNotEmpty)
+            line('可以這樣追問', q.followUp, C.textSecondary),
+        ],
+      ),
     );
   }
 }

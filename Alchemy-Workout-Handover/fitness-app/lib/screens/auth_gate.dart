@@ -8,16 +8,25 @@ import '../data/auth.dart';
 import '../data/platform_data.dart';
 import '../data/public_profile.dart';
 import '../data/follow_data.dart';
+import '../data/photo_data.dart';
+import '../data/rating_data.dart';
 import '../data/post_data.dart';
 import '../data/chat_data.dart';
 import '../data/team_data.dart';
 import '../data/mentor_data.dart';
+import '../data/instructor_case_data.dart';
 import '../data/report_data.dart';
+import '../data/appeal_data.dart';
+import '../data/punishment_data.dart';
+import '../data/quality_score_data.dart';
+import '../data/violation_data.dart';
+import '../domain/commerce.dart';
 import '../data/store.dart';
+import '../domain/admin.dart';
 import '../state/app_state.dart';
 import 'boot_screen.dart';
-import 'home_shell.dart';
 import 'signup/signup_screen.dart';
+import 'signup/terms_reconsent_screen.dart';
 import 'train/tasks_screen.dart';
 
 /// 依登入狀態決定要顯示登入流程還是這個帳號的內容。
@@ -48,12 +57,17 @@ class AuthGate extends StatefulWidget {
 
   /// 外部的 AI 建議來源（[BE-08]）。空值代表走端內規則。
   final AiSuggestionSource? aiSource;
+  final QualityScoreSource? qualitySource;
 
   /// 關注關係的來源（[BE-11] 批次 2）。空值代表不同步。
   final FollowSource Function(String uid)? followsFor;
 
   /// 貼文的來源（[BE-11] 批次 3）。空值代表不同步。
   final PostSource Function(String uid)? postsFor;
+  final PhotoSource Function(String uid)? photosFor;
+
+  /// 訓練體驗評分（`[BE-18]`）。
+  final RatingSource Function(String uid)? ratingsFor;
 
   /// 私訊的來源（[BE-14]）。空值代表不同步。
   final ChatSource Function(String uid)? chatsFor;
@@ -67,6 +81,13 @@ class AuthGate extends StatefulWidget {
   /// 檢舉的來源。空值代表不送上雲（既有測試走這條）。
   /// **只有寫、沒有讀** —— 檢舉佇列是管理端的東西。
   final ReportSource Function(String uid)? reportsFor;
+  final InstructorCaseSource Function(String uid)? instructorCasesFor;
+
+  /// 累計違規次數。與 uid 無關（一份服務讀所有人的），但與其他來源
+  /// 同一個形狀，保持呼叫端一致。
+  final ViolationSource Function()? violationsFor;
+  final PunishmentSource Function()? punishmentsFor;
+  final AppealSource Function()? appealsFor;
 
   const AuthGate({
     super.key,
@@ -77,12 +98,19 @@ class AuthGate extends StatefulWidget {
     this.platformData,
     this.profileFor,
     this.aiSource,
+    this.qualitySource,
     this.followsFor,
     this.postsFor,
+    this.photosFor,
+    this.ratingsFor,
     this.chatsFor,
     this.teamsFor,
     this.mentorFor,
     this.reportsFor,
+    this.instructorCasesFor,
+    this.violationsFor,
+    this.punishmentsFor,
+    this.appealsFor,
   });
 
   @override
@@ -137,6 +165,7 @@ class _AuthGateState extends State<AuthGate> {
     // 它不需要 uid，也不需要載入任何東西 —— token 是按下調整那一刻
     // 才抓的。沒有理由讓它依賴六個不相干的網路呼叫。
     widget.state.aiSource = widget.aiSource;
+    widget.state.qualitySource = widget.qualitySource;
 
     // 讀裝置層的記事本。**不 await** —— 讀不到只是文案退回「開始吧」，
     // 不該擋住登入頁畫出來。
@@ -186,6 +215,10 @@ class _AuthGateState extends State<AuthGate> {
       _hydratedFor = null;
       _platformLoaded = false;
       _profileSyncedFor = null;
+      // **訂閱要跟著斷。** 它綁在建立它的那個 Source 上（帶著當時的
+      // uid），Source 換掉了舊訂閱不會自己停 —— 不收的話下一個登入的
+      // 人會被上一個帳號的變動叫醒。
+      widget.state.stopCloudWatch();
     }
     if (mounted) {
       setState(() {
@@ -249,6 +282,9 @@ class _AuthGateState extends State<AuthGate> {
     if (_platformLoaded) return;
     final src = widget.platformData;
     if (src == null) return;
+    // **狀態層也要拿得到。** 讀完就丟的話，管理員改了什麼寫不回去
+    // —— 那正是 P123 的症狀（見 `AppState.platformSource`）。
+    widget.state.platformSource = src;
     _platformLoaded = true;
     try {
       widget.state.applyPlatformData(await src.load());
@@ -302,17 +338,30 @@ class _AuthGateState extends State<AuthGate> {
     // 使用者接下來做的事全部只留在記憶體裡。
     widget.state.myUid = uid;
     widget.state.postSource = widget.postsFor?.call(uid);
+    widget.state.photoSource = widget.photosFor?.call(uid);
     widget.state.chatSource = widget.chatsFor?.call(uid);
     widget.state.teamSource = widget.teamsFor?.call(uid);
     widget.state.mentorSource = widget.mentorFor?.call(uid);
     widget.state.reportSource = widget.reportsFor?.call(uid);
+    widget.state.instructorCaseSource =
+        widget.instructorCasesFor?.call(uid);
+    widget.state.violationSource = widget.violationsFor?.call();
+    widget.state.punishmentSource = widget.punishmentsFor?.call();
+    widget.state.appealSource = widget.appealsFor?.call();
     widget.state.followSource = widget.followsFor?.call(uid);
+    widget.state.ratingSource = widget.ratingsFor?.call(uid);
+
+    // **公開檔案的來源也要交給狀態層。** 在此之前只有這個畫面握著它，
+    // 於是「把我的公開檔案寫上去」只在這裡發生得了 —— 這個 session 內
+    // 升的階，別人要等我下次登入才看得到。交出去之後 `AppState` 才能
+    // 在升階當下重寫，也才能按 uid 隨用隨取補齊沒撈到的人。
+    final src = make(uid);
+    widget.state.profileSource = src;
 
     // 先寫再讀：讓自己在別人的清單裡也看得到，
     // 順序顛倒的話新使用者第一次登入不會出現在任何人的清單上。
     //
     // **這一塊要先完成**：其餘每一塊都靠 `nameByUid` 把 uid 翻回暱稱。
-    final src = make(uid);
     await step('公開檔案', () async {
       await src.publish(widget.state.myPublicProfile(uid));
       final others = await src.others(limit: kProfileFetchLimit);
@@ -325,6 +374,10 @@ class _AuthGateState extends State<AuthGate> {
       await step('貼文', () async {
         final got = await posts.recent(limit: AppState.kPostFeedLimit);
         widget.state.applyCloudPosts(got);
+        // **不 await 補細節。** 留言與讚是一篇各一趟，30 篇就是 60 趟；
+        // 等它們回來才往下跑，後面的私訊、團隊、師徒全都排在後面。
+        // 貼文本體已經在畫面上了，留言晚幾百毫秒到就好。
+        widget.state.fillPostDetails(got);
         return '${got.length} 則';
       });
     }
@@ -375,14 +428,34 @@ class _AuthGateState extends State<AuthGate> {
       await step('師徒', () async {
         final got = await mentor.bonds();
         widget.state.applyCloudBonds(got);
+        // **教官側的任務與問答也要讀回來**（`[BE-15]`）——
+        // 不讀的話學徒的提問教官永遠看不到，學徒給的評分也回不來，
+        // 於是拜師頁上那個星等永遠是 0。要排在 `applyCloudBonds`
+        // 之後：學徒清單是它建出來的。
+        await widget.state.loadMentorSide();
+        // **學徒那一側也要讀。** `loadMentorSide()` 跑的是「我帶的每位
+        // 學徒」，而一位學徒的那份清單是空的 —— 少了下面這一行，
+        // 教官的回答永遠到不了學徒手上（使用者 2026-09-29 實測）。
+        await widget.state.loadMyApprenticeSide();
         return '${got.length} 段關係';
       });
       // 待回應的師徒申請。**同樣在此之前沒有任何呼叫端** ——
       // 送出的拜師申請寫進了 Firestore，教官永遠看不到。
       await step('師徒申請', () async {
+        // **兩個方向都要讀。**
+        //
+        // `requestsFor` 是「別人送給我的」，`sentRequests` 是
+        // 「我送出去的」。少了後者，拜師申請送出之後重新整理就不見了 ——
+        // 按鈕退回「申請師徒關係」，而雲端那筆還在
+        // （使用者 2026-09-29 實測，見 PROGRESS 第 5 節 2M／2N）。
+        //
+        // **不能合成一條查詢** —— Firestore 不會過濾結果、只會整個拒絕，
+        // 而 or 條件證明不了自己（`bond()` 那次的教訓）。
         final got = await mentor.requestsFor(uid);
         widget.state.applyCloudMentorRequests(got);
-        return '${got.length} 筆';
+        final sent = await mentor.sentRequests();
+        widget.state.applyMySentMentorRequests(sent);
+        return '收到 ${got.length} 筆　送出 ${sent.length} 筆';
       });
     }
 
@@ -395,6 +468,92 @@ class _AuthGateState extends State<AuthGate> {
         return '關注 ${a.length}／粉絲 ${b.length}';
       });
     }
+
+    final ratings = widget.state.ratingSource;
+    if (ratings != null) {
+      await step('訓練體驗評分', () async {
+        final mine = await ratings.mine();
+        widget.state.applyCloudRatings(mine);
+        return '${mine.length} 筆';
+      });
+    }
+
+    // 管理員身分。**與 `firestore.rules` 的 `isAdmin()` 同源** ——
+    // 兩邊各自判斷的話會出現「後台進得去、每個寫入都被規則擋下」。
+    //
+    // 自成一塊：讀不到 claim 不該讓前面那幾塊的結果被丟掉，
+    // 而「不是管理員」本來就是絕大多數人的答案。
+    await step('管理員身分', () async {
+      final claims = await widget.auth.claims();
+      final isAdmin = claims['admin'] == true;
+      final scopes = claims['adminScopes'];
+      widget.state.applyAdminClaim(
+        isAdmin,
+        scopes: scopes is List ? [for (final s in scopes) '$s'] : null,
+      );
+      return isAdmin
+          ? '是管理員（${widget.state.admin.scopes.length} 組權限）'
+          : '一般使用者';
+    });
+
+    // 自己的累計違規次數。**不在存檔裡，也不該在** —— 存檔是本人寫得動的，
+    // 而處罰級距靠這個數字決定。
+    if (widget.state.violationSource != null) {
+      await step('違規次數', () async {
+        await widget.state.loadMyViolations();
+        return '${widget.state.myViolations} 次';
+      });
+    }
+
+    // 處罰狀態。**同樣不在存檔裡** —— 存檔是本人寫得動的，
+    // 被罰的人自己就能解除。
+    if (widget.state.punishmentSource != null) {
+      await step('處罰狀態', () async {
+        await widget.state.loadMyPunishment();
+        final p = widget.state.punishment;
+        return p == null ? '無' : punishmentKindNames[p.kind]!;
+      });
+    }
+
+    // 我自己那一筆教官申請的裁決。**每個人都要跑，不只管理員。**
+    //
+    // `instructorStage` 不進存檔，而裁決只寫在雲端那份文件上 ——
+    // 少了這一步，管理員按了「通過」，申請人重新整理之後看到的是
+    // 「你還沒申請」（使用者 2026-09-29 實測撞到）。
+    await step('教官申請狀態', () async {
+      await widget.state.loadMyInstructorVerdict();
+      return widget.state.isInstructor ? '已是教官' : '無或待審';
+    });
+
+    // 檢舉佇列。**只有管理員讀得動** —— 一般帳號連查都會被規則拒絕，
+    // 所以這一塊自己判斷、自己成敗，不要讓它的失敗影響別人。
+    if (widget.state.isPlatformAdmin) {
+      await step('檢舉佇列', () async {
+        await widget.state.loadReportQueue();
+        return '${widget.state.reports.length} 案'
+            '（待審 ${widget.state.reports.where((c) => c.state == CaseState.pending).length}）';
+      });
+      // 另外一塊 —— 檢舉讀不到不該連申訴也看不到。
+      await step('申訴佇列', () async {
+        await widget.state.loadAppealQueue();
+        return '${widget.state.appeals.length} 案';
+      });
+      // 教官申請（`[BE-20]`）。同樣自己成敗 —— 在此之前這一整個佇列
+      // 在正式環境對每一個人都是空的（見 PROGRESS 第 5 節 2I）。
+      await step('教官申請', () async {
+        await widget.state.loadInstructorQueue();
+        return '${widget.state.instructorCases.length} 案';
+      });
+    }
+
+    // **排在最後，不是隨便排的。**
+    //
+    // 團隊那條要監看「別人申請加入我的隊」，而那批請求掛在隊伍底下 ——
+    // 要先知道我在哪一隊才訂得到。上面「我的團隊」那一塊剛把它讀回來。
+    //
+    // 也因為一掛上就會先收到一份現況快照（`mergeWatches` 會丟掉），
+    // 排在同步之後才不會跟同步本身搶著寫同一批資料。
+    widget.state.startCloudWatch();
   }
 
   @override
@@ -474,6 +633,13 @@ class _SignedInHomeState extends State<_SignedInHome> {
         },
       );
     }
-    return const HomeShell();
+    // **條款改版後要重新同意** —— 與 `FirstRunGate` 共用同一道閘門。
+    //
+    // 這裡原本直接回 `HomeShell`。`main.dart` 有兩個入口：沒接 Firebase
+    // 走 `FirstRunGate`，接了走這裡 —— 2026-09-24 加條款閘門時只改了前者，
+    // 於是真正在線上跑的那條路徑完全沒有那道閘門。
+    //
+    // 同一個判斷寫在兩處、只有一處做對，正是這一批 bug 的共同形狀。
+    return const TermsGate();
   }
 }

@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 
 import '../../domain/ability.dart';
 import '../../domain/community.dart';
+import '../../domain/inbound.dart';
 import '../../state/app_state.dart';
+import '../me/instructor_apply_screen.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
+import 'inbox_screen.dart';
 import 'mentor_chat_screen.dart';
 import 'mentor_interaction_screen.dart';
 
@@ -73,8 +76,54 @@ class MentorScreen extends StatelessWidget {
         ],
       );
     }
+    // **有人想拜我為師，這一頁要講出來。**
+    //
+    // 拜師申請進的是 `inbox`，而收件匣的入口在「我的 → 收件匣」——
+    // 師徒頁上**沒有任何跡象**。於是一位教官打開師徒頁，
+    // 看到的是「我的學徒（0）」與一份拜師清單，
+    // 而有人正在等他回應（使用者 2026-09-29 實測 T1 回報 C：
+    // 「重整也沒有」—— 他看的是師徒頁，而那裡本來就不會顯示）。
+    //
+    // 回應仍然在收件匣做，這裡只負責**讓他知道有這件事**：
+    // 接受／拒絕的判定（名額、停權、逾期）已經在那裡了，
+    // 複製第二份就會有兩份慢慢長不一樣的規則。
+    final applies = s.liveInbox
+        .where((r) => r.kind == InboundKind.apprenticeApply)
+        .toList();
+
     return Column(
       children: [
+        if (applies.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(S.base, S.base, S.base, 0),
+            child: Panel(
+              color: C.statusWarning.withValues(alpha: 0.08),
+              border: C.statusWarning,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('有 ${applies.length} 位想拜你為師',
+                      style: T.body(weight: FontWeight.w700)),
+                  const SizedBox(height: S.xs),
+                  Text(
+                    applies.map((r) => r.from).join('、'),
+                    style: T.caption(),
+                  ),
+                  const SizedBox(height: S.md),
+                  SizedBox(
+                    width: double.infinity,
+                    child: AppButton(
+                      label: '去收件匣回應',
+                      kind: BtnKind.secondary,
+                      onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => const InboxScreen())),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         // 教官身分者另有帶徒的一側
         if (s.isInstructor)
           Padding(
@@ -88,10 +137,55 @@ class MentorScreen extends StatelessWidget {
             ),
           ),
         Expanded(
-          child:
-              s.myInstructor == null ? const _InstructorList() : const _MyMentor(),
+          // **三種狀態，不是兩種。** `myInstructor == null` 既可能是
+          // 「我還沒拜師」，也可能是「師徒那一塊還沒讀回來」——
+          // 在此之前兩者都畫成拜師清單，等於在同步失敗時對著一位
+          // 有教官的人說「你沒有教官」。而那不會報錯：師徒那一塊是
+          // 各自 try、吞掉錯誤的，出問題時完全沒有跡象。
+          child: s.myInstructor != null
+              ? const _MyMentor()
+              : s.mentorKnown
+                  ? const _InstructorList()
+                  : const _MentorUnknown(),
         ),
       ],
+    );
+  }
+}
+
+/// 師徒關係還沒讀回來。
+///
+/// 留白而不是猜一個答案（守則第 5 條：**填錯的數字比留白更糟**）。
+/// 這一頁會退到這裡，代表登入時師徒那一塊失敗了 —— 通常是連線，
+/// 也可能是安全規則。給一顆重試鍵，不必整個重新載入 App。
+class _MentorUnknown extends StatefulWidget {
+  const _MentorUnknown();
+
+  @override
+  State<_MentorUnknown> createState() => _MentorUnknownState();
+}
+
+class _MentorUnknownState extends State<_MentorUnknown> {
+  var _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    return EmptyState(
+      icon: Icons.cloud_off_outlined,
+      title: '師徒資料還沒讀到',
+      message: '這不代表你沒有教官 —— 是這一次沒讀回來。',
+      action: AppButton(
+        label: _busy ? '重新讀取中' : '重新讀取',
+        kind: BtnKind.secondary,
+        onPressed: _busy
+            ? null
+            : () async {
+                setState(() => _busy = true);
+                await s.refreshInbound();
+                if (mounted) setState(() => _busy = false);
+              },
+      ),
     );
   }
 }
@@ -106,6 +200,48 @@ class _InstructorList extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 50),
       children: [
+        // **自己也能當教官** —— 入口原本只在「我的」→ 更多底下，
+        // 而會想當教官的人正是在這一頁看別人的教官檔案的人
+        //（使用者裁決 2026-09-26）。
+        //
+        // 已經是教官的不顯示：那一頁對他只剩「你已通過」一句話。
+        // **與團隊頁的「你目前沒有團隊」同一張卡**（2026-09-28 使用者要求：
+        // 「希望跟團隊的『建立團隊』按鈕跟標題方式長得一樣」）。
+        //
+        // 兩處是同一件事：這一頁對還沒加入的人是空的，而空的時候要講得出
+        // 「你可以做什麼」。長相不一樣只會讓人以為是兩種不同的東西。
+        if (!s.isInstructor) ...[
+          Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('你還不是教官',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text(
+                  '通過初審與測驗後可以帶學徒。門檻是階級 '
+                  '${s.instructorGate.requiredRank} 與累積訓練 '
+                  '${s.instructorGate.requiredWorkouts} 次，'
+                  '你目前是階級 ${s.rank}、${s.totalWorkouts} 次。',
+                  style: const TextStyle(
+                      color: AppColors.textDim, fontSize: 12.5, height: 1.5),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    label: '我要成為教官',
+                    onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const InstructorApplyScreen())),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: S.base),
+        ],
         for (final i in s.instructors) _InstructorCard(instructor: i),
       ],
     );
@@ -147,7 +283,8 @@ class _InstructorCard extends StatelessWidget {
                               fontSize: 15.5, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 3),
                       Text(
-                        '${instructor.rank} 階　·　'
+                        // 教官現在的階級，不是建立師徒關係當下那個。
+                        '${s.rankOf(instructor.name, uid: instructor.uid, fallback: instructor.rank)} 階　·　'
                         '綜合 ${overallGrade(instructor.ability)}　·　'
                         '聲望 ${instructor.reputation}',
                         style: const TextStyle(
@@ -156,24 +293,32 @@ class _InstructorCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.star_rounded,
-                            size: 14, color: C.accentDeep),
-                        const SizedBox(width: 3),
-                        Text(instructor.avgRating.toStringAsFixed(1),
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w800)),
-                      ],
-                    ),
-                    Text('${instructor.ratingCount} 則',
-                        style: const TextStyle(
-                            color: AppColors.textFaint, fontSize: 10)),
-                  ],
-                ),
+                // **沒有評分就說沒有評分。** 原本一律畫出星號與
+                // 「0.0（0 則）」—— 那看起來像「被評過、但分數是 0」，
+                // 而拜師就是看這個數字挑人的。
+                if (instructor.ratingCount == 0)
+                  Text('尚無評分',
+                      style: const TextStyle(
+                          color: AppColors.textFaint, fontSize: 11))
+                else
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.star_rounded,
+                              size: 14, color: C.accentDeep),
+                          const SizedBox(width: 3),
+                          Text(instructor.avgRating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w800)),
+                        ],
+                      ),
+                      Text('${instructor.ratingCount} 則',
+                          style: const TextStyle(
+                              color: AppColors.textFaint, fontSize: 10)),
+                    ],
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -214,8 +359,15 @@ class _InstructorCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
+                  // **這個數字就是「他實際帶著幾位學徒」。**
+                  //
+                  // 2026-09-29 使用者裁決：待回應的申請不再佔名額
+                  // （見 `AppState.apprenticeCountOf`）。在那之前送出申請的
+                  // 當下數字就 +1，而對方還沒答應 —— 那行字在說一件
+                  // 不是事實的事。
                   child: Text(
-                    '帶徒 ${s.slotsUsedOf(instructor)} / ${instructor.apprenticeCap}',
+                    '學徒 ${s.apprenticeCountOf(instructor)} / '
+                    '${instructor.apprenticeCap}',
                     style: const TextStyle(
                         color: AppColors.textDim, fontSize: 12),
                   ),
@@ -224,19 +376,34 @@ class _InstructorCard extends StatelessWidget {
                   final blocked = s.mentorApplyBlockedReason(instructor);
                   final sent = s.mentorApplications
                       .any((a) => a.name == instructor.name);
+                  // **送出之後這顆不再是主要動作。**
+                  //
+                  // 原本送出後仍是 `BtnKind.primary`（亮色），而且**按得下去**
+                  // —— 按下去跑的是 `acceptMentorApplication()`，也就是
+                  // 「對方已接受」。那是**示範用的捷徑接在正式畫面上**：
+                  // 真使用者按一下，師徒關係就單方面建立了，教官那側
+                  // 從頭到尾沒有同意過。使用者 2026-09-29 指出顏色不對，
+                  // 查下去發現顏色只是表層。
+                  //
+                  // 示範模式保留那個捷徑 —— 沒有第二個人可以按「接受」，
+                  // 拿掉的話那條流程在示範裡走不完。
+                  if (sent) {
+                    return AppButton(
+                      label: '已申請',
+                      kind: BtnKind.secondary,
+                      onPressed: s.demo
+                          ? () => s.acceptMentorApplication(instructor)
+                          : null,
+                    );
+                  }
                   return AppButton(
-                    label: sent
-                        ? '已申請'
-                        : (blocked != null ? '不可申請' : '申請師徒關係'),
-                    onPressed: sent
-                        // Demo：對方已接受申請 → 師徒關係已建立。
-                        ? () => s.acceptMentorApplication(instructor)
-                        : (blocked != null
-                            ? null
-                            : () {
-                                s.applyMentor(instructor);
-                                showToast(context, '已送出申請，7 天內未回應即逾期');
-                              }),
+                    label: blocked != null ? '不可申請' : '申請師徒關係',
+                    onPressed: blocked != null
+                        ? null
+                        : () {
+                            s.applyMentor(instructor);
+                            showToast(context, '已送出申請，7 天內未回應即逾期');
+                          },
                     kind: BtnKind.primary,
                   );
                 }),
@@ -303,13 +470,16 @@ class _MyMentor extends StatelessWidget {
             onPressed: () => _release(context, s, ins),
           ),
         const SizedBox(height: S.md),
-        AppButton(
-          label: '與 ${ins.name} 對話',
-          kind: BtnKind.secondary,
-          icon: Icons.forum_outlined,
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => MentorChatScreen(instructor: ins))),
-        ),
+        // 已解除期間不給互動入口 —— 未完成的任務都作廢了，
+        // 而且教官那一側已經看不到這個人，問了也沒有人收得到。
+        if (!s.mentorReleased)
+          AppButton(
+            label: '與 ${ins.name} 對話',
+            kind: BtnKind.secondary,
+            icon: Icons.forum_outlined,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => MentorChatScreen(instructor: ins))),
+          ),
         const SectionLabel('本週互動摘要'),
         Panel(
           child: Column(
@@ -353,9 +523,13 @@ class _MyMentor extends StatelessWidget {
               const SizedBox(height: 8),
               // 未評分時聲望無變動，不視為差評。
               Text(
+                // **這裡說的是「我的教官」，不是我。**
+                // 原本取 `s.instructorReputation`／`s.apprenticeCap` ——
+                // 那是**我自己**當教官時的欄位。學徒不是教官，
+                // 所以它永遠是 0，而標籤寫著「教官聲望」。
                 '每週最多評一次，且該週雙方要有互動才評得了。'
-                '不評不算差評 —— 教官聲望目前 ${s.instructorReputation}，'
-                '帶徒上限 ${s.apprenticeCap} 人。',
+                '不評不算差評 —— 教官聲望目前 ${ins.reputation}，'
+                '帶徒上限 ${ins.apprenticeCap} 人。',
                 style: const TextStyle(
                     color: AppColors.textFaint, fontSize: 11, height: 1.5),
               ),
@@ -378,7 +552,17 @@ class _MyMentor extends StatelessWidget {
                   style: const TextStyle(fontSize: 12.5, height: 1.6),
                 ),
                 const SizedBox(height: 12),
-                if (s.mentorRestorePending)
+                // **提出的人看不到「同意」那一顆。**
+                // 原本這裡只問「有沒有人提出」，而提議只活在本機 ——
+                // 於是同一個人先按「提出」再按「同意」就恢復了，
+                // 直接違反 `[決策]`「恢復需雙方同意，不採單方面恢復」。
+                if (s.mentorRestoreByMe)
+                  Text(
+                    '已提出恢復，等 ${ins.name} 回應。',
+                    style: const TextStyle(
+                        color: AppColors.textFaint, fontSize: 12.5),
+                  )
+                else if (s.mentorRestoreAwaitingMe)
                   Row(
                     children: [
                       Expanded(
@@ -388,6 +572,7 @@ class _MyMentor extends StatelessWidget {
                           onPressed: () {
                             s.rejectRestore();
                             showToast(context, '已拒絕，3 天內可再次提出');
+
                           },
                         ),
                       ),
@@ -396,8 +581,16 @@ class _MyMentor extends StatelessWidget {
                         child: AppButton(
                           label: '同意恢復',
                           onPressed: () {
-                            s.acceptRestore();
-                            showToast(context, '師徒關係已恢復');
+                            // **做不到的時候不可以說做到了。**
+                            // 這一顆是 2026-09-30 深夜我自己寫的，
+                            // 而且重蹈當晚查了一整輪的那個覆轍。
+                            final ok = s.acceptRestore();
+                            showToast(
+                                context,
+                                ok
+                                    ? '師徒關係已恢復'
+                                    : s.myRestoreBlockedReason ?? '現在恢復不了。');
+
                           },
                         ),
                       ),
@@ -412,8 +605,14 @@ class _MyMentor extends StatelessWidget {
                       onPressed: !s.canRestoreMentor
                           ? null
                           : () {
-                              s.proposeRestore();
-                              showToast(context, '已提出，等對方同意');
+                              final ok = s.proposeRestore();
+                              showToast(
+                                  context,
+                                  ok
+                                      ? '已提出，等對方同意'
+                                      : s.myRestoreBlockedReason ??
+                                          '提不出來。');
+
                             },
                     ),
                   ),
@@ -458,7 +657,15 @@ class _MyMentor extends StatelessWidget {
         const SectionLabel('提問'),
         for (final q in s.questions) _QuestionCard(q: q),
         const SizedBox(height: 10),
-        _AskBox(),
+        // 已解除期間只看得到舊的問答，問不了新的。
+        if (s.mentorReleased)
+          Text(
+            s.askBlockedReason,
+            style: const TextStyle(
+                color: AppColors.textFaint, fontSize: 11.5, height: 1.5),
+          )
+        else
+          _AskBox(),
       ],
     );
   }
@@ -503,7 +710,8 @@ Future<void> _rateWeek(BuildContext context, AppState s) async {
   );
   if (ok != true || !context.mounted) return;
   s.rateWeeklyInteraction(stars);
-  showToast(context, '已評分，教官聲望 ${s.instructorReputation}');
+  // 同上：要說的是對方的聲望。
+  showToast(context, '已評分，教官聲望 ${s.myInstructor?.reputation ?? 0}');
 }
 
 /// 師徒關係已解除。**需經多次確認，避免誤觸**；任一方皆可單方面解除。
@@ -569,7 +777,11 @@ class _TaskCard extends StatelessWidget {
                   )
                 else
                   GestureDetector(
-                    onTap: () => s.completeMentorTask(task),
+                    onTap: () {
+                      if (!s.completeMentorTask(task)) {
+                        showToast(context, s.completeBlockedReason);
+                      }
+                    },
                     child: const Pill('標記完成', color: AppColors.accent),
                   ),
               ],
@@ -597,12 +809,22 @@ class _TaskCard extends StatelessWidget {
                   for (var i = 1; i <= 5; i++)
                     GestureDetector(
                       onTap: () {
-                        s.rateMentorTask(task, i);
-                        showToast(
-                            context,
-                            s.taskRatingsThisWeek > kMentorTaskRatingWeeklyCap
-                                ? '已評分，本週計入聲望的次數已用完'
-                                : '已評分，教官聲望 ${s.instructorReputation}');
+                        // **說出真的發生了什麼。** 原本的條件寫
+                        // `taskRatingsThisWeek > 上限`，而那個計數器
+                        // 只在有計分時才加一、永遠不會超過上限 ——
+                        // 那個分支從來沒跑到過，於是第三則之後聲望
+                        // 不再動，畫面照樣報一個沒變的數字。
+                        showToast(context, switch (s.rateMentorTask(task, i)) {
+                          RateResult.counted =>
+                            '已評分，教官聲望 ${s.myInstructor?.reputation ?? 0}',
+                          RateResult.capReached =>
+                            '已評分。本週計入聲望的次數已用完（每週 '
+                                '$kMentorTaskRatingWeeklyCap 則），'
+                                '任務照樣算評過。',
+                          RateResult.alreadyRated =>
+                            '已改成 $i 星。同一則不重複計入聲望。',
+                          RateResult.rejected => '這則現在評不了。',
+                        });
                       },
                       child: Padding(
                         padding: const EdgeInsets.all(3),
@@ -722,8 +944,11 @@ class _AskBoxState extends State<_AskBox> {
         const SizedBox(width: 8),
         IconButton(
           onPressed: () {
-            s.askQuestion(ctrl.text);
-            ctrl.clear();
+            if (s.askQuestion(ctrl.text)) {
+              ctrl.clear();
+            } else {
+              showToast(context, s.askBlockedReason);
+            }
           },
           icon: const Icon(Icons.send_rounded, color: AppColors.accent),
         ),

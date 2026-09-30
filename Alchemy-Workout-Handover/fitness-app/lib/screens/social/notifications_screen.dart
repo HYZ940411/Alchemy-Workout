@@ -16,6 +16,10 @@ import '../../widgets/common.dart';
 ///
 /// 超出上限者依優先序**由低至高捨棄** —— 本頁把被捨棄的那些也列出來，
 /// 否則「為什麼我沒收到提醒」永遠答不出來。
+///
+/// 「先前的推播」同理：紅點數的是全部的未讀，本頁若只列今天的，
+/// 昨天那則未讀就從畫面上消失，而紅點還在數它。
+/// **紅點數得到的每一則，這一頁都要列得出來。**
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -29,6 +33,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final s = AppScope.of(context);
     final sent = s.todaysPushes;
     final suppressed = s.suppressedPushes;
+    final earlier = s.earlierPushes;
     final inApp = s.notifications
         .where((n) => n.kind == NotifyKind.inApp)
         .toList();
@@ -70,7 +75,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             S.scrollBottom,
           ),
           children: [
-            SectionTitle('今日推播', trailing: '上限 $kDailyPushLimit 則／日'),
+            const SectionTitle('今日推播'),
             if (sent.isEmpty)
               AppCard(child: Text('今天沒有推播。', style: T.caption()))
             else
@@ -112,7 +117,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ],
 
-            const SectionTitle('App 內通知', trailing: '不推播，不受上限'),
+            if (earlier.isNotEmpty) ...[
+              const SectionTitle('先前的推播'),
+              ListGroup(
+                rows: [
+                  for (var i = 0; i < earlier.length; i++)
+                    _row(s, earlier[i], i != earlier.length - 1),
+                ],
+              ),
+            ],
+
+            const SectionTitle('App 內通知'),
             if (inApp.isEmpty)
               AppCard(child: Text('沒有 App 內通知。', style: T.caption()))
             else

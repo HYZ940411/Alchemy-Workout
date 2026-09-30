@@ -119,7 +119,7 @@ void main() {
         visibleToFollowers: true,
       );
       s.customPlans.add(other);
-      expect(s.following, contains('深蹲王'));
+      expect(s.isFollowing('深蹲王'), isTrue);
       expect(s.selectableCustomPlans, contains(other));
 
       other.visibleToFollowers = false;
@@ -128,7 +128,7 @@ void main() {
 
       other.visibleToFollowers = true;
       s.toggleFollow('深蹲王'); // 取消關注
-      expect(s.following, isNot(contains('深蹲王')));
+      expect(s.isFollowing('深蹲王'), isFalse);
       expect(s.selectableCustomPlans, isNot(contains(other)),
           reason: '不是關注者就看不到');
     });

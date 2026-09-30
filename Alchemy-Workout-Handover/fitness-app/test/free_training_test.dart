@@ -4,7 +4,7 @@ import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/mock/mock_data.dart';
 import 'package:fitness_app/state/app_state.dart';
 
-WorkoutPlan get blankPlan => kPlans.firstWhere((p) => p.source == PlanSource.blank);
+WorkoutPlan get blankPlan => kAllPlans.firstWhere((p) => p.source == PlanSource.blank);
 
 void main() {
   group('空白課表（自由訓練）', () {
@@ -58,7 +58,7 @@ void main() {
 
     test('一般課表也能中途加練計畫外的動作 —— 兩種入口共用同一路徑', () {
       final s = AppState();
-      final plan = kPlans.firstWhere((p) => p.id == 'p_push');
+      final plan = kAllPlans.firstWhere((p) => p.id == 'p_push');
       final planned = plan.totalSets;
       s.startWorkout(plan);
       s.addExerciseToSession(ex('lateral'), const [PlannedSet(10, 15)]);
@@ -110,6 +110,7 @@ void main() {
       s.startWorkout(blankPlan);
       s.addExerciseToSession(ex('squat'), const [PlannedSet(80, 5)]);
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       final r = s.finishWorkout(EndKind.completed);
       expect(r.rewards.completion, 1.0);
       expect(r.rewards.leaderboardScore, isNull);

@@ -22,7 +22,9 @@ import 'package:fitness_app/state/app_state.dart';
 class _FakePosts implements PostSource {
   List<Post> cloud;
   int reads = 0;
+  int detailFills = 0;
   bool throwOnRead = false;
+  bool throwOnFill = false;
   _FakePosts(this.cloud);
 
   @override
@@ -43,6 +45,15 @@ class _FakePosts implements PostSource {
   Future<void> updatePostText(String postId, Post p) async {}
   @override
   Future<void> markPostDeleted(String postId) async {}
+  @override
+  Future<void> updateCommentText(String postId, Comment c) async {}
+  @override
+  Future<void> markCommentDeleted(String postId, String commentId) async {}
+  @override
+  Future<void> fillDetails(List<Post> posts) async {
+    detailFills++;
+    if (throwOnFill) throw StateError('留言讀不到');
+  }
 }
 
 Post _post(String id, String author) => Post(
@@ -148,6 +159,86 @@ void main() {
       // 假課表原本會經「全平台已公開」那一類出現在課表選擇頁。
       final s = AppState(demo: false);
       expect(s.selectableCustomPlans, isEmpty);
+    });
+  });
+
+  _noFlicker();
+}
+
+/// 兩段式載入不可以讓畫面閃一下（`[BE-17]`，2026-09-24）。
+///
+/// `recent()` 現在只查貼文本體，留言與「我按過讚沒有」由 `fillDetails()`
+/// 隨後補。中間那幾百毫秒若直接把畫面上那份換成空的，使用者會看到
+/// **留言整批消失、愛心變回空心，然後又跳回來**。
+void _noFlicker() {
+  Post post({List<Comment> comments = const [], bool liked = false}) {
+    final p = Post(
+      id: 'p1',
+      author: '阿昶',
+      authorRank: 1,
+      text: '今天練完了。',
+      at: DateTime(2026, 9, 24),
+    );
+    p.comments.addAll(comments);
+    p.likedByMe = liked;
+    return p;
+  }
+
+  group('補細節之前不清空畫面上的留言與讚', () {
+    test('雲端那份還沒補留言時，沿用畫面上已有的', () {
+      final s = AppState(demo: false)..myUid = 'u-me';
+      s.applyCloudPosts([
+        post(comments: [Comment('小美', '厲害！', DateTime(2026, 9, 24))]),
+      ]);
+      expect(s.posts.single.comments, hasLength(1), reason: '前提');
+
+      // 第二輪：`recent()` 只給本體，留言還沒補上。
+      s.applyCloudPosts([post()]);
+
+      expect(s.posts.single.comments, hasLength(1),
+          reason: '留言不該消失一秒再跳回來');
+    });
+
+    test('愛心同理，不該閃回空心', () {
+      final s = AppState(demo: false)..myUid = 'u-me';
+      s.applyCloudPosts([post(liked: true)]);
+      s.applyCloudPosts([post()]);
+      expect(s.posts.single.likedByMe, isTrue);
+    });
+
+    test('本體本身仍然以雲端那份為準', () {
+      final s = AppState(demo: false)..myUid = 'u-me';
+      s.applyCloudPosts([post()]);
+
+      final edited = post()..text = '改過的';
+      s.applyCloudPosts([edited]);
+
+      expect(s.posts.single.text, '改過的');
+    });
+  });
+
+  group('重新整理走完兩段', () {
+    test('本體與細節都讀了', () async {
+      final src = _FakePosts([post()]);
+      final s = AppState(demo: false)
+        ..myUid = 'u-me'
+        ..postSource = src;
+
+      expect(await s.refreshCloudPosts(), isTrue);
+
+      expect(src.reads, 1);
+      expect(src.detailFills, 1, reason: '只讀本體的話留言永遠補不上');
+    });
+
+    test('補細節失敗不會讓貼文消失', () async {
+      final src = _FakePosts([post()])..throwOnFill = true;
+      final s = AppState(demo: false)
+        ..myUid = 'u-me'
+        ..postSource = src;
+
+      expect(await s.refreshCloudPosts(), isTrue,
+          reason: '本體讀到了就算成功 —— 留言補不到不是動態牆的失敗');
+      expect(s.posts, hasLength(1));
     });
   });
 }

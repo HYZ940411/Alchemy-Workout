@@ -10,7 +10,7 @@ import '../../widgets/image_picker_sheet.dart';
 /// 發文（〈發文與互動流程〉）
 ///
 /// 貼文支援文字與圖片，不支援影片，無標籤欄位。
-/// 發布時指定可見範圍：公開 / 僅關注者 / 私人。
+/// **貼文一律公開**（使用者裁決 2026-09-26，2026-09-28 再次確認 A）。
 /// 送出前先經自動過濾，依判定分兩條路：明顯違規當場攔截、疑似違規照常發布並自動送審。
 class ComposePostScreen extends StatefulWidget {
   const ComposePostScreen({super.key});
@@ -20,7 +20,25 @@ class ComposePostScreen extends StatefulWidget {
 
 class _ComposePostScreenState extends State<ComposePostScreen> {
   final ctrl = TextEditingController();
-  PostVisibility visibility = PostVisibility.public;
+  /// **貼文一律公開**（使用者裁決 2026-09-26）。
+  ///
+  /// 可見範圍的選擇器已移除。理由不是「不想做」，是**它從來沒有生效過**：
+  /// 動態牆只濾掉已刪除的，而 `firestore.rules` 的貼文讀取是
+  /// `allow read: if request.auth != null` —— **任何登入者都讀得到每一篇**，
+  /// 包括標「私人」的。也就是那個選項一直在對使用者說一件不是真的事。
+  ///
+  /// 要真的做對，「僅關注者」得讓安全規則判斷「讀的人有沒有關注作者」，
+  /// 而那在查詢裡做不到（Firestore 要求查詢條件本身就證明得了權限），
+  /// 得把可見名單反正規化到每一篇貼文上 —— 關注一個人就要回頭改他
+  /// 所有的貼文。成本與效益不成比例。
+  ///
+  /// 使用者裁決：**移除選項，一律公開**。停止假裝有保護，比留著一個
+  /// 擋不住任何人的開關誠實。
+  ///
+  /// **2026-09-28 補上告知。** 移除選項之後畫面上**什麼都沒說** ——
+  /// 使用者從一個有三個選項的畫面，變成一個沒有選項的畫面，
+  /// 而沒有任何地方告訴他結果是哪一種。不給選擇可以，不告知不行。
+  final PostVisibility visibility = PostVisibility.public;
   String? errorText;
 
   /// 貼文的圖片集合。文字為空但有圖時仍不可發布 ——
@@ -58,6 +76,22 @@ class _ComposePostScreenState extends State<ComposePostScreen> {
               padding: const EdgeInsets.fromLTRB(
                   S.base, S.base, S.base, S.scrollBottom),
               children: [
+                // 貼文是公開的，這件事要講出來 —— 見上面 [visibility]。
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.public,
+                        size: Sz.iconDense, color: C.accentInfo),
+                    const SizedBox(width: S.sm),
+                    Expanded(
+                      child: Text(
+                        '這篇貼文公開，任何人都看得到。',
+                        style: T.caption(),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: S.base),
                 // 多行輸入框（§8.2）：最小高 120、文字從頂部開始、字數上限置右下
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -113,35 +147,27 @@ class _ComposePostScreenState extends State<ComposePostScreen> {
                   ),
                   const SizedBox(height: S.base),
                 ],
-                AppButton(
-                  label: images.isEmpty ? '加入圖片' : '更換圖片（${images.length} 張）',
-                  kind: BtnKind.secondary,
-                  icon: Icons.image_outlined,
-                  onPressed: () async {
-                    final picked = await pickImages(
-                      context,
-                      title: '加入圖片',
-                      selected: images,
-                    );
-                    if (picked == null) return;
-                    setState(() => images = picked);
-                  },
-                ),
-
-                const SectionTitle('可見範圍'),
-                for (final v in PostVisibility.values) ...[
-                  OptionCard(
-                    title: postVisibilityNames[v]!,
-                    subtitle: switch (v) {
-                      PostVisibility.public => '全平台可見，會出現在探索',
-                      PostVisibility.followersOnly => '只有關注你的人看得到',
-                      PostVisibility.private => '只有你自己看得到',
+                // 沒接雲端就沒有任何加圖片的方式（內建圖庫已於 2026-09-29
+                // 自前台移除），那就不要放一顆打開來是空的按鈕。
+                if (s.canUploadPhoto)
+                  AppButton(
+                    label: images.isEmpty ? '加入圖片' : '更換圖片（${images.length} 張）',
+                    kind: BtnKind.secondary,
+                    icon: Icons.image_outlined,
+                    onPressed: () async {
+                      final picked = await pickImages(
+                        context,
+                        title: '加入圖片',
+                        selected: images,
+                        // 前台**不列**內建圖庫 —— 那十二張是程式繪製的假照片
+                        // （2026-09-29 使用者裁決 A）。
+                        showLibrary: false,
+                      );
+                      if (picked == null) return;
+                      setState(() => images = picked);
                     },
-                    selected: visibility == v,
-                    onTap: () => setState(() => visibility = v),
                   ),
-                  const SizedBox(height: S.md),
-                ],
+
 
               ],
             ),

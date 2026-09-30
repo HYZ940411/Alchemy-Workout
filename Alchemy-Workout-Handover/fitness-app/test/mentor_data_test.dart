@@ -8,6 +8,7 @@
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fitness_app/domain/clock.dart';
 
 import 'package:fitness_app/data/mentor_data.dart';
 import 'package:fitness_app/data/mentor_data_firestore.dart';
@@ -49,14 +50,34 @@ void main() {
       expect(await as('z').bonds(), isEmpty);
     });
 
-    test('同一學徒同時至多一筆生效中', () async {
-      // 不變條件。呼叫端有好幾條路徑會走到建立關係，
-      // 每一條都記得檢查是不可能的，所以檢查放在實作裡。
+    test('同一學徒同時至多一筆生效中 —— 由學徒那一側把關', () async {
+      await as('m').bond(bond(mentor: 'm', apprentice: 'a'));
+      // 學徒自己接受第二位教官的邀請時，檢查要擋下來。
+      await as('a').bond(bond(mentor: 'm2', apprentice: 'a'));
+
+      final all = await db.collection('mentor_bonds').get();
+      expect(all.docs, hasLength(1), reason: '一位學徒同時只能有一位教官');
+    });
+
+    test('教官那一側驗不了 —— 這是安全規則造成的已知殘留', () async {
       await as('m').bond(bond(mentor: 'm', apprentice: 'a'));
       await as('m2').bond(bond(mentor: 'm2', apprentice: 'a'));
 
+      // **這不是漏寫，是查不動。** 讀取規則要求每筆關係的 mentorUid 或
+      // apprenticeUid 等於我，而 Firestore 不會過濾查詢結果 ——
+      // 它整個拒絕查詢，除非查詢條件本身保證所有結果都通得過。
+      // 教官查的是 `apprenticeUid == 對方`，保證不了 → permission-denied，
+      // 而呼叫端即發即忘吞掉錯誤，於是**接受拜師申請會畫面成功、
+      // 雲端什麼都沒發生**（2026-09-24 上線後對照規則查出來的）。
+      //
+      // 所以檢查只在「我就是那位學徒」時做。學徒那一側的
+      // `mentorApplyBlockedReason()` 本來就擋著（有教官就不能再申請），
+      // 而「一位學徒只能有一位教官」本來也是學徒的不變條件。
+      //
+      // **`fake_cloud_firestore` 不套用安全規則** —— 這正是原本那版
+      // 能通過測試卻在線上失敗的原因，要誠實記著。
       final all = await db.collection('mentor_bonds').get();
-      expect(all.docs, hasLength(1), reason: '第二位教官不該收得到同一個學徒');
+      expect(all.docs, hasLength(2));
     });
 
     test('解除之後同一學徒可以拜新的教官', () async {
@@ -122,18 +143,29 @@ void main() {
       expect((await as('m').bonds()).first.state, MentorBondState.active);
     });
 
-    test('超過三天就不能恢復', () async {
+    // **擋下來要用丟的，不可以靜靜結束。**
+    // 這兩條原本只驗「狀態沒被改到」—— 而靜靜 return 的交易會正常結束，
+    // 呼叫端的 `_write()` 因此記成「成功」，雲端卻一個字都沒變。
+    // 使用者 2026-09-30 實測踩到：教官按同意、畫面說已恢復、
+    // 學徒重載還是已解除。
+    test('超過三天就不能恢復 —— 而且要說得出來', () async {
       await as('m').bond(bond());
       await as('m').release(
           'm_a', MentorReleaseReason.byApprentice, DateTime(2026, 9, 10));
-      await as('m').recover('m_a', DateTime(2026, 9, 20));
 
+      await expectLater(
+        as('m').recover('m_a', DateTime(2026, 9, 20)),
+        throwsA(isA<StateError>()),
+      );
       expect((await as('m').bonds()).first.state, MentorBondState.released);
     });
 
-    test('生效中的關係呼叫恢復不會有事', () async {
+    test('生效中的關係呼叫恢復會被擋下 —— 狀態不變', () async {
       await as('m').bond(bond());
-      await as('m').recover('m_a', DateTime(2026, 9, 5));
+      await expectLater(
+        as('m').recover('m_a', DateTime(2026, 9, 5)),
+        throwsA(isA<StateError>()),
+      );
       expect((await as('m').bonds()).first.state, MentorBondState.active);
     });
   });
@@ -228,8 +260,11 @@ void main() {
           fromName: '學徒',
           fromRank: 20,
           fromMentor: fromMentor,
-          at: DateTime(2026, 9, 1),
-          expiresAt: DateTime(2026, 9, 8),
+          // **相對於現在算，不寫死日期。** 寫死的話，到期日一過
+          // 這條測試就會以完全錯誤的理由變紅 —— `punishment_cloud_test`
+          // 在 2026-09-27 真的發生過一次。
+          at: appNow().subtract(const Duration(days: 1)),
+          expiresAt: appNow().add(const Duration(days: 6)),
         );
 
     test('收件者看得到申請', () async {
@@ -255,8 +290,17 @@ void main() {
 
     test('處理完就消失', () async {
       await as('a').sendRequest(req());
-      await as('m').dropRequest('r1');
+      // **文件 ID 是「誰送給誰」，不是送出時那個流水號。**
+      // 2026-09-29 改的：原本用 `newId('mr')`，於是同一個人對同一位教官
+      // 按幾次就寫幾筆（使用者按了四次，雲端四筆）。
+      await as('m').dropRequest(FirestoreMentor.reqDocId('a', 'm'));
       expect(await as('m').requestsFor('m'), isEmpty);
+    });
+
+    test('同一個人對同一位教官送兩次，只會有一筆', () async {
+      await as('a').sendRequest(req());
+      await as('a').sendRequest(req());
+      expect(await as('m').requestsFor('m'), hasLength(1));
     });
   });
 }

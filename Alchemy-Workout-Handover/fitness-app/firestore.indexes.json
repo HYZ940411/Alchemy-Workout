@@ -1,6 +1,22 @@
 {
   "indexes": [
     {
+      "collectionGroup": "public_profiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "weeklyGroup", "order": "ASCENDING" },
+        { "fieldPath": "weeklyScore", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "public_profiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "monthlyGroup", "order": "ASCENDING" },
+        { "fieldPath": "monthlyScore", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "conversations",
       "queryScope": "COLLECTION",
       "fields": [

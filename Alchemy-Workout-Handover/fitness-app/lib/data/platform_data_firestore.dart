@@ -24,6 +24,15 @@ class FirestorePlatformData implements PlatformDataSource {
   }) : _db = firestore ?? FirebaseFirestore.instance;
 
   @override
+  Future<void> put(
+          String collection, String docId, Map<String, dynamic> data) =>
+      _db.collection(collection).doc(docId).set(data);
+
+  @override
+  Future<void> remove(String collection, String docId) =>
+      _db.collection(collection).doc(docId).delete();
+
+  @override
   Future<PlatformData> load() async {
     final bundle = await fallback.load();
     try {

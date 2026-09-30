@@ -48,21 +48,16 @@ class _PreferredTimesScreenState extends State<PreferredTimesScreen> {
         padding:
             const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
         children: [
+          // 補充說明移除（使用者裁決 2026-09-26）：
+          // 「問的是有空，不是你平常幾點練」與「沒填的那天不發提醒」。
+          // 標題已經問得很清楚，底下每一天自己就看得出填了沒。
           AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('哪些時候你有空可以訓練？', style: T.h3()),
-                const SizedBox(height: S.sm),
-                Text(
-                  '問的是有空，不是你平常幾點練。'
-                  '以 $kSlotMinutes 分鐘為單位，區間不跨日。',
-                  style: T.caption(),
-                ),
-              ],
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('哪些時候你有空可以訓練？', style: T.h3()),
             ),
           ),
-          const SectionTitle('一週七天', trailing: '沒填的那天不發提醒'),
+          const SectionTitle('一週七天'),
           for (var d = 0; d < 7; d++) _day(context, d),
 
           const SizedBox(height: S.base),

@@ -1,3 +1,4 @@
+import 'novice_wrapup.dart';
 import 'review_deadline.dart';
 
 // 管理員（〈管理員 Aggregate〉）
@@ -118,6 +119,11 @@ class ReportCase {
   final String reason;
   int reporterCount; // 多人檢舉同一內容合併為同一案件；併案時累加
   final String accused;
+
+  /// 被檢舉者的雲端身分。**記點看它，不看暱稱** —— 暱稱會改，也會撞名。
+  /// 2026-09-25 之前送出的案件沒有，那些案件審得了但記不了點。
+  final String? accusedUid;
+
   final int accusedViolations; // 處罰級距依累計違規次數而定
   final DateTime enteredAt;
   CaseState state;
@@ -132,6 +138,7 @@ class ReportCase {
     required this.reason,
     required this.reporterCount,
     required this.accused,
+    this.accusedUid,
     required this.accusedViolations,
     required this.enteredAt,
     this.state = CaseState.pending,
@@ -160,6 +167,10 @@ const appealTargetNames = <AppealTarget, String>{
 class AppealCase {
   final String id;
   final String appellant;
+
+  /// 申訴人的雲端身分。**撤銷處罰、退回違規次數都看它，不看暱稱。**
+  /// 示範資料的假案件沒有，所以可以是空值。
+  final String? appellantUid;
   final AppealTarget target;
   final String subject;
   final String reason;
@@ -170,6 +181,7 @@ class AppealCase {
   AppealCase({
     required this.id,
     required this.appellant,
+    this.appellantUid,
     required this.target,
     required this.subject,
     required this.reason,
@@ -194,6 +206,16 @@ class AppealCase {
 class InstructorCase {
   final String id;
   final String applicant;
+
+  /// 申請人的雲端身分。**判定一律看它，不看暱稱**（暱稱重構階段二）。
+  ///
+  /// 在此之前 `decideInstructor()` 寫的是
+  /// `c.applicant == displayName` —— 撞名或改過名的話，
+  /// **教官資格會發給錯的人**。
+  ///
+  /// 示範資料的假案件沒有，所以可以是空值 ——
+  /// 與 `AppealCase.appellantUid`、`CloudReport.accusedUid` 同一個處理。
+  final String? applicantUid;
   /// AI 評分三維度與加權平均
   final Map<String, double> aiScores;
   final double weighted;
@@ -202,6 +224,7 @@ class InstructorCase {
   final DateTime enteredAt;
   CaseState state;
   InstructorCase({
+    this.applicantUid,
     required this.id,
     required this.applicant,
     required this.aiScores,
@@ -288,6 +311,52 @@ const ratingTargetNames = <RatingTarget, String>{
   RatingTarget.trainingPlan: '訓練計畫',
 };
 
+/// 把逐筆評分彙總成「每個評分對象一列」（〈Read Model：管理員評分彙總〉）。
+///
+/// [nameOf] 把對象翻成看得懂的名字 —— 訓練計畫的名稱、新手任務的範本名。
+/// 這一層不認得課表目錄，所以由呼叫端給。
+///
+/// **由差到好排。** 規格說這張表的用途是回答「哪一份訓練計畫該改」，
+/// 而管理員一打開就該看到最該改的那一份。平均相同時樣本多的在前 ——
+/// 兩份都是 2.5 星，一份 40 則一份 1 則，該先看哪一份沒有懸念。
+List<RatingSummary> summarizeRatings(
+  List<ExperienceRating> rows,
+  String Function(RatingTarget target, String targetId) nameOf,
+) {
+  final byTarget = <(RatingTarget, String), List<ExperienceRating>>{};
+  for (final r in rows) {
+    byTarget.putIfAbsent((r.target, r.targetId), () => []).add(r);
+  }
+
+  final out = <RatingSummary>[];
+  for (final e in byTarget.entries) {
+    final dist = List.filled(5, 0);
+    for (final r in e.value) {
+      // 星等超出 1–5 的資料不該存在，真的出現就略過 ——
+      // 算進去會讓平均值失真，而平均值正是這張表的主角。
+      if (r.stars < 1 || r.stars > 5) continue;
+      dist[r.stars - 1] += 1;
+    }
+    if (dist.every((n) => n == 0)) continue;
+    final entries = [
+      for (final r in e.value)
+        if (r.stars >= 1 && r.stars <= 5) (r.stars, r.feedback, r.at),
+    ]..sort((a, b) => b.$3.compareTo(a.$3)); // 新的在前
+    out.add(RatingSummary(
+      target: e.key.$1,
+      name: nameOf(e.key.$1, e.key.$2),
+      distribution: dist,
+      entries: entries,
+    ));
+  }
+
+  out.sort((a, b) {
+    final byAvg = a.average.compareTo(b.average);
+    return byAvg != 0 ? byAvg : b.count.compareTo(a.count);
+  });
+  return out;
+}
+
 class RatingSummary {
   final RatingTarget target;
   final String name;
@@ -308,5 +377,63 @@ class RatingSummary {
       sum += distribution[i] * (i + 1);
     }
     return sum / count;
+  }
+}
+
+/// 一次「檢舉成立」到底做了什麼。
+///
+/// ## 為什麼需要它
+///
+/// 2026-09-28 使用者雙人實測 T8：判成立之後**貼文兩邊都還在**、
+/// 被檢舉者也沒有收到任何處罰，而案件從佇列裡消失了。
+///
+/// 而管理員按下「成立並處罰」之後，畫面只說「已處罰：警告」——
+/// **那句話是照著級距印的，不是照著實際發生的事印的。**
+/// 下架了幾則、記點記到誰身上，一個字都沒說。
+///
+/// 邏輯本身在測試裡是通的（案件從雲端讀進來、判成立、`deleted` 變 true、
+/// 違規次數 +1），所以斷點在真實的雲端往返上 —— 而那裡**沒有任何回饋
+/// 可以讓人分辨是哪一段斷了**。
+class UpholdOutcome {
+  /// 下架了幾則內容。**-1 代表帳號類**（本來就不下架）。
+  /// 0 代表「找得到案件，卻找不到那則內容」—— 那正是要抓的狀況。
+  final int removed;
+
+  /// 記點後的累計違規次數。
+  final int violationsAfter;
+
+  /// 記得進被檢舉者的雲端紀錄嗎。
+  /// 沒有 `accusedUid` 的舊案件寫不進 `violations/{uid}` ——
+  /// 那時候被檢舉者永遠不會知道自己被記點。
+  final bool recordedForAccused;
+
+  /// 被拒絕的原因。空值代表真的執行了。
+  final String? refusedWhy;
+
+  const UpholdOutcome({
+    required this.removed,
+    required this.violationsAfter,
+    required this.recordedForAccused,
+  }) : refusedWhy = null;
+
+  const UpholdOutcome.refused(String why)
+      : removed = 0,
+        violationsAfter = 0,
+        recordedForAccused = false,
+        refusedWhy = why;
+
+  /// 給管理員看的一句話。**說實際發生的事，不說級距的名字。**
+  String get summary {
+    if (refusedWhy case final why?) return why;
+    final parts = <String>[
+      switch (removed) {
+        -1 => '帳號類不下架內容',
+        0 => '⚠ 沒有下架任何內容（找不到那則，可能不在這台裝置的清單裡）',
+        final n => '已下架 $n 則',
+      },
+      '累計第 $violationsAfter 次違規',
+      if (!recordedForAccused) '⚠ 這一案沒有對方的帳號識別，記點寫不進他的紀錄',
+    ];
+    return parts.join('　·　');
   }
 }

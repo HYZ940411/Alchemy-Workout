@@ -149,16 +149,19 @@ void main() {
     expect(t.takeException(), isNull);
   });
 
-  testWidgets('發文：可見範圍、字數、違規攔截', (t) async {
+  testWidgets('發文：違規攔截、發布成功', (t) async {
     await _boot(t);
     await t.tap(find.text('社群').last);
     await t.pumpAndSettle();
     await t.tap(find.widgetWithText(AppButton, '發文'));
     await t.pumpAndSettle();
 
-    // 空內容時發布鍵停用
-    expect(find.text('可見範圍'), findsOneWidget);
-    expect(find.text('僅關注者'), findsOneWidget);
+    // **可見範圍的選擇器已移除**（使用者裁決 2026-09-26，貼文一律公開）。
+    // 理由見 `PostVisibility` 的註解：它從來沒有生效過 ——
+    // 安全規則是 `allow read: if request.auth != null`，
+    // 任何登入者都讀得到每一篇，包括標「私人」的。
+    expect(find.text('可見範圍'), findsNothing);
+    expect(find.text('僅關注者'), findsNothing);
 
     // 明顯違規 → 當場攔截，不發布
     await t.enterText(find.byType(TextField).first, '加賴看更多');
@@ -175,7 +178,7 @@ void main() {
     await t.tap(find.widgetWithText(AppButton, '發布'));
     await t.pumpAndSettle();
     expect(find.text('今天腿日，深蹲破紀錄'), findsWidgets);
-    // 預設可見範圍為公開，故探索分頁也看得到
+    // 一律公開，故探索分頁也看得到
     await t.tap(find.text('探索').last);
     await t.pumpAndSettle();
     expect(find.text('今天腿日，深蹲破紀錄'), findsWidgets);
@@ -233,7 +236,10 @@ void main() {
     await t.tap(find.byIcon(Icons.send_rounded));
     await t.pump(const Duration(seconds: 2));
     await t.pumpAndSettle();
-    expect(find.textContaining('建議如下'), findsOneWidget);
+    // 建議自 2026-09-27 起排成表格，不再是一段「建議如下…」的純文字
+    // （使用者回報排版難讀）。表格的標題列講得出方向與動了幾項。
+    expect(find.textContaining('項調整'), findsOneWidget);
+    expect(find.textContaining('作用範圍：'), findsWidgets);
 
     // 接受 → 套用新強度
     await t.tap(find.widgetWithText(AppButton, '使用新強度'));
@@ -486,16 +492,16 @@ void main() {
     expect(t.takeException(), isNull);
   });
 
-  testWidgets('計畫詳情：AI 已替換動作以刪除線呈現原動作', (t) async {
+  // 「AI 已替換動作以刪除線呈現原動作」原本也在這裡，靠的是「推日」那份
+  // 課表身上**寫死的** `replacedFrom` —— 一份沒有人跑過 AI 卻已經標著
+  // 「AI 已替換」的課表，而真使用者看得到。2026-09-29 把那四份官方課表
+  // 搬上雲時一併清掉了，該測試改由 `swap_exercise_test` 以真的替換造狀態。
+  testWidgets('計畫詳情：課表指定的休息秒數蓋過動作預設', (t) async {
     await _boot(t);
     await t.tap(find.byIcon(Icons.fitness_center).last);
     await t.pumpAndSettle();
     await t.tap(find.text('推日：胸肩三頭').first);
     await t.pumpAndSettle();
-    expect(find.text('AI 已替換：'), findsOneWidget);
-    final orig = t.widget<Text>(find.text('上斜板凳臥推 · 槓鈴'));
-    expect(orig.style!.decoration, TextDecoration.lineThrough);
-    // 課表指定值蓋過動作預設（臥推動作預設 150，課表指定 120）。
     // 臥推動作預設 150 秒，本課表指定 120 —— 課表指定值為第一順位。
     expect(find.descendant(
       of: find.ancestor(

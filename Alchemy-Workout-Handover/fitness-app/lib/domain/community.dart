@@ -1,7 +1,22 @@
 import 'ability.dart';
+import 'ai_adjust.dart';
+import 'social.dart';
 
 // --- 社群動態牆 ---
 
+/// 貼文的可見範圍。
+///
+/// **2026-09-26 起一律為 `public`，選擇器已從發文頁移除**（使用者裁決）。
+///
+/// 這個列舉**留著不刪**，因為雲端既有的貼文文件上有這個欄位，
+/// 刪掉的話舊文件解不出來。新發的貼文一律寫 `public`。
+///
+/// 為什麼移除而不是修好：它從來沒有生效過。動態牆只濾掉已刪除的，
+/// 而 `firestore.rules` 的貼文讀取是 `allow read: if request.auth != null`
+/// —— 任何登入者都讀得到每一篇，包括標「私人」的。
+/// 要真的做對，「僅關注者」得讓安全規則判斷「讀的人有沒有關注作者」，
+/// 而那在查詢裡做不到，得把可見名單反正規化到每一篇貼文上 ——
+/// 關注一個人就要回頭改他所有的貼文。
 enum PostVisibility { public, followersOnly, private }
 
 const postVisibilityNames = <PostVisibility, String>{
@@ -19,6 +34,16 @@ class Comment {
   /// 以作者＋內容比對會在同一人重複留同一句話時一次刪掉兩則。
   final String id;
   final String author;
+
+  /// 作者的雲端身分。示範資料的假作者沒有 uid，所以可以是空值 ——
+  /// 與 [Post.authorUid] 同一個約定。
+  ///
+  /// **雲端本來就在存它了**（`post_data_firestore.dart` 的 `addComment`
+  /// 寫入 `authorUid`），只是讀回來的時候沒有欄位可以放，於是丟掉。
+  /// 「這則留言是不是我的」因此只剩暱稱可比 —— 而暱稱會撞名，
+  /// 開放改名之後還會讓自己的舊留言變成別人的。
+  final String? authorUid;
+
   String text;
   final DateTime at;
 
@@ -30,7 +55,10 @@ class Comment {
   final List<(String, DateTime)> edits;
 
   Comment(this.author, this.text, this.at,
-      {String? id, this.deleted = false, List<(String, DateTime)>? edits})
+      {String? id,
+      this.authorUid,
+      this.deleted = false,
+      List<(String, DateTime)>? edits})
       : id = id ?? 'c${at.microsecondsSinceEpoch}',
         edits = edits ?? [];
 
@@ -40,6 +68,21 @@ class Comment {
 class Post {
   final String id;
   final String author;
+
+  /// 作者的雲端身分。**示範資料的假作者沒有 uid，所以可以是空值。**
+  ///
+  /// 這個值本來就跟著貼文一起存在雲端（`posts/{id}.authorUid`），
+  /// 只是讀回來時被丟掉了 —— 於是畫面只剩暱稱可用，而暱稱可以改。
+  final String? authorUid;
+
+  /// 發文當下作者的階級。**這不是要顯示的值。**
+  ///
+  /// 顯示的階級一律問 `AppState.rankOf(author, uid: authorUid)` 拿現值 ——
+  /// 階級代表「這個人現在多強」，不是歷史事實。這個欄位只在公開檔案
+  /// 查不到（對方久未上線、剛好沒撈到）時墊底，總比顯示 1 階好。
+  ///
+  /// 2026-09-23 之前反過來：這個值就是顯示值，所以作者從 11 階練到
+  /// 40 階，他 11 階時發的那篇永遠寫著 11 階。
   final int authorRank;
   final int? authorReputation; // 僅教官身分者有值
 
@@ -71,6 +114,7 @@ class Post {
     required this.authorRank,
     required this.text,
     required this.at,
+    this.authorUid,
     this.authorReputation,
     this.attachedWorkout,
     this.visibility = PostVisibility.public,
@@ -338,7 +382,11 @@ class TimedTask {
     Set<String>? completedBy,
   }) : completedBy = completedBy ?? {};
 
-  bool doneBy(String name) => completedBy.contains(name);
+  /// 這個人完成了沒有。**鍵是 [personKey]**，與 `Team.timedCredited`
+  /// 同一套 —— 兩者之間有一條不變條件（記在某隊帳上的必定也完成了），
+  /// 用兩種鍵的話那條不變條件會在改名時無聲地失效。
+  bool doneBy(String name, {String? uid}) =>
+      completedBy.contains(personKey(name, uid));
 }
 
 /// 某支團隊在今日限時任務上的成績。
@@ -351,7 +399,8 @@ class TimedTaskTally {
   const TimedTaskTally({required this.members, required this.credited});
 
   int get total => members.length;
-  int get doneCount => members.where((m) => credited.contains(m.name)).length;
+  int get doneCount =>
+      members.where((m) => credited.contains(personKey(m.name, m.uid))).length;
   bool get allDone => total > 0 && doneCount == total;
 
   /// 團隊限時分數 ＝ 完成人數 × 10；全員完成再加固定 50。
@@ -437,6 +486,65 @@ const kWeeklyInteractionReputationDelta = <int>[-2, 0, 4, 8, 12];
 /// 每位學徒每週最多這麼多次**任務評分**計入聲望；超出者仍可完成並領獎，只是不計分。
 const int kMentorTaskRatingWeeklyCap = 2;
 
+/// 一段**已解除、還在 3 天挽回窗口內**的關係，從教官那一側看到的樣子。
+///
+/// 在此之前教官那一側根本沒有這個東西：`applyCloudBonds` 對非生效中的
+/// 關係做的是 `apprentices.removeWhere(...)`，**學徒直接從名單上消失**。
+/// 而整套解除／恢復的畫面都掛在學徒那一頁上、以 `myInstructor` 為鍵。
+///
+/// 後果：教官看不到關係被解除了、看不到挽回窗口、提不出恢復、
+/// 也回應不了對方提出的恢復 —— 而規格寫的是
+/// 「教官與學徒**任一方**皆可提出」。
+class ReleasedBond {
+  final String apprenticeUid;
+  final String apprenticeName;
+  final DateTime releasedAt;
+  final MentorReleaseReason? reason;
+
+  /// 誰提出了恢復。空值＝還沒有人提出。
+  final String? restoreProposedBy;
+
+  const ReleasedBond({
+    required this.apprenticeUid,
+    required this.apprenticeName,
+    required this.releasedAt,
+    this.reason,
+    this.restoreProposedBy,
+  });
+
+  /// 還能不能挽回。滿三天就不能了。
+  bool recoverableAt(DateTime now) =>
+      now.difference(releasedAt) <= kMentorReleaseCooldown;
+
+  Duration cooldownLeftAt(DateTime now) {
+    final left = kMentorReleaseCooldown - now.difference(releasedAt);
+    return left.isNegative ? Duration.zero : left;
+  }
+}
+
+/// 學徒評一則師徒任務之後，實際發生了什麼。
+///
+/// **「評得下去」與「有沒有計進教官的聲望」是兩件事。** 原本這一支
+/// 回 `bool`，畫面分不出來，於是不管有沒有計分都報一個聲望數字 ——
+/// 而超出每週上限之後那個數字根本不會動。
+enum RateResult {
+  /// 評了，而且計進聲望。
+  counted,
+
+  /// 評了，但本週計分額度已用完 —— 任務照樣算評過。
+  capReached,
+
+  /// 評了（改分數），但同一則不重複計分。
+  alreadyRated,
+
+  /// 評不下去（星數不合法、沒有教官、任務還沒完成）。
+  rejected,
+}
+
+extension RateResultX on RateResult {
+  bool get ok => this != RateResult.rejected;
+}
+
 /// 帶徒上限：初始 2 人，每達一個聲望門檻 +1，最大 5 人。
 /// 門檻採遞增（1 : 2 : 4）—— 帶徒愈多取得聲望愈快，等差會使後段升級失控。
 /// 教官初始聲望，於「使用者已成為教官」時給予。
@@ -468,6 +576,12 @@ int applyReputation(int current, int delta) =>
 
 class Instructor {
   final String name;
+
+  /// 教官的雲端身分。**示範資料的假教官沒有 uid，所以可以是空值。**
+  final String? uid;
+
+  /// **這不是要顯示的值。** 顯示的階級一律問 `AppState.rankOf` 拿現值，
+  /// 這個欄位只在查不到他的公開檔案時墊底。
   final int rank;
 
   /// 教官聲望。**屬於這位教官**，不是評分者的 ——
@@ -482,6 +596,7 @@ class Instructor {
   Instructor({
     required this.name,
     required this.rank,
+    this.uid,
     required this.reputation,
     required this.apprentices,
     required this.apprenticeCap,
@@ -493,11 +608,38 @@ class Instructor {
 }
 
 class MentorQuestion {
+  /// 問答的識別碼。**教官要回哪一則，靠的是這個。**
+  ///
+  /// 在此之前沒有這個欄位，雲端的問答只能以內容比對辨識 ——
+  /// 同一位學徒問了兩次同樣的話就分不出來。
+  final String id;
+
   final String from;
+
+  /// 提問的學徒是誰。**空值代表這是我自己問的**（我是學徒那一側），
+  /// 或是示範資料。
+  ///
+  /// 教官同時帶多位學徒，而本機這份 `questions` 是一份共用清單 ——
+  /// 沒有這個欄位就分不出「這則是哪位學徒問的」，於是教官側整個
+  /// 接不上雲端（雲端的問答掛在特定師徒關係下）。那正是 `[BE-15]`。
+  final String? apprenticeUid;
+
   final String text;
   final DateTime at;
   String? answer;
-  MentorQuestion({required this.from, required this.text, required this.at, this.answer});
+
+  /// 回答的時點。空值＝尚未回答。
+  DateTime? answeredAt;
+
+  MentorQuestion({
+    required this.from,
+    required this.text,
+    required this.at,
+    String? id,
+    this.apprenticeUid,
+    this.answer,
+    this.answeredAt,
+  }) : id = id ?? 'q${at.microsecondsSinceEpoch}';
 }
 
 /// 師徒任務狀態。**已作廢為終止狀態** —— 師徒關係解除時，
@@ -505,8 +647,19 @@ class MentorQuestion {
 enum MentorTaskState { assigned, done, claimed, voided }
 
 class MentorTask {
+  /// 任務的識別碼。
+  ///
+  /// 在此之前沒有這個欄位，雲端「暫以標題辨識」—— 教官指派兩個同名
+  /// 任務就會互相覆蓋。
+  final String id;
+
   final String title;
   final String detail;
+
+  /// 這則任務指派給哪位學徒。**空值代表這是指派給我的**（我是學徒那一側），
+  /// 或是示範資料。理由同 [MentorQuestion.apprenticeUid]。
+  final String? apprenticeUid;
+
   MentorTaskState state;
   final int rewardCoins;
 
@@ -516,14 +669,21 @@ class MentorTask {
   MentorTask({
     required this.title,
     required this.detail,
+    String? id,
+    this.apprenticeUid,
     this.state = MentorTaskState.assigned,
     this.rewardCoins = kMentorTaskCoin,
     this.rating,
-  });
+  }) : id = id ?? 't${title.hashCode}';
 }
 
 class Apprentice {
   final String name;
+
+  /// 學徒的雲端身分。**示範資料的假學徒沒有 uid，所以可以是空值。**
+  final String? uid;
+
+  /// **這不是要顯示的值**，只在查不到他的公開檔案時墊底 —— 顯示的是現值。
   final int rank;
   final Map<Dim, int> ability;
   final List<String> recentWorkouts;
@@ -531,6 +691,7 @@ class Apprentice {
   const Apprentice({
     required this.name,
     required this.rank,
+    this.uid,
     required this.ability,
     required this.recentWorkouts,
     this.scoredThisWeek = 0,
@@ -550,6 +711,11 @@ class ChatMessage {
   final bool fromMe;
   final String text;
   final DateTime at;
+  /// **對「我送出的訊息」而言，這是「對方讀了沒」。**
+  ///
+  /// 畫面只在 `fromMe && read` 時顯示「已讀」（見 `chat_screen`）——
+  /// 所以它從來不是「我讀了沒」。預設曾是 `true`，於是我一送出訊息
+  /// 就立刻標成已讀，使用者 2026-09-24 回報。
   final bool read;
 
   /// 訊息分類。**於發送當下依雙方關係判定並寫入**，其後關係變化
@@ -568,7 +734,7 @@ class ChatMessage {
     this.fromMe,
     this.text,
     this.at, {
-    this.read = true,
+    this.read = false,
     this.category = MessageCategory.normal,
     this.pendingReview = false,
     this.deleted = false,
@@ -656,7 +822,25 @@ class AiTurn {
   final AiTurnRole role;
   final String text;
   final DateTime at;
-  const AiTurn(this.role, this.text, this.at);
+
+  /// 這一則若是「AI 已產出建議」，帶著那份**結構化**的建議。
+  ///
+  /// **在此之前建議被拼成一整段字串塞進 [text]** —— 動作名、調整前後、
+  /// 替換動作、理由全部黏在一起，再擠進一個寬 260 的對話泡泡裡。
+  /// 使用者回報「AI 建議給的排版不好做閱讀」。
+  ///
+  /// 而那些欄位在 `AdjustChange` 裡本來就是分開的 —— 是渲染時才被拼掉的。
+  /// 帶著結構過去，畫面就排得出表格。
+  ///
+  /// [text] 仍然保留可讀的純文字版本：對話紀錄要留得下來，
+  /// 而「一段能唸出來的話」比一個物件可靠。
+  final AdjustSuggestion? suggestion;
+
+  /// 這份建議的作用範圍（例「本次訓練課表 · 僅本次訓練」）。
+  /// 與 [suggestion] 同進退。
+  final String? scope;
+
+  const AiTurn(this.role, this.text, this.at, {this.suggestion, this.scope});
 }
 
 /// AI 調整已失敗的原因值域：逾時 / 服務錯誤。

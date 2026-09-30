@@ -269,7 +269,8 @@ void main() {
       await t.pumpAndSettle();
       await t.tap(find.text('粉絲'));
       await t.pumpAndSettle();
-      expect(find.textContaining('粉絲成就'), findsOneWidget);
+      // 那行補充說明 2026-09-24 依使用者裁示移除（在按鈕底下反而讓人猶豫）。
+      expect(find.textContaining('粉絲成就'), findsNothing);
     });
   });
 

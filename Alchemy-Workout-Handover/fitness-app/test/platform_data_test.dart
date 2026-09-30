@@ -90,7 +90,7 @@ void main() {
       expect(back.items[0].restSeconds, 90);
     });
 
-    test('成就定義：doc id 為 category#threshold、獎勵原樣回來', () {
+    test('成就定義：doc id 為 category#name、獎勵原樣回來', () {
       final a = Achievement(
         category: '能力值',
         name: '任一維達 100 點',
@@ -98,7 +98,9 @@ void main() {
         rewardCoins: 100,
         rewardExp: 50,
       );
-      expect(achievementDocId(a), '能力值#100');
+      // **不是 `能力值#100`。** 門檻是管理員改得動的欄位，拿它當文件 ID
+      // 的話，後台改一次就在雲端多長出一筆（見 PROGRESS 1W）。
+      expect(achievementDocId(a), '能力值#任一維達 100 點');
       final back = achievementFromDoc(achievementDocId(a), achievementToMap(a));
       expect(back.category, '能力值');
       expect(back.threshold, 100);
@@ -272,10 +274,15 @@ void main() {
   });
 
   group('BundledPlatformData 與 App 既有種子一致（mock 邊界）', () {
-    test('bundle 動作庫即 kExercises，課表即 kPlatformPlans', () async {
+    test('bundle 動作庫即 kExercises，課表即 kAllPlanSpecs', () async {
       final bundle = await const BundledPlatformData().load();
       expect(bundle.exercises.length, kExercises.length);
-      expect(bundle.planSpecs.length, kPlatformPlans.length);
+      // **不是 `kPlatformPlans`。** 2026-09-29 起平台課表是 27 份 CSV
+      // 加上四份從 `kPlans` 搬上雲的官方課表（`kLegacyPlanSpecs`）——
+      // 少算那四份的話，它們就不會被匯出、不會被上傳，
+      // 後台改它們又會回到「存不住」。
+      expect(bundle.planSpecs.length, kAllPlanSpecs.length);
+      expect(kAllPlanSpecs.length, kPlatformPlans.length + 4);
       // 平台設定涵蓋所有群組。
       expect(bundle.config.keys.toSet(),
           platformConfig.groups.map((g) => g.id).toSet());

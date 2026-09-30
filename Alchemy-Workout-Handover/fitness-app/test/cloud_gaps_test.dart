@@ -174,8 +174,28 @@ void main() {
       // **兩個欄位相同、都是等值比較**，所以共用同一個複合索引，
       // 不必新增宣告 —— 這條測試要的是「你有沒有回頭確認過」，
       // 不是「每條查詢都要有自己的索引」。
-      expect(chains, 6,
-          reason: '複合查詢從 6 個變了 —— 請同步檢查 firestore.indexes.json');
+      //
+      // 9 而不是 6：`watchTeams()` 的三條監聽（`[BE-16]` 即時訂閱）。
+      // 三條的欄位組合都**逐字照抄**既有的查詢，所以三個索引都已經
+      // 在線上了：
+      //
+      //   · memberUids + disbanded ← 抄 `myTeam()`
+      //   · requests: uid + isInvite（true）← 抄「誰邀我入隊」
+      //   · requests: uid + isInvite（false）← 抄「我送出的申請」
+      //
+      // **照抄是刻意的。** 自己湊一組條件就要重新確認安全規則與索引，
+      // 而那兩件事錯了都是「畫面成功、雲端無聲拒絕」——
+      // `bond()` 那次就是這樣。
+      //
+      // 特別注意第二三條不可以合併成只查 `uid`：線上那個索引是
+      // COLLECTION_GROUP 範圍的 `(uid, isInvite)` 複合索引，
+      // 只查單一欄位的 collection group 查詢需要「集合群組範圍的
+      // 單欄位索引」，而那種索引**不會自動建立**。
+      // 2026-09-28 由 9 增為 11：排行榜的
+      // `(weeklyGroup, weeklyScore)` 與 `(monthlyGroup, monthlyScore)`，
+      // 兩個索引都已加進 `firestore.indexes.json`。
+      expect(chains, 11,
+          reason: '複合查詢從 11 個變了 —— 請同步檢查 firestore.indexes.json');
     });
   });
 
@@ -198,6 +218,52 @@ void main() {
         expect(body.indexOf('state.$f ='), lessThan(body.indexOf('await step(')),
             reason: '$f 要排在第一個 await 之前');
       }
+    });
+
+    test('平台資料的來源也要交給狀態層 —— 不然後台改了東西寫不回去', () {
+      final i = src.indexOf('Future<void> _loadPlatformData(');
+      expect(i, isNot(-1));
+      final body = src.substring(i, src.indexOf('\n  }', i));
+      expect(body, contains('state.platformSource = '),
+          reason: '在此之前 AuthGate 讀完就把來源丟了，'
+              '而 AppState 沒有任何寫回雲端的管道 —— 那正是 P123 的症狀');
+      expect(body.indexOf('state.platformSource = '),
+          lessThan(body.indexOf('await src.load()')),
+          reason: '載入失敗時來源仍要接著，否則連重試都寫不回去');
+    });
+
+    // 即時訂閱的開關（`[BE-16]`）。這兩條與上面同一種寫法：讀原始碼。
+    // 訂閱要接上 Firebase 才跑得起來，而這個專案的測試不連任何服務 ——
+    // 所以至少釘住「這兩行有沒有在該在的位置」。
+    test('訂閱排在同步的最後 —— 團隊那條需要先知道我在哪一隊', () {
+      final i = src.indexOf('Future<void> _syncProfile(');
+      final body = src.substring(i, src.indexOf('@override', i));
+      final start = body.indexOf('startCloudWatch()');
+      expect(start, isNot(-1), reason: '登入後沒有開始訂閱，即時就是沒接上');
+      // 監看「別人申請加入我的隊」要帶隊伍 ID，而那是上面「我的團隊」
+      // 那一塊讀回來的。排在前面的話隊長永遠收不到申請的訊號。
+      expect(start, greaterThan(body.lastIndexOf('await step(')),
+          reason: '要排在所有同步區塊之後');
+    });
+
+    test('登入時讀管理員 claim —— 判準要與 firestore.rules 同源', () {
+      final i = src.indexOf('Future<void> _syncProfile(');
+      final body = src.substring(i, src.indexOf('@override', i));
+      // 規則的 isAdmin() 看 request.auth.token.admin。畫面上若各自判斷，
+      // 會做出「後台進得去、每個寫入都被規則擋下」——
+      // 那是最難查的一種，兩邊都覺得自己是對的，而失敗是靜默的。
+      expect(body, contains('applyAdminClaim'),
+          reason: '不讀 claim 的話，真管理員永遠不是管理員');
+      expect(body, contains("claims['admin']"));
+    });
+
+    test('登出時收掉訂閱 —— 不收會讓下一個帳號被上一個的變動叫醒', () {
+      // 訂閱綁在建立它的那個 Source 上（帶著當時的 uid），
+      // Source 換掉了舊訂閱不會自己停。
+      final i = src.indexOf('if (user == null) {');
+      expect(i, isNot(-1));
+      final body = src.substring(i, src.indexOf('}', i));
+      expect(body, contains('stopCloudWatch()'));
     });
   });
 }

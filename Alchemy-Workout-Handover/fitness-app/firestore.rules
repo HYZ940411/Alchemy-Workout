@@ -165,7 +165,38 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.auth.uid in request.resource.data.memberUids;
 
-      allow update: if request.auth != null && (
+      // 分數只能動自己那一格，而且只能往上（使用者裁決 2026-09-28）。
+      //
+      // **這不是防作弊的完整防線** —— 分數本身仍由裝置算出來，
+      // 真正的把關要等 `[BE-07]` 把評分搬上 Cloud Functions。
+      // 這裡擋的是「改隊友的貢獻」與「把自己的分數改小」，
+      // 也就是一個人動得了別人紀錄的那一半。
+      function contribOk() {
+        let before = resource.data.get('contributions', {});
+        let after = request.resource.data.get('contributions', {});
+        let changed = after.diff(before).affectedKeys();
+        return changed.size() == 0
+               || (changed.hasOnly([request.auth.uid])
+                   && after[request.auth.uid] >= before.get(request.auth.uid, 0));
+      }
+
+      // 限時任務的完成名單：只能把自己加進去，或在換日時整份換成只有自己。
+      // 換日清空沒有伺服器可以做（免費方案沒有排程），由第一個完成的人做。
+      function timedOk() {
+        let before = resource.data.get('timedCredited', []).toSet();
+        let after = request.resource.data.get('timedCredited', []).toSet();
+        let sameDay = request.resource.data.get('timedDay', '')
+                      == resource.data.get('timedDay', '');
+        return after == before
+               || (sameDay
+                   && after.difference(before) == [request.auth.uid].toSet()
+                   && before.difference(after).size() == 0)
+               || (!sameDay && after == [request.auth.uid].toSet());
+      }
+
+      allow update: if request.auth != null
+                    && contribOk() && timedOk()
+                    && (
                       // 隊員可以改隊伍（加人、踢人、改可見性、解散）
                       request.auth.uid in resource.data.memberUids
                       // 或者：有一筆給我的待回應請求，而我正把自己加進去
@@ -236,6 +267,39 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // --- 教官資格申請的待審案件（[BE-20]）---
+    //
+    // 在此之前**沒有這個集合**：申請案只進申請人自己的記憶體，
+    // 管理員在另一台裝置上永遠看不到（見 PROGRESS 第 5 節 2I）。
+    //
+    // 文件 ID ＝ 申請人的 uid，所以「只寫得了自己那一筆」是結構性的，
+    // 不必靠欄位比對。仍然比對 `applicantUid`，因為那是判定教官資格時
+    // 真正會被讀的欄位 —— 讓它與文件 ID 對不上就是一條偽造路徑。
+    //
+    // **讀取限管理員 —— 以及申請人本人那一筆。**
+    //
+    // 原本只有管理員讀得到，註解還寫著「申請人自己也不必回頭讀，
+    // 他的階段狀態存在自己的使用者文件裡」。**那句話是錯的**：
+    // `instructorStage` 根本不進存檔，而裁決只寫在這份文件上 ——
+    // 於是管理員按了「通過」，申請人那一側沒有任何東西會去讀它，
+    // 重新整理之後連「待人工審核」都不見了。
+    // 使用者 2026-09-29 實測撞到（見 PROGRESS 第 5 節 2K）。
+    //
+    // 讓本人讀自己那一筆沒有代價：裡面本來就是他自己寫的答案。
+    match /instructor_cases/{applicantUid} {
+      allow read: if isAdmin()
+                  || (request.auth != null
+                      && applicantUid == request.auth.uid);
+      allow create, update: if isAdmin()
+                    || (request.auth != null
+                        && applicantUid == request.auth.uid
+                        && request.resource.data.applicantUid
+                             == request.auth.uid
+                        // 申請人自己不得寫裁決結果 —— 送出時一律是待審。
+                        && request.resource.data.state == 'pending');
+      allow delete: if isAdmin();
+    }
+
     // --- 貼文、留言、按讚（[BE-11] 批次 3）---
     //
     // 這裡有一個規則設計上的難處：**按讚的人不是作者，卻必須能改貼文**
@@ -248,25 +312,53 @@ service cloud.firestore {
     // 計數本身仍可被竄改（有心人可以不按讚而直接加十次），
     // 與金幣、能力值一樣要等 [BE-07] 搬上 Cloud Functions 才擋得住。
     // 現階段它至少不能改別人的文字。
+    // 使用者上傳的照片（2026-09-28 使用者裁決：存 Firestore，不開 R2）。
+    //
+    // 讀：登入者皆可 —— 貼文本來就是公開的，圖跟著文走。
+    // 建立：只能掛自己的 uid，而且**當場驗大小**。App 那一側壓過一次，
+    //       但那是客戶端的程式碼，改得掉；這裡是改不掉的那一道。
+    // 更新：**一律禁止**。照片換掉等於偷換別人已經看過的內容。
+    //       要改就刪掉重傳，那會換一個新 ID。
+    // 刪除：只有作者自己與管理員（下架違規內容）。
+    match /post_photos/{photoId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.bytes is bytes
+                    && request.resource.data.bytes.size() <= 911360;
+      allow update: if false;
+      allow delete: if request.auth != null
+                    && (resource.data.ownerUid == request.auth.uid
+                        || isAdmin());
+    }
+
     match /posts/{postId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
                     && request.resource.data.authorUid == request.auth.uid;
+      //
+      // **管理員也要能改** —— 檢舉成立時要下架違規內容，而那是改**別人的**
+      // 貼文。少了這一條，管理員在後台按下「成立」，畫面上內容消失了，
+      // 雲端那份一個位元都沒動，其他人照樣看得到。
+      // 那正是這個專案反覆出現的那種失敗：畫面成功、雲端無聲拒絕。
       allow update: if request.auth != null && (
                       resource.data.authorUid == request.auth.uid
+                      || isAdmin()
                       || request.resource.data.diff(resource.data)
                            .affectedKeys().hasOnly(['likeCount'])
                     );
       // **貼文一律軟刪除**（deleted 欄位），不給硬刪 ——
-      // 貼文可被檢舉，硬刪會讓案件失去證據。
+      // 貼文可被檢舉，硬刪會讓案件失去證據。管理員同樣只能軟刪。
       allow delete: if false;
 
       match /comments/{commentId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null
                       && request.resource.data.authorUid == request.auth.uid;
+        // 同上：檢舉成立時管理員要下架別人的留言。
         allow update: if request.auth != null
-                      && resource.data.authorUid == request.auth.uid;
+                      && (resource.data.authorUid == request.auth.uid
+                          || isAdmin());
         allow delete: if false; // 同樣軟刪除
       }
 
@@ -278,6 +370,60 @@ service cloud.firestore {
                               && likerUid == request.auth.uid;
         allow update: if false; // 按讚沒有「修改」這回事
       }
+    }
+
+    // --- 累計違規次數（[BE-13]，2026-09-25）---
+    //
+    // 階梯累犯制的級距由這個數字決定，所以它**必須是當事人自己改不動的**。
+    // 既有的兩個候選位置都不行：`public_profiles/{uid}` 與 `users/{uid}/…`
+    // 的規則都是「本人可寫」—— 他自己就能清掉。所以另開一份。
+    //
+    // 當事人讀得到自己的（處罰畫面要告訴他這是第幾次），
+    // 但讀不到別人的 —— 誰被罰過幾次不是公開資訊。
+    match /violations/{uid} {
+      allow read: if request.auth != null
+                  && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // --- 申訴（[BE-13]，2026-09-25）---
+    //
+    // 文件 ID 是 `{申訴人 uid}__{處罰開出的毫秒時戳}`，所以
+    // **同一筆處罰只能申訴一次**由主鍵保證，不是靠客戶端先查再寫。
+    //
+    // 申訴人讀得到自己那幾筆（要看審視進度），讀不到別人的。
+    // 裁決只有管理員寫得動 —— 不然他自己就能把申訴改成「已成立」。
+    match /appeals/{appealId} {
+      allow read: if request.auth != null
+                  && (resource.data.appellantUid == request.auth.uid
+                      || isAdmin());
+      allow create: if request.auth != null
+                    && request.resource.data.appellantUid == request.auth.uid
+                    && request.resource.data.state == 'pending';
+      allow update: if isAdmin();
+      // **申訴不硬刪** —— 它是處罰是否公正的紀錄，兩造都不該刪得掉。
+      allow delete: if false;
+    }
+
+    // --- 處罰狀態（[BE-13]，2026-09-25）---
+    //
+    // 與違規次數同一個形狀：管理員可寫、當事人唯讀。存在本人寫得動的
+    // 地方（存檔、public_profiles）的話，被罰的人自己就能解除。
+    //
+    // **唯一的例外是申訴** —— 那是當事人發起的，所以他改得動
+    // `appealed` 與 `appealState` 這兩個欄位，但**只有這兩個**。
+    // 用 affectedKeys 限住，與貼文 likeCount 同一個手法：
+    // 少了這層，他就能把自己的處罰種類改成「警告」。
+    match /punishments/{uid} {
+      allow read: if request.auth != null
+                  && (request.auth.uid == uid || isAdmin());
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+                    || (request.auth != null
+                        && request.auth.uid == uid
+                        && request.resource.data.diff(resource.data)
+                             .affectedKeys()
+                             .hasOnly(['appealed', 'appealState']));
     }
 
     // --- 關注關係（[BE-11] 批次 2）---
@@ -296,6 +442,40 @@ service cloud.firestore {
                     && resource.data.followerId == request.auth.uid;
       // 關注沒有「修改」這回事：要嘛存在、要嘛不存在。
       allow update: if false;
+    }
+
+    // --- 訓練體驗評分（[BE-18]）---
+    //
+    // 規格（02_Aggregate定義.md〈訓練體驗評分 Aggregate〉）明言
+    // **管理員是本評分的唯一讀者**，用途是回答「哪一份訓練計畫該改」。
+    //
+    // 在此之前評分存在 `users/{uid}` 底下，而那棵樹只有本人讀得到 ——
+    // 收集了卻沒有任何用途。
+    //
+    // 文件 ID 是 `{raterUid}_{對象類型}_{對象 ID}`，不變條件
+    // 「唯一鍵為 評分者 ＋ 對象類型 ＋ 對象 ID」由主鍵直接保證。
+    match /experience_ratings/{ratingId} {
+      // 本人讀自己的（登入時對齊本機那份），管理員讀全部。
+      allow read: if request.auth != null
+                  && (isAdmin() || resource.data.raterUid == request.auth.uid);
+
+      // **只寫得了自己那一筆。** 規格：評分後可修改、覆蓋原值，
+      // 所以 create 與 update 同一條規則。
+      // **`is number` 而不是 `is int`。** Flutter Web 的數字是 JS number，
+      // 一個 Dart int 寫過去可能落地成 double —— `is int` 會把它整個擋掉，
+      // 而且是**靜靜地**（用戶端即發即忘、吞掉錯誤）。
+      // 2026-09-28 P127 就是這樣：評分寫不上去，一筆都沒有。
+      // 範圍檢查照留 —— 那才是真正要守的東西。
+      allow create, update: if request.auth != null
+                            && request.resource.data.raterUid == request.auth.uid
+                            && request.resource.data.stars is number
+                            && request.resource.data.stars >= 1
+                            && request.resource.data.stars <= 5;
+
+      // **刪不得。** 規格只給「修改」，沒有給「撤回」——
+      // 而彙總表的「評分則數」是管理員判斷平均值可信度的依據，
+      // 給了差評再刪掉等於可以洗分。
+      allow delete: if false;
     }
 
     // --- 平台公用唯讀資料（[BE-12]）---

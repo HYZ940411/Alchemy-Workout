@@ -26,19 +26,9 @@ import 'package:fitness_app/data/platform_data.dart';
 Future<void> main(List<String> args) async {
   final d = await const BundledPlatformData().load();
 
-  final out = <String, Map<String, dynamic>>{
-    'exercises': {for (final e in d.exercises) e.id: exerciseToMap(e)},
-    'plans': {for (final s in d.planSpecs) s.id: planSpecToMap(s)},
-    'achievement_defs': {
-      for (final a in d.achievements) achievementDocId(a): achievementToMap(a),
-    },
-    'daily_task_pool': {
-      for (final t in d.taskPool) t.id: taskPoolItemToMap(t),
-    },
-    'platform_config': {
-      for (final e in d.config.entries) e.key: {'params': e.value},
-    },
-  };
+  // 內容的定義在 `platform_data.dart`，與 `platform_seed_roundtrip_test`
+  // 共用 —— 各寫一份的話，測試驗的就不是真正會被上傳的東西。
+  final out = platformSeedMap(d);
 
   final path = args.isNotEmpty ? args.first : 'build/platform_defs.json';
   final file = File(path);

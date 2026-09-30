@@ -412,6 +412,17 @@ class PlatformConfig {
         unit: '分',
         hint: '該單項低於此值即駁回，不論加權平均為何。',
       ),
+      // 三維權重（規格明訂為平台級可調參數，但沒給初始值）。
+      //
+      // **合理性壓重，是因為評分改由 Gemini 產出**（使用者裁決 2026-09-25）。
+      // 模型看到「數字漂亮」的紀錄很容易把完成率與規律性給高，
+      // 而合理性抓的是造假 —— 那是唯一「做錯會讓不該當教官的人當上」的維度。
+      SettingParam(
+          key: 'wCompletion', label: '權重：訓練完成率', value: 25, unit: '%'),
+      SettingParam(
+          key: 'wConsistency', label: '權重：訓練規律性', value: 25, unit: '%'),
+      SettingParam(
+          key: 'wSanity', label: '權重：紀錄合理性', value: 50, unit: '%'),
     ],
     invariant: (v) {
       if (v['discounted']! > v['workouts']!) {
@@ -421,6 +432,11 @@ class PlatformConfig {
         return '品質分折抵門檻須高於品質分通過門檻。';
       }
       if (v['rank']! < 1) return '需求階級至少為 1。';
+      // 權重全為 0 的話加權平均永遠是 0，每個人都會被品質分門檻擋下 ——
+      // 那不是「調參數」，是把整條路關掉，而且沒有人看得出為什麼。
+      if (v['wCompletion']! + v['wConsistency']! + v['wSanity']! <= 0) {
+        return '三維權重不得全為 0。';
+      }
       return null;
     },
   );
@@ -552,7 +568,7 @@ class PlatformConfig {
         label: '無懲罰退出窗口',
         value: 3,
         unit: '小時',
-        hint: '**加入**團隊後這段時間內退出不觸發冷卻期。誤入團隊是真實情境，'
+        hint: '「加入」團隊後這段時間內退出不觸發冷卻期。誤入團隊是真實情境，'
             '冷卻期不應懲罰誤觸；自己建立的團隊不適用（那不是誤入）。',
       ),
     ],
@@ -715,7 +731,22 @@ class InstructorGate {
     required this.vetoed,
   });
 
-  bool get passed => rankOk && workoutsOk && qualityOk && !vetoed;
+  /// **按得下「申請教官資格」的條件** —— 只看階級與累積訓練次數。
+  ///
+  /// 品質評分**不在這裡**。規格的順序是
+  /// 「使用者已申請教官權限」→ 系統初審 → 系統「分析歷史訓練品質」
+  /// （〈教官申請流程〉，2026-09-26 使用者糾正過一次）——
+  /// 評分發生在申請**之後**，而且屬於那一筆申請
+  /// （請求識別碼 ＝ 使用者 ID ＋ 教官申請 ID）。
+  ///
+  /// 在此之前申請鍵讀的是 [passed]，那包含 `qualityOk` 與 `vetoed`。
+  /// 還沒申請的人 `quality` 是空值 → 分數當 0 → `qualityOk` 為假、
+  /// 一票否決成立 —— **於是門檻達標了也永遠按不下申請鍵**。
+  /// 使用者回報「階級次數有達標，但是無法申請」。
+  bool get canApply => rankOk && workoutsOk;
+
+  /// 完整的初審結果。**申請之後**才判得出來（要有品質評分）。
+  bool get passed => canApply && qualityOk && !vetoed;
 }
 
 InstructorGate evaluateInstructorGate({

@@ -27,12 +27,25 @@ class _MentorInteractionScreenState extends State<MentorInteractionScreen> {
     return Scaffold(
       backgroundColor: C.bgPage,
       appBar: AppBar(title: const Text('師徒互動')),
-      body: apprentices.isEmpty
+      // **學徒清單空了不代表沒事可做** —— 剛解除的那些還在 3 天挽回
+      // 窗口內，教官得看得到、回應得了。原本這裡直接畫「還沒有學徒」，
+      // 於是解除之後那段關係就從教官眼前整個消失。
+      body: apprentices.isEmpty && s.releasedApprentices.isEmpty
           ? const EmptyState(
               icon: Icons.school_outlined,
               title: '還沒有學徒',
               message: '通過教官資格後，學徒可以在教官清單找到你並提出申請。',
             )
+          : apprentices.isEmpty
+              ? ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                      S.base, S.base, S.base, S.scrollBottom),
+                  children: [
+                    const SectionTitle('已解除的學徒', trailing: '3 天內可挽回'),
+                    for (final b in s.releasedApprentices)
+                      _ReleasedCard(state: s, bond: b),
+                  ],
+                )
           : ListView(
               padding: const EdgeInsets.fromLTRB(
                   S.base, S.base, S.base, S.scrollBottom),
@@ -79,11 +92,25 @@ class _MentorInteractionScreenState extends State<MentorInteractionScreen> {
                 _ApprenticeDetail(a: apprentices[selected]),
 
                 const SectionTitle('待回答的提問'),
-                _Questions(state: s),
+                _Questions(
+                    state: s, apprenticeUid: apprentices[selected].uid),
 
                 const SectionTitle('進行中的任務'),
-                _Tasks(state: s),
+                _Tasks(state: s, apprenticeUid: apprentices[selected].uid),
 
+                const SizedBox(height: S.base),
+                AppButton(
+                  label: '解除與 ${apprentices[selected].name} 的師徒關係',
+                  kind: BtnKind.secondary,
+                  onPressed: () => _release(
+                      context, s, apprentices[selected]),
+                ),
+
+                if (s.releasedApprentices.isNotEmpty) ...[
+                  const SectionTitle('已解除的學徒', trailing: '3 天內可挽回'),
+                  for (final b in s.releasedApprentices)
+                    _ReleasedCard(state: s, bond: b),
+                ],
               ],
             ),
     );
@@ -119,7 +146,10 @@ class _ApprenticeTab extends StatelessWidget {
                 style: T.body(weight: selected ? FontWeight.w600 : null),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            Text('${a.rank} 階', style: T.caption()),
+            // 學徒現在的階級，不是他拜師當下那個。
+            Text(
+                '${AppScope.of(context).rankOf(a.name, uid: a.uid, fallback: a.rank)} 階',
+                style: T.caption()),
           ],
         ),
       );
@@ -228,12 +258,19 @@ class _DimBar extends StatelessWidget {
 
 class _Questions extends StatelessWidget {
   final AppState state;
-  const _Questions({required this.state});
+
+  /// 目前選中的學徒。**問答要依他過濾** —— 本機這份 `questions` 是
+  /// 所有學徒共用的一份清單，不過濾的話教官會在小明的頁面上看到
+  /// 小華問的問題，答下去也記在小華那段關係上。
+  final String? apprenticeUid;
+  const _Questions({required this.state, this.apprenticeUid});
 
   @override
   Widget build(BuildContext context) {
     // 待回答＝回答內容為空值的師徒問答
-    final pending = state.questions.where((q) => q.answer == null).toList();
+    final pending = state.questions
+        .where((q) => q.answer == null && q.apprenticeUid == apprenticeUid)
+        .toList();
     if (pending.isEmpty) {
       return AppCard(
         child: Row(
@@ -310,9 +347,14 @@ class _AnswerCardState extends State<_AnswerCard> {
               AppButton(
                 label: '回答',
                 onPressed: () {
-                  if (ctrl.text.trim().isEmpty) return;
-                  setState(() => widget.question.answer = ctrl.text.trim());
-                  widget.state.answerQuestion();
+                  // **回答的內容由狀態層寫入並送上雲端。**
+                  // 在此之前是畫面直接改 `question.answer`，而
+                  // `answerQuestion()` 只是個計數器 —— 學徒永遠看不到回答。
+                  if (!widget.state.answerQuestion(
+                      widget.question, ctrl.text)) {
+                    return;
+                  }
+                  setState(() {});
                   showToast(context, '已回答');
                 },
               ),
@@ -324,12 +366,17 @@ class _AnswerCardState extends State<_AnswerCard> {
 
 class _Tasks extends StatelessWidget {
   final AppState state;
-  const _Tasks({required this.state});
+
+  /// 目前選中的學徒。理由同 [_Questions.apprenticeUid]。
+  final String? apprenticeUid;
+  const _Tasks({required this.state, this.apprenticeUid});
 
   @override
   Widget build(BuildContext context) {
     final ongoing = state.mentorTasks
-        .where((t) => t.state != MentorTaskState.claimed)
+        .where((t) =>
+            t.state != MentorTaskState.claimed &&
+            t.apprenticeUid == apprenticeUid)
         .toList();
     return Column(
       children: [
@@ -409,7 +456,150 @@ class _Tasks extends StatelessWidget {
     if (ok != true || !context.mounted) return;
     final t = title.text.trim();
     if (t.isEmpty) return;
-    state.assignMentorTask(t, detail.text.trim());
-    showToast(context, '已指派「$t」');
+    // **指派給哪位學徒要講清楚。** 不帶的話任務進一份共用清單，
+    // 誰都不知道是給誰的，也就寫不到正確的師徒關係下。
+    final ok2 = state.assignMentorTask(t, detail.text.trim(),
+        apprenticeUid: apprenticeUid);
+    // **做不到的時候不可以說做到了。** 這裡原本不管結果一律跳
+    // 「已指派」—— 而 `assignMentorTask` 有兩道守衛會靜靜 return。
+    if (!context.mounted) return;
+    showToast(context, ok2 ? '已指派「$t」' : state.assignBlockedReason);
+  }
+}
+
+/// 教官解除與這位學徒的關係。**需經多次確認，避免誤觸**
+/// —— 與學徒那一側同一套。
+Future<void> _release(BuildContext context, AppState s, Apprentice a) async {
+  final first = await showAppDialog(
+    context,
+    title: '解除與 ${a.name} 的師徒關係？',
+    message: '未完成的師徒任務會作廢，且解除後 3 天內雙方都不能與別人建立師徒關係。',
+    confirmLabel: '繼續',
+  );
+  if (first != true || !context.mounted) return;
+  final second = await showAppDialog(
+    context,
+    title: '確定要解除嗎？',
+    message: '3 天內你們任一方都可以提出恢復，但恢復需要雙方同意。',
+    confirmLabel: '確定解除',
+  );
+  if (second != true || !context.mounted) return;
+  final ok = s.releaseApprentice(a.uid ?? '', MentorReleaseReason.byInstructor);
+  showToast(context, ok ? '已解除，3 天內可挽回' : '解除不了，這位學徒不在名單上。');
+}
+
+/// 一段已解除、還在挽回窗口內的關係。
+///
+/// **提出恢復與同意恢復不會同時出現在同一個人面前** ——
+/// 那正是先前那版做錯的地方（規格：恢復需雙方同意）。
+class _ReleasedCard extends StatefulWidget {
+  final AppState state;
+  final ReleasedBond bond;
+  const _ReleasedCard({required this.state, required this.bond});
+
+  @override
+  State<_ReleasedCard> createState() => _ReleasedCardState();
+}
+
+class _ReleasedCardState extends State<_ReleasedCard> {
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.state;
+    final b = widget.bond;
+    final blocked = s.restoreBlockedReasonOf(b);
+    final byMe = b.restoreProposedBy == s.myUid;
+    final awaitingMe = b.restoreProposedBy != null && !byMe;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: S.md),
+      child: AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(b.apprenticeName,
+                      style: T.body(weight: FontWeight.w700)),
+                ),
+                TagBadge('剩 ${b.cooldownLeftAt(s.now).inHours} 小時',
+                    borderColor: C.accentInfo),
+              ],
+            ),
+            const SizedBox(height: S.sm),
+            Text(
+              '解除原因：${mentorReleaseReasonNames[b.reason] ?? '未註明'}。'
+              '未完成的任務已作廢。',
+              style: T.caption(),
+            ),
+            if (blocked != null) ...[
+              const SizedBox(height: S.md),
+              Text(blocked, style: T.caption(color: C.statusError)),
+            ] else if (awaitingMe) ...[
+              const SizedBox(height: S.md),
+              Text('${b.apprenticeName} 提出了恢復，等你回應。', style: T.caption()),
+              const SizedBox(height: S.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppButton(
+                      label: '拒絕恢復',
+                      kind: BtnKind.secondary,
+                      onPressed: () {
+                        final ok = s.rejectRestoreFor(b.apprenticeUid);
+                        showToast(context,
+                            ok ? '已拒絕，3 天內還能再提' : '現在拒絕不了。');
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: S.md),
+                  Expanded(
+                    child: AppButton(
+                      label: '同意恢復',
+                      onPressed: () {
+                        // **做不到的時候不可以說做到了。**
+                        // 這一顆是 2026-09-30 深夜我自己寫的，
+                        // 而且重蹈當晚查了一整輪的那個覆轍 ——
+                        // 使用者按下去、畫面說恢復了、雲端什麼也沒變。
+                        final ok = s.acceptRestoreFor(b.apprenticeUid);
+                        showToast(
+                            context,
+                            ok
+                                ? '師徒關係已恢復'
+                                : s.restoreBlockedReasonOf(b) ??
+                                    '現在恢復不了。');
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ] else if (byMe) ...[
+              const SizedBox(height: S.md),
+              Text('已提出恢復，等 ${b.apprenticeName} 回應。', style: T.caption()),
+            ] else ...[
+              const SizedBox(height: S.md),
+              SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  label: '提出恢復師徒關係',
+                  kind: BtnKind.secondary,
+                  onPressed: () {
+                    final ok = s.proposeRestoreFor(b.apprenticeUid);
+                    showToast(
+                        context,
+                        ok
+                            ? '已提出，等對方同意'
+                            : s.restoreBlockedReasonOf(b) ?? '提不出來。');
+                    setState(() {});
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

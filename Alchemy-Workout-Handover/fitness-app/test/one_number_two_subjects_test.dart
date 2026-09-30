@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/screens/social/mentor_screen.dart';
+import 'package:fitness_app/domain/social.dart';
 
 import 'package:fitness_app/domain/ability.dart';
 import 'package:fitness_app/domain/community.dart';
@@ -16,25 +17,31 @@ import 'package:fitness_app/state/app_state.dart';
 
 void main() {
   group('教官的帶徒名額', () {
-    // 模型：名額佔用數 ＝ 已建立的師徒關係數 ＋ 狀態為申請中的師徒申請數。
+    // **2026-09-29 使用者裁決：待回應的申請不再佔名額。**
+    //
+    // 原模型是「已建立的關係數 ＋ 申請中的申請數」。它讓一位申請人被
+    // 別人尚未被回應的申請擋在門外，而那些申請可能全部會被拒絕。
+    // 現在的模型：名額佔用數 ＝ **已建立的師徒關係數**。
+    // 超收由教官接受當下的 Precondition 擋下（同團隊那一套）。
+    //
     // [Instructor.apprentices] 只是那位教官與**別人**的關係數。
 
-    test('送出申請即佔用一格', () {
+    test('送出申請不佔名額 —— 對方還沒答應', () {
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-      final before = s.slotsUsedOf(i);
+      final before = s.apprenticeCountOf(i);
       expect(s.applyMentor(i), isTrue);
-      expect(s.slotsUsedOf(i), before + 1,
-          reason: '「待回應的申請佔名額」是這個專案明寫的裁決');
+      expect(s.apprenticeCountOf(i), before,
+          reason: '數字要等關係真的建立才動');
     });
 
     test('拜師成功後，他的帶徒人數要真的多一個', () {
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-      final before = s.slotsUsedOf(i);
+      final before = s.apprenticeCountOf(i);
       s.applyMentor(i);
       s.acceptMentorApplication(i);
-      expect(s.slotsUsedOf(i), before + 1,
+      expect(s.apprenticeCountOf(i), before + 1,
           reason: '我已經是他的學徒了，畫面上不該還寫著原本的數字');
       expect(s.myInstructor?.name, i.name);
     });
@@ -42,10 +49,10 @@ void main() {
     test('接受不會把申請與關係重複算成兩格', () {
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-      final before = s.slotsUsedOf(i);
+      final before = s.apprenticeCountOf(i);
       s.applyMentor(i);
       s.acceptMentorApplication(i);
-      expect(s.slotsUsedOf(i), before + 1, reason: '同一個人只佔一格');
+      expect(s.apprenticeCountOf(i), before + 1, reason: '同一個人只佔一格');
     });
 
     test('拒絕與逾期都釋放名額', () {
@@ -53,10 +60,10 @@ void main() {
         final s = AppState()..myInstructor = null;
         final i =
             s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-        final before = s.slotsUsedOf(i);
+        final before = s.apprenticeCountOf(i);
         s.applyMentor(i);
         s.resolveMentorApplication(i.name, verdict);
-        expect(s.slotsUsedOf(i), before,
+        expect(s.apprenticeCountOf(i), before,
             reason: '三個終止狀態皆釋放所佔用的帶徒名額（$verdict）');
       }
     });
@@ -65,14 +72,14 @@ void main() {
       final s = AppState()..myInstructor = null;
       final full =
           s.instructors.firstWhere((x) => x.apprentices >= x.apprenticeCap);
-      expect(s.slotsUsedOf(full), greaterThanOrEqualTo(full.apprenticeCap));
+      expect(s.apprenticeCountOf(full), greaterThanOrEqualTo(full.apprenticeCap));
       expect(s.mentorApplyBlockedReason(full), contains('名額已滿'));
       expect(s.applyMentor(full), isFalse);
     });
 
-    test('送出申請之後，看到的是「等對方回應」，不是「名額已滿」', () {
+    test('送出申請之後，看到的是「等對方回應」', () {
       final s = AppState()..myInstructor = null;
-      // 只差一格就滿：我的申請會填掉最後一格。
+      // 只差一格就滿。申請不再佔名額，所以送出之後那一格仍是空的。
       final i = Instructor(
         name: '快滿了的教官',
         rank: 40,
@@ -87,9 +94,10 @@ void main() {
       s.instructors.insert(0, i);
       expect(s.mentorApplyBlockedReason(i), isNull);
       expect(s.applyMentor(i), isTrue);
-      expect(s.slotsUsedOf(i), i.apprenticeCap, reason: '我佔掉了最後一格');
+      expect(s.apprenticeCountOf(i), i.apprenticeCap - 1,
+          reason: '申請不佔名額，最後那一格還在');
       expect(s.mentorApplyBlockedReason(i), contains('等對方回應'),
-          reason: '那一格是我自己佔的，不該回頭跟我說對方滿了');
+          reason: '已經送出的人該看到的是「等回應」，不是「再送一次」');
     });
 
     test('別人把名額佔滿時才說滿了', () {
@@ -110,14 +118,18 @@ void main() {
       expect(s.applyMentor(i), isFalse);
     });
 
-    test('擋人的判定讀的是推導出來的佔用數，不是那個假資料數字', () {
+    test('拜師成功之後，推導值才動 —— 而那個儲存欄位永遠不該被我改動', () {
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
       final stored = i.apprentices;
+
       s.applyMentor(i);
+      expect(s.apprenticeCountOf(i), stored, reason: '只是申請，還沒成立');
+
+      s.acceptMentorApplication(i);
       expect(i.apprentices, stored,
           reason: '那個欄位是「他與別人的關係數」，本來就不該被我改動');
-      expect(s.slotsUsedOf(i), stored + 1,
+      expect(s.apprenticeCountOf(i), stored + 1,
           reason: '會動的是推導值 —— 兩者分開，主體才不會混在一起');
     });
   });
@@ -127,7 +139,11 @@ void main() {
     // 要讓推導值超過而儲存值沒超過，得是「我已經是他的學徒」，
     // 但那會被上一個條件（一次只能有一位教官）先擋掉。
     // **會被看見的差別在畫面上**：拜師成功後那行數字有沒有跟著動。
-    testWidgets('申請送出後，教官頁的「帶徒 N / M」就多一格', (t) async {
+    // **2026-09-29 使用者裁決：申請不再佔名額，標籤改為「學徒 N / M」。**
+    //
+    // 原本送出申請當下數字就 +1，而對方還沒答應 —— 那行字在說一件
+    // 不是事實的事。現在它要等關係真的建立才動。
+    testWidgets('送出申請時數字不動，拜師成功才動', (t) async {
       t.view.physicalSize = const Size(393 * 3, 852 * 3);
       t.view.devicePixelRatio = 3.0;
       addTearDown(t.view.resetPhysicalSize);
@@ -135,8 +151,8 @@ void main() {
 
       final s = AppState()..myInstructor = null;
       final i = s.instructors.firstWhere((x) => x.apprentices < x.apprenticeCap);
-      final before = '帶徒 ${i.apprentices} / ${i.apprenticeCap}';
-      final after = '帶徒 ${i.apprentices + 1} / ${i.apprenticeCap}';
+      final before = '學徒 ${i.apprentices} / ${i.apprenticeCap}';
+      final after = '學徒 ${i.apprentices + 1} / ${i.apprenticeCap}';
 
       await t.pumpWidget(AppScope(
         state: s,
@@ -145,14 +161,72 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text(before), findsWidgets, reason: '前提：這行字要真的畫得出來');
 
-      // 只送出申請，不接受 —— 拜師成功後畫面會換成「我的教官」視圖，
-      // 這一行就不在了。看得見這條規則的時機正是「待回應」這一段。
+      // 只送出申請 —— 數字不該動。
       s.applyMentor(i);
       await t.pumpAndSettle();
+      expect(find.text(before), findsWidgets,
+          reason: '對方還沒答應，這行字不該說他多了一位學徒');
+      expect(find.text(after), findsNothing);
+    });
+  });
 
-      expect(find.text(after), findsWidgets,
-          reason: '待回應的申請佔名額 —— 這行數字不該還停在原本的值');
-      expect(find.text(before), findsNothing);
+  group('「教官聲望」說的是我的教官，不是我', () {
+    // 2026-09-30 使用者實測第 4 項：學徒給了五星，畫面跳
+    // 「已評分，教官聲望 0」。
+    //
+    // 評分其實生效了 —— 錯的是**畫面取錯了主體**：
+    // `s.instructorReputation` 是「我自己當教官時的聲望」，
+    // 學徒不是教官，所以它永遠是 0。而標籤寫著「教官聲望」。
+    //
+    // 這是本檔第四個同型的：學徒的評分加到評分者自己的聲望上、
+    // 我買的東西與後台的訂單、帶徒名額，現在是這一個。
+
+    AppState apprentice() {
+      final s = AppState()
+        ..instructorReputation = 0
+        ..myInstructor = Instructor(
+          name: '老王',
+          uid: 'u-教官',
+          rank: 40,
+          reputation: 137,
+          apprentices: 1,
+          apprenticeCap: 4,
+          ability: const {},
+          specialties: const ['增肌'],
+          avgRating: 4.5,
+          ratingCount: 10,
+        );
+      return s;
+    }
+
+    test('前提：兩個數字真的不一樣', () {
+      final s = apprentice();
+      expect(s.instructorReputation, 0, reason: '我自己不是教官');
+      expect(s.myInstructor!.reputation, 137);
+    });
+
+    testWidgets('畫面上寫的是 137，不是 0', (t) async {
+      t.view.physicalSize = const Size(393 * 3, 852 * 3);
+      t.view.devicePixelRatio = 3.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+
+      final s = apprentice();
+      await t.pumpWidget(AppScope(
+        state: s,
+        child: const MaterialApp(home: MentorScreen()),
+      ));
+      await t.pumpAndSettle();
+
+      final line = find.textContaining('教官聲望目前');
+      await t.scrollUntilVisible(line, 200,
+          scrollable: find.byType(Scrollable).first);
+
+      final text = t.widget<Text>(line).data!;
+      expect(text, contains('教官聲望目前 137'),
+          reason: '取的是我自己的欄位，而我不是教官 —— 永遠是 0');
+      expect(text, contains('帶徒上限 4 人'),
+          reason: '帶徒上限同理，那也是他的，不是我的');
     });
   });
 
@@ -175,12 +249,13 @@ void main() {
     test('限時任務：全平台完成與記在本隊帳上是兩件事', () {
       final s = AppState();
       final t = s.myTeam!;
-      final outsider = s.timedTask.completedBy
-          .where((n) => !t.members.any((m) => m.name == n))
-          .toList();
-      expect(t.timedCredited.every(s.timedTask.doneBy), isTrue,
+      // 兩邊都是 `personKey`，所以直接比鍵。
+      final mine = {for (final m in t.members) personKey(m.name, m.uid)};
+      final outsider =
+          s.timedTask.completedBy.where((k) => !mine.contains(k)).toList();
+      expect(t.timedCredited.every(s.timedTask.completedBy.contains), isTrue,
           reason: '記在本隊帳上的，必定也完成了');
-      expect(outsider.every((n) => !t.timedCredited.contains(n)), isTrue,
+      expect(outsider.every((k) => !t.timedCredited.contains(k)), isTrue,
           reason: '別隊的人完成了，不該記在我隊帳上');
     });
 

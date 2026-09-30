@@ -41,17 +41,15 @@ class _FollowListScreenState extends State<FollowListScreen> {
         body: TabBarView(
           children: [
             _List(
-              names: s.following.toList(),
+              keys: s.following.toList(),
               emptyTitle: '還沒有關注任何人',
               emptyMessage: '在動態牆或教官清單看到喜歡的人，關注他就會出現在這裡。',
               onChanged: () => setState(() {}),
             ),
             _List(
-              names: s.followers,
+              keys: s.followers,
               emptyTitle: '還沒有粉絲',
               emptyMessage: '持續發文與互動，會慢慢累積粉絲。',
-              footer: '已解鎖 ${s.followerMilestones} 個粉絲成就。'
-                  '粉絲數下降不會撤銷已解鎖的成就。',
               onChanged: () => setState(() {}),
             ),
           ],
@@ -62,23 +60,23 @@ class _FollowListScreenState extends State<FollowListScreen> {
 }
 
 class _List extends StatelessWidget {
-  final List<String> names;
+  /// **關注名單上的鍵，不是暱稱**（暱稱重構階段三）。
+  /// 要顯示的名字由 `AppState.followName` 查 —— 對方改名之後這裡跟著改。
+  final List<String> keys;
   final String emptyTitle;
   final String emptyMessage;
-  final String? footer;
   final VoidCallback onChanged;
   const _List({
-    required this.names,
+    required this.keys,
     required this.emptyTitle,
     required this.emptyMessage,
     required this.onChanged,
-    this.footer,
   });
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    if (names.isEmpty) {
+    if (keys.isEmpty) {
       return EmptyState(
         icon: Icons.people_outline,
         title: emptyTitle,
@@ -90,21 +88,21 @@ class _List extends StatelessWidget {
           const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
       children: [
         ListGroup(rows: [
-          for (var i = 0; i < names.length; i++)
-            _row(context, s, names[i], i != names.length - 1),
+          for (var i = 0; i < keys.length; i++)
+            _row(context, s, keys[i], i != keys.length - 1),
         ]),
-        if (footer != null) ...[
-          const SizedBox(height: S.base),
-          Text(footer!, style: T.caption()),
-        ],
       ],
     );
   }
 
   ListRow _row(
-      BuildContext context, AppState s, String name, bool divider) {
+      BuildContext context, AppState s, String key, bool divider) {
+    final name = s.followName(key);
     final u = s.userOf(name);
-    final followed = s.following.contains(name);
+    // 名單上的鍵就是身分，不必再經過一次暱稱 —— 兩個同名的人在這裡
+    // 各自是各自的那一列。
+    final uid = s.uidOfFollowKey(key) ?? u.uid;
+    final followed = s.following.contains(key);
     return ListRow(
       leading: CircleAvatar(
         radius: 18,
@@ -113,9 +111,13 @@ class _List extends StatelessWidget {
             Text(name.characters.first, style: T.body(weight: FontWeight.w700)),
       ),
       title: name,
-      subtitle: '階級 ${u.rank}　·　綜合 ${u.grade}',
+      // 現在的階級與綜合等級。`u` 那份是我第一次見到他時存下來的 ——
+      // 在此之前 `applyPublicProfiles` 對已在清單裡的人直接跳過，
+      // 所以這裡顯示的比貼文上那個凍結值還舊。
+      subtitle: '階級 ${s.rankOf(name, uid: uid, fallback: u.rank)}'
+          '　·　綜合 ${s.gradeOf(name, uid: uid) ?? u.grade}',
       // 點整列進他的公開檔案（`[QA-02i]`）。關注鍵在右邊，各自的觸控區。
-      onTap: () => openProfile(context, name),
+      onTap: () => openProfile(context, name, uid: uid),
       // 取消關注屬破壞性動作，用次要樣式（§4.5 R-23）；
       // 兩種狀態共用同一顆按鈕，寬度固定才不會左右跳動。
       trailing: SizedBox(
@@ -125,7 +127,7 @@ class _List extends StatelessWidget {
           kind: BtnKind.secondary,
           onPressed: () {
             if (socialLocked(context, '關注')) return;
-            s.toggleFollow(name);
+            s.toggleFollow(name, uid: uid);
             onChanged();
           },
         ),

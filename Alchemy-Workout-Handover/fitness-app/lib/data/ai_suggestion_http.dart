@@ -19,6 +19,7 @@ import 'package:http/http.dart' as http;
 import '../domain/ai_adjust.dart';
 import '../domain/models.dart';
 import 'ai_suggestion.dart';
+import 'http_error.dart';
 
 class HttpAiSuggestionSource implements AiSuggestionSource {
   /// Worker 的網址，形如 `https://alchemy-workout-ai.xxx.workers.dev`。
@@ -34,6 +35,92 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
     required this.idToken,
     http.Client? client,
   }) : _client = client ?? http.Client();
+
+  @override
+  Future<RemoteIntent> classify(String say) async {
+    final token = await idToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('尚未登入，無法呼叫 AI。');
+    }
+
+    final res = await _client
+        .post(
+          endpoint,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'say': say}),
+        )
+        // **比 suggest 短，但要放得下 Worker 那一側的一次重試。**
+        //
+        // 第一版設 10 秒，而 Worker 冷啟動時要先打一趟 `listModels`
+        // （逾時 10 秒）再打 generateContent —— 加起來就超過了。
+        // 使用者回報「分析時間非常久，得不到答案」。
+        //
+        // Worker 已改成不在熱路徑上探測模型（`gemini.ts`），
+        // 正常一趟約 1–3 秒；這裡留 20 秒是給「模型退役那一天」
+        // 的那一次額外重試，不是給常態。
+        .timeout(const Duration(seconds: 20));
+
+    if (res.statusCode != 200) {
+      throw http.ClientException(
+          httpFailureReason('AI 服務回應', res), endpoint);
+    }
+    final data =
+        (jsonDecode(utf8.decode(res.bodyBytes)) as Map).cast<String, dynamic>();
+    final raw = data['intent'];
+    // 模型回什麼都不信，只認四個值之一。
+    final match = AdjustIntent.values
+        .where((i) => i.name == raw)
+        .firstOrNull;
+    return RemoteIntent(match);
+  }
+
+  @override
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) async {
+    final token = await idToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('尚未登入，無法呼叫 AI。');
+    }
+
+    final res = await _client
+        .post(
+          endpoint,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            // `auto` 不是四個方向之一 —— 它是「請你自己判斷」的意思。
+            'intent': 'auto',
+            ...encodePlan(exercises, 0, context: context),
+          }),
+        )
+        .timeout(const Duration(seconds: 25));
+
+    if (res.statusCode != 200) {
+      throw http.ClientException(
+          httpFailureReason('自動優化', res), endpoint);
+    }
+    final data =
+        (jsonDecode(utf8.decode(res.bodyBytes)) as Map).cast<String, dynamic>();
+    final raw = data['intent'];
+    final intent =
+        AdjustIntent.values.where((i) => i.name == raw).firstOrNull;
+    if (intent == null) return const RemoteAutoAdjust();
+    final why = data['why'];
+    return RemoteAutoAdjust(
+      intent: intent,
+      why: why is String && why.trim().isNotEmpty ? why.trim() : null,
+      suggestion: decodeSuggestion(data, exercises, intent, 0,
+          candidates: candidates),
+    );
+  }
 
   @override
   Future<RemoteSuggestion> suggest({
@@ -68,7 +155,8 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
         .timeout(const Duration(seconds: 25));
 
     if (res.statusCode != 200) {
-      throw http.ClientException('AI 服務回應 ${res.statusCode}', endpoint);
+      throw http.ClientException(
+          httpFailureReason('AI 服務回應', res), endpoint);
     }
     final data =
         (jsonDecode(utf8.decode(res.bodyBytes)) as Map).cast<String, dynamic>();

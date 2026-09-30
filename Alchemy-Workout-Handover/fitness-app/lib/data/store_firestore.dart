@@ -48,7 +48,15 @@ class FirestoreStore implements Store {
   // 不比對的話等於每次改一個開關都重寫整棵樹。
   Map<String, dynamic>? _lastRoot;
   final Map<String, Map<String, dynamic>> _lastDocs = {};
-  int _lastHistoryCount = -1;
+
+  /// 已寫進雲端的訓練歷史，key 是**時間順序**的場次序號（見 [save]）。
+  ///
+  /// 原本這裡只記一個筆數 `_lastHistoryCount`，然後寫「比上次多出來的那幾筆」。
+  /// 那假設了歷史是往後追加的，而快照裡的歷史是**新的在前** ——
+  /// 於是每一場新訓練都寫錯格，寫進去的是被插隊擠下去的舊那場。
+  /// 記內容而不是記筆數，順序怎麼變都不會寫錯。
+  final Map<int, Map<String, dynamic>> _lastHistory = {};
+  int _lastHistoryLength = -1;
 
   // ===========================================================================
   // 讀取
@@ -98,9 +106,31 @@ class FirestoreStore implements Store {
     _merge(out, docs[5]); // wallet/ai_credits
     _mergeMembership(out, docs[6]);
 
-    out['history'] = [
+    // 落地是舊的在前，快照要的是新的在前 —— 但**排序的權威是日期，
+    // 不是 `seq`**。
+    //
+    // 原本這裡是 `history.docs.reversed`，也就是信任 `seq`。
+    // 而 `seq` 正是壞掉的那個東西：寫錯格的那段時間留下了一批殘留副本，
+    // 它們的 `seq` 比真正的新場次大，反轉之後就排到新場次前面 ——
+    // 使用者回報「訓練清單還是日期舊的排前面」，就是這個。
+    //
+    // 剔重保留「先遇到的那一筆」，所以順序壞掉時連保留哪一份都會選錯。
+    // 先照日期排好，剔重與後續的一切才站得住。
+    out['history'] = _dedupeHistory(_byDateDesc([
       for (final d in history.docs) _historyFromDoc(d.data()),
-    ];
+    ]));
+
+    // **記下雲端現在有幾份歷史文件**，[save] 才知道要刪掉多出來的幾份。
+    //
+    // 少了這一行，`_lastHistoryLength` 留在 -1，於是 [save] 裡那個
+    // 「把多出來的舊文件刪掉」的迴圈跑的是 `for (i = 現在筆數; i < -1)`
+    // —— 一次都不跑。剛剛被 [_dedupeHistory] 剔掉的重複文件會留在雲端，
+    // 而它們的 `seq` 比之後的新場次大，反轉之後就排到新場次前面：
+    // 使用者看到的是「訓練歷史變成舊到新排序」，而且課表卡上的
+    // 「上次訓練」讀到的是那筆舊的。
+    //
+    // 取**文件數**而不是剔重後的筆數 —— 要刪的正是兩者的差。
+    _lastHistoryLength = history.docs.length;
 
     return out;
   }
@@ -186,12 +216,12 @@ class FirestoreStore implements Store {
       ]),
     };
 
-    final batch = _db.batch();
-    var writes = 0;
+    // 這一批要送出去的寫入。先收集再分批送 —— 見 [_batchLimit]。
+    final ops = <void Function(WriteBatch)>[];
 
     if (!_same(rest, _lastRoot)) {
-      batch.set(_root, {...rest, 'savedAt': savedAt}, SetOptions(merge: true));
-      writes++;
+      ops.add((b) =>
+          b.set(_root, {...rest, 'savedAt': savedAt}, SetOptions(merge: true)));
     }
 
     for (final entry in groups.entries) {
@@ -204,39 +234,55 @@ class FirestoreStore implements Store {
       }
       if (_same(doc, _lastDocs[entry.key])) continue;
 
-      batch.set(_sub(path[0], path[1]), doc, SetOptions(merge: true));
-      writes++;
+      ops.add((b) => b.set(_sub(path[0], path[1]), doc, SetOptions(merge: true)));
     }
 
-    // 訓練歷史只會往後追加（結算寫一筆，不回頭改已完成的場次）——
-    // 所以只寫「比上次多出來的那幾筆」，不是每次存檔都重寫整份歷史。
+    // --- 訓練歷史 ---
+    //
+    // **快照裡是新的在前，落地是舊的在前。**
+    //
+    // 文件 ID 必須綁**時間順序**才穩定：新的一場拿到新的號碼，既有場次的
+    // 號碼不動。若照快照的索引給號（新的在前），每加一場全部號碼都往後挪，
+    // 「只寫多出來的那幾筆」就會把新的那場寫到舊的格子裡 ——
+    // 使用者回報的「練了 7 次，7 筆全是第一場」正是這樣來的。
     final entries = history is List ? history : const [];
-    if (entries.length != _lastHistoryCount) {
-      final from = _lastHistoryCount < 0 ? 0 : _lastHistoryCount;
-      for (var i = from; i < entries.length; i++) {
-        batch.set(
-          _root.collection('history').doc(_seqId(i)),
-          _historyToDoc(entries[i] as Map<String, dynamic>, i),
-        );
-        writes++;
-      }
-      // 歷史變短只會發生在重設帳號：把多出來的舊文件刪掉，
-      // 否則下次讀回來會混進上一個帳號的場次。
-      for (var i = entries.length; i < _lastHistoryCount; i++) {
-        batch.delete(_root.collection('history').doc(_seqId(i)));
-        writes++;
-      }
+    final chrono = entries.reversed.toList();
+    final nextHistory = <int, Map<String, dynamic>>{};
+    for (var i = 0; i < chrono.length; i++) {
+      final doc = _historyToDoc(chrono[i] as Map<String, dynamic>, i);
+      nextHistory[i] = doc;
+      if (_same(doc, _lastHistory[i])) continue;
+      ops.add((b) => b.set(_root.collection('history').doc(_seqId(i)), doc));
+    }
+    // 歷史變短會發生在重設帳號，也發生在讀回來時剔掉重複的壞資料。
+    // 不刪的話，下次讀回來會混進已經不該存在的場次。
+    for (var i = chrono.length; i < _lastHistoryLength; i++) {
+      ops.add((b) => b.delete(_root.collection('history').doc(_seqId(i))));
     }
 
-    if (writes == 0) return;
-    await batch.commit();
+    if (ops.isEmpty) return;
+    for (var i = 0; i < ops.length; i += _batchLimit) {
+      final batch = _db.batch();
+      for (final op in ops.skip(i).take(_batchLimit)) {
+        op(batch);
+      }
+      await batch.commit();
+    }
 
     _lastRoot = rest;
     for (final e in groups.entries) {
       _lastDocs[e.key] = e.value;
     }
-    _lastHistoryCount = entries.length;
+    _lastHistory
+      ..clear()
+      ..addAll(nextHistory);
+    _lastHistoryLength = chrono.length;
   }
+
+  /// 一個 Firestore 批次最多 500 個操作。第一次存檔會重寫整份訓練歷史
+  /// （記憶體裡還不知道雲端有什麼），練滿 500 場的人就會撞到上限 ——
+  /// 而 `AppState.saveNow()` 對失敗是靜默的，他會毫無徵兆地停止存檔。
+  static const _batchLimit = 450;
 
   /// 把 [keys] 從 [from] 搬出來成為一份子文件的內容。
   /// 搬走而不是複製 —— 同一個欄位同時存在根文件與子文件，
@@ -307,6 +353,45 @@ class FirestoreStore implements Store {
             },
         ],
       };
+
+  /// 照日期排，新的在前。
+  ///
+  /// 解析不出日期的擺到最後 —— 那是壞資料，但不該讓它把好資料擠亂。
+  List<Map<String, dynamic>> _byDateDesc(List<Map<String, dynamic>> all) {
+    DateTime keyOf(Map<String, dynamic> h) {
+      final raw = h['date'];
+      return (raw is String ? DateTime.tryParse(raw) : null) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    return all.toList()..sort((a, b) => keyOf(b).compareTo(keyOf(a)));
+  }
+
+  /// 剔除**內容完全相同**的場次。
+  ///
+  /// 這是替上面那個「寫錯格」缺陷善後的。它在使用者的帳號上留下了 7 份
+  /// 一模一樣的文件（全是第一場），修好寫入不會讓它們消失 —— 讀回來得
+  /// 認得出那是壞資料，才能在下一次存檔時把多出來的文件刪掉、自己痊癒。
+  ///
+  /// **只認「完全一樣」。** 同一天早晚各練一場是正常的，同一個時間戳的
+  /// 兩場才不可能 —— 結算時間精確到毫秒，真的撞在一起就是同一場被寫了兩次。
+  /// 用整份內容比而不是只比時間戳，是因為前者只會漏掉壞資料，
+  /// 後者可能誤刪真資料。
+  ///
+  /// **無法挽回的部分**：被覆蓋掉的那幾場訓練從來沒有寫進雲端，
+  /// 這裡救不回來，任何地方都救不回來。
+  List<Map<String, dynamic>> _dedupeHistory(List<Map<String, dynamic>> all) {
+    final out = <Map<String, dynamic>>[];
+    final byDate = <String, List<Map<String, dynamic>>>{};
+    for (final h in all) {
+      final key = '${h['date']}';
+      final same = byDate.putIfAbsent(key, () => []);
+      if (same.any((k) => _deepEquals(k, h))) continue;
+      same.add(h);
+      out.add(h);
+    }
+    return out;
+  }
 
   Map<String, dynamic> _historyFromDoc(Map<String, dynamic> d) {
     final out = Map<String, dynamic>.from(d)..remove('seq');
@@ -395,6 +480,7 @@ class FirestoreStore implements Store {
 
     _lastRoot = null;
     _lastDocs.clear();
-    _lastHistoryCount = -1;
+    _lastHistory.clear();
+    _lastHistoryLength = -1;
   }
 }

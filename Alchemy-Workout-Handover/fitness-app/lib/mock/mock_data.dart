@@ -57,80 +57,151 @@ List<PlannedSet> _sets(int n, double w, int reps) =>
     List.generate(n, (_) => PlannedSet(w, reps));
 
 /// 〈Read Model：課表選擇頁〉涵蓋的四類入口。
-final kPlans = <WorkoutPlan>[
-  WorkoutPlan(
+///
+/// **「上次訓練」與「上次完成度」不寫在這裡。**
+/// 那兩個是「**我**上次練這份課表是什麼時候」—— 每個使用者各自不同，
+/// 而這份清單是平台提供給所有人的目錄。寫在這裡的後果是：一個從來
+/// 沒練過「拉日」的人，打開課表選擇頁看到「上次訓練 5 天前　完成度 70%」。
+/// 使用者 2026-09-26 實測回報的正是這個。
+///
+/// 改由 `AppState.lastTrainedOf()` 依訓練歷史推導（見 PROGRESS 第 5 節 0k）。
+/// 四份官方課表的規格。
+///
+/// ## 為什麼這一份是手寫的，而不是 `platform_plans.g.dart` 產生的
+///
+/// 生成檔的來源是《健身計劃.csv》，那 27 份是課表作者寫的內容。
+/// 這四份不在 CSV 裡 —— 它們是專案早期直接寫死在 `kPlans` 的程式碼，
+/// 比雲端早太多，2026-09-28 平台資料上雲時沒有一起搬。
+///
+/// 後果是使用者 2026-09-29 撞到的：**後台改得動它們，但存不住** ——
+/// 雲端沒有它們的位置。改完只改到記憶體，重新整理就打回原形。
+///
+/// 2026-09-29 使用者裁決 B：搬上雲，讓後台改得動。
+///
+/// ## 內容一字未改
+///
+/// 重量、組數、次數、休息秒數、階級門檻、解鎖價格、適用經驗與目標
+/// **全部照抄原本 `kPlans` 的值**。為此 `PlanItemSpec` 補了 `weight`、
+/// `PlatformPlanSpec` 補了 `memberUnlockable` —— 規格裝不下就等於搬家時
+/// 把處方改掉，而**訓練處方不是我該替使用者決定的**（CLAUDE.md 第 7 條）。
+///
+/// ## 六段說明性內容是空的，這是刻意的
+///
+/// CSV 那 27 份帶著介紹、怎麼練、負荷、訓練效果、技術重點與**學理依據**。
+/// 這四份從來沒有過那些內容，而我不編 —— 尤其是依據那一欄：
+/// 一份說得出依據的課表與一份憑空編的，對使用者是兩件不同的東西
+/// （見 [PlatformPlanSpec.reference]）。
+///
+/// 空著的代價是課表詳情頁少一段；編一段假的的代價是使用者以為它有根據。
+/// **課表詳情頁已改為內容全空時整段不呈現**，不會出現空白卡片。
+/// 補內容是人的工作，已記入待辦。
+final kLegacyPlanSpecs = <PlatformPlanSpec>[
+  PlatformPlanSpec(
     id: 'p_push',
     name: '推日：胸肩三頭',
-    suitableExperience: const {'中階（6 個月–2 年）', '進階（2 年以上）'},
-    suitableGoals: const {'增肌', '提升體能'},
-    source: PlanSource.official,
+    level: '戰士級',
+    requiredRank: null,
     equipmentTier: '健身房',
-    lastTrainedAt: DateTime.now().subtract(const Duration(days: 3)),
-    lastCompletion: 1.0,
-    exercises: [
+    suitableExperience: const ['中階（6 個月–2 年）', '進階（2 年以上）'],
+    suitableGoals: const ['增肌', '提升體能'],
+    duration: '',
+    intro: '',
+    howTo: '',
+    load: '',
+    effect: '',
+    technique: '',
+    reference: '',
+    items: const [
       // 課表指定值蓋過動作預設（150 秒）—— 取值優先序的第一順位。
-      PlanExercise(
-        exercise: ex('bench'),
-        planned: _sets(4, 60, 8),
-        restSeconds: 120,
-      ),
-      // AI 已替換動作：上斜臥推 → 啞鈴臥推，原動作可展開檢視
-      PlanExercise(
-        exercise: ex('db_press'),
-        planned: _sets(3, 22, 10),
-        replacedFrom: ex('incline'),
-      ),
-      PlanExercise(exercise: ex('ohp'), planned: _sets(3, 35, 8)),
-      PlanExercise(exercise: ex('pushdown'), planned: _sets(3, 25, 12)),
+      PlanItemSpec('bench', 4, 8, PlanUnit.reps, 120, weight: 60),
+      PlanItemSpec('db_press', 3, 10, PlanUnit.reps, 90, weight: 22),
+      PlanItemSpec('ohp', 3, 8, PlanUnit.reps, 90, weight: 35),
+      PlanItemSpec('pushdown', 3, 12, PlanUnit.reps, 90, weight: 25),
     ],
   ),
-  WorkoutPlan(
+  PlatformPlanSpec(
     id: 'p_pull',
     name: '拉日：背二頭',
-    suitableExperience: const {'中階（6 個月–2 年）', '進階（2 年以上）'},
-    suitableGoals: const {'增肌', '提升體能'},
-    source: PlanSource.official,
+    level: '戰士級',
+    requiredRank: null,
     equipmentTier: '健身房',
-    lastTrainedAt: DateTime.now().subtract(const Duration(days: 5)),
-    lastCompletion: 0.7,
-    exercises: [
-      PlanExercise(exercise: ex('row'), planned: _sets(4, 50, 8)),
-      PlanExercise(exercise: ex('latpull'), planned: _sets(3, 45, 10)),
-      PlanExercise(exercise: ex('curl'), planned: _sets(3, 15, 12)),
+    suitableExperience: const ['中階（6 個月–2 年）', '進階（2 年以上）'],
+    suitableGoals: const ['增肌', '提升體能'],
+    duration: '',
+    intro: '',
+    howTo: '',
+    load: '',
+    effect: '',
+    technique: '',
+    reference: '',
+    items: const [
+      PlanItemSpec('row', 4, 8, PlanUnit.reps, 90, weight: 50),
+      PlanItemSpec('latpull', 3, 10, PlanUnit.reps, 90, weight: 45),
+      PlanItemSpec('curl', 3, 12, PlanUnit.reps, 90, weight: 15),
     ],
   ),
-  WorkoutPlan(
+  PlatformPlanSpec(
     id: 'p_leg',
     name: '腿日：深蹲主導',
-    suitableExperience: const {'中階（6 個月–2 年）', '進階（2 年以上）'},
-    suitableGoals: const {'增肌', '提升體能'},
-    source: PlanSource.official,
+    level: '戰士級',
     requiredRank: 12,
     equipmentTier: '健身房',
-    exercises: [
-      PlanExercise(exercise: ex('squat'), planned: _sets(5, 80, 5)),
-      PlanExercise(exercise: ex('legpress'), planned: _sets(3, 120, 10)),
-      PlanExercise(exercise: ex('crunch'), planned: _sets(3, 10, 15)),
+    suitableExperience: const ['中階（6 個月–2 年）', '進階（2 年以上）'],
+    suitableGoals: const ['增肌', '提升體能'],
+    duration: '',
+    intro: '',
+    howTo: '',
+    load: '',
+    effect: '',
+    technique: '',
+    reference: '',
+    items: const [
+      PlanItemSpec('squat', 5, 5, PlanUnit.reps, 90, weight: 80),
+      PlanItemSpec('legpress', 3, 10, PlanUnit.reps, 90, weight: 120),
+      PlanItemSpec('crunch', 3, 15, PlanUnit.reps, 90, weight: 10),
     ],
   ),
   // 未解鎖的進階計畫一併呈現、不隱藏 —— 它是三種解鎖方式的唯一曝光點。
-  WorkoutPlan(
+  PlatformPlanSpec(
     id: 'p_power',
     name: '進階：爆發力週期',
-    suitableExperience: const {'進階（2 年以上）'},
-    suitableGoals: const {'提升體能'},
-    source: PlanSource.official,
+    level: '精銳級',
     requiredRank: 55,
     // 進階訓練計畫統一定價，不逐計畫區分（〈虛擬商品購買流程〉2026-08-20）。
     unlockCoins: kPlanUnlockCoins,
     memberUnlockable: true,
     equipmentTier: '健身房',
-    exercises: [
-      PlanExercise(exercise: ex('deadlift'), planned: _sets(5, 100, 3)),
-      PlanExercise(exercise: ex('squat'), planned: _sets(4, 85, 4)),
-      PlanExercise(exercise: ex('ohp'), planned: _sets(4, 40, 5)),
+    suitableExperience: const ['進階（2 年以上）'],
+    suitableGoals: const ['提升體能'],
+    duration: '',
+    intro: '',
+    howTo: '',
+    load: '',
+    effect: '',
+    technique: '',
+    reference: '',
+    items: const [
+      PlanItemSpec('deadlift', 5, 3, PlanUnit.reps, 90, weight: 100),
+      PlanItemSpec('squat', 4, 4, PlanUnit.reps, 90, weight: 85),
+      PlanItemSpec('ohp', 4, 5, PlanUnit.reps, 90, weight: 40),
     ],
   ),
+];
+
+/// 示範用的課表 —— **只有示範模式看得到**。
+///
+/// 這兩份是假資料，而且是**假的「使用者自己的東西」**：
+/// 「我的核心日」的來源標成私人自訂，「社群熱門：全身循環」標成別人分享的。
+/// 它們原本混在 `kPlans` 裡而沒有任何開關，於是**一個全新的真帳號一打開
+/// App，就有一份他從來沒建過的自訂課表，和一份來自還沒有任何人的社群的
+/// 熱門課表**（2026-09-29 以 `AppState(demo: false)` 實測確認）。
+///
+/// 這是「假資料撐著功能」的第六次。`[QA-02]` 當初清假資料的那個開關
+/// 只管集合，課表目錄沒有被納入，所以它活到今天。
+///
+/// **不刪除**：它們撐著自訂課表與社群分享課表那兩條流程的示範
+/// （真帳號要等到真的有人建了課表、有人分享了課表才看得到那些畫面）。
+final kDemoPlans = <WorkoutPlan>[
   WorkoutPlan(
     id: 'p_custom',
     name: '我的核心日',
@@ -138,11 +209,20 @@ final kPlans = <WorkoutPlan>[
     suitableGoals: const {'培養運動習慣'},
     source: PlanSource.privateCustom,
     equipmentTier: '徒手',
-    hasOptimizationSuggestion: true,
-    lastTrainedAt: DateTime.now().subtract(const Duration(days: 9)),
-    lastCompletion: 0.5,
+    // **這裡本來寫著 `hasOptimizationSuggestion: true`。**
+    //
+    // 那是「**我**有一份待看的優化建議」—— 每個人各自不同，不該長在
+    // 共用的課表目錄上。寫死的結果是每一位真實使用者一開啟 App
+    // 就看到一張不是自己的課表掛著「新的優化建議」，點進去卻什麼也沒有。
+    //
+    // 與 0k③ 的 `lastTrainedAt`／`lastCompletion` 同一個家族：
+    // **使用者的資料寫進了平台目錄。** 現在那件事記在
+    // `AppState.optimizedPlanId`，存在使用者自己的存檔裡。
     exercises: [
-      PlanExercise(exercise: ex('plank'), planned: _sets(3, 0, 60)),
+      PlanExercise(
+          exercise: ex('plank'),
+          planned: _sets(3, 0, 60),
+          unit: PlanUnit.seconds),
       PlanExercise(exercise: ex('crunch'), planned: _sets(4, 8, 15)),
     ],
   ),
@@ -159,6 +239,13 @@ final kPlans = <WorkoutPlan>[
       PlanExercise(exercise: ex('squat'), planned: _sets(3, 40, 12)),
     ],
   ),
+];
+
+/// 不屬於平台資料、但**每個帳號都必須有**的課表。
+///
+/// 目前只有空白課表 —— 它是**自由訓練的唯一入口**，沒有任何內容可設定，
+/// 所以既不上雲（沒東西可存），也不是示範資料（真帳號一樣要有）。
+final kPlans = <WorkoutPlan>[
   const WorkoutPlan(
     id: 'p_blank',
     name: '空白課表（自由訓練）',
@@ -277,8 +364,31 @@ const kOpponentNames = [
 ///
 /// 時間型動作把秒數放在 `targetReps`，沿用 App 加入有氧動作時的既有慣例
 /// （`PlannedSet(0, _seconds)`）。判讀依據是動作本身的 [ExerciseType]。
+/// 打包在本地的全部平台課表規格 = CSV 產生的 27 份 ＋ 手寫的 4 份。
+///
+/// 兩份都是平台資料、都上雲、後台都改得動。差別只在**來源**：
+/// 前者由 `gen_platform_plans.py` 自 CSV 產生（不可手改），
+/// 後者是 2026-09-29 從 `kPlans` 搬過來的（見 [kLegacyPlanSpecs]）。
+/// **順序有意義**：四份手寫的官方課表排在 27 份 CSV 課表前面，
+/// 因為在 2026-09-29 搬家之前它們就是目錄的開頭。順序一改，
+/// 「目錄的第一份是什麼」跟著改，而好幾處（畫面預設、測試夾具）
+/// 都靠那個。搬家不該順手改動使用者看到的排列。
+final kAllPlanSpecs = <PlatformPlanSpec>[
+  ...kLegacyPlanSpecs,
+  ...kPlatformPlans,
+];
+
 List<WorkoutPlan> buildCsvPlans() =>
-    buildCsvPlansFrom(kPlatformPlans, kPlatformExercises);
+    buildCsvPlansFrom(kAllPlanSpecs, kPlatformExercises);
+
+/// 打包狀態下一個帳號看得到的全部課表 —— 比照 [kAllExercises]。
+///
+/// 2026-09-29 之前這件事等於 `kPlans`，所以到處都直接寫 `kPlans.firstWhere(...)`。
+/// 四份官方課表搬上雲之後 `kPlans` 只剩空白課表，那些查詢會撈不到東西
+/// （`Bad state: No element`）—— 它們要的其實一直是「目錄裡的那一份」，
+/// 不是「寫死在程式裡的那一份」。
+List<WorkoutPlan> get kAllPlans =>
+    [...buildCsvPlans(), ...kDemoPlans, ...kPlans];
 
 /// 同 [buildCsvPlans]，但課表規格與動作庫由呼叫端提供 ——
 /// 平台資料上雲（[BE-12]）後，這兩份來源可能是 Firestore 的即時內容
@@ -293,6 +403,11 @@ List<WorkoutPlan> buildCsvPlansFrom(
           name: s.name,
           source: PlanSource.official,
           requiredRank: s.requiredRank,
+          // 後台改得動的欄位都要一路帶著走，否則「已設定」下次載入
+          // 就消失（`[BE-12b]`）。`memberUnlockable` 不是後台改的，
+          // 但同樣要帶 —— 掉了就等於少一條解鎖途徑，而那是無聲的。
+          unlockCoins: s.unlockCoins,
+          memberUnlockable: s.memberUnlockable,
           equipmentTier: s.equipmentTier,
           suitableExperience: s.suitableExperience.toSet(),
           suitableGoals: s.suitableGoals.toSet(),
@@ -305,12 +420,15 @@ List<WorkoutPlan> buildCsvPlansFrom(
                       .firstWhere((e) => e.id == it.exerciseId),
                 ),
                 planned: List.generate(
-                    it.sets, (_) => PlannedSet(0, it.amount)),
+                    it.sets, (_) => PlannedSet(it.weight, it.amount)),
                 restSeconds: it.restSeconds,
+                // **單位要一路帶著走。** 丟在這裡的話，下游只剩「重量是 0」
+                // 可以猜 —— 而這 27 份課表的重量全部是 0。
+                unit: it.unit,
               ),
           ],
         ),
     ];
 
 /// 課表 ID → 它的說明性內容。課表詳情頁要用，訓練流程用不到。
-final kPlanSpecById = {for (final s in kPlatformPlans) s.id: s};
+final kPlanSpecById = {for (final s in kAllPlanSpecs) s.id: s};

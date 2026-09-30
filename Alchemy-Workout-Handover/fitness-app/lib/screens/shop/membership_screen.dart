@@ -108,21 +108,38 @@ class _MembershipScreenState extends State<MembershipScreen> {
             ),
           ],
           const SectionLabel('權益', trailing: '對照你的現況'),
+          // 這一段本來有三處**寫死的假資料**（「你目前 5 / 5」「你這個月
+          // 用了 6 次，花了 900 金幣」），而且最後一條會**整頁當掉** ——
+          // `snapshots.keys.reduce(...)` 對空集合丟 StateError，
+          // 而新帳號一份能力值快照都沒有。使用者回報「會員頁是灰色的，
+          // 無法顯示任何資料」就是它（2026-09-28）。
+          //
+          // 「權益逐條對照使用者現況」是這一頁的用途 —— 對照的若是假的，
+          // 這一頁就沒有存在的理由。
           _Benefit(
             title: '無限自訂訓練',
-            current: '你目前 5 / ${s.isMember ? '無限' : '5'}',
+            current: s.isMember
+                ? '你目前 ${s.myPlanCount} 份，會員不限數量'
+                : '你目前 ${s.myPlanCount} / ${s.customPlanQuota} 份',
           ),
           _Benefit(
             title: '每月 $kMonthlyAiCredits 點 AI 點數',
-            current: '你這個月用了 6 次，花了 900 金幣',
+            current: s.isMember
+                ? '本月剩餘 ${s.aiMonthly} 點（另有永久點數 ${s.aiPermanent} 點）'
+                : '你目前只有永久點數 ${s.aiPermanent} 點，沒有每月配發',
           ),
           _Benefit(
             title: '解鎖全部進階訓練計畫',
-            current: '還有 $unlockedPlans 個計畫你尚未解鎖',
+            current: unlockedPlans == 0
+                ? '你已經解鎖全部計畫'
+                : '還有 $unlockedPlans 個計畫你尚未解鎖',
           ),
           _Benefit(
             title: '訓練歷史的跨時間彙總',
-            current: '你已累積 ${s.snapshots.keys.reduce((a, b) => a > b ? a : b)} 天的能力值歷史',
+            // **空集合不能 reduce。** 沒有快照時講實話，不要硬湊一個數字。
+            current: s.snapshots.isEmpty
+                ? '你還沒有能力值歷史 —— 練過幾次之後就會開始累積'
+                : '你已累積 ${s.snapshots.length} 天的能力值歷史',
           ),
           const _Benefit(
             title: '免費 AI 自動優化 ＋ 月報 AI 分析',

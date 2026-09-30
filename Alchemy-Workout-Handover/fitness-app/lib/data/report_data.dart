@@ -2,12 +2,18 @@ import '../domain/admin.dart';
 
 /// 一筆檢舉在雲端的樣子。
 ///
-/// ## 為什麼只有寫、沒有讀
+/// ## 誰讀得到
 ///
 /// 檢舉是**送出去給別人處理**的東西，不是使用者自己的資料。
 /// 一般使用者不該讀得到檢舉佇列 —— 那裡面有別人的違規內容、
-/// 檢舉者的身分與累計違規次數。所以這個介面只有 [file]，
-/// 讀取那一側屬於管理端（custom claim），不在 App 裡。
+/// 檢舉者的身分與累計違規次數。所以 [queue] 與 [judge] 只有管理員
+/// 呼叫得動，`firestore.rules` 那一側也是同一條線
+/// （`allow read: if isAdmin()`）。
+///
+/// **原本這裡只有 [file]**，註解寫著「讀取那一側屬於管理端，不在 App 裡」。
+/// 但管理端就在 App 裡（`screens/admin/`），只是身分那一段沒接 ——
+/// 2026-09-24 接上 custom claim 之後，缺的就只剩這條讀取路徑。
+/// 在那之前使用者按的每一筆檢舉都寫進了 Firestore，而**沒有任何人讀它**。
 ///
 /// 在此之前檢舉**完全沒有上雲**：使用者按了檢舉，那筆案件只進本機的
 /// `reports` 清單，關掉 App 就沒了，而且從頭到尾沒有任何人看得到。
@@ -28,9 +34,19 @@ class CloudReport {
   final String reason;
   final String? note;
 
-  /// 被檢舉者的暱稱。uid 在客戶端不一定查得到（對方可能不在
-  /// 已載入的公開檔案裡），所以這裡存的是當下看得到的名字。
+  /// 被檢舉者的暱稱。**只給人看的** —— 暱稱會改，也可能撞名。
   final String accused;
+
+  /// 被檢舉者的雲端身分。**判定與記點一律看它，不看暱稱。**
+  ///
+  /// 舊案件沒有這個欄位（2026-09-25 之前送出的），所以可以是空值 ——
+  /// 那些案件仍然審得了，只是**記不了違規次數**，因為記點要寫到
+  /// `violations/{uid}`，而我們不知道是哪個 uid。管理端會標示出來。
+  ///
+  /// 在此之前這裡只有暱稱，註解寫著「uid 在客戶端不一定查得到」。
+  /// 那句話對訊息類成立，但貼文與留言的作者 uid 就在手上
+  /// （`Post.authorUid`／`Conversation.peerUid`）—— 只是沒有傳下來。
+  final String? accusedUid;
 
   final String reporterUid;
   final String reporterName;
@@ -44,6 +60,7 @@ class CloudReport {
     required this.content,
     required this.reason,
     required this.accused,
+    this.accusedUid,
     required this.reporterUid,
     required this.reporterName,
     required this.at,
@@ -55,4 +72,18 @@ abstract class ReportSource {
   /// 送出一筆檢舉。**同一個人對同一個標的只會有一筆** ——
   /// 由文件 ID 保證，不必先查有沒有重複。
   Future<void> file(CloudReport r);
+
+  /// 待處理的檢舉。**只有管理員叫得動** —— 一般帳號會被安全規則拒絕。
+  ///
+  /// 回傳的是**逐筆**，不是併過案的。併案（多人檢舉同一標的合併成
+  /// 一個案件）在狀態層做，因為那需要看到所有人的那幾筆，
+  /// 而那正是一般使用者不該讀得到的東西。
+  Future<List<CloudReport>> queue({int limit});
+
+  /// 寫回裁決。[upheld] 為真＝成立。
+  ///
+  /// 同一個標的可能有好幾位檢舉者、也就是好幾份文件，
+  /// 所以裁決是對**一整組 [ids]** 下的，不是對一筆。
+  Future<void> judge(List<String> ids,
+      {required bool upheld, required String handlerName});
 }

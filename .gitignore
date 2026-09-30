@@ -1,0 +1,27 @@
+# repo 根目錄的忽略規則。
+#
+# **這個檔案在 2026-09-24 之前不存在。** `fitness-app/.gitignore` 的註解
+# 寫著 service account 私鑰「由上層 .gitignore 的 *-firebase-adminsdk-*.json
+# 擋掉」—— 而那個「上層」指的是 repo 外面的目錄，git 根本不會讀。
+# 也就是說那條保護一直是文件上有、實際沒有。
+
+# --- 機密：絕對不可進版控 ---
+#
+# Firebase service account 私鑰。**這才是真正的機密** ——
+# 它繞過所有安全規則，拿到就等於拿到整個專案的讀寫權。
+# （相對地 firebase_options.dart 與 google-services.json 裡的 apiKey
+#  只是識別碼，本來就會送給每一位訪客，那兩個是刻意進版控的。）
+*-firebase-adminsdk-*.json
+*serviceAccountKey*.json
+.env
+.env.*
+!.env.example
+
+# --- 工具產生的本機記錄 ---
+firebase-debug.log
+firestore-debug.log
+firebase-debug.*.log
+.firebase/
+
+# --- 作業系統 ---
+.DS_Store

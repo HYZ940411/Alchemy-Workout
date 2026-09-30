@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../domain/admin.dart';
 import 'report_data.dart';
 
 /// Firestore 上的檢舉（`Firestore-Schema設計.md` §2.16）。
@@ -39,6 +40,7 @@ class FirestoreReports implements ReportSource {
       'reason': r.reason,
       if (r.note != null) 'note': r.note,
       'accused': r.accused,
+      if (r.accusedUid != null) 'accusedUid': r.accusedUid,
       'reporterUid': r.reporterUid,
       'reporterName': r.reporterName,
       'at': Timestamp.fromDate(r.at),
@@ -46,5 +48,71 @@ class FirestoreReports implements ReportSource {
       'state': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  @override
+  Future<List<CloudReport>> queue({int limit = 100}) async {
+    // 只撈還沒裁決的。**條件只有 `state`** —— 規則那一側是
+    // `allow read: if isAdmin()`，不限欄位，所以不需要為了滿足規則
+    // 而多加條件（`bond()` 那次的教訓反過來用：那裡是條件不夠，
+    // 這裡是不必多加）。
+    final snap = await _db
+        .collection('reports')
+        .where('state', isEqualTo: 'pending')
+        .limit(limit)
+        .get();
+
+    final out = <CloudReport>[];
+    for (final d in snap.docs) {
+      final r = _reportOf(d.id, d.data());
+      if (r != null) out.add(r);
+    }
+    // 由舊到新 —— 佇列要先處理等最久的那一筆。
+    out.sort((a, b) => a.at.compareTo(b.at));
+    return out;
+  }
+
+  @override
+  Future<void> judge(List<String> ids,
+      {required bool upheld, required String handlerName}) async {
+    if (ids.isEmpty) return;
+    final batch = _db.batch();
+    for (final id in ids) {
+      batch.update(_db.collection('reports').doc(id), {
+        'state': upheld ? 'upheld' : 'dismissed',
+        'handlerName': handlerName,
+        'judgedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+
+  CloudReport? _reportOf(String id, Map<String, dynamic> j) {
+    final targetKey = j['targetKey'];
+    final at = j['at'];
+    // 認不出標的或時間的文件略過 —— 一筆壞資料不該讓整個佇列開不起來。
+    if (targetKey is! String || at is! Timestamp) return null;
+
+    T? byName<T extends Enum>(List<T> values, Object? name) =>
+        values.where((v) => v.name == name).firstOrNull;
+
+    final target = byName(ReportTarget.values, j['target']);
+    final origin = byName(CaseOrigin.values, j['origin']);
+    if (target == null || origin == null) return null;
+
+    return CloudReport(
+      id: id,
+      targetKey: targetKey,
+      target: target,
+      origin: origin,
+      content: j['content'] as String? ?? '',
+      reason: j['reason'] as String? ?? '',
+      note: j['note'] as String?,
+      accused: j['accused'] as String? ?? '',
+      accusedUid: j['accusedUid'] as String?,
+      reporterUid: j['reporterUid'] as String? ?? '',
+      reporterName: j['reporterName'] as String? ?? '',
+      at: at.toDate(),
+    );
   }
 }

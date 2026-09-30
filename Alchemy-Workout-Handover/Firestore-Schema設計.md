@@ -458,6 +458,80 @@ custom claim（`request.auth.token.admin == true`）區分管理員/一般使用
 
 ---
 
+## 10. 實際落地現況（2026-09-25）
+
+> **第 1–9 節是 2026-09-10 的設計方案，不是現況。** 這一節記的是
+> **線上真的存在的東西**。兩者不一致時以本節為準，並在下面註明為什麼偏離。
+>
+> 判準很簡單：**`fitness-app/firestore.rules` 有 `match` 區塊的才是真的存在**，
+> 因為最後一條規則是 `match /{document=**} { allow read, write: if false; }`
+> —— 沒有對應區塊的路徑，客戶端一個位元都讀寫不了。
+
+### 已上線的頂層 collection
+
+| 路徑 | 誰讀得到 | 誰寫得動 | 批次 |
+|---|---|---|---|
+| `users/{uid}/**` | 本人 | 本人 | `[BE-04]` |
+| `public_profiles/{uid}` | 所有登入者 | 本人 | `[BE-11]` 批 1 |
+| `follows/{followerUid}_{followeeUid}` | 所有登入者 | 關注者本人 | `[BE-11]` 批 2 |
+| `posts/{postId}` ＋ `comments`／`likes` | 所有登入者 | 作者、按讚者、**管理員（下架）** | `[BE-11]` 批 3 |
+| `teams/{teamId}` ＋ `requests` | 所有登入者 | 隊員（＋持有邀請者可自行入隊） | `[BE-11]` 批 4 |
+| `conversations/{convId}` ＋ `messages` | 對話的兩人 | 對話的兩人（訊息只能建，已讀例外） | `[BE-11]` 批 5 |
+| `mentor_bonds/{bondId}` ＋ `tasks`／`questions` | 當事兩人 | 當事兩人 | `[BE-11]` 批 6 |
+| `mentor_requests/{requestId}` | 收件與寄件者 | 寄件者建、兩者皆可刪 | `[BE-11]` 批 6 |
+| `reports/{targetKey}__{reporterUid}` | **管理員** | 檢舉者建、管理員裁決 | `[BE-13]` |
+| `violations/{uid}` | 本人與管理員 | **僅管理員** | `[BE-13]` |
+| `punishments/{uid}` | 本人與管理員 | 管理員；**本人僅限申訴那兩個欄位** | `[BE-13]` |
+| `exercises`／`plans`／`platform_config`／`achievement_defs`／`daily_task_pool` | 所有登入者 | 管理員（custom claim） | `[BE-12]` |
+
+### 與第 1–9 節的偏離，以及理由
+
+**① `public_profiles/{uid}` 是後來才有的，原設計沒有它。**
+原設計把階級、能力值等等留在 `users/{uid}`。但**安全規則的粒度是文件，
+不是欄位** —— 「有些欄位公開」唯一可靠的做法就是把它們拆成另一份文件。
+身高體重、生日、電子郵件、處罰狀態、違規次數全部留在只有本人可讀的那棵樹。
+
+**② 累計違規次數**不在 `users/{uid}/violations_log/{id}`（原設計 §1 的位置），
+**而在頂層 `violations/{uid}`**。
+原設計那個位置**是錯的**：`users/{uid}/**` 的規則是「本人全權讀寫」，
+而這個數字決定階梯累犯制的處罰級距 —— **當事人自己就能清掉**。
+`public_profiles/{uid}` 同樣不行（本人可寫）。所以另開一份：管理員可寫、
+當事人唯讀。當事人要讀得到，因為處罰畫面要告訴他這是第幾次。
+
+**③ 處罰狀態**同理。原設計寫在 `users/{uid}` 的純量欄位裡（§1「處罰狀態等」），
+理由與 ② 完全相同：被罰的人自己就能解除。現在在 `punishments/{uid}`。
+**唯一的例外是申訴**——那是當事人發起的，所以他改得動 `appealed` 與
+`appealState`，但只有這兩個（規則用 `affectedKeys().hasOnly([...])` 限住，
+與貼文 `likeCount` 同一個手法）。少了那層，他就能把自己的處罰種類改成「警告」。
+
+**④ 管理員可以改別人的貼文與留言**（只為了下架）。
+原設計的 posts 規則只允許作者。但檢舉成立要下架違規內容，而那是**別人的**
+貼文 —— 少了這一條，管理員按下「成立」畫面上內容消失了，雲端一個位元
+都沒動，其他人照樣看得到。仍然只能軟刪（`deleted` 欄位），硬刪永遠 `false`：
+貼文可被檢舉，硬刪會讓案件失去證據。
+
+**⑤ collection group 查詢需要自己的規則區塊。**
+`match /teams/{teamId}/requests/{targetUid}` **管不到** `collectionGroup('requests')`
+—— 規則引擎眼中那是另一條帶遞迴萬用字元的路徑。少了
+`match /{path=**}/requests/{targetUid}`，「誰邀我入隊」一律 PERMISSION_DENIED。
+
+### 還沒上雲的（後台相關）
+
+- **申訴**：`fileAppeal()` 只把案件加進本機 `appeals`，雲端沒有集合 ——
+  使用者申訴了，管理員看不到。
+- **教官審核**：`instructorCases` 同樣只在本機。
+- **訂單與商品**：整個商城都在本機。**使用者裁決跳過**（2026-09-25）——
+  那不是補讀取路徑，是從零建一套。
+- **訓練體驗評分**：存在 `users/{uid}` 的存檔裡，管理員讀不到（`[BE-18]`）。
+
+### 查證方式
+
+不要相信這一節（也不要相信我的記憶）—— **去讀 `fitness-app/firestore.rules`**，
+那是唯一會被 Firebase 真的執行的東西。索引看 `fitness-app/firestore.indexes.json`，
+而 `test/cloud_gaps_test.dart` 會在新增複合查詢卻沒宣告索引時失敗。
+
+---
+
 ### 關鍵參考檔案
 
 - `fitness-app/lib/data/store.dart`

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../domain/community.dart';
 import 'chat_data.dart';
+import 'cloud_watch.dart';
 
 /// Firestore 上的私訊（[BE-11] 批次 5）。
 ///
@@ -31,6 +32,17 @@ class FirestoreChats implements ChatSource {
     final pair = [a, b]..sort();
     return pair.join('_');
   }
+
+  /// 與 [conversations] 同一組條件（`participants` 含我）。
+  /// 送出訊息時 `send()` 會順手更新對話本體的 `lastAt`，
+  /// 所以新訊息也會讓這條監聽發出訊號 —— 不必另外監看子集合。
+  ///
+  /// **標記已讀不會發訊號**：`markRead()` 改的是訊息上的 `readBy`，
+  /// 動不到對話本體。所以「對方剛讀了我的訊息」仍要重整才看得到。
+  @override
+  Stream<void> watchConversations() => mergeWatches([
+        _col.where('participants', arrayContains: uid).snapshots(),
+      ]);
 
   @override
   Future<List<CloudConversation>> conversations({int limit = 50}) async {

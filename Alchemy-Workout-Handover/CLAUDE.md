@@ -36,9 +36,12 @@ UI 規格在 `UI設計規格書_基礎規範.md`；`Figma/` 是參考不是照�
 
 **活的**
 
-- `fitness-app/` — App 本體。`lib/` 45,169 行、129 檔、約 80 個畫面
+- `fitness-app/` — App 本體。`lib/` 60,996 行、180 檔，其中 `screens/` 89 檔
 - `Event-Storming_事件風暴/` — 規格（見上）
-- `系統架構` — 系統架構章節。**寫的是目標，不是現況**（Firebase／Gemini 都還沒做）
+- `系統架構` — 系統架構章節。**寫的是目標，不是現況** —— 但差距已經變小：
+  Firebase 與 Gemini 都做完了（2026-09-11／09-20），仍未做的是
+  FCM 推播、App Check，以及「評分跑在伺服器上」。逐項狀態看
+  `PROGRESS.md` 第 3 節，**不要憑這一行判斷**
 - `UI設計規格書_基礎規範.md`、`Figma/`
 - `tools/`、`fitness-app/tools/` — 資料匯入與建置腳本
 - `健身動作資料庫-*.csv`、`健身計劃*.csv` — 資料來源
@@ -50,7 +53,7 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 
 **`fitness-app/lib/` 分層**
 
-`data/`（存讀邊界）、`domain/`（22 檔，約 1:1 對應事件風暴的 Aggregate）、
+`data/`（存讀邊界，37 檔）、`domain/`（27 檔，約 1:1 對應事件風暴的 Aggregate）、
 `state/`（`app_state.dart` 是中樞）、`screens/`、`design/`（設計 token）、
 `widgets/`、`mock/`（假資料與生成檔）。
 
@@ -62,7 +65,7 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 
 ```bash
 flutter analyze                          # 應該完全乾淨
-flutter test --timeout 90s               # 1,212 passed
+flutter test --timeout 90s               # 2,652 passed
 flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
                                          # 17 passed，需要 Chrome
 flutter build macos --release

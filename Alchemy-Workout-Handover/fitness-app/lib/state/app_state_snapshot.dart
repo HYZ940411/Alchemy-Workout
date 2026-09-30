@@ -41,6 +41,7 @@ extension AppStateSnapshot on AppState {
         'isMale': isMale,
         'registeredOn': _iso(registeredOn),
         'signUpCompleted': signUpCompleted,
+        'agreedTermsVersion': agreedTermsVersion,
 
         // --- 註冊問卷的四個欄位（已落地的值） ---
         'daysPerWeek': daysPerWeek,
@@ -48,6 +49,8 @@ extension AppStateSnapshot on AppState {
         'commonGoal': commonGoal,
         'experience': experience,
         'equipmentTier': equipmentTier,
+        'birthday': _iso(birthday),
+        'motiveGoal': motiveGoal,
         'weightUpdatedAt': _iso(weightUpdatedAt),
         'surveyUpdatedAt': _iso(surveyUpdatedAt),
         'weightAskSkippedAt': _iso(_weightAskSkippedAt),
@@ -134,6 +137,9 @@ extension AppStateSnapshot on AppState {
         // 168 小時的期限 —— 「還剩幾天」要跨啟動才算得準。
         'inbox': [for (final r in inbox) r.toJson()],
         'autoOptimizeCount': autoOptimizeCount,
+        // 哪一份課表掛著優化建議。**平台目錄存不住它** ——
+        // `applyPlatformData()` 每次登入都整份重建（見 `applyOptimizationMark`）。
+        'optimizedPlanId': optimizedPlanId,
         'followTotal': followTotal,
         'mentorUnlocked': mentorUnlocked,
 
@@ -143,6 +149,48 @@ extension AppStateSnapshot on AppState {
         'noviceChecked': noviceChecked,
         'noviceFinished': noviceFinished,
         'noviceRewardClaimed': noviceRewardClaimed,
+
+        // --- 引導收尾：偏好訓練時段與體驗評分 ---
+        //
+        // **這兩個原本不在存檔裡。** 新手任務的最後兩步問了使用者，
+        // 然後在下一次重新整理時把答案丟掉 —— 而重填一次還是會丟。
+        // 偏好時段沒了，訓練提醒就沒有來源（`reminderSource` 會說
+        // 「尚未填寫」）；評分沒了，那一頁又會回頭問一次。
+        //
+        // 收尾這一段是後來才加的，旁邊的 `noviceStarted`／`noviceFinished`
+        // ／`noviceRewardClaimed` 全都有存 —— **只有這兩個漏掉**。
+        //
+        // **攤平成一維，不可以是「七天各一個陣列」。**
+        //
+        // Firestore 不收陣列包陣列 —— 而且不是只丟掉那個欄位，是**整份
+        // 寫入被拒**。`AppState.saveNow()` 對寫入失敗是靜默吞掉的，
+        // 所以症狀會是「從今以後什麼都存不起來」，而且毫無徵兆。
+        //
+        // 我第一版就是寫成 `[[{from,to}], [], ...]`，本機測試全綠
+        // （MemoryStore／FileStore 是純 JSON，收得下巢狀陣列），
+        // 上線後使用者回報「填了刷新還是未填寫」—— 真相是那一刻起
+        // 他的**所有**資料都停止存檔了。
+        //
+        // 訓練歷史的 `sets` 早就踩過同一個坑（見 `store_firestore.dart`
+        // 的 `_historyToDoc`），但那邊是在 Store 那一層轉形狀。這裡直接
+        // 存成攤平的樣子 —— 少一層轉換，就少一個會忘記的地方。
+        'preferredTimes': [
+          for (var day = 0; day < preferredTimes.byDay.length; day++)
+            for (final r in preferredTimes.byDay[day])
+              {'day': day, 'from': r.startMin, 'to': r.endMin},
+        ],
+        'experienceRatings': [
+          for (final r in experienceRatings)
+            {
+              'target': r.target.name,
+              'targetId': r.targetId,
+              'rater': r.rater,
+              if (r.raterUid != null) 'raterUid': r.raterUid,
+              'stars': r.stars,
+              'feedback': r.feedback,
+              'at': _iso(r.at),
+            },
+        ],
         'socialUnlocked': socialUnlocked,
         'returnTaskAssigned': returnTaskAssigned,
         'returnTaskAssignedAt': _iso(returnTaskAssignedAt),
@@ -163,9 +211,18 @@ extension AppStateSnapshot on AppState {
         'purchasedPlanIds': purchasedPlanIds.toList(),
         'currentPlanId': currentPlan?.id,
 
+        // --- 改名（階段五）---
+        'lastRenamedAt': _iso(lastRenamedAt),
+        'formerNames': formerNames,
+
         // --- 關注 ---
-        'following': following.toList(),
-        'followers': followers,
+        //
+        // **鍵不是暱稱**（暱稱重構階段三）。欄位名跟著換，舊存檔裡的
+        // `following`／`followers` 因此不會被當成鍵讀進來 ——
+        // 版本號要另外維護，換欄位名不用。
+        'followingKeys': following.toList(),
+        'followerKeys': followers,
+        'followNames': _followNames,
         'peakFollowerCount': peakFollowerCount,
 
         // --- 訓練歷史與信箱（會隨使用累積，丟了最有感） ---
@@ -177,6 +234,9 @@ extension AppStateSnapshot on AppState {
               'volume': h.volume,
               'minutes': h.minutes,
               'calories': h.calories,
+              // 2026-09-26 新增。舊存檔沒有這個鍵，讀回來是空值 ——
+              // 那是誠實的：那幾場的完成度我們真的不知道。
+              if (h.completion != null) 'completion': h.completion,
               'exercises': [
                 for (final e in h.exercises)
                   {
@@ -252,6 +312,19 @@ extension AppStateSnapshot on AppState {
         'peakReputation': peakReputation,
         'instructorSpecialties': instructorSpecialties.toList(),
 
+        // **這兩個不進存檔的話，每次重新整理就退回「還沒確認」。**
+        // 而它們守的是 Command：教官不能指派任務、學徒不能提問 ——
+        // 兩者都是靜靜地不做事，畫面照樣說成功了。
+        // 2026-09-30：教官指派任務，toast 跳「已指派」、雲端什麼都沒有。
+        'instructorDutyVersion': instructorDutyVersion,
+        'mentorDisclaimerVersion': mentorDisclaimerVersion,
+
+        // **這兩份記的是「這筆帳已經算過了」，不是畫面上的東西。**
+        // 學徒的評分存在雲端，我每次重讀都會再看到它一次；少了這兩份，
+        // 教官每重開一次 App 聲望就再加一次。
+        'creditedTaskRatings': creditedTaskRatings.toList(),
+        'creditedWeeklyRatings': creditedWeeklyRatings.toList(),
+
         // --- 師徒的週期計數器 ---
         // 一併存檔，否則重開 App 就等於過了一個新的週 ——
         // 「每週最多 N 次」的上限會從另一道門重新變成無上限。
@@ -308,12 +381,17 @@ extension AppStateSnapshot on AppState {
     isMale = boolOf('isMale', isMale);
     registeredOn = _date(j['registeredOn']) ?? registeredOn;
     signUpCompleted = boolOf('signUpCompleted', signUpCompleted);
+    // **讀不到就是空值，不是沿用預設的現行版本。** 這個欄位 2026-09-24
+    // 才加，舊存檔一個都沒有 —— 沿用預設等於替他們按了同意鍵。
+    agreedTermsVersion = pick<String>('agreedTermsVersion');
 
     daysPerWeek = intOf('daysPerWeek', daysPerWeek);
     duration = pick<String>('duration') ?? duration;
     commonGoal = pick<String>('commonGoal') ?? commonGoal;
     experience = pick<String>('experience') ?? experience;
     equipmentTier = pick<String>('equipmentTier') ?? equipmentTier;
+    birthday = _date(pick<String>('birthday')) ?? birthday;
+    motiveGoal = pick<String>('motiveGoal') ?? motiveGoal;
     weightUpdatedAt = _date(j['weightUpdatedAt']);
     surveyUpdatedAt = _date(j['surveyUpdatedAt']);
     _weightAskSkippedAt = _date(j['weightAskSkippedAt']);
@@ -446,8 +524,17 @@ extension AppStateSnapshot on AppState {
         a.claimed = e is Map && e['claimed'] == true;
         a.unlockedAt = e is Map ? _date(e['at']) : null;
       }
-      // 載入後再依真實進度補上該解的 —— 存檔沒記到的（如舊版存檔）不漏掉。
-      syncAchievementsAfterLoad();
+      // **補跑的解鎖判定不在這裡** —— 見 `applySnapshot` 結尾。
+      //
+      // 原本在這裡就呼叫 `syncAchievementsAfterLoad()`，而那時候
+      // **後面的欄位都還沒還原**：互動計數在第 520 行左右、
+      // 訓練天數在 `repairLoadedState()`。於是重算讀到的是建構子
+      // 留下的**示範種子**（`interactionTotals` 的 `{按讚:143, …}`）。
+      //
+      // 2026-09-28 使用者實測：一個讚都沒按過，卻有「按讚 1／10／25／
+      // 50／100 次」五個已解鎖成就 —— 就是這樣來的。
+      // 而且它**在計數被清空之後仍然留著**：成就是單調遞增的，
+      // 一旦被錯誤地解鎖就撤不回來。
     }
 
     final box = pick<List>('inbox');
@@ -462,17 +549,34 @@ extension AppStateSnapshot on AppState {
         ..clear()
         ..addAll(reqs.map((e) => '$e'));
     }
+    // **先清空再填。**
+    //
+    // 原本是直接覆寫存檔裡有的鍵 —— 而 `interactionTotals` 有一組示範用的
+    // 種子值（`{分享:26, 發文:18, 按讚:143, 留言:41}`）。新帳號在
+    // `resetToNewAccount()` 裡被清空，存進去的是 `{}`；讀回來時
+    // `{}` 不是 null，但**迴圈一圈都沒跑**，種子值原封不動留著。
+    //
+    // 2026-09-28 使用者實測：貼文 0、粉絲 0、關注 0、訓練 6 次，
+    // **按讚卻是 145**，而且「按讚 1／10／25／50／100 次」五個成就
+    // 一開始就已領取 —— 他一個讚都沒按過。
+    //
+    // 旁邊的 `interactCounts` 與 `snapshots` 本來就是先 clear 再 addAll，
+    // **這一處是唯一的例外**。
     final totals = pick<Map>('interactionTotals');
     if (totals != null) {
-      for (final e in totals.entries) {
-        if (e.value is num) {
-          interactionTotals['${e.key}'] = (e.value as num).round();
-        }
-      }
+      interactionTotals
+        ..clear()
+        ..addAll({
+          for (final e in totals.entries)
+            if (e.value is num) '${e.key}': (e.value as num).round(),
+        });
     }
 
     followTotal = intOf('followTotal', followTotal);
     autoOptimizeCount = intOf('autoOptimizeCount', autoOptimizeCount);
+    optimizedPlanId = pick<String>('optimizedPlanId');
+    // 存檔載回來之後，記號要貼回目錄上才看得見。
+    applyOptimizationMark();
     // 單調遞增：存檔說解鎖過就是解鎖過。
     if (boolOf('mentorUnlocked', false)) markMentorUnlocked();
 
@@ -481,6 +585,39 @@ extension AppStateSnapshot on AppState {
     noviceChecked = boolOf('noviceChecked', noviceChecked);
     noviceFinished = boolOf('noviceFinished', noviceFinished);
     noviceRewardClaimed = boolOf('noviceRewardClaimed', noviceRewardClaimed);
+
+    // 缺鍵時不動預設值（空的）—— 舊存檔沒有這兩個鍵。
+    if (pick<List>('preferredTimes') case final rows?) {
+      final byDay = List.generate(7, (_) => <TimeRange>[]);
+      for (final r in rows) {
+        if (r is! Map) continue;
+        final day = (r['day'] as num?)?.toInt();
+        final from = (r['from'] as num?)?.toInt();
+        final to = (r['to'] as num?)?.toInt();
+        if (day == null || from == null || to == null) continue;
+        if (day < 0 || day > 6) continue; // 壞資料不要打翻整份
+        byDay[day].add(TimeRange(from, to));
+      }
+      preferredTimes = PreferredTimes(byDay);
+    }
+    if (pick<List>('experienceRatings') case final rows?) {
+      experienceRatings.clear();
+      for (final r in rows) {
+        if (r is! Map) continue;
+        final target = _enumByName(RatingTarget.values, r['target']);
+        final at = _date(r['at']);
+        if (target == null || at == null) continue;
+        experienceRatings.add(ExperienceRating(
+          target: target,
+          targetId: r['targetId'] as String? ?? '',
+          rater: r['rater'] as String? ?? '',
+          raterUid: r['raterUid'] as String?,
+          stars: (r['stars'] as num?)?.toInt() ?? 0,
+          feedback: r['feedback'] as String?,
+          at: at,
+        ));
+      }
+    }
     socialUnlocked = boolOf('socialUnlocked', socialUnlocked);
     returnTaskAssigned = boolOf('returnTaskAssigned', returnTaskAssigned);
     returnTaskAssignedAt = _date(j['returnTaskAssignedAt']);
@@ -512,12 +649,37 @@ extension AppStateSnapshot on AppState {
         ? null
         : platformPlans.where((p) => p.id == planId).firstOrNull;
 
-    if (pick<List>('following') != null) {
+    lastRenamedAt = _date(pick<String>('lastRenamedAt'));
+    if (pick<List>('formerNames') != null) {
+      formerNames
+        ..clear()
+        ..addAll(strs('formerNames'));
+    }
+
+    // 關注名單。新欄位是鍵，舊欄位（階段三之前）是暱稱，翻一次。
+    final names = pick<Map>('followNames');
+    if (names != null) {
+      _followNames
+        ..clear()
+        ..addAll({
+          for (final e in names.entries)
+            if (e.value is String) '${e.key}': e.value as String,
+        });
+    }
+    if (pick<List>('followingKeys') != null) {
       following
         ..clear()
-        ..addAll(strs('following'));
+        ..addAll(strs('followingKeys'));
+    } else if (pick<List>('following') != null) {
+      following
+        ..clear()
+        ..addAll(strs('following').map(followKeyFromLegacyName));
     }
-    if (pick<List>('followers') != null) followers = strs('followers');
+    if (pick<List>('followerKeys') != null) {
+      followers = strs('followerKeys');
+    } else if (pick<List>('followers') != null) {
+      followers = strs('followers').map(followKeyFromLegacyName).toList();
+    }
     peakFollowerCount = intOf('peakFollowerCount', peakFollowerCount);
 
     final hist = pick<List>('history');
@@ -545,8 +707,21 @@ extension AppStateSnapshot on AppState {
                       isTimed: e['isTimed'] == true,
                     ),
               ],
+              // 舊存檔沒有這個鍵 → 空值 → 畫面顯示「—」。
+              completion: (h['completion'] as num?)?.toDouble(),
             ),
       ];
+      // **訓練歷史一律新的在前。**
+      //
+      // 這是 `AppState.history` 的不變條件（`finishWorkout` 是
+      // `insert(0, …)`），而在此之前它只是「存檔裡剛好是那個順序」。
+      // 2026-09-26 Firestore 那一側的文件順序真的壞過一次，讀回來變成
+      // 舊的在前 —— 而首頁、訓練歷史頁、課表卡的「上次訓練」全都
+      // 假設了這個順序。
+      //
+      // 各個 Store 各自保證一次，就是同一個決定寫在三個地方。
+      // 在這裡排一次，任何來源進來都成立。
+      history.sort((a, b) => b.date.compareTo(a.date));
     }
 
     final mails = pick<List>('mailbox');
@@ -632,6 +807,10 @@ extension AppStateSnapshot on AppState {
     }
 
     isInstructor = boolOf('isInstructor', isInstructor);
+    instructorDutyVersion =
+        pick<String>('instructorDutyVersion') ?? instructorDutyVersion;
+    mentorDisclaimerVersion =
+        pick<String>('mentorDisclaimerVersion') ?? mentorDisclaimerVersion;
     instructorReputation = intOf('instructorReputation', instructorReputation);
     peakReputation = intOf('peakReputation', peakReputation);
     _mentorWeek = _date(j['mentorWeek']) ?? _mentorWeek;
@@ -648,6 +827,16 @@ extension AppStateSnapshot on AppState {
       instructorSpecialties
         ..clear()
         ..addAll(strs('instructorSpecialties'));
+    }
+    if (pick<List>('creditedTaskRatings') != null) {
+      creditedTaskRatings
+        ..clear()
+        ..addAll(strs('creditedTaskRatings'));
+    }
+    if (pick<List>('creditedWeeklyRatings') != null) {
+      creditedWeeklyRatings
+        ..clear()
+        ..addAll(strs('creditedWeeklyRatings'));
     }
 
     if (pick<List>('ownedEquipment') != null) {
@@ -666,6 +855,14 @@ extension AppStateSnapshot on AppState {
 
     demoClockOffset = Duration(milliseconds: intOf('demoClockOffsetMs', 0));
     repairLoadedState();
+
+    // **最後才補跑解鎖判定。**
+    //
+    // 「依真實進度補上存檔沒記到的」要成立，前提是**真實進度已經全部
+    // 還原完**。擺在中間就會拿建構子的示範資料去解鎖（見上方
+    // `achievements` 那一段）。`repairLoadedState()` 之後也是刻意的 ——
+    // 它會補回累積訓練天數，而那是累積訓練成就的依據。
+    syncAchievementsAfterLoad();
     return true;
   }
 
@@ -699,6 +896,44 @@ extension AppStateSnapshot on AppState {
       for (final d in ghosts) {
         pending[d] = 0;
       }
+    }
+
+    // --- 訓練天數：歷史裡有幾天就至少是幾天 ---
+    //
+    // 2026-09-28 使用者實測：累積訓練次數 6、**累積訓練天數 0**。
+    // 根因修好了（`finishWorkout` 原本問 `lastTrainedDate != today`，
+    // 而新帳號的那個值就是今天 —— 見 1C），但**修不了已經漏掉的那幾天**：
+    // 那一天的訓練已經寫進歷史，計數器卻永遠少了 1。
+    //
+    // 所以在這裡補。與上面清 [trainedDims] 同一個原則：
+    // **歷史是證據**。差別只在方向 —— 那邊是移除沒有證據的，
+    // 這邊是補上有證據卻沒算到的。
+    //
+    // **只增不減**，維持「單調遞增」的不變條件
+    //（`02_Aggregate定義.md` §47）。算多了不在這裡處理，
+    // 那是 `reconcileWorkoutCount()` 的事。
+    final days = {for (final h in history) businessDate(h.date)};
+    if (days.length > totalWorkoutDays) totalWorkoutDays = days.length;
+
+    // --- 連續訓練天數：只補「今天」這一格 ---
+    //
+    // **不整段重算。** 連續天數的規則只能有一份，而它在 `finishWorkout`
+    // （遞增）與 `runStreakCheck`（超過 36 小時歸零）兩處 ——
+    // `finishWorkout` 自己的註解就寫著「與 `runStreakCheck` 的中斷判定
+    // 共用同一條規則，兩邊各寫一份就會對不起來」。在載入時再推算一次
+    // 就是第三份。
+    //
+    // 但**今天練過卻顯示 0 天**是實話與畫面不符 —— 那是 1C 那個缺陷的
+    // 殘留：那一天的遞增分支沒跑到，而今天不會再跑第二次。
+    // 所以只補這一格：歷史裡今天有訓練，連續天數至少是 1。
+    // 這不是重算，是把 `finishWorkout` 當時該寫進去的下限補上。
+    //
+    // 〔更正〕第一版我寫的理由是「連續天數可以被合法地調低（永久停權
+    // 經申訴撤銷時要重設）」—— **那是錯的**：`rebaseClocks()` 只移動
+    // 計時基準，完全不動 `trainingStreakDays`。留著錯的理由比沒有理由糟。
+    if (trainingStreakDays == 0 &&
+        history.any((h) => businessDate(h.date) == businessDate(now))) {
+      trainingStreakDays = 1;
     }
   }
 }

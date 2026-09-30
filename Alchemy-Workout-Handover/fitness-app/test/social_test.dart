@@ -18,33 +18,37 @@ void main() {
     test('關注別人只改對方的粉絲數，不改自己的', () {
       final s = AppState();
       final mine = s.followerCount;
-      final target = s.socialUsers.firstWhere((u) => !s.following.contains(u.name));
-      final theirs = s.otherFollowerCounts[target.name]!;
+      final target =
+          s.socialUsers.firstWhere((u) => !s.isFollowing(u.name, uid: u.uid));
+      final key = s.personKeyOf(target.name, target.uid);
+      final theirs = s.otherFollowerCounts[key]!;
 
-      s.toggleFollow(target.name);
+      s.toggleFollow(target.name, uid: target.uid);
 
-      expect(s.following.contains(target.name), isTrue);
-      expect(s.otherFollowerCounts[target.name], theirs + 1);
+      expect(s.isFollowing(target.name, uid: target.uid), isTrue);
+      expect(s.otherFollowerCounts[key], theirs + 1);
       expect(s.followerCount, mine, reason: '關注是我對他，不是他對我');
     });
 
     test('重複關注不產生第二筆 —— 唯一鍵為關注者＋被關注者', () {
       final s = AppState();
       final name = s.socialUsers.first.name;
-      if (!s.following.contains(name)) s.toggleFollow(name);
+      if (!s.isFollowing(name)) s.toggleFollow(name);
       final n = s.following.length;
-      s.following.add(name); // 直接再塞一次
+      s.toggleFollow(name); // 直接再關注一次
+      s.toggleFollow(name); // 取消之後再來一次，繞回同一個鍵
       expect(s.following.length, n);
     });
 
     test('取消關注把對方的粉絲數減回去', () {
       final s = AppState();
       const name = '深蹲王'; // 一開始就在關注中
-      expect(s.following.contains(name), isTrue);
-      final theirs = s.otherFollowerCounts[name]!;
+      expect(s.isFollowing(name), isTrue);
+      final key = s.personKeyOf(name, null);
+      final theirs = s.otherFollowerCounts[key]!;
       s.toggleFollow(name);
-      expect(s.following.contains(name), isFalse);
-      expect(s.otherFollowerCounts[name], theirs - 1);
+      expect(s.isFollowing(name), isFalse);
+      expect(s.otherFollowerCounts[key], theirs - 1);
     });
 
     test('粉絲數下降不撤銷已解鎖的粉絲成就', () {
@@ -59,7 +63,7 @@ void main() {
 
       // 掉回門檻以下
       for (var i = 0; i < 8; i++) {
-        s.loseFollower('粉絲$i');
+        s.loseFollower(s.personKeyOf('粉絲$i', null));
       }
       expect(s.followerCount, lessThan(10));
       expect(s.followerMilestones, unlocked,
@@ -276,7 +280,8 @@ void main() {
       // 切到粉絲分頁
       await t.tap(find.textContaining('粉絲 '));
       await t.pumpAndSettle();
-      expect(find.textContaining('粉絲成就'), findsOneWidget);
+      // 那行補充說明 2026-09-24 依使用者裁示移除（在按鈕底下反而讓人猶豫）。
+      expect(find.textContaining('粉絲成就'), findsNothing);
     });
 
     testWidgets('封鎖名單：解除要先確認', (t) async {

@@ -23,9 +23,9 @@ void main() {
   test('取消關注不扣歷史計數', () {
     final s = AppState();
     final before = s.followTotal;
-    final who = s.following.first;
+    final who = s.followName(s.following.first);
     s.toggleFollow(who);
-    expect(s.following.contains(who), isFalse);
+    expect(s.isFollowing(who), isFalse);
     expect(s.followTotal, before, reason: '解鎖條件以歷史行為計數，行為刪除不影響計數');
   });
 

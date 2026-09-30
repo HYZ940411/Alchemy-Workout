@@ -15,7 +15,7 @@ import 'package:fitness_app/state/app_state.dart';
 import 'developer_mode.dart';
 
 WorkoutPlan get blankPlan =>
-    kPlans.firstWhere((p) => p.source == PlanSource.blank);
+    kAllPlans.firstWhere((p) => p.source == PlanSource.blank);
 
 void main() {
   group('退步下限：相對歷史最高的兩個主階', () {

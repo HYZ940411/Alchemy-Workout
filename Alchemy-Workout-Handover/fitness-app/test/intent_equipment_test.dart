@@ -1,0 +1,146 @@
+// 講「今天沒有啞鈴」要聽得懂（2026-09-26）。
+//
+// 使用者實測：在訓練中調整裡打「今天沒有啞鈴可以用」，系統回
+// 「抱歉，我看不出你想往哪個方向調」。那句話講得再清楚不過了 ——
+// 他要換掉做不了的動作（`AdjustIntent.swap`）。
+//
+// 根因：原本的條件只有 `沒有器材` 與 `器材不`。**沒有人會說「我沒有
+// 器材」**，他會說沒有**哪一樣**器材。
+//
+// 器材名稱直接取自值域 `kEquipmentItems`，不自己再列一份 ——
+// 管理員在後台加了品項，這裡要跟著認得。
+
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:fitness_app/domain/ai_adjust.dart';
+import 'package:fitness_app/mock/mock_equipment.dart';
+import 'package:fitness_app/state/app_state.dart';
+
+void main() {
+  group('器材缺席＝換動作', () {
+    for (final t in const [
+      '今天沒有啞鈴可以用',
+      '沒有槓鈴',
+      '健身房的壺鈴被占了',
+      '彈力繩壞了',
+      '機械式器材不能用',
+      '今天沒帶啞鈴',
+    ]) {
+      test('「$t」', () {
+        expect(AppState.parseIntent(t), AdjustIntent.swap, reason: t);
+      });
+    }
+
+    // 2026-09-28 使用者實測打「我沒有任何器材」，系統回「AI 暫時忙不過來，
+    // 沒辦法判讀你的需求」—— 模型那一趟失敗了，而端內備援**也沒接住**。
+    //
+    // 根因：條件寫的是 `a.contains('沒有器材')`，而他打的是
+    // 「沒有**任何**器材」。**中間插一個詞，整串比對就失效了。**
+    // 2026-09-26 那次的結論「沒有人會說我沒有器材」只對了一半 ——
+    // 他確實不會單講「器材」，但他會講「任何器材」「所有器材」。
+    //
+    // 改法與具體品項同一條路：否定詞 ＋ 泛稱（器材／設備／裝備／器械）。
+    for (final t in const [
+      '我沒有任何器材',
+      '我現在沒有任何器材可以使用',
+      '今天沒有器材',
+      '沒有任何設備',
+      '所有器材都不能用',
+      '健身器材都壞了',
+    ]) {
+      test('泛稱也要認得：「$t」', () {
+        expect(AppState.parseIntent(t), AdjustIntent.swap, reason: t);
+      });
+    }
+
+    test('值域裡的每一樣器材都認得', () {
+      for (final e in kEquipmentItems) {
+        expect(AppState.parseIntent('今天沒有$e'), AdjustIntent.swap,
+            reason: e);
+      }
+    });
+  });
+
+  group('不會誤判成換動作', () {
+    test('「沒力氣了，想輕一點」→ 降強度', () {
+      expect(AppState.parseIntent('沒力氣了，想輕一點'), AdjustIntent.easier);
+    });
+
+    test('「組數太多」→ 減少組數', () {
+      expect(AppState.parseIntent('組數太多'), AdjustIntent.trim);
+    });
+
+    test('「今天狀況好，想加重」→ 升強度', () {
+      expect(AppState.parseIntent('今天狀況好，想加重'), AdjustIntent.harder);
+    });
+
+    test('沒提到器材的否定句不算換動作', () {
+      // 「沒睡飽」有「沒」但沒有任何器材名稱 —— 不該判成換動作。
+      expect(AppState.parseIntent('沒睡飽'), isNull);
+    });
+  });
+
+  group('認不出來就回空值，不猜', () {
+    test('「早安」', () {
+      // 猜錯的代價不是保守與否，是做了他沒要求的事還收了錢。
+      expect(AppState.parseIntent('早安'), isNull);
+    });
+  });
+
+  // 2026-09-27 使用者：「希望能先判斷是否符合 4 個調整方向其中一項，
+  // 不要什麼都擋」。擴充說法，但原則沒變：**只收指向唯一方向的說法**。
+  group('常見說法認得出方向', () {
+    void reads(String said, AdjustIntent want) =>
+        expect(AppState.parseIntent(said), want, reason: said);
+
+    test('想輕一點的各種講法', () {
+      for (final said in [
+        '今天太重了',
+        '有點吃力',
+        '肩膀很痠',
+        '今天狀況不好',
+        '想保守一點',
+        '最後一組撐不住',
+      ]) {
+        reads(said, AdjustIntent.easier);
+      }
+    });
+
+    test('想重一點的各種講法', () {
+      for (final said in [
+        '這樣太輕',
+        '想重一點',
+        '今天狀態很好',
+        '想挑戰看看',
+      ]) {
+        reads(said, AdjustIntent.harder);
+      }
+    });
+
+    test('時間不夠 → 減少組數', () {
+      // 最常見卻認不出來的那一類：使用者講的是「我只有 30 分鐘」，
+      // 而不是「減少組數」。
+      for (final said in [
+        '今天時間不夠',
+        '有點趕時間',
+        '想縮短一點',
+        '沒時間練完',
+      ]) {
+        reads(said, AdjustIntent.trim);
+      }
+    });
+
+    test('指向兩個方向的說法一律不收 —— 寧可再問一次', () {
+      for (final said in ['今天這個太難', '想少做一點重量', '早安']) {
+        expect(AppState.parseIntent(said), isNull, reason: said);
+      }
+    });
+
+    // 使用者裁決 B：不新增第五個方向。所以「重點練某個部位」仍然擋下，
+    // 但訊息改口為「目前只能往這 4 個方向調」（不再說「我看不出」）。
+    test('練某個部位不在四個方向裡，仍然認不出來', () {
+      expect(AppState.parseIntent('我想多練上胸'), isNull);
+      expect(AppState.parseIntent('我希望今天重點練上斜'), isNull);
+    });
+  });
+}

@@ -45,7 +45,8 @@ void main() {
 
     test('粉絲數', () {
       final s = AppState();
-      expect(s.followersOf('早鳥訓練'), s.otherFollowerCounts['早鳥訓練']);
+      expect(s.followersOf('早鳥訓練'),
+          s.otherFollowerCounts[s.personKeyOf('早鳥訓練', null)]);
       expect(s.followersOf('早鳥訓練'), isNot(s.followerCount));
       expect(s.followersOf(s.displayName), s.followerCount);
     });
@@ -145,15 +146,19 @@ void main() {
           reason: '原本取的是整個動態牆');
     });
 
-    test('看別人時不列僅關注者與私人的貼文', () {
+    // 原本驗「看別人時不列僅關注者與私人的貼文」。
+    // **可見範圍已移除**（使用者裁決 2026-09-26）—— 理由見
+    // `PostVisibility` 的註解：它從來沒有生效過。
+    test('看別人時，舊貼文不論當初標什麼都列出來', () {
       final s = AppState();
       for (final v in [PostVisibility.followersOnly, PostVisibility.private]) {
         s.posts.insert(0, Post(
           id: 'p-$v', author: '早鳥訓練', authorRank: 27,
           text: '${v.name} 的貼文', at: DateTime.now(), visibility: v));
       }
-      final got = s.postsBy('早鳥訓練');
-      expect(got.every((p) => p.visibility == PostVisibility.public), isTrue);
+      final got = s.postsBy('早鳥訓練').map((p) => p.text);
+      expect(got, contains('private 的貼文'));
+      expect(got, contains('followersOnly 的貼文'));
     });
 
     test('看自己時三種可見範圍都列 —— 那本來就是我的東西', () {

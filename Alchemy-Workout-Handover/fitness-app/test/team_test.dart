@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/design/components.dart';
 import 'package:fitness_app/domain/community.dart';
+import 'package:fitness_app/domain/social.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/main.dart';
 import 'package:fitness_app/screens/social/team_create_screen.dart';
@@ -82,19 +83,25 @@ void main() {
 
     test('完成人數 × 10，全員完成另加 50', () {
       expect(
-        TimedTaskTally(members: ms(3), credited: const {'m0', 'm1'}).score,
+        TimedTaskTally(
+                members: ms(3),
+                credited: {personKey('m0', null), personKey('m1', null)})
+            .score,
         2 * kTimedTaskPerMember,
       );
       expect(
-        TimedTaskTally(members: ms(3), credited: const {'m0', 'm1', 'm2'}).score,
+        TimedTaskTally(members: ms(3), credited: {
+          for (final n in ['m0', 'm1', 'm2']) personKey(n, null)
+        }).score,
         3 * kTimedTaskPerMember + kTimedTaskAllBonus,
         reason: '全員完成另加固定分',
       );
     });
 
     test('名單向團隊要 —— 已離隊的人不算，也不佔分母', () {
-      final tally =
-          TimedTaskTally(members: ms(2), credited: const {'m0', '已離隊的人'});
+      final tally = TimedTaskTally(
+          members: ms(2),
+          credited: {personKey('m0', null), personKey('已離隊的人', null)});
       expect(tally.total, 2);
       expect(tally.doneCount, 1);
       expect(tally.allDone, isFalse);

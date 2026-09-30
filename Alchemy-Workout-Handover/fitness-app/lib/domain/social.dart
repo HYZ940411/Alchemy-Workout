@@ -7,20 +7,49 @@ library;
 /// 社群裡的一個人。名稱在本專案即為識別碼。
 class SocialUser {
   final String name;
+
+  /// 雲端身分。**示範資料的假使用者沒有 uid，所以可以是空值。**
+  ///
+  /// 名稱在示範資料裡當識別碼用，但**暱稱可以改** —— 要拿去查對方
+  /// 現在的階級與六維時一律用這個，查不到才退回用名稱。
+  final String? uid;
+
+  /// **這不是要顯示的值**，只在查不到他的公開檔案時墊底。
   final int rank;
   final String grade; // 綜合能力等級
   const SocialUser({
     required this.name,
     required this.rank,
     required this.grade,
+    this.uid,
   });
 }
 
 /// 一筆封鎖。單向關係，唯一鍵為 封鎖者 ID ＋ 被封鎖者 ID。
+/// 一個人在「以人為鍵」的集合裡長什麼樣（暱稱重構）。
+///
+/// **有 uid 就是 uid。** 沒有的（示範資料、還沒發布公開檔案的人）退回
+/// 暱稱並加上前綴 —— 加前綴是為了不可能跟某個真實 uid 撞值，
+/// Firebase 的 uid 不含冒號。
+///
+/// 關注名單、他人的粉絲數、團隊貢獻、限時任務完成名單、學徒評分次數
+/// 都用這個鍵。`AppState.personKeyOf` 是它加上「暱稱反查 uid」的版本。
+String personKey(String name, String? uid) => uid ?? 'name:$name';
+
+/// 這個鍵是不是「沒有 uid」的那一種。
+bool isNamePersonKey(String key) => key.startsWith('name:');
+
 class BlockedUser {
   final String name;
+
+  /// 對方的雲端身分。**示範資料的假使用者沒有，所以可以是空值。**
+  ///
+  /// 理由同 [SocialUser.uid]。封鎖的後置條件是「解除雙方的關注關係」，
+  /// 而關注名單以 uid 為鍵 —— 只留暱稱的話，對方改名之後解不掉，
+  /// 也擋不住他在下一次登入時從雲端回到我的粉絲名單。
+  final String? uid;
   final DateTime at;
-  const BlockedUser(this.name, this.at);
+  const BlockedUser(this.name, this.at, {this.uid});
 }
 
 /// 通知的兩類。**只有推播類受同日總量上限約束。**

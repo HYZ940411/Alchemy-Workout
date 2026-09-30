@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/domain/community.dart';
+import 'package:fitness_app/domain/social.dart';
 import 'package:fitness_app/domain/leaderboard.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/state/app_state.dart';
@@ -128,7 +129,7 @@ void main() {
     test('每位成員都查得到自己對本隊貢獻了多少', () {
       final t = AppState().myTeam!;
       for (final m in t.members) {
-        expect(t.contributions[m.name], isNotNull);
+        expect(t.contributions[personKey(m.name, m.uid)], isNotNull);
       }
     });
   });

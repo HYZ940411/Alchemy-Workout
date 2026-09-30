@@ -18,11 +18,12 @@ void main() {
     test('我關注的人被封鎖 → 關注取消，對方粉絲數 −1', () {
       final s = AppState();
       const who = '深蹲王';
-      expect(s.following, contains(who));
-      final before = s.otherFollowerCounts[who] ?? 0;
+      expect(s.isFollowing(who), isTrue);
+      final key = s.personKeyOf(who, null);
+      final before = s.otherFollowerCounts[key] ?? 0;
       expect(s.blockUser(who), isTrue);
-      expect(s.following, isNot(contains(who)));
-      expect(s.otherFollowerCounts[who], before - 1,
+      expect(s.isFollowing(who), isFalse);
+      expect(s.otherFollowerCounts[key], before - 1,
           reason: '粉絲數為儲存欄位，非即時彙總，得逐處維護');
     });
 
@@ -30,9 +31,11 @@ void main() {
       final s = AppState();
       // 隊友不能封鎖，挑一個不在隊上的粉絲。
       final mates = s.myTeam!.members.map((m) => m.name).toSet();
-      final who = s.followers.firstWhere((f) => !mates.contains(f));
+      final who = s.followers
+          .map(s.followName)
+          .firstWhere((f) => !mates.contains(f));
       expect(s.blockUser(who), isTrue);
-      expect(s.followers, isNot(contains(who)));
+      expect(s.isFollower(who), isFalse);
     });
 
     test('解除封鎖不自動恢復關注', () {
@@ -41,7 +44,7 @@ void main() {
       s.blockUser(who);
       s.unblockUser(who);
       expect(s.isBlocked(who), isFalse);
-      expect(s.following, isNot(contains(who)),
+      expect(s.isFollowing(who), isFalse,
           reason: '模型明訂解除封鎖不自動恢復任何已解除的關係');
     });
   });

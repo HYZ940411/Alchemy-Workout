@@ -95,7 +95,17 @@ class AchievementDefsScreen extends StatelessWidget {
       coins: c,
       exp: e,
     );
-    showToast(context, failure ?? '已設定');
+    if (failure != null) {
+      showToast(context, failure);
+      return;
+    }
+    // 改完的那一枚（同一個 category#threshold 可能已經換成新門檻）。
+    final now = s.achievements.firstWhere(
+        (x) => x.category == a.category && x.name == a.name,
+        orElse: () => a);
+    final cloud = await s.pushAchievement(now);
+    if (!context.mounted) return;
+    showToast(context, cloud ?? '已設定');
   }
 }
 
@@ -230,7 +240,10 @@ class _DailyTaskPoolScreenState extends State<DailyTaskPoolScreen> {
       showToast(context, '請填入整數');
       return;
     }
-    showToast(context, s.applySettings('taskPool', {'drawCount': v}) ?? '已設定');
+    final failure = s.applySettings('taskPool', {'drawCount': v});
+    final cloud = failure ?? await s.pushConfigGroup('taskPool');
+    if (!context.mounted) return;
+    showToast(context, cloud ?? '已設定');
     setState(() {});
   }
 
@@ -292,9 +305,13 @@ class _DailyTaskPoolScreenState extends State<DailyTaskPoolScreen> {
               AppButton(
                 label: '移除此項目',
                 kind: BtnKind.secondary,
-                onPressed: () {
+                onPressed: () async {
                   Navigator.of(context).pop(false);
-                  showToast(context, s.removeTaskPoolItem(existing) ?? '已移除');
+                  final failure = s.removeTaskPoolItem(existing);
+                  final cloud =
+                      failure ?? await s.dropTaskPoolItem(existing);
+                  if (!context.mounted) return;
+                  showToast(context, cloud ?? '已移除');
                 },
               ),
             ],
@@ -308,21 +325,30 @@ class _DailyTaskPoolScreenState extends State<DailyTaskPoolScreen> {
       showToast(context, '目標次數請填整數');
       return;
     }
+    final item = TaskPoolItem(
+      id: existing?.id ?? 'tp${DateTime.now().millisecondsSinceEpoch}',
+      name: name.text,
+      sourceEvent: event.text.trim().isEmpty ? '（未指定）' : event.text.trim(),
+      target: n,
+      audience: audience,
+    );
     final failure = existing == null
-        ? s.addTaskPoolItem(TaskPoolItem(
-            id: 'tp${DateTime.now().millisecondsSinceEpoch}',
-            name: name.text,
-            sourceEvent:
-                event.text.trim().isEmpty ? '（未指定）' : event.text.trim(),
-            target: n,
-            audience: audience,
-          ))
+        ? s.addTaskPoolItem(item)
         : s.updateTaskPoolItem(existing,
             name: name.text,
             sourceEvent: event.text,
             target: n,
             audience: audience);
-    showToast(context, failure ?? '已設定');
+    if (failure != null) {
+      showToast(context, failure);
+      setState(() {});
+      return;
+    }
+    // 更新走的是「同一個 id 覆寫」，新增是「新的 id」—— 兩者在雲端都是 set。
+    final now = s.taskPool.firstWhere((x) => x.id == item.id, orElse: () => item);
+    final cloud = await s.pushTaskPoolItem(now);
+    if (!context.mounted) return;
+    showToast(context, cloud ?? '已設定');
     setState(() {});
   }
 }

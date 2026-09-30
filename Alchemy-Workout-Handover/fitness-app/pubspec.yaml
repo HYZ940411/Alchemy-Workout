@@ -48,6 +48,8 @@ dependencies:
   # [BE-08]：呼叫我們自己的 Cloudflare Worker。
   # **金鑰不在這裡** —— 它在 Cloudflare 的 secret，App 只呼叫自己的端點。
   http: ^1.2.2
+  image_picker: ^1.2.3
+  image: ^4.10.1
   # 刻意**不**加 google_sign_in：改用 firebase_auth 內建的 OAuth 流程。
   # 理由見 lib/data/auth.dart 的類別註解（Web 按鈕外觀、Android SHA-1）。
 

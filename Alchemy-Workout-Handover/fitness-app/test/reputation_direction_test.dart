@@ -54,7 +54,7 @@ void main() {
           .firstWhere((x) => x.state != MentorTaskState.assigned);
       final mine = s.instructorReputation;
       final theirs = s.myInstructor!.reputation;
-      expect(s.rateMentorTask(t, 5), isTrue);
+      expect(s.rateMentorTask(t, 5), RateResult.counted);
       expect(s.myInstructor!.reputation, greaterThan(theirs));
       expect(s.instructorReputation, mine);
     });
@@ -64,7 +64,7 @@ void main() {
       s.myInstructor = null;
       final t = s.mentorTasks
           .firstWhere((x) => x.state != MentorTaskState.assigned);
-      expect(s.rateMentorTask(t, 5), isFalse);
+      expect(s.rateMentorTask(t, 5), RateResult.rejected);
     });
   });
 

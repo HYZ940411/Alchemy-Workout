@@ -1,3 +1,4 @@
+import 'dart:async';
 // 外部 AI 的邊界（`[BE-08]`）。
 //
 // 規格把 LLM 放在軟體邊界**之外**，只規範呼叫時點、扣點、失敗退點與
@@ -24,10 +25,45 @@ import 'package:fitness_app/state/app_state.dart';
 
 /// 回傳預先寫好的東西，或是擲出例外。
 class _FakeSource implements AiSuggestionSource {
+  /// 這幾份假件都不測自動優化 —— **擲例外而不是回空值**：
+  /// 回空值會讓「沒被呼叫到」與「回了個空的」長得一樣。
+  @override
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) =>
+      throw UnimplementedError('這個假件不支援自動優化');
+
   final Map<String, dynamic>? reply;
   final bool throws;
   Map<String, dynamic>? sent;
-  _FakeSource({this.reply, this.throws = false});
+
+  /// 意圖分類要回什麼。空值代表「判不出來」（合法結果）。
+  final AdjustIntent? classifyAs;
+
+  /// 分類這一支要不要擲例外 —— 驗「AI 掛掉時退回端內規則」。
+  final bool classifyThrows;
+
+  /// 擲出去的訊息。用來分辨「額度用完」與「忙線」。
+  final String throwMessage;
+
+  String? classified;
+
+  _FakeSource({
+    this.reply,
+    this.throws = false,
+    this.classifyAs,
+    this.classifyThrows = false,
+    this.throwMessage = '分類逾時',
+  });
+
+  @override
+  Future<RemoteIntent> classify(String say) async {
+    classified = say;
+    if (classifyThrows) throw Exception(throwMessage);
+    return RemoteIntent(classifyAs);
+  }
 
   @override
   Future<RemoteSuggestion> suggest({
@@ -217,18 +253,199 @@ void main() {
     });
   });
 
-  group('接上 AppState', () {
-    /// 照 `ai_adjust_test.dart` 的建法：開一場訓練，走到「等建議」那一步。
-    AppState upToAnalyzing(AiSuggestionSource? source) {
+  // 2026-09-27 使用者裁決 B：**一律先給 AI 判斷方向**，
+  // 端內的關鍵字比對只當 AI 掛掉時的備援。
+  //
+  // 保守的原則沒有變：模型也被要求「只在明確指向唯一方向時才回答，
+  // 否則回 null」。交給模型是為了聽懂更多說法，不是為了無論如何給個答案。
+  group('意圖分類：AI 先判，端內規則當備援', () {
+    Future<AppState> ask(AiSuggestionSource? source, String say) async {
       final s = AppState()..aiSource = source;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, say);
+      return s;
+    }
+
+    test('AI 判得出來就用 AI 的答案 —— 即使端內規則認不出來', () async {
+      final fake = _FakeSource(classifyAs: AdjustIntent.trim);
+      // 「我想多練上胸」端內一定認不出來（不在四個方向裡）。
+      // 這裡只是要驗「AI 說什麼就是什麼」。
+      final s = await ask(fake, '我等一下要趕去接小孩');
+      expect(fake.classified, '我等一下要趕去接小孩', reason: '原話要送上去');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
+      expect(s.intentDecidedBy, 'AI');
+    });
+
+    test('AI 判不出來就再問一次 —— 不退回端內規則硬猜', () async {
+      final fake = _FakeSource(classifyAs: null);
+      final s = await ask(fake, '早安');
+      expect(s.aiIntent[AiSource.beforeTraining], isNull);
+      expect(s.aiStage[AiSource.beforeTraining], AiStage.clarifying);
+      expect(s.intentDecidedBy, contains('判不出來'));
+    });
+
+    test('**AI 掛掉時退回端內規則，而且記下來**', () async {
+      final fake = _FakeSource(classifyThrows: true);
+      final s = await ask(fake, '今天太重了');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.easier,
+          reason: '端內規則接得住這一句');
+      expect(s.intentDecidedBy, contains('AI 失敗'),
+          reason: '靜默退回在這個專案咬過五次 —— 至少要記下來');
+    });
+
+    test('沒接 AI 時就是端內規則，與接上之前一樣', () async {
+      final s = await ask(null, '今天太重了');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.easier);
+      expect(s.intentDecidedBy, '端內規則');
+    });
+
+    // 使用者回報「分析時間也非常久，得不到答案」。有一半不是真的那麼久，
+    // 是**完全沒有跡象**：整段跑完才 notifyListeners()，於是按下送出之後
+    // 連他自己打的那句話都不會出現，畫面靜止一秒多（失敗時二十秒）。
+    test('請 AI 判讀期間畫面有跡象，而且使用者那句話先出現', () async {
+      final gate = Completer<RemoteIntent>();
+      final fake = _SlowSource(gate.future);
+      final s = AppState()..aiSource = fake;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+
+      var notified = 0;
+      s.addListener(() => notified++);
+
+      final done = s.aiConfirmDemand(AiSource.beforeTraining, '我要趕去接小孩');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(s.aiClassifying[AiSource.beforeTraining], isTrue,
+          reason: '判讀中要標記起來，畫面才顯示得出「判讀你的需求…」');
+      expect(notified, greaterThan(0), reason: '等網路之前就要先更新畫面');
+      expect(
+        s.aiConversations[AiSource.beforeTraining]!.last.text,
+        '我要趕去接小孩',
+        reason: '使用者那句話要先出現，不是等 AI 回來才一起冒出來',
+      );
+
+      gate.complete(const RemoteIntent(AdjustIntent.trim));
+      await done;
+      expect(s.aiClassifying[AiSource.beforeTraining], isFalse);
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
+    });
+
+    test('AI 失敗時也要把判讀中的標記收掉 —— 不能卡在轉圈', () async {
+      final fake = _FakeSource(classifyThrows: true);
+      final s = await ask(fake, '今天太重了');
+      expect(s.aiClassifying[AiSource.beforeTraining], isFalse);
+    });
+
+    // 2026-09-27 使用者實測：Gemini 回 503「模型忙線」，而畫面上顯示的是
+    // 「目前只能往這 4 個方向調」—— 使用者只會以為是自己講錯話，
+    // 不會知道系統剛剛壞了一下。兩件事要講不同的話。
+    test('AI 掛掉且端內也認不出來 → 說「AI 暫時忙不過來」', () async {
+      final s = await ask(_FakeSource(classifyThrows: true), '早安');
+      final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+      expect(said, contains('忙不過來'));
+      expect(said, contains('未扣點'));
+      expect(s.aiUnavailable, isTrue);
+    });
+
+    test('AI 好好的、只是這句話不在四個方向裡 → 說「目前只能往這 4 個方向調」',
+        () async {
+      final s = await ask(_FakeSource(classifyAs: null), '我想多練上胸');
+      final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+      expect(said, contains('4 個方向'));
+      expect(said, isNot(contains('忙不過來')),
+          reason: 'AI 沒壞，不要把自己的限制說成故障');
+      expect(s.aiUnavailable, isFalse);
+    });
+
+    test('AI 掛掉但端內接得住 → 照常產建議，不提故障', () async {
+      final s = await ask(_FakeSource(classifyThrows: true), '今天太重了');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.easier);
+      expect(s.aiStage[AiSource.beforeTraining], AiStage.analyzing);
+    });
+
+    test('上一輪掛過，這一輪好了 —— 旗標要歸零', () async {
+      final s = AppState()..aiSource = _FakeSource(classifyThrows: true);
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '早安');
+      expect(s.aiUnavailable, isTrue);
+
+      s.aiSource = _FakeSource(classifyAs: null);
+      await s.aiConfirmDemand(AiSource.beforeTraining, '我想多練上胸');
+      expect(s.aiUnavailable, isFalse, reason: '不可以一直沿用上一輪的狀態');
+    });
+
+    // 使用者實測拿到兩種失敗：
+    //   429 "You exceeded your current quota"  —— 額度用完
+    //   503 "This model is currently experiencing high demand" —— 忙線
+    // 它們對使用者的意義完全不同：忙線等一下再試就好，
+    // 額度用完是今天不必再試了。說同一句話，他會一直重試一件不會成功的事。
+    group('額度用完與忙線要講不同的話', () {
+      test('429 → 說「今天的 AI 額度已用完」', () async {
+        final s = await ask(
+            _FakeSource(classifyThrows: true, throwMessage: '429 quota'), '早安');
+        final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+        expect(said, contains('額度已用完'));
+        expect(said, isNot(contains('忙不過來')));
+        expect(s.aiQuotaExhausted, isTrue);
+      });
+
+      test('503 → 說「AI 暫時忙不過來」', () async {
+        final s = await ask(
+            _FakeSource(classifyThrows: true, throwMessage: '503 high demand'),
+            '早安');
+        final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+        expect(said, contains('忙不過來'));
+        expect(said, isNot(contains('額度')));
+        expect(s.aiQuotaExhausted, isFalse);
+      });
+
+      test('上一輪額度用完，這一輪好了 —— 旗標要歸零', () async {
+        final s = AppState()
+          ..aiSource =
+              _FakeSource(classifyThrows: true, throwMessage: '429 quota');
+        s.startWorkout(
+            s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+        s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+        await s.aiConfirmDemand(AiSource.beforeTraining, '早安');
+        expect(s.aiQuotaExhausted, isTrue);
+
+        s.aiSource = _FakeSource(classifyAs: AdjustIntent.trim);
+        await s.aiConfirmDemand(AiSource.beforeTraining, '我要趕時間');
+        expect(s.aiQuotaExhausted, isFalse);
+      });
+
+      test('看得出哪些訊息在講額度', () {
+        expect(AppState.looksLikeQuota('gemini 429: quota exceeded'), isTrue);
+        expect(AppState.looksLikeQuota('You exceeded your current quota'),
+            isTrue);
+        expect(AppState.looksLikeQuota('503 high demand'), isFalse);
+        expect(AppState.looksLikeQuota('404 not found'), isFalse);
+      });
+    });
+
+    test('直接點四顆方向鍵不問模型 —— 那已經是答案了', () async {
+      final fake = _FakeSource(classifyAs: AdjustIntent.harder);
+      final s = await ask(fake, adjustIntentNames[AdjustIntent.trim]!);
+      expect(fake.classified, isNull, reason: '根本不該呼叫模型');
+      expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
+      expect(s.intentDecidedBy, '選項');
+    });
+  });
+
+  group('接上 AppState', () {
+    /// 照 `ai_adjust_test.dart` 的建法：開一場訓練，走到「等建議」那一步。
+    Future<AppState> upToAnalyzing(AiSuggestionSource? source) async {
+      final s = AppState()..aiSource = source;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
       return s;
     }
 
     test('不注入就走端內規則 —— 既有測試的前提', () async {
-      final s = upToAnalyzing(null);
+      final s = await upToAnalyzing(null);
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       expect(s.aiStage[AiSource.beforeTraining], AiStage.proposed);
       expect(s.aiLastOrigin, isNull, reason: '沒接外部 API 就沒有來源可言');
@@ -237,7 +454,7 @@ void main() {
 
     test('注入之後，送出去的是使用者眼前那份課表', () async {
       final fake = _FakeSource(reply: const {'source': 'gemini', 'changes': []});
-      final s = upToAnalyzing(fake);
+      final s = await upToAnalyzing(fake);
       final names = s.session!.exercises.map((e) => e.exercise.name).toList();
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
@@ -278,7 +495,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiOpen(AiSource.beforeTraining);
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       expect(fake.sent!.containsKey('note'), isFalse);
@@ -292,15 +509,22 @@ void main() {
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       final before = s.aiTotal;
       s.aiRequest(AiSource.beforeTraining, '早安');
-      s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
 
       expect(s.aiStage[AiSource.beforeTraining], AiStage.clarifying,
           reason: '停在追問，不往下走');
       expect(s.aiIntent[AiSource.beforeTraining], isNull);
       expect(s.aiTotal, before, reason: '未扣點');
       expect(fake.sent, isNull, reason: '根本不該呼叫模型');
-      expect(s.aiConversations[AiSource.beforeTraining]!.last.text,
-          contains('看不出你想往哪個方向調'));
+      // 2026-09-27 改了措辭：不說「我看不出你想往哪個方向調」——
+      // 使用者打「我想多練上胸」時，系統看得懂，只是不支援。
+      // 而方向的個數由值域算，不寫死（原本寫「三個」卻列了四個）。
+      final said = s.aiConversations[AiSource.beforeTraining]!.last.text;
+      expect(said, contains('${AdjustIntent.values.length} 個方向'));
+      for (final i in AdjustIntent.values) {
+        expect(said, contains(adjustIntentNames[i]!), reason: '要列出每一個方向');
+      }
+      expect(said, contains('未扣點'));
     });
 
     test('再問一次答得出來就繼續', () async {
@@ -308,8 +532,8 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '早安');
-      s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
-      s.aiConfirmDemand(AiSource.beforeTraining, '減少組數');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '減少組數');
 
       expect(s.aiStage[AiSource.beforeTraining], AiStage.analyzing);
       expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
@@ -345,7 +569,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
 
@@ -364,7 +588,7 @@ void main() {
       s.myUid = 'uid-12345';
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '今天狀況不太好');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
 
@@ -378,7 +602,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.duringTraining, '幫我保留一個動作就好');
-      s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
+      await s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
 
       await s.aiProduceSuggestionAsync(AiSource.duringTraining);
 
@@ -391,7 +615,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.duringTraining, '整體降強度');
-      s.aiConfirmDemand(AiSource.duringTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.duringTraining, '整體降強度');
 
       await s.aiProduceSuggestionAsync(AiSource.duringTraining);
       expect(fake.sent!.containsKey('note'), isFalse);
@@ -402,7 +626,7 @@ void main() {
       final s = AppState()..aiSource = fake;
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.duringTraining, '很' * 500);
-      s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
+      await s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
 
       await s.aiProduceSuggestionAsync(AiSource.duringTraining);
       expect((fake.sent!['note'] as String).length, 200);
@@ -435,7 +659,7 @@ void main() {
         });
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.beforeTraining, '');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       return s;
     }
@@ -478,7 +702,7 @@ void main() {
       // 重跑一次才會用到新的旗標。
       s.aiReset(AiSource.beforeTraining);
       s.aiRequest(AiSource.beforeTraining, '');
-      s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
+      await s.aiConfirmDemand(AiSource.beforeTraining, '整體降強度');
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
 
       final texts =
@@ -510,7 +734,7 @@ void main() {
             .firstWhere((p) => p.exercises.isNotEmpty));
       final first = base.session!.exercises.first;
 
-      final s = upToAnalyzing(_FakeSource(reply: {
+      final s = await upToAnalyzing(_FakeSource(reply: {
         'source': 'gemini',
         'changes': [
           {
@@ -534,14 +758,14 @@ void main() {
       // 這是既有的 bug，接外部 API 才踩到：畫面上的「模擬逾時」
       // 顯示在 analyzing 階段，而扣點發生在「成功產出建議」時。
       // aiFail 原本無條件退 1 點 —— 使用者每失敗一次就白賺一點。
-      final s = upToAnalyzing(null);
+      final s = await upToAnalyzing(null);
       final before = s.aiTotal;
       s.aiFail(AiSource.beforeTraining, AiFailReason.timeout);
       expect(s.aiTotal, before, reason: '沒扣過就不該退');
     });
 
     test('扣過了才退 —— 成功產出後失敗，點數淨額為零', () async {
-      final s = upToAnalyzing(null);
+      final s = await upToAnalyzing(null);
       final before = s.aiTotal;
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       expect(s.aiTotal, before - 1, reason: '前提：成功產出時扣了一點');
@@ -551,7 +775,7 @@ void main() {
     });
 
     test('接受之後的失敗不退點 —— 那一點已經定了', () async {
-      final s = upToAnalyzing(null);
+      final s = await upToAnalyzing(null);
       final before = s.aiTotal;
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
       s.aiAccept(AiSource.beforeTraining);
@@ -560,7 +784,7 @@ void main() {
     });
 
     test('外部 API 失敗走既有的退點流程 —— 點數淨額為零', () async {
-      final s = upToAnalyzing(_FakeSource(throws: true));
+      final s = await upToAnalyzing(_FakeSource(throws: true));
       final before = s.aiTotal;
 
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
@@ -671,4 +895,35 @@ void main() {
       expect(got.suggestion.changes.single.exerciseName, '槓鈴臥推');
     });
   });
+}
+
+
+/// 卡在呼叫端給的那個 Future 上 —— 用來觀察「等待期間」的狀態。
+class _SlowSource implements AiSuggestionSource {
+  /// 這幾份假件都不測自動優化 —— **擲例外而不是回空值**：
+  /// 回空值會讓「沒被呼叫到」與「回了個空的」長得一樣。
+  @override
+  Future<RemoteAutoAdjust> suggestAuto({
+    required List<PlanExercise> exercises,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) =>
+      throw UnimplementedError('這個假件不支援自動優化');
+
+  final Future<RemoteIntent> gate;
+  _SlowSource(this.gate);
+
+  @override
+  Future<RemoteIntent> classify(String say) => gate;
+
+  @override
+  Future<RemoteSuggestion> suggest({
+    required List<PlanExercise> exercises,
+    required AdjustIntent intent,
+    int onlyFrom = 0,
+    String? note,
+    AdjustContext? context,
+    Map<String, List<Exercise>> candidates = const {},
+  }) =>
+      throw UnimplementedError();
 }

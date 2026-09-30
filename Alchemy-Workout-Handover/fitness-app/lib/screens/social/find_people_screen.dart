@@ -88,17 +88,26 @@ class _FindPeopleScreenState extends State<FindPeopleScreen> {
                               radius: 18,
                               backgroundColor: C.bgPage,
                               child: Text(
-                                people[i].name.characters.first,
+                                s
+                                    .nameOf(people[i].name,
+                                        uid: people[i].uid)
+                                    .characters
+                                    .first,
                                 style: T.body(weight: FontWeight.w700),
                               ),
                             ),
-                            title: people[i].name,
-                            subtitle: '階級 ${people[i].rank}　·　'
-                                '綜合 ${people[i].grade}'
-                                '${s.following.contains(people[i].name) ? '　·　追蹤中' : ''}',
+                            title: s.nameOf(people[i].name, uid: people[i].uid),
+                            // 現在的階級與綜合等級，不是我第一次見到他時那個。
+                            subtitle: '階級 '
+                                '${s.rankOf(people[i].name, uid: people[i].uid, fallback: people[i].rank)}'
+                                '　·　綜合 '
+                                '${s.gradeOf(people[i].name, uid: people[i].uid) ?? people[i].grade}'
+                                '${s.isFollowing(people[i].name, uid: people[i].uid) ? '　·　追蹤中' : ''}',
                             chevron: true,
                             // 點進公開檔案，「開始聊天」在那裡。
-                            onTap: () => openProfile(context, people[i].name),
+                            onTap: () =>
+                                openProfile(context, people[i].name,
+                                    uid: people[i].uid),
                             showDivider: i != people.length - 1,
                           ),
                       ]),

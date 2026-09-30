@@ -147,6 +147,18 @@ class MoreScreen extends StatelessWidget {
           _Item(Icons.settings_outlined, '設定', '器材、隱私、帳號',
               () => const SettingsScreen()),
         ]),
+        // **真正的管理員有自己的入口，不藏在開發者模式底下。**
+        //
+        // 在此之前後台只掛在下面那個「流程示範」區裡 —— 也就是任何人
+        // 長按頁首三秒都進得去，而真正的管理員沒有入口。它進得去只是
+        // 因為裡面全是假資料；接上 custom claim 之後那就不成立了。
+        if (s.isPlatformAdmin) ...[
+          const SectionLabel('管理員'),
+          _Group(items: [
+            _Item(Icons.admin_panel_settings_outlined, '管理員後台',
+                '待審、訂單、商品、評分', () => const AdminHomeScreen()),
+          ]),
+        ],
         // **這一整區只在開發者模式顯示。**
         // 裡面全是示範與除錯用的畫面 —— 註冊流程重跑、模擬對方、
         // 骨架屏樣式集、管理員後台。一般使用者看到只會問「這是什麼」。
@@ -158,6 +170,8 @@ class MoreScreen extends StatelessWidget {
               () => const SignUpScreen()),
           _Item(Icons.auto_awesome_outlined, 'AI 自動優化', '會員權益，不扣點',
               () => const AiAdjustScreen(source: AiSource.autoOptimize)),
+          // 與上面那個真管理員入口是**同一個畫面**。留著是因為示範身分
+          // 的假案件還撐著「這幾頁長什麼樣」；真帳號進來會看到空的。
           _Item(Icons.admin_panel_settings_outlined, '管理員後台',
               '待審、訂單、商品、評分', () => const AdminHomeScreen()),
           _Item(Icons.grid_view_rounded, '骨架屏與錯誤頁', '六種骨架、四種空狀態、兩種錯誤頁',
@@ -185,8 +199,11 @@ class _Header extends StatelessWidget {
   double get _tons =>
       state.history.fold<double>(0, (a, h) => a + h.volume) / 1000;
 
-  int get _myPosts =>
-      state.posts.where((p) => p.author == state.displayName).length;
+  /// **走 `AppState.myPostCount`，不自己數。**
+  /// 原本是 `posts.where((p) => p.author == displayName).length` ——
+  /// 漏了 `!p.deleted`，而貼文是軟刪除。使用者回報「刪除了 5 篇，
+  /// 貼文顯示 7 篇」。
+  int get _myPosts => state.myPostCount;
 
   @override
   Widget build(BuildContext context) {
@@ -248,10 +265,16 @@ class _Header extends StatelessWidget {
                 children: [
                   Pill('階級 ${state.rank}', color: C.accentDeep),
                   const SizedBox(width: 8),
-                  // 綜合能力等級可設為不公開；不公開時連自己的頁首也不掛，
-                  // 免得誤以為別人看得到。
-                  if (state.overallGradePublic)
-                    Pill('綜合 ${overallGrade(state.points)}'),
+                  // **不公開時仍然顯示，但標出來**（2026-09-28 使用者裁決 A）。
+                  //
+                  // 原本是整顆藏起來，理由寫著「免得誤以為別人看得到」——
+                  // 方向錯了：用「資訊消失」表達狀態，使用者只會以為壞了。
+                  // 使用者實測時就是這樣，他找不到那顆標籤，問「我要去哪裡找」。
+                  Pill('綜合 ${overallGrade(state.points)}'),
+                  if (!state.overallGradePublic) ...[
+                    const SizedBox(width: 6),
+                    const Pill('未公開', color: C.textSecondary),
+                  ],
                 ],
               ),
               const SizedBox(height: 16),

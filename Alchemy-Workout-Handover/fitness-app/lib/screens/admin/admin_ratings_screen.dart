@@ -9,8 +9,23 @@ import '../../widgets/common.dart';
 ///
 /// 無直接支撐的 Command —— 用途為平台優化自身提供的內容。
 /// 採延遲更新：本 Read Model 為分析用途，不支撐任何即時決策。
-class AdminRatingsScreen extends StatelessWidget {
+class AdminRatingsScreen extends StatefulWidget {
   const AdminRatingsScreen({super.key});
+
+  @override
+  State<AdminRatingsScreen> createState() => _AdminRatingsScreenState();
+}
+
+class _AdminRatingsScreenState extends State<AdminRatingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // 進來才讀。規格明訂這張表**延遲更新**、不支撐任何即時決策 ——
+    // 不值得為它掛一條即時訂閱。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppScope.of(context).loadAdminRatings();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,19 +39,36 @@ class AdminRatingsScreen extends StatelessWidget {
         padding:
             const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
         children: [
-          Row(
-            children: [
-              const Icon(Icons.schedule,
-                  size: Sz.iconDense, color: C.textSecondary),
-              const SizedBox(width: S.sm),
-              Expanded(
-                child: Text('延遲更新　·　資料更新於 2 小時前', style: T.caption()),
+          if (rows.isEmpty)
+            // **「還沒有人評分」與「讀不到」是兩件事。**
+            // 在此之前這裡只有一句「尚未接上後台」—— 那時候是實話
+            // （評分存在各自的 `users/{uid}` 底下，管理端讀不到），
+            // `[BE-18]` 之後不是了。
+            Panel(
+              child: Text(
+                s.ratingSource == null
+                    ? '沒有接上雲端 —— 這裡看到的是示範資料的彙總。'
+                    : '還沒有人評分過。\n'
+                        '使用者在訓練結算與新手任務收尾會被問一次，'
+                        '而規格明訂可跳過、不阻擋任何後續動作。',
+                style: T.caption(),
               ),
-            ],
-          ),
-          const SizedBox(height: S.md),
-          // 兩種評分對象類型共用同一張彙總表，新手任務為其中一列
-          for (final r in rows) _SummaryCard(r: r),
+            )
+          else ...[
+            Row(
+              children: [
+                const Icon(Icons.schedule,
+                    size: Sz.iconDense, color: C.textSecondary),
+                const SizedBox(width: S.sm),
+                Expanded(
+                  child: Text('延遲更新　·　資料更新於 2 小時前', style: T.caption()),
+                ),
+              ],
+            ),
+            const SizedBox(height: S.md),
+            // 兩種評分對象類型共用同一張彙總表，新手任務為其中一列
+            for (final r in rows) _SummaryCard(r: r),
+          ],
         ],
       ),
     );

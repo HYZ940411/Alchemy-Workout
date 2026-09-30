@@ -14,11 +14,25 @@ import 'data/chat_data.dart';
 import 'data/mentor_data.dart';
 import 'data/mentor_data_firestore.dart';
 import 'data/report_data.dart';
+import 'data/instructor_case_data.dart';
+import 'data/instructor_case_data_firestore.dart';
 import 'data/report_data_firestore.dart';
+import 'data/appeal_data.dart';
+import 'data/appeal_data_firestore.dart';
+import 'data/punishment_data.dart';
+import 'data/quality_score_data.dart';
+import 'data/quality_score_http.dart';
+import 'data/punishment_data_firestore.dart';
+import 'data/violation_data.dart';
+import 'data/violation_data_firestore.dart';
 import 'data/team_data.dart';
 import 'data/team_data_firestore.dart';
 import 'data/chat_data_firestore.dart';
 import 'data/post_data.dart';
+import 'data/photo_data.dart';
+import 'data/rating_data.dart';
+import 'data/photo_data_firestore.dart';
+import 'data/rating_data_firestore.dart';
 import 'data/post_data_firestore.dart';
 import 'data/public_profile.dart';
 import 'data/public_profile_firestore.dart';
@@ -27,8 +41,8 @@ import 'data/store_firestore.dart';
 import 'firebase_options.dart';
 import 'screens/auth_gate.dart';
 import 'screens/boot_screen.dart';
-import 'screens/home_shell.dart';
 import 'screens/signup/signup_screen.dart';
+import 'screens/signup/terms_reconsent_screen.dart';
 import 'screens/train/tasks_screen.dart';
 import 'state/app_state.dart';
 import 'theme.dart';
@@ -53,6 +67,14 @@ const _kWebHost = 'alchemy-workout.web.app';
 FirebaseOptions _firebaseOptions() => kIsWeb
     ? DefaultFirebaseOptions.web.copyWith(authDomain: _kWebHost)
     : DefaultFirebaseOptions.currentPlatform;
+
+/// 我們自己的 Gemini 代理。金鑰在 Cloudflare 的 secret 裡，前端看不到。
+///
+/// **2026-09-26 換帳號**：原本在 `...ntub.workers.dev`，但那個 Cloudflare
+/// 帳號的登入方式已不可考（Cloudflare 回「Your account uses a different
+/// login provider」）。改部署到 `a94041198` 這個帳號。
+/// 舊的那個仍然活著但沒有人打它了 —— 進得去舊帳號時可以刪掉。
+const kAiWorker = 'https://alchemy-workout-ai.a94041198.workers.dev';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -79,16 +101,30 @@ Future<void> main() async {
     profileFor: (uid) => FirestorePublicProfile(uid: uid),
     followsFor: (uid) => FirestoreFollows(uid: uid),
     postsFor: (uid) => FirestorePosts(uid: uid),
+    // 2026-09-28 使用者裁決：照片存 Firestore，不另外開 Cloudflare R2。
+    photosFor: (uid) => FirestorePhotos(uid: uid),
+    ratingsFor: (uid) => FirestoreRatings(uid: uid),
     chatsFor: (uid) => FirestoreChats(uid: uid),
     teamsFor: (uid) => FirestoreTeams(uid: uid),
     mentorFor: (uid) => FirestoreMentor(uid: uid),
     reportsFor: (uid) => FirestoreReports(uid: uid),
+    instructorCasesFor: (uid) => FirestoreInstructorCases(uid: uid),
+    violationsFor: FirestoreViolations.new,
+    punishmentsFor: FirestorePunishments.new,
+    appealsFor: FirestoreAppeals.new,
     // [BE-08]：訓練調整建議交給 Gemini 產生。
     // **呼叫的是我們自己的 Worker，不是 Gemini** —— 金鑰在 Cloudflare
     // 的 secret 裡，前端看不到它。Worker 失敗或模型輸出不合格時，
     // 伺服器會退回與 App 內同一組規則，使用者照樣拿得到建議。
     aiSource: HttpAiSuggestionSource(
-      endpoint: Uri.parse('https://alchemy-workout-ai.alchemy-workout-ntub.workers.dev'),
+      endpoint: Uri.parse(kAiWorker),
+      idToken: auth.idToken,
+    ),
+    // 教官申請的訓練品質評分。**同一個 Worker**（靠請求裡有沒有
+    // `sessions` 分流）—— 驗身分與 CORS 完全一樣，分兩條就是同一個
+    // 決定寫在兩個地方。失敗時 `AppState` 退回 App 內的規則計算。
+    qualitySource: HttpQualityScoreSource(
+      endpoint: Uri.parse(kAiWorker),
       idToken: auth.idToken,
     ),
   ));
@@ -126,6 +162,8 @@ class FitnessApp extends StatefulWidget {
   /// 貼文的來源（[BE-11] 批次 3）。空值代表不同步 ——
   /// **既有測試全部走這條**。
   final PostSource Function(String uid)? postsFor;
+  final PhotoSource Function(String uid)? photosFor;
+  final RatingSource Function(String uid)? ratingsFor;
 
   /// 私訊的來源（[BE-14]）。空值代表不同步 —— **既有測試全部走這條**。
   final ChatSource Function(String uid)? chatsFor;
@@ -138,6 +176,11 @@ class FitnessApp extends StatefulWidget {
 
   /// 檢舉的來源。空值代表不送上雲 —— **既有測試全部走這條**。
   final ReportSource Function(String uid)? reportsFor;
+  final InstructorCaseSource Function(String uid)? instructorCasesFor;
+  final ViolationSource Function()? violationsFor;
+  final PunishmentSource Function()? punishmentsFor;
+  final QualityScoreSource? qualitySource;
+  final AppealSource Function()? appealsFor;
 
   const FitnessApp({
     super.key,
@@ -149,10 +192,17 @@ class FitnessApp extends StatefulWidget {
     this.aiSource,
     this.followsFor,
     this.postsFor,
+    this.photosFor,
+    this.ratingsFor,
     this.chatsFor,
     this.teamsFor,
     this.mentorFor,
     this.reportsFor,
+    this.instructorCasesFor,
+    this.violationsFor,
+    this.punishmentsFor,
+    this.qualitySource,
+    this.appealsFor,
   });
   @override
   State<FitnessApp> createState() => _FitnessAppState();
@@ -220,12 +270,19 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
                 platformData: widget.platformData,
                 profileFor: widget.profileFor,
                 aiSource: widget.aiSource,
+                qualitySource: widget.qualitySource,
                 followsFor: widget.followsFor,
                 postsFor: widget.postsFor,
+                photosFor: widget.photosFor,
+                ratingsFor: widget.ratingsFor,
                 chatsFor: widget.chatsFor,
                 teamsFor: widget.teamsFor,
                 mentorFor: widget.mentorFor,
                 reportsFor: widget.reportsFor,
+                instructorCasesFor: widget.instructorCasesFor,
+                violationsFor: widget.violationsFor,
+                punishmentsFor: widget.punishmentsFor,
+                appealsFor: widget.appealsFor,
               ),
       ),
     );
@@ -262,6 +319,7 @@ class _FirstRunGateState extends State<FirstRunGate> {
         },
       );
     }
-    return const HomeShell();
+    return const TermsGate();
   }
 }
+

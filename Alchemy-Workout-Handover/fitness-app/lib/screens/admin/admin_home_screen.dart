@@ -33,6 +33,50 @@ class AdminHomeScreen extends StatelessWidget {
         padding:
             const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
         children: [
+          // **沒有管理員標記的人，在這裡改什麼都寫不上雲。**
+          //
+          // `firestore.rules` 的 `isAdmin()` 看的是 custom claim。
+          // 沒有它的時候，後台每一頁都點得下去、每一個雲端寫入都被擋下，
+          // 而且是無聲的。
+          //
+          // 2026-09-28 使用者用沒有標記的帳號審檢舉，查了三輪才發現。
+          // 2026-09-29 又一次：後台改成就門檻，畫面說「已設定」，
+          // 雲端一筆都沒有（P123b／P124）。**同一個陷阱踩了兩次。**
+          //
+          // ## 2026-09-29 更正：這個警告本來永遠不會出現
+          //
+          // 原本的條件是 `adminMode && !adminClaim`，而 **`adminMode`
+          // 全 App 沒有任何地方切換它**（`toggleAdminMode()` 零個呼叫端），
+          // 加上 `applyAdminClaim(false)` 還會把它強制設回 false ——
+          // 兩個條件湊不齊，這塊警告是死的。
+          //
+          // 測試之所以是綠的，是因為它們直接 `..adminMode = true`，
+          // 也就是**從一個 App 不會進入的狀態出發**。
+          // 使用者 2026-09-29 測 P131 回報 B（沒有任何警告），就是這個。
+          //
+          // 正確的判準與 `adminMode` 無關：**人已經在後台了，
+          // 而他沒有標記** —— 那就該講。
+          if (!s.adminClaim) ...[
+            Panel(
+              color: C.statusWarning.withValues(alpha: 0.08),
+              border: C.statusWarning,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('這個帳號沒有管理員標記',
+                      style: T.body(weight: FontWeight.w700)),
+                  const SizedBox(height: S.xs),
+                  Text(
+                    '看得到的資料是本機的，改任何東西都寫不上雲 —— '
+                    '安全規則認的是帳號上的管理員標記，不是進得進得來這一頁。'
+                    '\n\n要真的改，請用帶管理員標記的帳號登入。',
+                    style: T.caption(),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: S.md),
+          ],
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

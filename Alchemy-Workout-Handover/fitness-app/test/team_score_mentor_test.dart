@@ -19,6 +19,9 @@ AppState _outsideRegroup() {
 void _train(AppState s) {
   s.startWorkout(s.platformPlans.firstWhere((p) => p.id == 'p_push'));
   s.completeCurrentSet();
+  // 獎勵有「不到 5 分鐘不發」的門檻（使用者裁決 2026-09-26）——
+  // 測試是開始之後立刻結束的，不往前挪的話每一場都算太短。
+  s.backdateSession(const Duration(minutes: 10));
   s.finishWorkout(EndKind.completed);
 }
 
@@ -39,9 +42,10 @@ void main() {
 
     test('記到該成員的貢獻欄位，不是一個孤兒數字', () {
       final s = _outsideRegroup();
-      final before = s.myTeam!.contributions[s.displayName]!;
+      final me = s.personKeyOf(s.displayName, s.myUid);
+      final before = s.myTeam!.contributions[me]!;
       _train(s);
-      expect(s.myTeam!.contributions[s.displayName], greaterThan(before));
+      expect(s.myTeam!.contributions[me], greaterThan(before));
       // 不變條件：團隊分數 ＝ 各成員貢獻的總和，且為結構上成立。
       expect(s.myTeam!.dailyScore,
           s.myTeam!.contributions.values.reduce((a, b) => a + b));

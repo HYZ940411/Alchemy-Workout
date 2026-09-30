@@ -5,7 +5,6 @@ import '../domain/platform_plan.dart';
 import '../domain/task_pool.dart';
 import '../mock/mock_data.dart';
 import '../mock/mock_extra.dart';
-import '../mock/platform_plans.g.dart';
 
 /// 平台公用唯讀資料的來源。
 ///
@@ -17,6 +16,19 @@ import '../mock/platform_plans.g.dart';
 /// 與 `store.dart` 的 [Store] 是對等的兩條邊界：[Store] 管「使用者私有資料」，
 /// 本介面管「平台公用資料」。兩者都讓 [AppState] 不必知道資料放在哪。
 abstract class PlatformDataSource {
+  /// 管理端改了一筆，寫回去。
+  ///
+  /// **在此之前 `[BE-12]` 只做了讀的那一半** —— 後台改完只改記憶體，
+  /// 下次登入就從雲端重新載入、打回原形。使用者 2026-09-28 測 P123
+  /// 當場撞到（「改的值變回原本的」）。
+  ///
+  /// 失敗就讓它拋 —— 呼叫端要把「沒寫上去」講給管理員聽，
+  /// 而不是吞掉之後讓他以為存好了。
+  Future<void> put(String collection, String docId, Map<String, dynamic> data);
+
+  /// 管理端刪了一筆（目前只有每日任務池用得到）。
+  Future<void> remove(String collection, String docId);
+
   /// 載入六類平台資料的當前快照。
   ///
   /// 正式環境失敗（離線、權限、格式不符）時**不該讓 App 起不來** ——
@@ -54,12 +66,23 @@ class PlatformData {
 /// 與既有 `AppState` 建構時的種子完全一致，因此不注入任何來源的測試
 /// 行為一個位元都不變（比照 [BE-05] 的 mock 邊界）。
 class BundledPlatformData implements PlatformDataSource {
+  /// **後備來源是唯讀的。** 它就是打包在 App 裡的那份常數，寫不進去。
+  ///
+  /// 不拋例外而是靜靜什麼都不做：它同時是「沒接雲端」時的來源，
+  /// 而既有的一千多個測試都走這條 —— 在那裡拋例外等於把測試全部弄紅，
+  /// 而它們本來就不在驗雲端寫入。
+  @override
+  Future<void> put(String c, String id, Map<String, dynamic> d) async {}
+
+  @override
+  Future<void> remove(String c, String id) async {}
+
   const BundledPlatformData();
 
   @override
   Future<PlatformData> load() async => PlatformData(
         exercises: List.of(kExercises),
-        planSpecs: List.of(kPlatformPlans),
+        planSpecs: List.of(kAllPlanSpecs),
         achievements: buildAchievements(),
         taskPool: buildTaskPool(),
         config: {
@@ -108,6 +131,23 @@ Map<String, dynamic> planSpecToMap(PlatformPlanSpec s) => {
       'name': s.name,
       'level': s.level,
       'requiredRank': s.requiredRank,
+      // **2026-09-29 補上三個一直沒被序列化的欄位。**
+      //
+      // `unlockCoins` 是 `[BE-12b]`：後台「設定訓練計畫」改的就是它，
+      // 而它原本只活在 `WorkoutPlan` 上，寫回雲端時無處可放。
+      //
+      // `suitableExperience`／`suitableGoals` 更嚴重 —— 那是 `[QA-02l]`
+      // 補的兩欄（27 份課表逐一判定、使用者 2026-09-18 逐列審核通過），
+      // 而 `recommendPlan` **把空集合視為「全部符合」**。於是 2026-09-28
+      // 平台資料上雲之後，雲端那 27 筆兩欄皆空 → 每一份課表又重新宣稱
+      // 適合所有人，推薦退回只靠器材篩，`[QA-02l]` 等於被默默撤銷。
+      //
+      // 失敗方向是**寬鬆**的，所以不會有任何地方報錯。
+      // 舊的往返測試沒抓到，是因為它的夾具兩欄剛好都是預設空值。
+      'unlockCoins': s.unlockCoins,
+      'memberUnlockable': s.memberUnlockable,
+      'suitableExperience': s.suitableExperience,
+      'suitableGoals': s.suitableGoals,
       'equipmentTier': s.equipmentTier,
       'duration': s.duration,
       'intro': s.intro,
@@ -124,6 +164,7 @@ Map<String, dynamic> planSpecToMap(PlatformPlanSpec s) => {
             'amount': it.amount,
             'unit': it.unit.name,
             'restSeconds': it.restSeconds,
+            'weight': it.weight,
           },
       ],
     };
@@ -134,6 +175,17 @@ PlatformPlanSpec planSpecFromDoc(String id, Map<String, dynamic> m) =>
       name: m['name'] as String,
       level: m['level'] as String,
       requiredRank: (m['requiredRank'] as num?)?.toInt(),
+      unlockCoins: (m['unlockCoins'] as num?)?.toInt(),
+      memberUnlockable: m['memberUnlockable'] as bool? ?? false,
+      // 缺鍵時退回空清單，與 `PlatformPlanSpec` 的預設一致 ——
+      // 舊文件（2026-09-29 之前上傳的那批）沒有這兩個鍵。
+      suitableExperience: [
+        for (final v in (m['suitableExperience'] as List? ?? const []))
+          v as String,
+      ],
+      suitableGoals: [
+        for (final v in (m['suitableGoals'] as List? ?? const [])) v as String,
+      ],
       equipmentTier: m['equipmentTier'] as String,
       duration: m['duration'] as String? ?? '',
       intro: m['intro'] as String? ?? '',
@@ -150,13 +202,47 @@ PlatformPlanSpec planSpecFromDoc(String id, Map<String, dynamic> m) =>
             (it['amount'] as num).toInt(),
             PlanUnit.values.byName(it['unit'] as String? ?? 'reps'),
             (it['restSeconds'] as num).toInt(),
+            weight: (it['weight'] as num?)?.toDouble() ?? 0,
           ),
       ],
     );
 
 /// 成就定義的 doc id 沿用既有 `category#threshold` 邏輯（見 Schema §2.6）——
 /// 用索引的話成就表一改順序，已解鎖紀錄就會套到別的成就上。
-String achievementDocId(Achievement a) => '${a.category}#${a.threshold}';
+/// 成就定義的文件 ID。
+///
+/// **鍵是「類別＋名稱」，不是「類別＋門檻」。**
+///
+/// 原本用門檻 —— 而門檻正是管理員在後台會改的東西
+/// （〈設定成就定義〉的三個欄位之一）。改了之後寫回雲端會落在**新的**
+/// 文件 ID 上，舊那筆留在原地：下次登入讀回來變成兩枚成就，
+/// 而且舊門檻那一枚還在。2026-09-29 補上寫回路徑時才看出來。
+///
+/// **文件 ID 不可以編碼一個會被改的欄位。** 名稱與類別在
+/// `settings/成就定義` 那一頁改不了，所以是穩定的；
+/// 99 枚的 (類別, 名稱) 已驗證唯一。
+String achievementDocId(Achievement a) => '${a.category}#${a.name}';
+
+/// 要上傳到 Firestore 的那一份種子：集合名 → (文件 ID → 內容)。
+///
+/// **匯出工具與測試共用這一份。** `tools/export_platform_defs.dart` 是
+/// `dart run` 的程式，測試 import 不了它的 `main`；各寫一份的話兩邊會
+/// 慢慢長歪，而測試就驗不到真正會被上傳的東西了。
+///
+/// 集合名要與 `FirestorePlatformData.load()` 讀的那五個一致。
+Map<String, Map<String, dynamic>> platformSeedMap(PlatformData d) => {
+      'exercises': {for (final e in d.exercises) e.id: exerciseToMap(e)},
+      'plans': {for (final s in d.planSpecs) s.id: planSpecToMap(s)},
+      'achievement_defs': {
+        for (final a in d.achievements) achievementDocId(a): achievementToMap(a),
+      },
+      'daily_task_pool': {
+        for (final t in d.taskPool) t.id: taskPoolItemToMap(t),
+      },
+      'platform_config': {
+        for (final e in d.config.entries) e.key: {'params': e.value},
+      },
+    };
 
 Map<String, dynamic> achievementToMap(Achievement a) => {
       'category': a.category,

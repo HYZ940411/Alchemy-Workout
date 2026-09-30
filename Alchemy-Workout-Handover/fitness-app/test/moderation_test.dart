@@ -5,6 +5,7 @@ import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/custom_plan.dart';
 import 'package:fitness_app/mock/mock_data.dart';
 import 'package:fitness_app/state/app_state.dart';
+import 'package:fitness_app/domain/ai_adjust.dart';
 import 'package:fitness_app/domain/models.dart';
 
 ReportCase mine(AppState s) => s.reports.firstWhere((c) => c.id == 'R-2046');
@@ -291,19 +292,43 @@ void main() {
     });
 
     test('使用者已還原被替換的動作：組數與目標沿用', () {
+      // **替換狀態由真的替換造出來，不靠夾具。**
+      //
+      // 這條測試原本是 `kAllPlans.firstWhere((p) => p.id == 'p_push')`，
+      // 靠的是「推日」那份課表身上寫死的 `replacedFrom: ex('incline')` ——
+      // 也就是一份**沒有人跑過 AI 卻已經標著「AI 已替換」**的課表。
+      // 那是假資料，而且真使用者看得到（2026-09-29 把那四份官方課表搬上雲
+      // 時一併清掉了）。
+      //
+      // 從 Command 造出狀態才驗得到「還原」真的在還原**剛剛發生過的替換**，
+      // 而不是還原一個我們自己擺進去的字典值。
       final s = AppState();
-      final plan = kPlans.firstWhere((p) => p.id == 'p_push');
-      s.startWorkout(plan);
-      final i = s.session!.exercises
-          .indexWhere((e) => e.replacedFrom != null);
-      expect(i, greaterThanOrEqualTo(0));
-      final before = s.session!.exercises[i];
-      final origin = before.replacedFrom!;
+      s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
+      final origin = s.session!.exercises.first.exercise;
+      final cand = s.swapCandidatesFor(origin).first;
+      final out = applySuggestion(s.session!.exercises, AdjustSuggestion(
+        intent: AdjustIntent.swap,
+        changes: [
+          AdjustChange(
+            exerciseIndex: 0,
+            exerciseName: origin.name,
+            before: [...s.session!.exercises.first.planned],
+            after: const [PlannedSet(30, 12)],
+            replacement: cand,
+          ),
+        ],
+      ));
+      for (var i = 0; i < out.length; i++) {
+        s.session!.exercises[i] = out[i];
+      }
 
-      s.restoreReplacedExercise(i);
-      final after = s.session!.exercises[i];
+      final before = s.session!.exercises.first;
+      expect(before.replacedFrom?.id, origin.id, reason: '前提：真的換過了');
+
+      expect(s.restoreReplacedExercise(0), isTrue);
+      final after = s.session!.exercises.first;
       expect(after.exercise.id, origin.id);
-      expect(after.planned.length, before.planned.length);
+      expect(after.planned.length, before.replacedPlanned!.length);
       expect(after.replacedFrom, isNull);
     });
 

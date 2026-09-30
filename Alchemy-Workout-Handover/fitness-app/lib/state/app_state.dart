@@ -9,18 +9,32 @@ import '../domain/clock.dart';
 // 換日規則已移入 clock.dart（假資料產生器也要用同一套）。
 // 轉出以維持既有呼叫端不變 —— 19 處在本檔、5 個測試檔。
 export '../domain/clock.dart' show businessDate;
+import '../data/http_error.dart';
 import '../data/ai_suggestion.dart';
+import '../data/instructor_case_data.dart';
 import '../data/report_data.dart';
+import '../data/appeal_data.dart';
+import '../data/punishment_data.dart';
+import '../data/quality_score_data.dart';
+import '../data/violation_data.dart';
 import '../domain/ai_adjust.dart';
 import '../domain/decay.dart';
 import '../domain/novice.dart';
 import '../domain/novice_wrapup.dart';
 import '../domain/task_pool.dart';
+import '../domain/training_quality.dart';
 import '../domain/models.dart';
 import '../domain/registration.dart';
 import '../domain/social.dart';
 import '../domain/leaderboard.dart';
 import '../domain/rank.dart';
+import 'dart:typed_data';
+
+import '../data/photo_data.dart';
+import '../data/rating_data.dart';
+import '../design/image_library.dart' show PhotoScope;
+import '../domain/photo.dart';
+import '../domain/plan_duration.dart';
 import '../domain/rewards.dart';
 import '../domain/admin.dart';
 import '../domain/platform_config.dart';
@@ -99,6 +113,65 @@ class SettlementResult {
 class AppState extends ChangeNotifier {
   // --- 使用者 Aggregate（假資料）---
   String displayName = '你';
+
+  // --- 改名（暱稱重構階段五，使用者裁決 A：30 天一次）---
+
+  /// 上次改名的時點。**空值代表從來沒改過。**
+  DateTime? lastRenamedAt;
+
+  /// 曾用名，新的在前。**只給管理員看，不對一般使用者呈現。**
+  ///
+  /// 規格說暱稱是顯示名稱不是識別碼 —— 把一個人的改名史公開出去
+  /// 等於替他做了一次他沒同意的揭露。管理端的用途見
+  /// `review_queue_screen`：那裡呈現的是**案件建立當下**的名字，
+  /// 而那一份本來就跟著案件存著（`ReportCase.accused`）。
+  final List<String> formerNames = [];
+
+  /// 現在不能改名的理由；null 表示可以改。
+  ///
+  /// **規格沒有規定改名頻率**（〈註冊流程〉只說「可於設定頁事後更新」）。
+  /// 30 天是使用者 2026-09-28 的裁決 A —— 理由是管理員的待審佇列
+  /// 靠名字認人（`02_Aggregate定義.md`：顯示名稱「供待審佇列與稽核呈現」），
+  /// 不限次數的話，被檢舉的人改個名字就換了一張臉。
+  String? renameBlockedReason() {
+    final at = lastRenamedAt;
+    if (at == null) return null;
+    final days = businessDate(now).difference(businessDate(at)).inDays;
+    if (days >= kRenameCooldownDays) return null;
+    return '暱稱每 $kRenameCooldownDays 天只能改一次，'
+        '還要等 ${kRenameCooldownDays - days} 天。';
+  }
+
+  /// 開發者模式：解除改名冷卻鎖。**只清時間鎖，曾用名不動。**
+  ///
+  /// 與教官重考鎖同一個理由：30 天是給真實使用者的節流，
+  /// 而測試的人一按下去就把自己鎖住一個月，那條路從此驗不了
+  /// （重考鎖那次就是這樣，見 `clearExamRetakeLock`）。
+  void clearRenameCooldown() {
+    lastRenamedAt = null;
+    notifyListeners();
+  }
+
+  /// 使用者已更新暱稱。回傳失敗的理由；null 表示成功。
+  String? rename(String to) {
+    final blocked = renameBlockedReason();
+    if (blocked != null) return blocked;
+    final next = to.trim();
+    if (!isValidNickname(next)) {
+      return '暱稱要 1–$kNicknameMaxLength 個字。';
+    }
+    if (next == displayName) return '這就是你現在的暱稱。';
+
+    formerNames.insert(0, displayName);
+    displayName = next;
+    lastRenamedAt = now;
+    // **立刻重寫公開檔案。** 不然別人看到的還是舊名字 ——
+    // 而整個暱稱重構的前提就是「顯示名稱一律去查現值」，
+    // 現值沒更新的話那一整套白做。
+    publishMyProfile();
+    notifyListeners();
+    return null;
+  }
   double bodyweightKg = 72;
   bool isMale = true;
 
@@ -144,13 +217,27 @@ class AppState extends ChangeNotifier {
   /// 註冊日 —— 六個退步計時器與連續訓練計時器的初始基準，皆不允許空值。
   /// 非 final：真實使用者的註冊日來自帳號，示範與測試需要換一個近期的日子
   /// 才看得到「補不回註冊日之前」這條界線。
-  late DateTime registeredOn =
-      businessDate(DateTime.now()).subtract(const Duration(days: 180));
+  ///
+  /// **非示範帳號取今天。** 寫死 180 天前是示範身分的一部分 ——
+  /// 與 `posts`／`socialUsers` 那些一樣，只是它是純量，2026-09-16 那次
+  /// 假資料清查（`[QA-02a]`–`[QA-02e]`）清的是集合，把它漏掉了。
+  late DateTime registeredOn = demo
+      ? businessDate(DateTime.now()).subtract(const Duration(days: 180))
+      : businessDate(DateTime.now());
 
-  /// 各維最後訓練日刻意錯開，使六個計時器各自落在不同的門檻上：
+  /// 各維最後訓練日。
+  ///
+  /// **示範身分**刻意錯開，使六個計時器各自落在不同的門檻上：
   /// 胸今天、背 2 天、腿 5 天（退步預告）、肩 12 天、手 26 天、核心 46 天。
   /// 退步後的點數不寫死，由 [runDecayCheck] 於建構時推導 ——
   /// 上面 [points] 的六個值即為「本次中斷前點數」。
+  ///
+  /// **非示範帳號一律自註冊日起算**，六個都一樣。在此之前這裡沒有
+  /// `demo` 開關，於是真實使用者一建出來就帶著 7 筆「能力值已退步」
+  /// 的假紀錄（肩累積 14、手 31、核心 37）—— 使用者 2026-09-24 回報。
+  ///
+  /// `resetToNewAccount()` 會修正它們，但那只在完成註冊流程時跑；
+  /// 存檔缺 `decayTimers` 這個鍵時（舊存檔）那份假資料就會留著。
   late final Map<Dim, DimDecay> decayTimers = {
     for (final e in const {
       Dim.chest: 0,
@@ -160,8 +247,9 @@ class AppState extends ChangeNotifier {
       Dim.arms: 26,
       Dim.core: 46,
     }.entries)
-      e.key: _freshTimer(
-          businessDate(DateTime.now()).subtract(Duration(days: e.value))),
+      e.key: _freshTimer(demo
+          ? businessDate(DateTime.now()).subtract(Duration(days: e.value))
+          : registeredOn),
   };
 
   static DimDecay _freshTimer(DateTime lastTrained) =>
@@ -412,7 +500,26 @@ class AppState extends ChangeNotifier {
   // --- 經驗值 / 金幣 / 階級 ---
   // 階級 45 —— 自訂訓練名額為 4（初始 2 ＋ 里程碑 25、45 各 +1），
   // 與這位假使用者手上的四份自訂訓練相符。
-  int totalExp = 1700;
+  int _totalExp = 1700;
+
+  /// 累計經驗值。**寫入這裡會順手偵測升階**（見下方 setter）。
+  int get totalExp => _totalExp;
+
+  /// 經驗值一改就比對階級有沒有跨過門檻，跨過就把公開檔案重寫上雲。
+  ///
+  /// **為什麼掛在這裡，不是掛在每個加經驗值的地方**：全專案有十一處會動
+  /// `totalExp`（簽到、結算、成就、師徒任務、新手任務、回歸任務、管理員歸零
+  /// ……）。逐一去加「記得同步」的話，漏掉一處就是一個查不出來的陳舊階級，
+  /// 而且之後每新增一個經驗值來源都要再記得一次。收斂到 setter 就不會漏。
+  ///
+  /// 在此之前公開檔案**只在登入那一刻寫一次**（`AuthGate._syncProfile`），
+  /// 所以這個 session 內升的階，別人一律要等到我下次登入才看得到。
+  set totalExp(int v) {
+    final before = rankForExp(_totalExp);
+    _totalExp = v;
+    if (rankForExp(v) != before) publishMyProfile();
+  }
+
   int coins = 640;
   int get rank => rankForExp(totalExp);
 
@@ -699,6 +806,17 @@ class AppState extends ChangeNotifier {
   }
 
   /// 立即寫入。App 進背景或關閉前呼叫，才不會漏掉最後 300ms 的變動。
+  /// 最近一次存檔失敗的原因。**開發者模式看得到。**
+  ///
+  /// 吞掉錯誤是對的 —— 存檔失敗不該中斷使用者正在做的事。但完全不說
+  /// 就太過頭了：2026-09-24 我把偏好時段寫成陣列包陣列，Firestore
+  /// **整份寫入被拒**，於是那個帳號從那一刻起什麼都存不起來，
+  /// 而畫面上唯一的跡象是「填了、刷新還是未填寫」。
+  ///
+  /// 存的是「為什麼失敗」與「連續失敗幾次」，不是資料本身。
+  String? saveError;
+  int consecutiveSaveFailures = 0;
+
   Future<void> saveNow() async {
     final store = _store;
     if (store == null || !_hydrated) return;
@@ -706,8 +824,15 @@ class AppState extends ChangeNotifier {
     try {
       await store.save(toSnapshot());
       saveCount++;
-    } catch (_) {
-      // 寫不進去就算了 —— 存檔失敗不該中斷使用者正在做的事。
+      if (saveError != null) {
+        saveError = null;
+        consecutiveSaveFailures = 0;
+      }
+    } catch (e) {
+      // 寫不進去不中斷使用者正在做的事，但要留下痕跡。
+      consecutiveSaveFailures++;
+      saveError = '$e';
+      debugPrint('存檔失敗（連續 $consecutiveSaveFailures 次）：$e');
     }
   }
 
@@ -719,6 +844,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _saveTimer?.cancel();
+    stopCloudWatch();
     super.dispose();
   }
 
@@ -795,6 +921,132 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 更新動機類健身目標（選填，可清空）。
+  ///
+  /// **不重新推薦訓練計畫** —— 動機類不是比對維度，改了它而換掉使用者的
+  /// 當前計畫，是拿一個與課表內容無關的欄位去動他正在練的東西。
+  void updateMotiveGoal(String? goal) {
+    motiveGoal = goal;
+    notifyListeners();
+  }
+
+  /// 快轉到教官初審門檻（**開發者模式專用**）。
+  ///
+  /// 使用者要測 T1／T3（師徒關係），而兩者都要求其中一方是教官 ——
+  /// 教官初審門檻是階級 ≥20 且累積訓練次數 ≥50，測試帳號到不了。
+  ///
+  /// **只動階級與累積訓練次數兩個數字，不碰教官身分本身。**
+  /// 使用者的疑慮是「後續恢復非教官時會出 Bug」——
+  /// 這個做法沒有那個狀態要恢復：教官身分仍然要走完整的
+  /// 申請 → 初審 → 測驗 → 人工審核，這裡只是讓他**按得下申請鍵**。
+  ///
+  /// 階級是由 [totalExp] 推導的（`rankForExp`），不是獨立欄位 ——
+  /// 所以推的是經驗值，推到門檻階級的下限即可。
+  ///
+  /// 快轉前的兩個數字。**存在這裡而不是畫面上** ——
+  /// 還原鍵要撐得過換頁，而設定頁是 StatelessWidget。
+  (int exp, int workouts)? _beforeFastForward;
+
+  bool get canUndoInstructorFastForward => _beforeFastForward != null;
+
+  void fastForwardToInstructorGate() {
+    final gate = instructorGate;
+    // 連按兩次不該把「原本的數字」覆蓋成已經快轉過的那一組。
+    _beforeFastForward ??= (totalExp, totalWorkouts);
+    totalExp = math.max(totalExp, expThresholdForRank(gate.requiredRank));
+    totalWorkouts = math.max(totalWorkouts, gate.requiredWorkouts);
+    notifyListeners();
+  }
+
+  /// 還原成快轉前的兩個數字。沒快轉過就什麼都不做。
+  void undoInstructorFastForward() {
+    final before = _beforeFastForward;
+    if (before == null) return;
+    totalExp = before.$1;
+    totalWorkouts = before.$2;
+    _beforeFastForward = null;
+    notifyListeners();
+  }
+
+  /// 把累積訓練次數與累積訓練天數校正成訓練歷史算得出來的值。
+  ///
+  /// **這會讓數字變小，而規格明訂「累積訓練次數為單調遞增，任何情況下
+  /// 不減少」**（〈訓練結算流程〉）。所以它不是自動的，也不對一般使用者
+  /// 開放 —— 只在開發者模式裡，按下去之前要確認。
+  ///
+  /// ### 為什麼需要它
+  ///
+  /// 使用者的帳號上，累積訓練次數比訓練歷史多 12 筆。那 12 筆有兩個來源，
+  /// **而它們無法事後區分**：
+  ///
+  /// 1. 舊行為下「按開始、放著、按結束」的空場次 —— 次數 +1 但不寫歷史。
+  ///    依 2026-09-26 的裁決，那些本來就不該算（見 0t）。
+  /// 2. 0n–0p 那條寫入缺陷吃掉的真實場次 —— 那是真的練過。
+  ///
+  /// 校正會把第 2 類也一起抹掉。**這是取捨，不是修好** ——
+  /// 換到的是「兩個數字從此相符」，付出的是「真實練過的場次不再被計入」。
+  ///
+  /// ### 為什麼不自動做
+  ///
+  /// 對一般使用者而言，歷史遺失（雲端寫入失敗）不該連帶沒收他的教官進度。
+  /// 那個單調遞增的不變條件存在的理由正是這個。
+  ///
+  /// 回傳被扣掉的次數。
+  int reconcileWorkoutCount() {
+    final removed = totalWorkouts - history.length;
+    if (removed <= 0) return 0;
+    totalWorkouts = history.length;
+    // 累積訓練天數同樣由歷史算得出來，且被同一個原因撐高。
+    totalWorkoutDays = {
+      for (final h in history) businessDate(h.date),
+    }.length;
+    notifyListeners();
+    return removed;
+  }
+
+  /// 補填生日。**只在原本沒有時可用，填了就鎖住。**
+  ///
+  /// 〈設定頁 Read Model〉明訂生日唯讀，理由是它決定年齡係數，
+  /// 「可任意改動將使既有點數失去計算基準⋯⋯如需更正，屬客服範疇」。
+  ///
+  /// 但規格沒設想到一種狀況：2026-09-26 之前註冊問卷問了生日卻沒有任何
+  /// 地方存它（見 [birthday]），那些帳號的生日是空的 —— 唯讀意味著
+  /// **永遠填不進去**。
+  ///
+  /// **「補一個從來沒有的值」與「改一個已有的值」不是同一件事**
+  /// （2026-09-26 使用者裁決 B）：前者不會讓任何既有點數失去基準，
+  /// 因為在它之前根本沒有基準。後者仍然鎖著。
+  ///
+  /// 回傳錯誤訊息，成功回空值。
+  String? fillBirthday(DateTime date) {
+    if (birthday != null) {
+      return '生日已填寫，不可修改。如需更正請聯繫客服。';
+    }
+    final today = DateTime(now.year, now.month, now.day);
+    if (date.isAfter(today)) return '生日不能是未來的日期。';
+    var age = today.year - date.year;
+    if (today.month < date.month ||
+        (today.month == date.month && today.day < date.day)) {
+      age--;
+    }
+    // 與註冊流程同一道年齡門檻，不另立一套。
+    if (age < kMinAge) return '須滿 $kMinAge 歲才能使用本服務。';
+    if (age > 120) return '請確認生日是否正確。';
+    birthday = DateTime(date.year, date.month, date.day);
+    notifyListeners();
+    return null;
+  }
+
+  /// 使用者已填入身高。
+  ///
+  /// 身高不像體重會週週變動，所以沒有週期詢問 —— 但設定頁那一列本來
+  /// **點下去什麼都不會發生**（右邊還畫著可點的箭頭）。
+  /// 填錯一次就沒有任何地方改得回來。
+  void updateHeight(double cm) {
+    heightCm = cm;
+    notifyListeners();
+  }
+
   /// 跳過體重：沿用上次的值，該次詢問週期內不再詢問。
   ///
   /// **不得阻擋簽到** —— 跳過即無法簽到會使連續簽到天數中斷，
@@ -813,11 +1065,15 @@ class AppState extends ChangeNotifier {
     String? duration,
     String? commonGoal,
     String? experience,
+    String? equipmentTier,
   }) {
     if (daysPerWeek != null) this.daysPerWeek = daysPerWeek;
     if (duration != null) this.duration = duration;
     if (commonGoal != null) this.commonGoal = commonGoal;
     if (experience != null) this.experience = experience;
+    // 器材是推薦的第一順位比對維度（硬約束），改了不重新推薦的話，
+    // 使用者會拿著一份他的器材做不到的當前計畫。
+    if (equipmentTier != null) this.equipmentTier = equipmentTier;
     surveyUpdatedAt = now;
     // 任一欄位更新即重新推薦並自動替換當前計畫。推薦為單向指派，無拒絕分支。
     currentPlan = recommendCurrentPlan() ?? currentPlan;
@@ -828,22 +1084,51 @@ class AppState extends ChangeNotifier {
   /// 為空值時，首頁退回「解得開的第一份官方課表」。
   WorkoutPlan? currentPlan;
 
-  /// 依現在的器材、經驗與目標重新推薦一份官方計畫。
+  /// 推薦的取材範圍：解得開的官方計畫。
   ///
   /// 只從解得開的計畫裡挑 —— 自動替換成一份使用者按不下去的計畫，
   /// 等於把他的當前計畫拿走。
+  List<WorkoutPlan> get _recommendablePlans => platformPlans
+      .where((p) => p.source == PlanSource.official && planUnlocked(p))
+      .toList();
+
+  /// 依現在的器材、經驗、目標與時長，把解得開的官方計畫由適合到不適合排序。
+  ///
+  /// **2026-09-28 加入**（使用者裁決）。在此之前畫面上只看得到
+  /// **一份**推薦 —— 使用者實測的原話是「每次只會看到一個推薦訓練，
+  /// 只能練到胸」。推薦本身是單向指派沒有錯，錯在**沒有別的東西可看**。
+  ///
+  /// 所以單向指派那條規則不動（[recommendCurrentPlan] 仍只回一份，
+  /// 且仍是這份排序的第一名），另外開一條「還有哪些也適合」給畫面用。
+  List<RankedPlan<WorkoutPlan>> rankedPlans() => recommendPlans<WorkoutPlan>(
+        _recommendablePlans,
+        equipment: equipmentTier,
+        experience: experience,
+        commonGoal: commonGoal,
+        duration: duration,
+        tierOf: (p) => p.equipmentTier,
+        experienceOf: (p) => p.suitableExperience,
+        goalsOf: (p) => p.suitableGoals,
+        durationOf: (p) {
+          final d = estimatedDurationOf(p);
+          return d == null ? null : planDurationBucket(d, kDurations);
+        },
+      );
+
+  /// 推薦給使用者看的前幾份。
+  ///
+  /// **只收「器材做得到」的** —— 排序不篩掉器材不符的（使用者可能正要
+  /// 去健身房），但推薦清單要篩：推一份他今天做不到的課表沒有意義。
+  List<RankedPlan<WorkoutPlan>> recommendedPlans({int count = 5}) =>
+      rankedPlans()
+          .where((r) => r.match.equipmentOk)
+          .take(count)
+          .toList();
+
+  /// 依現在的器材、經驗與目標重新推薦一份官方計畫。
   WorkoutPlan? recommendCurrentPlan() {
-    return recommendPlan<WorkoutPlan>(
-      platformPlans
-          .where((p) => p.source == PlanSource.official && planUnlocked(p))
-          .toList(),
-      equipment: equipmentTier,
-      experience: experience,
-      commonGoal: commonGoal,
-      tierOf: (p) => p.equipmentTier,
-      experienceOf: (p) => p.suitableExperience,
-      goalsOf: (p) => p.suitableGoals,
-    );
+    final ranked = rankedPlans();
+    return ranked.isEmpty ? null : ranked.first.plan;
   }
 
   /// 跳過問卷：沿用原值，該詢問週期內不再詢問。同樣不得阻擋簽到。
@@ -926,12 +1211,19 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t == null) return;
     // 該成員於得分當下須為本團隊成員。
-    if (!t.members.any((m) => m.name == displayName)) return;
+    if (!t.members.any((m) => sameUser(m.name, m.uid, displayName, myUid))) {
+      return;
+    }
     // 重新分隊期內兩個團隊分數皆不累加；限制的是隊，不是練。
     if (inRegroupWindow(now)) return;
     // 中途加入者僅能貢獻加入後產生的分數 —— 由「當下累加」自然成立，
     // 加入前的個人分數本就沒有經過這裡。
-    t.contributions[displayName] = (t.contributions[displayName] ?? 0) + n;
+    // **以 uid 為鍵。** 只用暱稱的話，我改名之後貢獻分數會從 0 重算，
+    // 而舊的那一筆變成沒有主人的孤兒。
+    final me = personKeyOf(displayName, myUid);
+    t.contributions[me] = (t.contributions[me] ?? 0) + n;
+    // 送上雲。**累加不是覆寫** —— 見 `TeamSource.addScore`。
+    _pushTeam((src, uid) => src.addScore(t.id, uid, n));
   }
 
   bool _allTasksBonusGiven = false;
@@ -988,16 +1280,38 @@ class AppState extends ChangeNotifier {
 
     // 自任務池隨機抽取指派。允許與前一日重複，不做跨日去重。
     redrawDailyTasks();
-    // 進度的計數範圍限當日，隨重置清空；全部完成的加碼旗標同樣歸零。
+    // 進度的計數範圍限當日，隨重置清空；全部完成的兩個加碼旗標同樣歸零
+    // —— 分數那個在完成當下給，金幣那個在全部領取之後給。
     _allTasksBonusGiven = false;
+    _allTasksCoinGiven = false;
     notifyListeners();
     return true;
+  }
+
+  /// 全部完成的加碼**金幣**是否已發。
+  ///
+  /// 與上面的 [_allTasksBonusGiven] 不是同一件事 —— 那個管的是**排行榜
+  /// 分數**的加碼，在任務「完成」當下就給；這個管金幣，在三項都**領取**
+  /// 之後才給（獎勵須由使用者主動點擊領取，見〈每日任務流程〉）。
+  ///
+  /// **在此之前那 4 枚金幣只掛在「領取全部」那顆按鈕上**，一項一項點的人
+  /// 永遠拿不到，一天只有 6 金幣而不是規格寫的 10
+  /// （〈02_Aggregate定義〉每日任務 300／月 ＝ 10／日）。
+  bool _allTasksCoinGiven = false;
+
+  /// 三項都領完就給加碼金幣。兩個領取路徑共用這一支，不再各寫一份。
+  void _giveAllTasksCoinIfDue() {
+    if (_allTasksCoinGiven) return;
+    if (!dailyTasks.every((t) => t.claimed)) return;
+    _allTasksCoinGiven = true;
+    coins += kDailyTaskAllDoneCoin;
   }
 
   void claimTask(DailyTask t) {
     if (!t.done || t.claimed) return;
     t.claimed = true;
     coins += kDailyTaskCoin;
+    _giveAllTasksCoinIfDue();
     notifyListeners();
   }
 
@@ -1008,7 +1322,7 @@ class AppState extends ChangeNotifier {
         coins += kDailyTaskCoin;
       }
     }
-    if (allTasksDone) coins += 4; // 全部完成加碼金幣
+    _giveAllTasksCoinIfDue();
     notifyListeners();
   }
 
@@ -1054,6 +1368,22 @@ class AppState extends ChangeNotifier {
     '按讚': 143,
     '留言': 41,
   };
+
+  /// 把互動的終身累計歸零（**開發者模式專用**）。
+  ///
+  /// 2026-09-28 使用者的帳號上有一組假的互動計數
+  /// （`{按讚:145, 留言:41, …}`，來自示範種子漏進真帳號，見 1F）。
+  /// 根因修好了，但**那個數字早就被存進雲端**，而它
+  /// **沒辦法從證據修補** —— 天數可以從訓練歷史重算，
+  /// 「按過幾個讚」沒有一份完整的紀錄可查。
+  ///
+  /// 所以給一顆自救的按鈕。**已解鎖的成就不動** ——
+  /// 規格：一經解鎖不可撤銷（`persistence_test` 也釘著這一條）。
+  /// 計數歸零之後會出現「已解鎖但當前值對不上」，那是合法狀態。
+  void resetInteractionTotals() {
+    interactionTotals.clear();
+    notifyListeners();
+  }
 
   /// 存檔套用完畢後補跑一次解鎖判定。供 [applySnapshot] 使用。
   void syncAchievementsAfterLoad() => _syncAchievements();
@@ -1256,6 +1586,11 @@ class AppState extends ChangeNotifier {
       pe.restSeconds ??
       exerciseById(pe.exercise.id).defaultRestSeconds ??
       kDefaultRestSeconds;
+
+  /// 預估訓練時長（見 `domain/plan_duration.dart`）。
+  /// 休息秒數由 [restSecondsFor] 供給 —— 那三層取值優先序只有一份。
+  Duration? estimatedDurationOf(WorkoutPlan plan) =>
+      estimatePlanDuration(plan, restSecondsOf: restSecondsFor);
 
   int get restRemaining {
     if (restEndsAt == null) return 0;
@@ -1533,32 +1868,100 @@ class AppState extends ChangeNotifier {
       returnTaskLog.add((assignedAt: today, overdue: false));
     }
 
+    // --- 這一場算不算「一次訓練」---
+    //
+    // **一組都沒完成的訓練不在任何地方留下紀錄**（2026-09-26 使用者裁決）。
+    // 按下開始、放著、按結束，不是一次訓練。
+    //
+    // 這個旗標是**唯一**的判準，下面每一處都讀它 —— 累積訓練次數、
+    // 累積訓練天數、連續訓練天數、訓練歷史、AI 自動優化計數。
+    // 在此之前它們各自寫一份條件，結果是「累積訓練次數 +1 但訓練歷史
+    // 沒有那一筆」：使用者回報「教官申請的累計訓練次數跟訓練清單的不一樣」，
+    // 而那個落差**每開關一次就再拉開一格**。
+    //
+    // **與 [rewardable] 分開**（見下方獎勵那一段）：不到 5 分鐘但做了組的
+    // 訓練**算**一次訓練，只是不發獎勵 —— 他確實練了。
+    //
+    // ### 與規格的關係
+    //
+    // 〈訓練結算流程〉寫「累積訓練次數 +1；三種終止狀態皆計入」。
+    // 這裡的判準不是終止狀態而是「有沒有完成任何一組」，兩者正交：
+    // 三種終止狀態在有完成組的前提下**仍然全部計入**。
+    //
+    // 「不變條件：單調遞增，任何情況下不減少」**沒有被違反** ——
+    // 不增加不等於減少。
+    //
+    // 規格自己也有這條原則：〈AI 自動優化訓練流程〉「已完成組數為 0 的
+    // 訓練不計入 —— 一組都沒完成者不構成歷史訓練資料」，理由是
+    // 「其無任何實績資料可供分析，且開場即關閉可用來強迫 AI 重新優化課表，
+    // 為一條刷新路徑」。同一條刷新路徑對教官初審門檻（累積訓練次數 ≥50）
+    // 一樣成立 —— 開關五十次就過門檻。
+    final recorded = s.doneSets > 0;
+
     // --- 連續訓練天數 ---
     // 次數每場都加；天數與連續天數只在該日第一場加。
-    totalWorkouts += 1;
-    if (lastTrainedDate != today) {
-      // 距上次訓練日的日界未超過 36 小時者續計 —— 與 [runStreakCheck]
-      // 的中斷判定共用同一條規則，兩邊各寫一份就會對不起來。
-      trainingStreakDays =
-          streakContinues(lastTrainedDate, now) ? trainingStreakDays + 1 : 1;
-      // 訓練恢復 —— 預告階段歸零，下一次中斷才會重新發。
-      _trainNoticeStage = DecayStage.normal;
-      lastTrainedDate = today;
-      totalWorkoutDays += 1;
+    //
+    // **「今天算過了沒」要問訓練歷史，不能問 [lastTrainedDate]。**
+    //
+    // `resetToNewAccount()` 把 `lastTrainedDate` 設成 `registeredOn`
+    // ＝今天（那個初始值本身是對的，它是給退步門檻用的：「從未訓練者的
+    // 四道門檻自註冊日的日界起算」）。但這裡拿它來問「今天是不是第一場」
+    // 的話，**註冊當天練的每一場都會被當成不是第一場** ——
+    // 天數與連續天數一整天都不動。
+    //
+    // 2026-09-28 使用者實測：累積訓練次數 3、累積訓練天數 0。
+    //
+    // 同一個欄位兩種語意，日後必然衝突 —— `Exercise.dim` / `parts`
+    // 的註解早就寫過這句話。這裡改用歷史當判準，與
+    // `reconcileWorkoutCount()` 的算法同源（那支也是用 history 重算天數）。
+    //
+    // **這一段跑在 `history.insert` 之前**，所以此刻的歷史還不含這一場。
+    if (recorded) {
+      totalWorkouts += 1;
+      final firstToday =
+          !history.any((h) => businessDate(h.date) == today);
+      if (firstToday) {
+        // 距上次訓練日的日界未超過 36 小時者續計 —— 與 [runStreakCheck]
+        // 的中斷判定共用同一條規則，兩邊各寫一份就會對不起來。
+        trainingStreakDays =
+            streakContinues(lastTrainedDate, now) ? trainingStreakDays + 1 : 1;
+        // 訓練恢復 —— 預告階段歸零，下一次中斷才會重新發。
+        _trainNoticeStage = DecayStage.normal;
+        lastTrainedDate = today;
+        totalWorkoutDays += 1;
+      }
     }
 
     // --- 獎勵 ---
+    //
+    // **一組都沒完成、或不到 5 分鐘的訓練一律不發獎勵**（使用者裁決
+    // 2026-09-26）。按下開始、放著、按結束，不該換到經驗值與金幣 ——
+    // 那是「打開 App」的獎勵，不是訓練的獎勵。
+    //
+    // 判準取「**完成的組數**」與「**實際時長**」兩者，缺一不可：
+    //   · 只看組數：做一組再結束也能領，而那組可能是隨手勾的
+    //   · 只看時長：開著不動十分鐘也能領
+    //
+    // 排行榜分數、每日任務的「完成訓練」計數一併不給 —— 那些同樣是
+    // 獎勵。訓練紀錄本來就有「一組都沒完成不寫入」的判斷，不重複。
+    final duration = now.difference(s.startedAt);
+    final tooShort = duration < kMinRewardedWorkout;
+    // 發獎勵比「算一次訓練」更嚴：還要滿 5 分鐘。
+    final rewardable = recorded && !tooShort;
+
     _rollRewardCounters(today);
-    final rewards = computeSettlement(
-      kind: kind,
-      source: s.plan.source,
-      doneSets: s.doneSets,
-      plannedSets: s.plannedSets,
-      streakDays: trainingStreakDays,
-      expAlreadyGrantedToday: _expGrantedOn == today,
-      coinsGrantedToday: _coinsGrantedToday,
-      scoreGrantedToday: _scoreGrantedToday,
-    );
+    final rewards = rewardable
+        ? computeSettlement(
+            kind: kind,
+            source: s.plan.source,
+            doneSets: s.doneSets,
+            plannedSets: s.plannedSets,
+            streakDays: trainingStreakDays,
+            expAlreadyGrantedToday: _expGrantedOn == today,
+            coinsGrantedToday: _coinsGrantedToday,
+            scoreGrantedToday: _scoreGrantedToday,
+          )
+        : const SettlementRewards.none();
     if (rewards.exp > 0) _expGrantedOn = today;
     totalExp += rewards.exp;
     coins += rewards.coins;
@@ -1574,10 +1977,10 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    _bumpTasks('使用者已完成訓練', 1);
+    // 每日任務的「完成訓練」同樣不給 —— 見上方獎勵那一段的理由。
+    if (rewardable) _bumpTasks('使用者已完成訓練', 1);
     final newly = _syncAchievements();
 
-    final duration = now.difference(s.startedAt);
     final result = SettlementResult(
       plan: s.plan,
       kind: kind,
@@ -1600,8 +2003,8 @@ class AppState extends ChangeNotifier {
     );
 
     // AI 自動優化的每 3 次計數。三種終止方式皆計入；
-    // 一組都沒完成的訓練不構成歷史訓練資料，故不計。
-    _bumpAutoOptimize(anySetDone: s.doneSets > 0);
+    // 一組都沒完成的訓練不構成歷史訓練資料，故不計（讀同一個旗標）。
+    _bumpAutoOptimize(anySetDone: recorded);
 
     // 訓練紀錄於結算時凍結，寫入訓練歷史。
     // **只收已完成的組** —— 未完成的組不產生實績，也不得成為下次的帶入來源。
@@ -1620,7 +2023,12 @@ class AppState extends ChangeNotifier {
         isTimed: pe.exercise.isBodyweight,
       ));
     }
-    if (logged.isNotEmpty) {
+    // `logged.isNotEmpty` 與 [recorded] 邏輯上等價（有完成的組 ⟺ 有東西可記），
+    // 但**寫成同一個條件**，兩者才不會日後各自漂移 ——
+    // 「累積訓練次數 +1 卻沒有那一筆歷史」正是它們曾經漂開的後果。
+    // 不變條件由 `test/workout_count_invariant_test.dart` 釘住。
+    if (recorded) {
+      assert(logged.isNotEmpty, '有完成的組，就一定有東西可以寫進歷史');
       history.insert(
         0,
         HistoryEntry(
@@ -1630,8 +2038,15 @@ class AppState extends ChangeNotifier {
           math.max(1, duration.inMinutes),
           result.calories,
           logged,
+          // 課表卡片的「上次完成度」要讀得到它。空白課表沒有計畫組數。
+          completion: result.plannedSets == 0
+              ? null
+              : result.doneSets / result.plannedSets,
         ),
       );
+      // **訓練紀錄變了，品質評分就過期了。** 設成空值，下次有人讀
+      // 就重算 —— 不當場算，因為結算這條路上沒有人要看那個分數。
+      quality = null;
     }
 
     // 自訂訓練的「上次訓練日期／上次完成度」——
@@ -1674,8 +2089,51 @@ class AppState extends ChangeNotifier {
   ///
   /// 空清單的意思是「這個榜還沒有資料」，畫面據此顯示尚未開放，
   /// 而 [myPlace] 回傳空值讓結算整個跳過。
+  /// 雲端讀回來的排行榜視窗。**空值代表還沒讀到**，不是「我是第 1 名」。
+  final Map<bool, LeaderboardPage> _cloudBoards = {};
+  final Set<bool> _boardsFetched = {};
+  final Set<bool> _boardsInFlight = {};
+
+  /// 去雲端讀一次排行榜（使用者裁決 B，2026-09-28）。
+  ///
+  /// 呼叫端不必 await：讀回來會 [notifyListeners]，畫面自己重畫 ——
+  /// 與 [ensureFollowerCount] 同一套。
+  ///
+  /// **一個榜只讀一次**，除非 [force]。畫面每次重建都讀的話，
+  /// 捲一下排行榜就是好幾十次查詢。
+  Future<void> ensureLeaderboard({required bool weekly, bool force = false}) async {
+    final src = profileSource;
+    if (demo || src == null || myUid == null) return;
+    if (!force && _boardsFetched.contains(weekly)) return;
+    if (!_boardsInFlight.add(weekly)) return;
+    try {
+      final page = await src.leaderboard(
+        weekly: weekly,
+        group: rankGroupNow(weekly: weekly),
+        // **我手上這份，不是雲端那份。** 公開檔案是即發即忘寫上去的，
+        // 雲端可能比我剛剛練完的分數舊。
+        myScore: weekly ? weeklyScore : monthlyScore,
+      );
+      if (page != null) {
+        _cloudBoards[weekly] = page;
+        _boardsFetched.add(weekly);
+        notifyListeners();
+      }
+    } catch (_) {
+      // 讀不到就維持「還沒讀到」——畫面會說「排行榜還在讀取」而不是
+      // 宣稱一個名次。
+    } finally {
+      _boardsInFlight.remove(weekly);
+    }
+  }
+
+  /// 排行榜讀到了沒有。**「讀到了但只有我一個」與「還沒讀到」是兩件事** ——
+  /// 畫面那兩種空狀態要講不一樣的話。
+  bool get leaderboardReady =>
+      demo || _boardsFetched.isNotEmpty || profileSource == null;
+
   List<LeaderboardEntry> leaderboardWindow({required bool weekly}) {
-    if (!demo) return const [];
+    if (!demo) return _cloudWindow(weekly: weekly);
     final myScore = weekly ? weeklyScore : monthlyScore;
     final rnd = math.Random(weekly ? 7 : 30);
     final myPos = 11 + rnd.nextInt(40);
@@ -1692,6 +2150,39 @@ class AppState extends ChangeNotifier {
       }
     }
     return out;
+  }
+
+  /// 把雲端讀回來的那一頁排成畫面要的樣子。
+  ///
+  /// **名次以我那一列為錨點。** 我的名次是「同組裡分數比我高的人數 ＋ 1」，
+  /// 那正是「同分並列、並列後順延跳號」的定義；其餘各列由視窗內的相對
+  /// 名次平移過去。視窗最上面那一列若剛好切在同分群中間，它上面幾列的
+  /// 名次會偏低 —— 要完全正確得為每一列各跑一次聚合查詢，不值得。
+  List<LeaderboardEntry> _cloudWindow({required bool weekly}) {
+    final page = _cloudBoards[weekly];
+    if (page == null) return const [];
+    final myScore = weekly ? weeklyScore : monthlyScore;
+
+    // **自己那一列用本機的分數重新插進去**，不用雲端那一份 ——
+    // 剛練完還沒同步上去的話，畫面會顯示一個比我實際少的數字。
+    final rows = <({int score, String name, bool self})>[
+      for (final p in page.rows)
+        if (p.uid != myUid)
+          (
+            score: weekly ? p.weeklyScore : p.monthlyScore,
+            name: p.displayName,
+            self: false
+          ),
+      (score: myScore, name: displayName, self: true),
+    ]..sort((a, b) => b.score.compareTo(a.score));
+
+    final rel = placesOf([for (final r in rows) r.score]);
+    final offset = page.place - rel[rows.indexWhere((r) => r.self)];
+    return [
+      for (var i = 0; i < rows.length; i++)
+        LeaderboardEntry(rel[i] + offset, rows[i].name, rows[i].score,
+            isSelf: rows[i].self),
+    ];
   }
 
   // -------------------------------------------------------------------------
@@ -1950,7 +2441,17 @@ class AppState extends ChangeNotifier {
 
   /// 關注關係。單向，唯一鍵為 關注者 ID ＋ 被關注者 ID ——
   /// 用集合表達，重複關注不會產生第二筆。
-  final Set<String> following = {'深蹲王', 'CoreMax', '早鳥訓練'};
+  ///
+  /// **裡面裝的是 [personKeyOf] 算出來的鍵，不是暱稱**（暱稱重構階段三）。
+  /// 認得出 uid 的人以 uid 為鍵：暱稱會改、會撞名，而這份名單要跨改名活著。
+  /// 判斷請用 [isFollowing]，要顯示名字請用 [followName]。
+  ///
+  /// **跟著 [demo] 走。** 在此之前它是無條件帶三個假名字的 `final`，
+  /// 真帳號靠 `resetToNewAccount()` 記得清掉才不會看到它們。
+  late Set<String> following =
+      demo ? {for (final n in _demoFollowing) _nameKey(n)} : {};
+
+  static const _demoFollowing = ['深蹲王', 'CoreMax', '早鳥訓練'];
 
   /// 社群裡的人。關注／粉絲清單要呈現階級與綜合能力等級。
   late List<SocialUser> socialUsers = demo ? buildSocialUsers() : [];
@@ -1962,7 +2463,10 @@ class AppState extends ChangeNotifier {
 
   /// 我的粉絲。粉絲數為使用者 Aggregate 的**儲存欄位**，非即時彙總 ——
   /// 不變條件：粉絲數 ＝ 關注關係中被關注者為本人的筆數。
-  late List<String> followers = demo ? buildFollowers() : [];
+  ///
+  /// 同 [following]，裝的是鍵不是暱稱。順序有意義（新的在前）。
+  late List<String> followers =
+      demo ? [for (final n in buildFollowers()) _nameKey(n)] : [];
   int get followerCount => followers.length;
 
   /// 歷史最高粉絲數。粉絲成就依它判定 ——
@@ -1972,16 +2476,40 @@ class AppState extends ChangeNotifier {
   int get followerMilestones => followerMilestonesReached(peakFollowerCount);
 
   /// 他人的粉絲數。我關注／取消關注時 +1 / −1。
+  ///
+  /// **以 [personKeyOf] 的鍵為鍵**，與 [following] 同一套 —— 原本以暱稱為鍵，
+  /// 兩個同名的人會共用一個數字，而改名的人會從此對不上自己的舊計數。
   late Map<String, int> otherFollowerCounts = {
-    for (final u in socialUsers) u.name: 40 + u.rank * 3,
+    for (final u in socialUsers) personKeyOf(u.name, u.uid): 40 + u.rank * 3,
   };
 
+  /// 關注／粉絲名單上，某個鍵在建立當下看到的暱稱。
+  ///
+  /// **只是墊底值。** 顯示一律先問 [nameByUid] 拿現值，查不到才用這裡的 ——
+  /// 對方還沒發布公開檔案時，名單上至少寫得出一個名字而不是一串 uid。
+  /// 同 `apprenticeName`／`mentorName` 那一套（見 [applyCloudBonds]）。
+  final Map<String, String> _followNames = {};
+
   // --- 公開檔案（[BE-11] 批次 1）---
+
+  /// 雲端的公開檔案。**空值代表不同步** —— 既有測試走這條。
+  ///
+  /// 在此之前這個來源只有 `AuthGate` 自己握著，所以「把我的公開檔案寫上去」
+  /// 這件事只在登入那一刻發生得了。升階要即時同步就得讓狀態層也拿得到。
+  PublicProfileSource? profileSource;
 
   /// uid → 暱稱。跨使用者資料在雲端以 uid 為鍵，畫面上要顯示的是暱稱，
   /// 這張表就是兩者之間的翻譯。批次 2 起的關注／貼文都靠它把
   /// 雲端的 uid 還原成畫面認得的暱稱。
   final Map<String, String> nameByUid = {};
+
+  /// 暱稱 → uid。[nameByUid] 的反查。
+  ///
+  /// **這是退路，不是主路。** 暱稱可以改而 uid 不會，所以拿得到 uid 的
+  /// 呼叫端一律直接給 uid（[rankOf] 等幾支都收 `uid:` 具名參數）。
+  /// 只有畫面上真的只剩暱稱時才走這裡 —— 對方改過暱稱就查不到了，
+  /// 那時候退回示範資料的預設值，不會顯示成 1 階。
+  final Map<String, String> _uidByName = {};
 
   /// 我自己要公開出去的那一份。
   ///
@@ -1997,106 +2525,411 @@ class AppState extends ChangeNotifier {
         isInstructor: isInstructor,
         followers: followerCount,
         reputation: instructorReputation,
+        // **帶徒人數與名額要公開，「名額已滿」才擋得住。** 少了它們，
+        // 別人的拜師頁只能假設我還有空位 —— 他申請下去才發現滿了。
+        apprentices: apprentices.length,
+        apprenticeCap: apprenticeCap,
+        avgRating: myRatingStats.avg,
+        ratingCount: myRatingStats.count,
         specialties: instructorSpecialties.toList(),
+        // 排行榜要跟別人比，就得讓別人讀得到我的分數（使用者裁決 B）。
+        weeklyScore: weeklyScore,
+        monthlyScore: monthlyScore,
+        weeklyGroup: rankGroupNow(weekly: true),
+        monthlyGroup: rankGroupNow(weekly: false),
       );
+
+  /// 把我自己的公開檔案重寫上雲。
+  ///
+  /// **即發即忘、吞掉錯誤**：與關注、貼文同一套 —— 同步失敗不該擋住
+  /// 使用者手上正在做的事，下次升階或下次登入會再寫一次。
+  void publishMyProfile() {
+    final src = profileSource;
+    final uid = myUid;
+    if (src == null || uid == null) return;
+    _write('公開檔案', src.publish(myPublicProfile(uid)));
+  }
 
   /// 把雲端讀到的其他使用者併進來（[BE-11] 批次 1）。
   ///
   /// **是併入而不是取代。** 現階段動態牆上的貼文、對話、教官清單仍指向
   /// 示範用的那幾位；直接換掉會讓那些畫面指到不存在的人。
-  /// 等批次 2–4 把貼文與師徒也搬上雲，示範資料才有辦法整批退場。
   void applyPublicProfiles(List<PublicProfile> others) {
     for (final p in others) {
       nameByUid[p.uid] = p.displayName;
+      _uidByName[p.displayName] = p.uid;
       // **整份留著**。只取 rank 與 grade 的話，六維明細就在這裡被丟掉了，
       // 而檔案頁上的雷達圖需要它 —— 拿不到就只能顯示我自己的，那是錯的。
-      publicProfiles[p.displayName] = p;
-      // **粉絲數以雲端為準，而且要在 continue 之前寫。**
-      // 原本寫在下面用 `putIfAbsent`，但 `socialUsers.add()` 會先觸發
+      publicProfiles[p.uid] = p;
+      // **粉絲數以雲端為準，而且要在下面那個 add 之前寫。**
+      // 原本寫在後面用 `putIfAbsent`，但 `socialUsers.add()` 會先觸發
       // `otherFollowerCounts` 這個 late 欄位初始化，那份初始值是用
       // 示範公式 `40 + rank * 3` 算的 —— 等輪到 putIfAbsent 時鍵已經在了，
       // 雲端讀回來的真實數字就這樣被一個假數字蓋掉。
-      otherFollowerCounts[p.displayName] = p.followers;
-      if (socialUsers.any((u) => u.name == p.displayName)) continue;
-      socialUsers.add(SocialUser(
+      otherFollowerCounts[p.uid] = p.followers;
+
+      // **把暱稱鍵升級成 uid 鍵。** 我在對方發布公開檔案之前就關注了他
+      // （示範資料的人一直都是這樣），那一筆當時只能以暱稱為鍵；
+      // 不升級的話他會在名單上變成兩個人 —— 一個舊的按不動、一個新的。
+      _upgradeFollowKey(_nameKey(p.displayName), p.uid);
+
+      // 對方關閉了綜合等級的對外可見時，畫面顯示最低階 ——
+      // 不猜、也不留空白造成版面破洞。
+      final u = SocialUser(
         name: p.displayName,
+        uid: p.uid,
         rank: p.rank,
-        // 對方關閉了綜合等級的對外可見時，畫面顯示最低階 ——
-        // 不猜、也不留空白造成版面破洞。
         grade: p.grade ?? 'E',
-      ));
+      );
+      // **已經在清單裡的人要更新，不是跳過。**
+      //
+      // 原本這裡是 `if (socialUsers.any(...)) continue;` —— 只有「第一次
+      // 見到這個人」才寫入，之後每次登入從雲端讀回來的新階級全被丟掉。
+      // 於是「找人」與關注／粉絲清單顯示的是**我第一次見到他時**的階級，
+      // 比貼文上那個凍結值還舊。
+      final i = socialUsers.indexWhere((x) => x.name == p.displayName);
+      if (i >= 0) {
+        socialUsers[i] = u;
+      } else {
+        socialUsers.add(u);
+      }
+
+      _applyInstructor(p);
     }
     notifyListeners();
   }
 
-  /// 別人的公開檔案，依暱稱索引（[BE-11] 批次 1）。
+  /// 把雲端的教官併進 [instructors]。
+  ///
+  /// **在此之前這份清單對真實帳號永遠是空的**（`demo ? buildInstructors() : []`），
+  /// 而拜師頁就是跑這份清單 —— 於是真實使用者打開拜師頁看到一片空白，
+  /// **連要拜誰為師都看不到**。師徒功能從入口就是斷的，不只是接受之後不上雲。
+  ///
+  /// 教官身分被撤銷時要從清單移除，不是留著 —— 留著的話他會一直出現在
+  /// 拜師頁上，而申請送出去對方那側會被擋下，使用者只看到一次無聲的失敗。
+  void _applyInstructor(PublicProfile p) {
+    final at = instructors.indexWhere((i) => i.name == p.displayName);
+    if (!p.isInstructor) {
+      if (at >= 0) instructors.removeAt(at);
+      return;
+    }
+
+    final i = Instructor(
+      name: p.displayName,
+      uid: p.uid,
+      rank: p.rank,
+      reputation: p.reputation ?? 0,
+      apprentices: p.apprentices,
+      apprenticeCap: p.apprenticeCap,
+      // 教官身分讓兩個可見度開關失效，所以六維一定拿得到；
+      // 真的沒有就給空集合，讓畫面把「沒有資料」畫成沒有資料。
+      ability: p.ability ?? const {},
+      specialties: p.specialties,
+      // 星等由教官自己統計自己那些師徒任務上的評分後發布（`[BE-15]`）——
+      // 別人算不出來，讀不到那些關係底下的任務。
+      // **`ratingCount` 為 0 時畫面要顯示「尚無評分」，不是 0.0 顆星。**
+      avgRating: p.avgRating,
+      ratingCount: p.ratingCount,
+    );
+    if (at >= 0) {
+      instructors[at] = i;
+    } else {
+      instructors.add(i);
+    }
+  }
+
+  /// 別人的公開檔案，**依 uid 索引**（[BE-11] 批次 1）。
+  ///
+  /// **鍵是 uid 不是暱稱。** 暱稱可以改 —— 以暱稱為鍵的話，對方改名之後
+  /// 這份快取就再也對不上，階級與六維一起掉回預設值。
   ///
   /// **只有雲端同步過的人在裡面。** 示範用的那幾位不在 —— 對他們
   /// [abilityOf] 會回空值，而畫面必須把「沒有資料」畫成沒有資料。
   final Map<String, PublicProfile> publicProfiles = {};
 
+  /// 正在路上的 uid。避免同一個人被重複查 —— 動態牆一頁二十篇貼文
+  /// 可能全是同一位作者，不擋的話就是二十次相同的查詢。
+  final Set<String> _profilesInFlight = {};
+
+  /// 補齊這些 uid 的公開檔案。**已經有的、正在查的都不會再查一次。**
+  ///
+  /// 登入時的 [PublicProfileSource.others] 只撈得到最近活躍的前 200 位，
+  /// 而畫面上會出現的人不一定在那 200 位裡 —— 久未上線的作者、剛加入的
+  /// 隊友、三年前那篇貼文的主人都是。在這一支之前，他們的階級與六維
+  /// 一律取預設值（階級顯示 1），而且**人越多越常發生**。
+  ///
+  /// 呼叫端不必 await：查回來會 [notifyListeners]，畫面自己重畫。
+  Future<void> ensureProfiles(Iterable<String> uids) async {
+    final src = profileSource;
+    if (src == null) return;
+
+    final want = {
+      for (final u in uids)
+        if (u.isNotEmpty &&
+            u != myUid &&
+            !publicProfiles.containsKey(u) &&
+            !_profilesInFlight.contains(u))
+          u,
+    };
+    if (want.isEmpty) return;
+
+    _profilesInFlight.addAll(want);
+    try {
+      applyPublicProfiles(await src.byUids(want.toList()));
+    } catch (_) {
+      // 查不到就維持現狀 —— 一次網路失敗不該把畫面上的階級洗成預設值。
+    } finally {
+      // **查無此人也要移出 in-flight**，否則那個 uid 會被永遠鎖住；
+      // 但下次呼叫又會再查一次，這是刻意的：對方可能是稍後才註冊的。
+      _profilesInFlight.removeAll(want);
+    }
+  }
+
+  /// 這個暱稱對應到的公開檔案。拿得到 uid 請直接給 [uid]。
+  PublicProfile? _profile(String name, String? uid) {
+    final key = uid ?? _uidByName[name];
+    return key == null ? null : publicProfiles[key];
+  }
+
+  /// 這是不是我自己。有 uid 就以 uid 為準 —— 暱稱可能跟別人撞名。
+  bool _isMe(String name, String? uid) =>
+      uid != null && myUid != null ? uid == myUid : _mineByName(name);
+
+  // --- 關注名單的鍵（暱稱重構階段三）---
+
+  /// 沒有 uid 的人長什麼樣。定義在 `domain/social.dart`，
+  /// 因為不認得 `AppState` 的地方（例如 [TimedTaskTally]）也要用同一份。
+  static const _namePrefix = 'name:';
+
+  static String _nameKey(String name) => personKey(name, null);
+
+  static bool _isNameKey(String key) => isNamePersonKey(key);
+
+  /// 這一則師徒問答是不是我自己問的（我在學徒那一側）。
+  ///
+  /// **看 [MentorQuestion.apprenticeUid] 是不是空的，不比暱稱。**
+  /// 雲端的問答掛在特定師徒關係下、帶著提問學徒的 uid；我自己問的那些
+  /// 沒有這個欄位（見該欄位的說明）。在此之前這裡比的是
+  /// `q.from == displayName` —— 我改個名字，自己問過的問題就全部不見了。
+  bool isMyQuestion(MentorQuestion q) => q.apprenticeUid == null;
+
+  /// 兩筆資料指的是不是同一個人。
+  ///
+  /// **兩邊都有 uid 就只比 uid。** 有一邊沒有（示範資料、還沒發布公開
+  /// 檔案的人）就只剩暱稱可比 —— 那是退路，會在撞名與改名時答錯。
+  static bool sameUser(String nameA, String? uidA, String nameB, String? uidB) =>
+      (uidA != null && uidB != null) ? uidA == uidB : nameA == nameB;
+
+  /// 這個人在關注名單上的鍵。**有 uid 就用 uid。**
+  ///
+  /// 呼叫端拿不到 uid 時會再走一次 [_uidByName] 反查 —— 那是退路不是主路
+  /// （見 [_uidByName] 的說明），查不到才退成暱稱鍵。
+  /// 退成暱稱鍵的人日後發布了公開檔案，[applyPublicProfiles] 會把那一筆
+  /// 升級成 uid 鍵，名單不會多出一個分身。
+  String personKeyOf(String name, String? uid) =>
+      uid ?? _uidByName[name] ?? _nameKey(name);
+
+  /// 關注／粉絲名單上這個鍵該顯示的名字。
+  ///
+  /// 順序有意義：**現在的暱稱優先**，其次是當初記下來的，都沒有才認賠。
+  /// 反過來的話，對方改了名字而我這裡永遠顯示舊的。
+  String followName(String key) => _isNameKey(key)
+      ? key.substring(_namePrefix.length)
+      : nameOf(_followNames[key] ?? '（資料載入中）', uid: key);
+
+  /// 名單上這個鍵背後的 uid。暱稱鍵沒有 uid，回空值。
+  String? uidOfFollowKey(String key) => _isNameKey(key) ? null : key;
+
+  /// 讀存檔用：把**階段三之前存下來的暱稱**翻成鍵。
+  ///
+  /// 翻得出 uid 的就此收斂到 uid，翻不出的留成暱稱鍵 —— 而登入時
+  /// [applyFollows] 會以雲端為準把 uid 那一半整份換掉，所以翻錯也只錯一次。
+  String followKeyFromLegacyName(String name) => personKeyOf(name, null);
+
+  /// 我有沒有關注這個人。
+  ///
+  /// **拿得到 uid 就給 uid。** 只給暱稱的話，對方改名之後這裡會答錯 ——
+  /// 畫面顯示「關注」，按下去卻在雲端建了第二次同樣的關係。
+  bool isFollowing(String name, {String? uid}) =>
+      following.contains(personKeyOf(name, uid));
+
+  /// 這個人有沒有關注我。
+  bool isFollower(String name, {String? uid}) =>
+      followers.contains(personKeyOf(name, uid));
+
+  /// 把一個鍵記上它當下的暱稱，供 [followName] 墊底。
+  void _rememberFollowName(String key, String name) {
+    if (!_isNameKey(key)) _followNames[key] = name;
+  }
+
+  /// 已經去數過的人。避免同一頁重複查 —— 與 [_profilesInFlight] 同理。
+  final Set<String> _followerCountsInFlight = {};
+
+  /// 去數一次「這個人現在有幾個粉絲」，數完寫進 [otherFollowerCounts]。
+  ///
+  /// **`follows` 集合才是真相來源。** 公開檔案上那個 `followers` 只有
+  /// 本人寫得了，所以我關注某人不會讓它變動 —— 一重新整理，本機的 +1
+  /// 就被那個舊值蓋掉。使用者 2026-09-24 回報「重新追蹤刷新後顯示還是 0」。
+  ///
+  /// 呼叫端不必 await：數回來會 [notifyListeners]，畫面自己重畫。
+  /// 數完之後本機的關注／取消關注照樣疊在上面（見 [_unfollow]）——
+  /// 那一刻的樂觀更新比剛數回來的值更新。
+  Future<void> ensureFollowerCount(String name, String? uid) async {
+    final src = followSource;
+    if (src == null || uid == null || uid == myUid) return;
+    if (!_followerCountsInFlight.add(uid)) return;
+    try {
+      otherFollowerCounts[uid] = await src.followerCountOf(uid);
+      notifyListeners();
+    } catch (_) {
+      // 數不到就維持現狀 —— 一次網路失敗不該把畫面上的數字洗掉。
+    } finally {
+      _followerCountsInFlight.remove(uid);
+    }
+  }
+
   /// 某人的粉絲數。看自己請用 [followerCount]。
-  int followersOf(String name) =>
-      _mine(name) ? followerCount : (otherFollowerCounts[name] ?? 0);
+  ///
+  /// **以 [otherFollowerCounts] 為先，不是公開檔案上那個數字。** 兩者都是
+  /// 雲端來的（`applyPublicProfiles` 每次載入都會把它寫成雲端值），差別是
+  /// 前者還帶著我剛剛按下去的那一次關注／取消關注。反過來取的話，
+  /// 我關注了某人、他的粉絲數卻紋風不動 —— 那個 +1 被雲端快照蓋掉了。
+  int followersOf(String name, {String? uid}) => _isMe(name, uid)
+      ? followerCount
+      : (otherFollowerCounts[personKeyOf(name, uid)] ??
+          _profile(name, uid)?.followers ??
+          0);
 
   /// 某人在檔案頁上該顯示的六維能力值。
   ///
   /// **回空值代表「我這裡沒有他的六維明細」**，可能是對方關掉了對外可見，
   /// 也可能是他根本不在公開檔案裡。兩種情況都不該拿我自己的點數頂上 ——
   /// 那會讓每個人的檔案頁長得跟我一模一樣。
-  Map<Dim, int>? abilityOf(String name) {
-    if (_mine(name)) return points;
+  Map<Dim, int>? abilityOf(String name, {String? uid}) {
+    if (_isMe(name, uid)) return points;
+    final cloud = _profile(name, uid)?.ability;
+    if (cloud != null) return cloud;
     // 教官身分讓兩個可見度開關失效（〈使用者 Aggregate〉的規定），
-    // 所以教官一律看得到六維。
-    final ins = instructors.where((i) => i.name == name).firstOrNull;
-    if (ins != null) return ins.ability;
-    return publicProfiles[name]?.ability;
+    // 所以教官一律看得到六維。示範資料的教官只在這份清單裡。
+    return instructors.where((i) => i.name == name).firstOrNull?.ability;
   }
 
   /// 某人的綜合能力等級。回空值代表對方未公開。
-  String? gradeOf(String name) {
-    if (_mine(name)) return overallGrade(points);
-    final a = abilityOf(name);
+  String? gradeOf(String name, {String? uid}) {
+    if (_isMe(name, uid)) return overallGrade(points);
+    final a = abilityOf(name, uid: uid);
     if (a != null) return overallGrade(a);
-    final p = publicProfiles[name];
+    final p = _profile(name, uid);
     if (p != null) return p.grade;
     // 示範用的使用者沒有六維明細，但帶著綜合等級。
     return socialUsers.any((u) => u.name == name) ? userOf(name).grade : null;
   }
 
   /// 某人的階級。
-  int rankOf(String name) {
-    if (_mine(name)) return rank;
+  ///
+  /// **一律回「他現在的階級」，不是任何時點的快照。** 貼文、私訊、團隊
+  /// 名冊、收件匣在雲端都各自存了一份發生當下的階級，那些值只是這裡
+  /// 查不到時的墊底（見各呼叫端的 `fallback`）—— 顯示的第一順位永遠是
+  /// 公開檔案上的現值。2026-09-23 之前反過來：發文當下寫死進 `posts`
+  /// 文件，作者從 11 階練到 40 階，那篇貼文永遠寫著 11 階。
+  /// [fallback] 是呼叫端手上那份快照（貼文、對話、名冊上存的那個值）。
+  /// **只在這裡完全查不到這個人時才用得到** —— 顯示一個他真的曾經有過的
+  /// 階級，比顯示 1 階好。
+  int rankOf(String name, {String? uid, int? fallback}) {
+    if (_isMe(name, uid)) return rank;
+    final cloud = _profile(name, uid)?.rank;
+    if (cloud != null) return cloud;
     final ins = instructors.where((i) => i.name == name).firstOrNull;
-    return ins?.rank ?? publicProfiles[name]?.rank ?? userOf(name).rank;
+    if (ins != null) return ins.rank;
+    final known = socialUsers.where((u) => u.name == name).firstOrNull;
+    if (known != null) return known.rank;
+    return fallback ?? 1;
   }
 
-  /// 某人的教官聲望。非教官回空值。
-  int? reputationOf(String name) {
-    if (_mine(name)) return isInstructor ? instructorReputation : null;
+  /// 某人**現在**該顯示的名字（暱稱重構階段四）。
+  ///
+  /// **一律回「他現在的暱稱」，不是任何時點的快照。** 與 [rankOf] 同一套：
+  /// 貼文、留言、對話、團隊名冊、收件匣各自存了一份「發生當下的名字」，
+  /// 那些值只是這裡查不到人時的墊底。
+  ///
+  /// [frozen] 就是呼叫端手上那份快照。**改名之後它就過期了** ——
+  /// 規格說得很清楚：「暱稱為顯示名稱，不是識別碼」（〈註冊流程〉），
+  /// 所以顯示的第一順位永遠是公開檔案上的現值。
+  ///
+  /// 沒有 uid 就只能原封不動回傳 —— 那不是查詢失敗，是**沒有東西可查**。
+  String nameOf(String frozen, {String? uid}) {
+    if (_isMe(frozen, uid)) return displayName;
+    return uid == null ? frozen : (nameByUid[uid] ?? frozen);
+  }
+
+  /// 某人**現在**的教官聲望。非教官回空值。
+  ///
+  /// [fallback] 是呼叫端手上那份快照（貼文上的 `authorReputation`），
+  /// 只在完全查不到這個人時用。
+  int? reputationOf(String name, {String? uid, int? fallback}) {
+    if (_isMe(name, uid)) return isInstructor ? instructorReputation : null;
+    final p = _profile(name, uid);
+    // **檔案在手上就以它為準，不可以再退回快照。** 它說不是教官就是不是 ——
+    // 退回去的話，被撤銷教官身分的人在舊貼文上會一直掛著那枚徽章。
+    if (p != null) return p.reputation;
     final ins = instructors.where((i) => i.name == name).firstOrNull;
-    return ins?.reputation ?? publicProfiles[name]?.reputation;
+    if (ins != null) return ins.reputation;
+    return fallback;
+  }
+
+  /// 某人**現在**是不是教官。
+  ///
+  /// 教官身分會被撤銷（`revokeInstructor`），所以這件事跟階級一樣
+  /// 不能存快照 —— 對話框上那枚「教官」徽章原本是開對話當下存的。
+  bool isInstructorOf(String name, {String? uid, bool fallback = false}) {
+    if (_isMe(name, uid)) return isInstructor;
+    final p = _profile(name, uid);
+    if (p != null) return p.isInstructor;
+    if (instructors.any((i) => i.name == name)) return true;
+    return fallback;
   }
 
   /// 某人在檔案頁上該列出的貼文。
   ///
   /// **看別人只列公開的**：僅關注者與私人兩種可見範圍是發文者指定的，
   /// 檔案頁不是繞過它的後門。看自己則三種都列 —— 那本來就是我的東西。
-  List<Post> postsBy(String name) => posts
+  /// 這個人的貼文，**由新到舊**。
+  ///
+  /// 排序要在這裡做，不能倚賴 `posts` 本身的順序：`applyCloudPosts` 會排，
+  /// 但本機新發的是直接插進去的。在此之前檔案頁只取前兩篇 ——
+  /// 順序不對的話，「最新兩篇」拿到的會是別的兩篇。
+  /// **不再依可見範圍過濾**（使用者裁決 2026-09-26，貼文一律公開）。
+  ///
+  /// 過濾掉也沒有用：安全規則那一側是 `allow read: if request.auth != null`，
+  /// 任何登入者本來就讀得到每一篇。前端濾掉只是讓自己看不到。
+  ///
+  /// 2026-09-26 之前標為「私人」「僅關注者」的舊貼文因此會出現在
+  /// 檔案頁上 —— 但它們**本來就在所有人的動態牆上**（動態牆從來沒有
+  /// 依可見範圍過濾過），所以這不是新的曝光，是把不一致修掉。
+  /// [uid] 拿得到就以它為準 —— 暱稱可以改、也會撞名。
+  List<Post> postsBy(String name, {String? uid}) => posts
       .where((p) =>
           !p.deleted &&
-          p.author == name &&
-          (_mine(name) || p.visibility == PostVisibility.public))
-      .toList();
+          (uid != null && p.authorUid != null
+              ? p.authorUid == uid
+              : p.author == name))
+      .toList()
+    ..sort((a, b) => b.at.compareTo(a.at));
+
+  /// 我發過幾篇**還在**的貼文。
+  ///
+  /// **「我的」那個數字原本是自己數的**：
+  /// `posts.where((p) => p.author == displayName).length` ——
+  /// 沒有排除 `p.deleted`，而貼文是軟刪除（已刪除的仍留在清單裡供
+  /// 獎勵回收與成就計數判定）。使用者回報「刪除了 5 篇，貼文顯示 7 篇」。
+  ///
+  /// 旁邊的 [postsBy] 一直都有排除已刪除的 —— 同一個決定寫在兩個地方，
+  /// 只有一處做對。改成走同一支，數字與清單從此不可能對不起來。
+  int get myPostCount => postsBy(displayName, uid: myUid).length;
 
   /// 暱稱 → uid。[nameByUid] 的反查 —— 畫面上拿得到的是暱稱，
   /// 而雲端要的是 uid。
-  String? uidOf(String name) {
-    for (final e in nameByUid.entries) {
-      if (e.value == name) return e.key;
-    }
-    return null;
-  }
+  String? uidOf(String name) => _uidByName[name];
 
   // --- 關注關係上雲（[BE-11] 批次 2）---
 
@@ -2108,28 +2941,54 @@ class AppState extends ChangeNotifier {
   /// **即發即忘，而且吞掉錯誤**：關注是樂觀更新，記憶體與畫面已經改了。
   /// 這裡失敗就讓它失敗 —— 下次登入 [applyFollows] 會以雲端為準重新對齊。
   /// 為了一次網路失敗把畫面倒回去，比晚一點才一致更難解釋。
-  void _pushFollow(String name, {required bool nowFollowing}) {
+  void _pushFollow(String key, {required bool nowFollowing}) {
     final src = followSource;
     if (src == null) return;
-    final target = uidOf(name);
-    // 對方不在公開檔案裡（示範用的假使用者就是這種）—— 只在本地生效。
-    if (target == null) return;
-    (nowFollowing ? src.follow(target) : src.unfollow(target))
-        .catchError((_) {});
+    // 暱稱鍵代表對方不在公開檔案裡（示範用的假使用者就是這種），
+    // 雲端沒有這個人可以指 —— 只在本地生效。
+    if (_isNameKey(key)) return;
+    (nowFollowing ? src.follow(key) : src.unfollow(key)).catchError((_) {});
+  }
+
+  /// 把名單上的 [from] 換成 [to]，三份資料一起換。
+  ///
+  /// 用在「原本只認得暱稱的人，現在拿到 uid 了」。
+  void _upgradeFollowKey(String from, String to) {
+    if (from == to) return;
+    if (following.remove(from)) following.add(to);
+    final at = followers.indexOf(from);
+    if (at >= 0) followers[at] = to;
+    final count = otherFollowerCounts.remove(from);
+    // **舊的計數不蓋掉新的。** 上面那一行剛把雲端讀回來的真實數字寫進
+    // `otherFollowerCounts[p.uid]`，暱稱鍵底下那個是示範公式算出來的。
+    if (count != null) otherFollowerCounts.putIfAbsent(to, () => count);
   }
 
   /// 以雲端的關注關係為準重新對齊（[BE-11] 批次 2）。
   ///
-  /// **只處理認得出暱稱的 uid**：對方若還沒發布公開檔案，
-  /// 這裡沒有暱稱可以填進 [following]，略過即可 —— 下次它發布了自然會出現。
+  /// **uid 那一半整份換掉，不是併入。** 併入的話，我在另一台裝置上取消的
+  /// 關注永遠回不來 —— 雲端已經沒有那筆關係，而本機這份留著。
+  /// 暱稱鍵那一半留著：那是示範資料的假使用者，雲端本來就沒有他們，
+  /// 跟著換掉的話一登入就整批消失。
+  ///
+  /// **不再要求「認得出暱稱」。** 在此之前查不到暱稱的 uid 會被整筆丟掉，
+  /// 於是「對方還沒發布公開檔案」等於「我沒有關注他」—— 名單少人、
+  /// 粉絲數也少。現在名單存的是 uid，名字查不到就由 [followName] 墊底。
   void applyFollows(Set<String> followingUids, Set<String> followerUids) {
-    for (final uid in followingUids) {
-      final name = nameByUid[uid];
-      if (name != null) following.add(name);
-    }
-    for (final uid in followerUids) {
-      final name = nameByUid[uid];
-      if (name != null && !followers.contains(name)) followers.insert(0, name);
+    following
+      ..removeWhere((k) => !_isNameKey(k))
+      ..addAll(followingUids);
+    followers.removeWhere((k) => !_isNameKey(k));
+    // **封鎖過的人不回來。** 我刪不掉他那一筆關係文件（安全規則只讓
+    // 建立者刪），雲端於是永遠留著 —— 不擋的話，「封鎖自動解除雙方關注」
+    // 這條後置條件每次登入都被推翻一次。
+    final blocked = {
+      for (final b in blockedUsers) personKeyOf(b.name, b.uid),
+    };
+    // 反著插，雲端那批彼此的相對順序才跟傳進來的一致。
+    for (final uid in followerUids.toList().reversed) {
+      if (blocked.contains(uid)) continue;
+      if (!followers.contains(uid)) followers.insert(0, uid);
     }
     // 粉絲數的不變條件：等於關注關係中被關注者為本人的筆數。
     peakFollowerCount = math.max(peakFollowerCount, followers.length);
@@ -2140,6 +2999,35 @@ class AppState extends ChangeNotifier {
 
   /// 雲端的貼文。**空值代表不同步** —— 既有測試走這條。
   PostSource? postSource;
+
+  /// 使用者上傳的照片（2026-09-28 使用者裁決：存 Firestore，不開 R2）。
+  ///
+  /// **空值代表不接雲端** —— 既有測試全部走這條，
+  /// 行為與加這個功能之前一模一樣（選不到裝置照片，只有內建圖庫）。
+  PhotoSource? photoSource;
+
+  bool get canUploadPhoto => photoSource != null;
+
+  /// 壓縮並上傳一張照片。回傳 `(照片 ID, 失敗原因)`，兩者必有其一。
+  ///
+  /// **壓縮在這裡做，不在存讀層做。** 存讀層只負責存得進去；
+  /// 「這個檔案能不能變成一張存得下的照片」是先決條件，
+  /// 而它在沒有雲端的環境（測試）也該驗得出來。
+  Future<(String?, String?)> uploadPhoto(Uint8List raw) async {
+    final src = photoSource;
+    if (src == null) return (null, '目前無法上傳照片。');
+    final encoded = encodePhoto(raw);
+    if (encoded == null) return (null, '這個檔案不是看得懂的圖片。');
+    try {
+      return (await src.put(encoded.bytes), null);
+    } catch (e) {
+      return (null, '照片上傳失敗：$e');
+    }
+  }
+
+  /// 取一張上傳照片的位元組。畫面用（見 `PhotoScope`）。
+  Future<Uint8List?> photoBytes(String id) async =>
+      isUploadedPhoto(id) ? await photoSource?.get(id) : null;
 
   /// 動態牆一次讀幾篇。登入時的首次載入與下拉重新整理共用同一個值 ——
   /// 兩邊不一致的話，下拉之後看到的篇數會跟剛登入時不一樣。
@@ -2158,6 +3046,31 @@ class AppState extends ChangeNotifier {
     if (src == null || uid == null) return;
     job(src, uid).catchError((_) {});
   }
+
+  /// 與 [_pushSocial] 同一件事，但**等它做完並回報成功與否**。
+  ///
+  /// 給刪除用。沒接後端時回真 —— 那是示範模式與既有測試走的路，
+  /// 「沒有雲端可寫」不是失敗。
+  Future<bool> _pushSocialTracked(
+      Future<void> Function(PostSource src, String uid) job) async {
+    final src = postSource;
+    final uid = myUid;
+    if (src == null || uid == null) return true;
+    try {
+      await job(src, uid);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 這則留言掛在哪篇貼文底下。
+  ///
+  /// 留言本身不帶貼文 ID（雲端是子集合，父層由路徑決定），而寫回雲端
+  /// 要指定父文件 —— 所以反查一次。找不到回空字串，呼叫端的雲端寫入
+  /// 會失敗並被吞掉，不影響本機。
+  String _postIdOf(Comment c) =>
+      posts.where((p) => p.comments.contains(c)).firstOrNull?.id ?? '';
 
   /// 把雲端的貼文併進動態牆（[BE-11] 批次 3）。
   ///
@@ -2180,12 +3093,29 @@ class AppState extends ChangeNotifier {
     final src = postSource;
     if (src == null) return false;
     try {
-      applyCloudPosts(await src.recent(limit: kPostFeedLimit));
+      // **兩段。** 先把貼文本體畫出來（一趟查詢），再補留言與讚
+      // （一篇各一趟，30 篇就是 60 趟）。合在一起等的話，動態牆要
+      // 等最慢的那一趟才出現第一個字 —— 使用者回報的「有點慢」。
+      final got = await src.recent(limit: kPostFeedLimit);
+      applyCloudPosts(got);
+      await fillPostDetails(got);
       return true;
     } catch (_) {
       // 讀不到就維持畫面上現有的貼文 —— 下拉失敗不該把動態牆清空。
       return false;
     }
+  }
+
+  /// 補上這幾篇的留言與「我按過讚沒有」，補完重畫。
+  ///
+  /// 失敗只影響這一塊：貼文本體已經在畫面上了，補不到留言不該讓它消失。
+  Future<void> fillPostDetails(List<Post> got) async {
+    final src = postSource;
+    if (src == null) return;
+    try {
+      await src.fillDetails(got);
+      notifyListeners();
+    } catch (_) {/* 留著本體，不清空 */}
   }
 
   /// 登入後每一塊同步的結果。**開發者模式看得到。**
@@ -2232,16 +3162,172 @@ class AppState extends ChangeNotifier {
     }
     final mentor = mentorSource;
     if (mentor != null) {
+      // **關係本身也要重讀，不只是申請。** B 按下「接受拜師」之後，
+      // A 這一側要看到的是一段新關係 —— 那在 `bonds()` 裡，
+      // 不在 `requestsFor()` 裡（那筆申請反而被刪掉了）。
+      // 少了這一段，即時訂閱會發出訊號卻什麼都沒變。
+      try {
+        applyCloudBonds(await mentor.bonds());
+        await loadMentorSide();
+        // **學徒那一側也要讀。** 少了它，教官的回答永遠到不了學徒手上。
+        await loadMyApprenticeSide();
+      } catch (_) {/* 同上 */}
       try {
         applyCloudMentorRequests(await mentor.requestsFor(uid));
       } catch (_) {/* 同上 */}
+      try {
+        // **我自己送出去的**申請。與上面那一條是不同的方向，
+        // 不能合成一條（安全規則證明不了 or 條件）。
+        applyMySentMentorRequests(await mentor.sentRequests());
+      } catch (_) {/* 同上 */}
     }
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // 即時訂閱（`[BE-16]`）
+  // ─────────────────────────────────────────────────────────
+
+  final List<StreamSubscription<void>> _cloudWatches = [];
+  Timer? _cloudWatchDebounce;
+
+  /// 開發者模式看得到：訂了哪幾條、被叫醒過幾次。
+  ///
+  /// **「完全沒有訊號」與「訂閱根本沒掛上」在畫面上長得一模一樣。**
+  /// 這個專案查過三輪的那種 bug 就是這樣 —— 即發即忘、吞掉錯誤、
+  /// 出事時毫無跡象。所以至少把「掛上了沒、醒過幾次」記下來。
+  final Map<String, String> cloudWatchReport = {};
+
+  /// 即發即忘的雲端寫入留下的痕跡。**開發者模式的同步報告會顯示它。**
+  ///
+  /// 本專案已經因為 `catchError((_) {})` 犯過四次同一個錯
+  /// （`quotaHint`、`inboundFailure`、評分寫不上雲，以及 2026-09-30
+  /// 教官指派的任務到不了學徒）。共通的形狀是：**畫面說成功了，
+  /// 雲端什麼也沒發生，而沒有任何地方看得出來。**
+  ///
+  /// 所以這裡三種結果都記：送出中、成功、失敗，外加第四種 ——
+  /// 「根本沒送出」。最後那種最要命，它原本與「成功」長得一模一樣。
+  final Map<String, String> cloudWriteReport = {};
+
+  /// 雲端**讀取**留下的痕跡。與 [cloudWriteReport] 同一個用途。
+  ///
+  /// 2026-09-30：學徒讀得到提問卻讀不到任務。兩者在同一支函式、
+  /// 同一段關係下，**共用一個 `try`** —— 提問先讀、任務後讀，
+  /// 任務那一趟丟例外就靜靜結束，而畫面上與「雲端本來就沒有任務」
+  /// 長得一模一樣。
+  final Map<String, String> cloudReadReport = {};
+
+  /// 包一次即發即忘的寫入。[job] 為空值表示**這次根本沒送出**
+  /// （來源或關係 id 是空的），那也要留下痕跡。
+  void _write(String what, Future<void>? job, {String? into}) {
+    // **寫到哪裡去，要跟寫成功一樣看得見。**
+    //
+    // 2026-09-30：教官指派任務報「成功」，學徒在正確的關係底下卻讀到
+    // 0 則。Firestore **允許往不存在的文件底下建子集合** —— 關係 id
+    // 算錯的話寫入照樣成功，而那些孤兒在列關係時根本不會出現。
+    if (into != null) cloudWriteReport['$what → '] = into;
+    if (job == null) {
+      cloudWriteReport[what] = '沒送出 —— 來源或關係 id 是空的';
+      notifyListeners();
+      return;
+    }
+    cloudWriteReport[what] = '送出中…';
+    job.then((_) {
+      final t = now;
+      cloudWriteReport[what] = '成功　'
+          '${t.hour.toString().padLeft(2, '0')}:'
+          '${t.minute.toString().padLeft(2, '0')}';
+      notifyListeners();
+    }).catchError((Object e) {
+      cloudWriteReport[what] = '失敗：${describeError(e)}';
+      notifyListeners();
+    });
+  }
+
+  /// 兩次重讀之間的最短間隔。
+  ///
+  /// 一個動作常常連帶好幾筆文件變動（接受申請＝建關係＋刪申請，
+  /// 兩條監聽各發一次訊號）。沒有這一層，一個動作會觸發兩三趟
+  /// 完整重讀，而每趟都 `notifyListeners()` 讓整個畫面重建。
+  static const _cloudWatchDebounceMs = 400;
+
+  bool get isWatchingCloud => _cloudWatches.isNotEmpty;
+
+  /// 開始監聽雲端變動。登入同步跑完之後呼叫。
+  ///
+  /// **重複呼叫是安全的** —— 會先把舊的收掉。`myTeam` 換了之後
+  /// 要重訂（監看「別人申請加入我的隊」需要知道是哪一隊），
+  /// 所以這支本來就會被叫第二次。
+  void startCloudWatch() {
+    stopCloudWatch();
+    cloudWatchReport.clear();
+
+    void sub(String what, Stream<void>? stream) {
+      if (stream == null) return;
+      var woke = 0;
+      cloudWatchReport[what] = '已訂閱';
+      _cloudWatches.add(stream.listen(
+        (_) {
+          woke++;
+          cloudWatchReport[what] = '已訂閱，叫醒 $woke 次';
+          _onCloudChanged();
+        },
+        onError: (Object e) => cloudWatchReport[what] = '失敗：$e',
+        cancelOnError: false,
+      ));
+    }
+
+    sub('私訊', chatSource?.watchConversations());
+    sub('團隊', teamSource?.watchTeams(myTeamId: myTeam?.id));
+    sub('師徒', mentorSource?.watchMentor());
+
+    // **貼文刻意不訂。** 動態牆已經有下拉重新整理，而按讚會改到
+    // 貼文文件 —— 任何人按一個讚，所有在線的人都得重抓 50 篇貼文
+    // 連同留言。以免費方案每日 5 萬次讀取算，那是會自己燒完的設計。
+    // 關注也不訂：粉絲數在開啟檔案頁時才數一次，沒有「在畫面上等著
+    // 看它變」的情境。
+    notifyListeners();
+  }
+
+  /// 收掉所有監聽。登出、或換帳號時呼叫。
+  ///
+  /// **不收的話訊號會流到上一個帳號的資料上。** 監聽是綁在
+  /// 建立它的那個 Source（帶著當時的 uid）上的，Source 換掉了，
+  /// 舊的訂閱不會自己斷。
+  void stopCloudWatch() {
+    _cloudWatchDebounce?.cancel();
+    _cloudWatchDebounce = null;
+    for (final w in _cloudWatches) {
+      w.cancel();
+    }
+    _cloudWatches.clear();
+  }
+
+  void _onCloudChanged() {
+    _cloudWatchDebounce?.cancel();
+    _cloudWatchDebounce = Timer(
+      const Duration(milliseconds: _cloudWatchDebounceMs),
+      () {
+        _cloudWatchDebounce = null;
+        // 即發即忘：重讀失敗維持畫面現狀，不清空也不擋住使用者。
+        refreshInbound();
+      },
+    );
   }
 
   void applyCloudPosts(List<Post> cloud) {
     for (final p in cloud) {
       final i = posts.indexWhere((x) => x.id == p.id);
       if (i >= 0) {
+        // **留言與讚先沿用畫面上那份。**
+        //
+        // `recent()` 只查貼文本體，留言與「我按過讚沒有」由
+        // `fillDetails()` 隨後補上。中間那幾百毫秒若直接換成空的，
+        // 使用者會看到留言整批消失、愛心變回空心，然後又跳回來。
+        //
+        // 補上之後 `_fillComments` 會先 `clear()`，所以真的被刪掉的
+        // 留言不會因為這裡沿用而留著。
+        if (p.comments.isEmpty) p.comments.addAll(posts[i].comments);
+        p.likedByMe = p.likedByMe || posts[i].likedByMe;
         posts[i] = p;
       } else {
         posts.add(p);
@@ -2250,13 +3336,24 @@ class AppState extends ChangeNotifier {
     // 動態牆依時間由新到舊。
     posts.sort((a, b) => b.at.compareTo(a.at));
     notifyListeners();
+
+    // 把這一批作者的公開檔案補齊 —— 他們的階級要顯示現值，而登入時
+    // 只撈得到最近活躍的前 200 位，久沒上線的作者不在裡面。
+    // **不 await**：補到了會自己 notifyListeners 重畫，補不到就用
+    // 貼文上那份快照墊底。動態牆不該為了階級而等網路。
+    ensureProfiles([for (final p in cloud) ?p.authorUid]);
   }
 
   // --- 封鎖（獨立 Aggregate，不附屬於對話）---
 
   late List<BlockedUser> blockedUsers = demo ? buildBlockedUsers() : [];
 
-  bool isBlocked(String name) => blockedUsers.any((b) => b.name == name);
+  /// 這個人有沒有被我封鎖。
+  ///
+  /// **拿得到 uid 就給 uid。** 只比暱稱的話，對方改名之後
+  /// 「封鎖過的人」會變回「沒封鎖過」—— 而封鎖是自保，不是社交功能。
+  bool isBlocked(String name, {String? uid}) =>
+      blockedUsers.any((b) => sameUser(b.name, b.uid, name, uid));
 
   /// 不能封鎖的理由；null 表示可以封鎖。
   ///
@@ -2267,10 +3364,10 @@ class AppState extends ChangeNotifier {
   /// 已知代價：騷擾者為同隊隊友時，受害者須先退出團隊才能自保。
   /// 這是模型明示接受的代價，而它成立的前提正是這條 Precondition 真的擋住 ——
   /// 不擋的話，使用者付了退隊的代價卻換不到任何東西。
-  String? blockBlockedReason(String name) {
-    if (isBlocked(name)) return '已經封鎖過這個人了。';
+  String? blockBlockedReason(String name, {String? uid}) {
+    if (isBlocked(name, uid: uid)) return '已經封鎖過這個人了。';
     final t = myTeam;
-    if (t != null && t.members.any((m) => m.name == name)) {
+    if (t != null && t.members.any((m) => sameUser(m.name, m.uid, name, uid))) {
       return '同隊的人不能封鎖。要先退出「${t.name}」，'
           '退出後 12 小時換隊冷卻期照常適用。';
     }
@@ -2282,13 +3379,19 @@ class AppState extends ChangeNotifier {
   ///
   /// 封鎖**不受社群功能停權限制**：功能對照表列的是發文、私訊、關注這些
   /// 對外互動，封鎖是自保。停權中的人一樣會被騷擾。
-  bool blockUser(String name) {
-    if (blockBlockedReason(name) != null) return false;
-    blockedUsers.insert(0, BlockedUser(name, now));
+  bool blockUser(String name, {String? uid}) {
+    if (blockBlockedReason(name, uid: uid) != null) return false;
+    blockedUsers.insert(0, BlockedUser(name, now, uid: uid ?? uidOf(name)));
 
     // Postcondition：自動解除**雙方**的關注關係。
-    _unfollow(name);
-    followers.remove(name);
+    //
+    // **「對方關注我」那一半只解得掉本機這一份。** 雲端的關係文件是
+    // `follows/{他的uid}_{我的uid}`，而安全規則只讓 `followerId` 本人刪除 ——
+    // 我刪不了別人建立的關係。下次登入 `applyFollows` 會把他加回粉絲名單。
+    // 見 PROGRESS 1Q，待裁決。
+    final key = personKeyOf(name, uid);
+    _unfollow(key);
+    followers.remove(key);
 
     // Postcondition：自動解除師徒關係，未完成的師徒任務作廢。
     // 封鎖後該關係只剩空殼，且會繼續佔用教官的帶徒名額。
@@ -2300,15 +3403,23 @@ class AppState extends ChangeNotifier {
   }
 
   /// 取消關注的帳務處理。粉絲數為儲存欄位，非即時彙總，故得逐處維護。
-  void _unfollow(String name) {
-    if (!following.remove(name)) return;
-    otherFollowerCounts[name] = (otherFollowerCounts[name] ?? 1) - 1;
+  ///
+  /// **不得扣成負數。** 使用者回報：已關注對方時封鎖他，對方的粉絲數
+  /// 變成 −1。成因是這個計數會被 `applyPublicProfiles` 重設成對方檔案上
+  /// 的值（那份只有他自己更新得了），而本機的 `following` 還留著 ——
+  /// 於是「已關注」與「粉絲數 0」同時成立，一扣就變負的。
+  ///
+  /// 聲望早就有地板了（`applyReputation`），粉絲數漏掉。
+  void _unfollow(String key) {
+    if (!following.remove(key)) return;
+    final now = (otherFollowerCounts[key] ?? 1) - 1;
+    otherFollowerCounts[key] = now < 0 ? 0 : now;
   }
 
   /// 使用者已解除封鎖。
-  void unblockUser(String name) {
+  void unblockUser(String name, {String? uid}) {
     final before = blockedUsers.length;
-    blockedUsers.removeWhere((b) => b.name == name);
+    blockedUsers.removeWhere((b) => sameUser(b.name, b.uid, name, uid));
     if (blockedUsers.length != before) notifyListeners();
   }
 
@@ -2357,6 +3468,27 @@ class AppState extends ChangeNotifier {
         .toList();
   }
 
+  /// 今天以外的推播 —— **紅點數得到，頁面原本列不出來的那些。**
+  ///
+  /// 紅點數的是 [notifications] 全部的未讀，而通知頁只列「今日推播」、
+  /// 「今日未送出」與「App 內通知」。昨天那則未讀的推播於是從畫面上
+  /// 消失，紅點卻還在數它：使用者看到紅點寫著 1，點進去一則未讀都沒有，
+  /// 而且怎麼點都消不掉。
+  ///
+  /// 不套同日總量上限 —— 那條上限管的是「今天打不打斷你」，
+  /// 已經過去的日子沒有這個問題，翻紀錄時該看得到全部。
+  ///
+  /// 由近至遠。翻舊通知的人先想看到的是最近那幾則。
+  List<AppNotification> get earlierPushes {
+    final t = now;
+    return notifications
+        .where((n) =>
+            n.kind == NotifyKind.push &&
+            !(n.at.year == t.year && n.at.month == t.month && n.at.day == t.day))
+        .toList()
+      ..sort((a, b) => b.at.compareTo(a.at));
+  }
+
   void markNotificationRead(AppNotification n) {
     if (n.read) return;
     n.read = true;
@@ -2397,6 +3529,7 @@ class AppState extends ChangeNotifier {
     final post = Post(
       id: newId('p'),
       author: displayName,
+      authorUid: myUid,
       authorRank: rank,
       text: text,
       images: images,
@@ -2414,10 +3547,24 @@ class AppState extends ChangeNotifier {
         target: ReportTarget.post,
         content: text,
         accused: displayName,
+        accusedUid: myUid,
       );
     }
     coins += 5; // 發文獎勵
     _bumpTasks('發文者已發布貼文', 1);
+    // **這一行原本不在。**
+    //
+    // `interactionTotals['發文']` 因此**沒有任何增加的路徑** ——
+    // 發文者已發布貼文是師徒功能五個解鎖條件之一，而它永遠是 0。
+    //
+    // 以前看不出來，是因為示範種子給了 18（`{分享:26, 發文:18, …}`）。
+    // 1F 把那組種子從真帳號清掉之後，**師徒功能對所有真實使用者
+    // 變成永遠解不開** —— 2026-09-28 雙人實測 T1 當場撞到：
+    // 「就算發文了無法解鎖發文任務」。
+    //
+    // 按讚（3267）、留言（3284）、分享（3312）三處本來就有，
+    // 只有發文這一處漏了。
+    _grantInteraction('Post');
     notifyListeners();
     return v;
   }
@@ -2505,7 +3652,7 @@ class AppState extends ChangeNotifier {
     if (p.likedByMe) {
       _bumpTasks('使用者已按讚', 1);
       // **自己的貼文不計**：對自身貼文的按讚與留言不發放任何獎勵。
-      if (!_mine(p.author)) _grantInteraction('Like', requestId: p.id);
+      if (!isMyPost(p)) _grantInteraction('Like', requestId: p.id);
     }
     final liked = p.likedByMe;
     _pushSocial((src, _) => src.setLike(p.id, liked: liked));
@@ -2517,10 +3664,12 @@ class AppState extends ChangeNotifier {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return 0;
     if (text.trim().isEmpty) return 0;
-    final c = Comment(displayName, text.trim(), now);
+    // **帶上 uid。** 雲端那一側本來就在存它，本機這一份漏了 ——
+    // 於是離線建立的留言讀回來之前都認不出是誰的。
+    final c = Comment(displayName, text.trim(), now, authorUid: myUid);
     p.comments.add(c);
     _pushSocial((src, uid) => src.addComment(p.id, c, authorUid: uid));
-    final exp = _mine(p.author) ? 0 : _grantInteraction('Comment');
+    final exp = isMyPost(p) ? 0 : _grantInteraction('Comment');
     _syncAchievements();
     notifyListeners();
     return exp;
@@ -2536,6 +3685,7 @@ class AppState extends ChangeNotifier {
     final post = Post(
       id: newId('share-'),
       author: displayName,
+      authorUid: myUid,
       authorRank: rank,
       text: text.trim().isEmpty ? '今天練完了。' : text.trim(),
       at: now,
@@ -2553,26 +3703,71 @@ class AppState extends ChangeNotifier {
     return (post: post, exp: exp);
   }
 
-  bool _mine(String author) => author == displayName;
+  /// **只比暱稱。** 這是 [_isMe] 在沒有 uid 可比時的退路，
+  /// 不該被直接呼叫 —— 暱稱會撞名，開放改名之後還會讓自己的舊貼文
+  /// 與舊留言變成別人的。
+  ///
+  /// 2026-09-26 之前有五處直接呼叫它（按讚與留言的獎勵判定、
+  /// 編輯貼文、編輯留言、刪除留言），而旁邊的 `isMyPost` 已經改用
+  /// [_isMe] 了 —— 於是「⋯」選單開得出「編輯」，按下去 `editPost`
+  /// 卻回傳假。同一個問題兩種答案。
+  bool _mineByName(String author) => author == displayName;
+
+  /// 這篇貼文是不是我發的。
+  ///
+  /// **以 uid 為準，暱稱只是退路。** 暱稱可以撞名、日後也會開放修改 ——
+  /// 到那時候「我改了暱稱，自己的舊貼文變成別人的」會一次影響編輯、
+  /// 刪除與這顆「⋯」要開哪一組選單。貼文本來就帶著 `authorUid`。
+  ///
+  /// 這件事原本散在畫面上各寫一次（`p.author == s.displayName`），
+  /// 而動態牆那一處根本沒寫 —— 見 `showPostMenu`。
+  bool isMyPost(Post p) => _isMe(p.author, p.authorUid);
+
+  /// 這則留言是不是我留的。與 [isMyPost] 同一套判準 ——
+  /// 編輯與刪除留言、以及「對自己的貼文互動不發獎勵」都讀它。
+  bool isMyComment(Comment c) => _isMe(c.author, c.authorUid);
 
   /// 貼文已編輯。編輯前的內容與時戳寫入編輯歷史，**保留完整歷史版本**；
   /// 已編輯旗標設為真，讀者看得到「已編輯」。
   bool editPost(Post p, String text) {
-    if (!_mine(p.author) || p.deleted || text.trim().isEmpty) return false;
+    if (!isMyPost(p) || p.deleted || text.trim().isEmpty) return false;
     if (text.trim() == p.text) return false;
     p.edits.add((p.text, now));
     p.text = text.trim();
     notifyListeners();
+    // **在此之前這一行不存在。** `PostSource.updatePostText` 早就寫好了，
+    // Firestore 的實作也完整，就是沒有人呼叫 —— 於是編輯只改記憶體，
+    // 重新整理變回舊內容，別人從頭到尾看到的是原版。
+    //
+    // 編輯沿用即發即忘：失敗了內容還在，使用者可以再改一次。
+    // **刪除不能這樣**（見 [deletePost]）。
+    _pushSocial((src, _) => src.updatePostText(p.id, p));
     return true;
   }
 
   /// 貼文已刪除。**軟刪除**：資料保留，因為貼文可被檢舉。
   /// 已刪除貼文的按讚與留言一併隱藏但保留，供獎勵回收與成就計數判定使用。
-  bool deletePost(Post p) {
-    if (!_mine(p.author) || p.deleted) return false;
+  /// 回傳**要顯示給使用者的訊息**；空值代表成功。
+  ///
+  /// ## 為什麼刪除不能即發即忘
+  ///
+  /// 按讚、留言、編輯失敗了都還好 —— 東西還在，再做一次就是。
+  /// **刪除失敗不一樣：使用者以為東西沒了，實際上還在別人眼前。**
+  /// 那正是這次要修的困惑，靜靜地失敗只是把它換個地方發生。
+  ///
+  /// 所以雲端寫不進去就**把本機的刪除收回**：讓貼文重新出現，並說明原因。
+  /// 看到它還在、知道為什麼，比以為刪掉了好。
+  Future<String?> deletePost(Post p) async {
+    if (!isMyPost(p) || p.deleted) return null;
     p.deleted = true;
     notifyListeners();
-    return true;
+
+    if (!await _pushSocialTracked((src, _) => src.markPostDeleted(p.id))) {
+      p.deleted = false;
+      notifyListeners();
+      return '刪除沒有成功，貼文還在。網路恢復後再試一次。';
+    }
+    return null;
   }
 
   /// 動態牆看得到的貼文。
@@ -2580,50 +3775,66 @@ class AppState extends ChangeNotifier {
 
   /// 留言已編輯。規則比照貼文，不另定義。
   bool editComment(Comment c, String text) {
-    if (!_mine(c.author) || c.deleted || text.trim().isEmpty) return false;
+    if (!isMyComment(c) || c.deleted || text.trim().isEmpty) return false;
     if (text.trim() == c.text) return false;
     c.edits.add((c.text, now));
     c.text = text.trim();
     notifyListeners();
+    _pushSocial((src, _) => src.updateCommentText(_postIdOf(c), c));
     return true;
   }
 
   /// 留言已刪除。同樣是軟刪除，且不回收已發放的獎勵 ——
   /// 刪除後重新留言是新的留言 ID，屬新的一次互動。
-  bool deleteComment(Comment c) {
-    if (!_mine(c.author) || c.deleted) return false;
+  /// 回傳要顯示給使用者的訊息；空值代表成功。理由同 [deletePost]。
+  Future<String?> deleteComment(Comment c) async {
+    if (!isMyComment(c) || c.deleted) return null;
+    final postId = _postIdOf(c);
     c.deleted = true;
     notifyListeners();
-    return true;
+
+    if (!await _pushSocialTracked(
+        (src, _) => src.markCommentDeleted(postId, c.id))) {
+      c.deleted = false;
+      notifyListeners();
+      return '刪除沒有成功，留言還在。網路恢復後再試一次。';
+    }
+    return null;
   }
 
   /// 使用者已關注帳號 / 已取消關注。
   /// Postcondition：被關注者的粉絲數 +1 / −1。
-  void toggleFollow(String name) {
+  void toggleFollow(String name, {String? uid}) {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return;
-    if (following.contains(name)) {
-      _unfollow(name);
-      _pushFollow(name, nowFollowing: false);
+    final key = personKeyOf(name, uid);
+    if (following.contains(key)) {
+      _unfollow(key);
+      _pushFollow(key, nowFollowing: false);
     } else {
-      following.add(name);
-      otherFollowerCounts[name] = (otherFollowerCounts[name] ?? 0) + 1;
+      following.add(key);
+      _rememberFollowName(key, name);
+      otherFollowerCounts[key] = (otherFollowerCounts[key] ?? 0) + 1;
       // 歷史行為計數，取消關注不扣回去。
       followTotal += 1;
-      _pushFollow(name, nowFollowing: true);
+      _pushFollow(key, nowFollowing: true);
     }
     notifyListeners();
   }
 
   /// 對方取消關注我 —— 粉絲數減少，但已解鎖的粉絲成就不撤銷。
-  void loseFollower(String name) {
-    if (!followers.remove(name)) return;
+  ///
+  /// 收的是[followers] 裡的鍵（畫面上那份清單就是它）。
+  void loseFollower(String key) {
+    if (!followers.remove(key)) return;
     notifyListeners();
   }
 
-  void gainFollower(String name) {
-    if (followers.contains(name)) return;
-    followers.insert(0, name);
+  void gainFollower(String name, {String? uid}) {
+    final key = personKeyOf(name, uid);
+    if (followers.contains(key)) return;
+    followers.insert(0, key);
+    _rememberFollowName(key, name);
     peakFollowerCount = math.max(peakFollowerCount, followers.length);
     notifyListeners();
   }
@@ -2701,6 +3912,14 @@ class AppState extends ChangeNotifier {
           TeamMember(e.value.name, e.value.rank, e.value.role, uid: e.key),
       ],
       lockedGroupSize: t.peakSize,
+      // **分數以雲端為準。** 在此之前團隊分數完全沒有上雲，重開 App
+      // 就回到示範資料、真帳號則每次從零開始（使用者 2026-09-28 回報）。
+      contributions: {...t.contributions},
+      // 限時任務的完成名單只在**今天**才算數 —— 雲端那份如果是昨天的，
+      // 清空這件事沒有伺服器可以做，由第一個完成的人順手做
+      // （見 `CloudTeam.timedDay`），在那之前這裡先當它是空的。
+      timedCredited:
+          t.timedDay == _timedDayKey() ? {...t.timedCredited} : <String>{},
     );
     // **雲端說我已經在隊上，本機那筆「已送出的申請」就該消失。**
     // 一次只能屬於一個團隊，申請被核准後它已經沒有意義了 ——
@@ -2709,9 +3928,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 限時任務完成名單屬於哪一個業務日（04:00 換日，與全域規範一致）。
+  String _timedDayKey() {
+    final d = businessDate(now);
+    return '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+  }
+
+  /// 我是不是這支隊伍的隊長。
+  ///
+  /// **以 uid 為準，暱稱只是退路**（與 `isMyPost` 同一套判準）。
+  /// 隊員本來就帶著 uid —— `applyCloudTeam` 把雲端文件的鍵原樣帶進來。
   bool get iAmLeader =>
-      myTeam?.members.any((m) => m.name == displayName &&
-          m.role == TeamRole.leader) ??
+      myTeam?.members.any(
+          (m) => _isMe(m.name, m.uid) && m.role == TeamRole.leader) ??
       false;
 
   /// 隊長已踢除成員。隊長不得踢除自己 —— 隊長離隊須經轉讓或解散。
@@ -2824,7 +4055,7 @@ class AppState extends ChangeNotifier {
   bool timedRewardClaimed = false;
 
   bool get canClaimTimedReward =>
-      timedTask.doneBy(displayName) && !timedRewardClaimed;
+      timedTask.doneBy(displayName, uid: myUid) && !timedRewardClaimed;
 
   ({int exp, int coins})? claimTimedReward() {
     if (!canClaimTimedReward) return null;
@@ -2896,18 +4127,22 @@ class AppState extends ChangeNotifier {
 
   /// 我今天完成了，但分數記在別支隊伍帳上（完成後才換隊或重建）。
   bool get timedDoneElsewhere =>
-      timedTask.doneBy(displayName) &&
+      timedTask.doneBy(displayName, uid: myUid) &&
       myTeam != null &&
-      !myTeam!.timedCredited.contains(displayName);
+      !myTeam!.timedCredited.contains(personKeyOf(displayName, myUid));
 
   /// Demo：把自己標記為完成。完成判定實際由系統訂閱 Event 自動累計，
   /// 不採自行回報 —— 可自行按鈕加分的排行榜不成立。
   void completeTimedTask() {
-    if (timedTaskExpired || timedTask.doneBy(displayName)) return;
-    timedTask.completedBy.add(displayName);
+    if (timedTaskExpired || timedTask.doneBy(displayName, uid: myUid)) return;
+    timedTask.completedBy.add(personKeyOf(displayName, myUid));
     // 完成的當下記在當時所屬的隊帳上。中途加入者僅能貢獻加入後產生的分數，
     // 轉隊也不帶走舊團隊已貢獻的分數 —— 與團隊日常分數同一條規則。
-    myTeam?.timedCredited.add(displayName);
+    final t = myTeam;
+    if (t != null) {
+      t.timedCredited.add(personKeyOf(displayName, myUid));
+      _pushTeam((src, uid) => src.creditTimed(t.id, uid, _timedDayKey()));
+    }
     notifyListeners();
   }
   late List<PublicTeam> publicTeams = demo ? buildPublicTeams() : [];
@@ -3093,18 +4328,60 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 上一次 [acceptInbound] 為什麼沒成功。
+  ///
+  /// **原本只回一個 `bool`**，畫面印「沒有成功」—— 而那句話對使用者
+  /// 與對我都一樣沒有用。2026-09-28 雙人實測 T2 卡在這裡：
+  /// B 接受了團隊邀請，畫面說成功（或沒有成功），重整之後什麼都沒有，
+  /// 而**沒有任何地方說得出是哪一段斷的**。
+  String? inboundFailure;
+
   /// 使用者已接受邀請 / 對方已接受申請。
   bool acceptInbound(InboundRequest r) {
-    if (!inbox.contains(r)) return false;
-    if (inboundBlockedReason(r) != null) return false;
+    inboundFailure = null;
+    // 這兩條原本也是「回 false、不說原因」。
+    if (!inbox.contains(r)) {
+      inboundFailure = '這筆請求已經不在信箱裡了（可能逾期或已處理過）。';
+      return false;
+    }
+    if (inboundBlockedReason(r) case final why?) {
+      inboundFailure = why;
+      return false;
+    }
     switch (r.kind) {
       case InboundKind.teamInvite:
-        final t = publicTeams.firstWhere((x) => x.name == r.subject);
+        // **`firstWhere` 原本沒有 `orElse`** —— 找不到就丟例外，
+        // 而呼叫端只看得到 `ok` 是 true 還是 false。
+        //
+        // 找不到是真的會發生：`publicTeams` 是「公開團隊清單」，
+        // 而它要載入過才有東西。使用者若從通知直接點進信箱、
+        // 沒去過團隊分頁，那份清單就是空的。
+        //
+        // 2026-09-28 雙人實測 T2：A 邀 B → B 接受 → **重整也沒有**。
+        final t = publicTeams.where((x) => x.name == r.subject).firstOrNull;
+        if (t == null) {
+          inboundFailure = '找不到「${r.subject}」這支團隊。'
+              '先到社群的團隊分頁看一下公開團隊清單，再回來接受。';
+          notifyListeners();
+          return false;
+        }
+        // **雲端寫得進去，才算加入成功。**
+        //
+        // `_joinPublicTeam()` 只動本機；雲端那一步失敗的話，
+        // 畫面上加入了、重新整理就沒了 —— 那正是使用者看到的。
+        if (t.id.isEmpty) {
+          inboundFailure = '這支團隊還沒有雲端識別碼，加入不會被保存。'
+              '請隊長重新建立團隊，或改用「申請加入」。';
+          notifyListeners();
+          return false;
+        }
         _joinPublicTeam(t);
+        _pushJoinedTeam();
       case InboundKind.mentorInvite:
         final i = instructors.where((x) => x.name == r.from).firstOrNull ??
             Instructor(
               name: r.from,
+              uid: r.fromUid,
               rank: r.fromRank,
               reputation: 0,
               apprentices: 0,
@@ -3120,20 +4397,117 @@ class AppState extends ChangeNotifier {
       case InboundKind.apprenticeApply:
         apprentices.add(Apprentice(
           name: r.from,
+          uid: r.fromUid,
           rank: r.fromRank,
           ability: const {},
           recentWorkouts: const [],
         ));
     }
+    // **把師徒關係寫上雲端。**
+    //
+    // 在此之前這裡只改記憶體 —— `MentorSource.bond()` 寫好了卻沒有人呼叫，
+    // 於是兩邊各自重整之後，這段關係就不存在了。收徒那一側尤其明顯：
+    // 教官看得到學徒、學徒看不到教官，而且誰都不知道為什麼。
+    if (r.kind != InboundKind.teamInvite) _pushBond(r);
+
+    // 請求已經回應完了，把雲端那筆清掉。**團隊那筆要排在入隊之後** ——
+    // 安全規則允許我把自己加進名冊的條件，正是「有一筆給我的待回應請求」
+    // （見 `firestore.rules` 的 teams update 規則），先刪就把自己鎖在外面了。
+    _dropCloudRequest(r);
+
     inbox.remove(r);
     notifyListeners();
     return true;
+  }
+
+  /// 接受團隊邀請後，把自己寫進雲端的名冊。
+  ///
+  /// **在此之前這一步不存在。** `_joinPublicTeam()` 整個函式沒有一行雲端
+  /// 寫入，而登入時是 `teams.myTeam()` 去查「我在哪支隊」—— 查不到，
+  /// 於是接受邀請、重新整理，團隊就不見了。
+  ///
+  /// 申請被核准那條路徑不必走這裡：隊長的 `approveApplication()` 已經
+  /// 把我 `putMember` 上去了，而那時我的申請也被他刪掉了 ——
+  /// 再寫一次反而會被安全規則擋下（規則要求那筆請求還在）。
+  void _pushJoinedTeam() {
+    final t = myTeam;
+    final me = myUid;
+    if (t == null || me == null) return;
+    final me2 = t.members.where((m) => m.uid == me).firstOrNull;
+    if (me2 == null) return;
+    _pushTeam((src, _) => src.putMember(t.id, me, _asCloudMember(me2)));
+  }
+
+  /// 把雲端那筆待回應請求清掉。
+  ///
+  /// **接受與拒絕都要做。** 在此之前兩條路徑都只從本機的 `inbox` 移除 ——
+  /// 雲端那筆還在，下次登入 `applyCloudTeamRequests`／
+  /// `applyCloudMentorRequests` 又把它撈回來。使用者拒絕了三次，
+  /// 它出現了四次。
+  ///
+  /// 這與「撤回申請」那個已修的 bug 是同一句話：本機移掉、雲端還在。
+  void _dropCloudRequest(InboundRequest r) {
+    switch (r.kind) {
+      case InboundKind.teamInvite:
+        final id = myTeam?.id ??
+            publicTeams
+                .where((t) => t.name == r.subject && t.id.isNotEmpty)
+                .map((t) => t.id)
+                .firstOrNull;
+        final me = myUid;
+        if (id == null || me == null) return;
+        _pushTeam((src, _) => src.dropRequest(id, me));
+      case InboundKind.mentorInvite:
+      case InboundKind.apprenticeApply:
+        // `MentorSource.dropRequest` 在此之前**一個呼叫端都沒有**。
+        // `data_source_wiring_test` 沒抓到它，因為 `TeamSource` 也有一支
+        // 同名方法而那支有人呼叫 —— 那正是該檔案開頭寫明的撞名漏抓。
+        mentorSource?.dropRequest(r.id).catchError((_) {});
+    }
+  }
+
+  /// 接受師徒請求時把關係寫上雲端。
+  ///
+  /// **方向由請求的種類決定**：`mentorInvite` 是對方邀我當學徒（他是教官），
+  /// `apprenticeApply` 是對方想拜我為師（我是教官）。搞反的話，雲端那筆
+  /// 關係的師徒位置對調，而下次登入 `applyCloudBonds` 只看
+  /// `apprenticeUid == me`，於是教官會把自己載入成學徒。
+  void _pushBond(InboundRequest r) {
+    final src = mentorSource;
+    final me = myUid;
+    // 對方的 uid 現在跟著請求一起來（`InboundRequest.fromUid`）。
+    // 在此之前只有暱稱，要反查 —— 而反查只認得已載入的那幾位。
+    final peer = r.fromUid ?? uidOf(r.from);
+    if (src == null || me == null || peer == null) return;
+
+    final mentorUid = r.kind == InboundKind.mentorInvite ? peer : me;
+    final apprenticeUid = r.kind == InboundKind.mentorInvite ? me : peer;
+    final mentorName = r.kind == InboundKind.mentorInvite ? r.from : displayName;
+    final apprenticeName =
+        r.kind == InboundKind.mentorInvite ? displayName : r.from;
+
+    src
+        .bond(CloudBond(
+          // 關係 ID 由雙方 uid 組成 —— 與 `_apprenticeBondId` 同一套規則，
+          // 兩邊各自算出來的必須是同一個字串。
+          id: '${mentorUid}_$apprenticeUid',
+          mentorUid: mentorUid,
+          apprenticeUid: apprenticeUid,
+          mentorName: mentorName,
+          apprenticeName: apprenticeName,
+          state: MentorBondState.active,
+          bondedAt: now,
+        ))
+        // 即發即忘，與其餘社群寫入同一套 —— 失敗了下次登入以雲端為準。
+        .catchError((_) {});
   }
 
   /// 使用者已拒絕邀請 / 對方已拒絕申請。
   /// 拒絕後該筆失效，對方可再次送出，無冷卻期（承既有裁決）。
   void declineInbound(InboundRequest r) {
     if (!inbox.remove(r)) return;
+    // 拒絕也要把雲端那筆清掉，否則下次登入它又跑出來。
+    _dropCloudRequest(r);
     notifyListeners();
   }
 
@@ -3173,11 +4547,12 @@ class AppState extends ChangeNotifier {
   Map<String, int> _seedContributions(PublicTeam t) {
     if (t.members.isEmpty) return {};
     final each = t.dailyScore ~/ t.members.length;
-    final out = <String, int>{for (final m in t.members) m.name: each};
-    final leader = t.members
-        .firstWhere((m) => m.role == TeamRole.leader,
-            orElse: () => t.members.first)
-        .name;
+    final out = <String, int>{
+      for (final m in t.members) personKeyOf(m.name, m.uid): each,
+    };
+    final l = t.members.firstWhere((m) => m.role == TeamRole.leader,
+        orElse: () => t.members.first);
+    final leader = personKeyOf(l.name, l.uid);
     out[leader] = out[leader]! + t.dailyScore - each * t.members.length;
     return out;
   }
@@ -3311,6 +4686,7 @@ class AppState extends ChangeNotifier {
         target: ReportTarget.message,
         content: body,
         accused: c.peer,
+        accusedUid: c.peerUid,
       );
     }
     notifyListeners();
@@ -3338,12 +4714,14 @@ class AppState extends ChangeNotifier {
   /// 成員已完成一次限時任務。
   ///
   /// 完成記在**當時所屬的隊**帳上，與我自己完成時同一條規則。
-  bool teammateCompletesTimedTask(String name) {
+  bool teammateCompletesTimedTask(String name, {String? uid}) {
     final t = myTeam;
     if (t == null || timedTaskExpired) return false;
-    if (!t.members.any((m) => m.name == name)) return false;
-    if (!timedTask.completedBy.add(name)) return false;
-    t.timedCredited.add(name);
+    final m =
+        t.members.where((m) => sameUser(m.name, m.uid, name, uid)).firstOrNull;
+    if (m == null) return false;
+    if (!timedTask.completedBy.add(personKeyOf(m.name, m.uid))) return false;
+    t.timedCredited.add(personKeyOf(m.name, m.uid));
     notifyListeners();
     return true;
   }
@@ -3377,7 +4755,7 @@ class AppState extends ChangeNotifier {
         reason: reason,
         reporterCount: 1,
         accused: displayName,
-        accusedViolations: violationsOf(displayName),
+        accusedViolations: violationsOf(myUid, name: displayName),
         enteredAt: now,
       ),
     );
@@ -3525,7 +4903,31 @@ class AppState extends ChangeNotifier {
   // --- 師徒上雲（[BE-14]）---
 
   /// 雲端的師徒關係。**空值代表不同步** —— 既有測試走這條。
-  MentorSource? mentorSource;
+  MentorSource? _mentorSource;
+  MentorSource? get mentorSource => _mentorSource;
+  set mentorSource(MentorSource? v) {
+    _mentorSource = v;
+    // 換了來源就等於換了一個人 —— 上一個帳號載過的事實不算數。
+    _mentorLoaded = false;
+  }
+
+  /// 師徒關係是否已經從雲端載回來過。
+  bool _mentorLoaded = false;
+
+  /// 「我沒有教官」與「還不知道」分得開嗎。
+  ///
+  /// **`myInstructor == null` 有兩個意思。** 一個是事實（我還沒拜師），
+  /// 一個是我們還沒讀到。在此之前拜師頁把兩者畫成同一張清單 ——
+  /// 也就是在同步失敗時，對著一位有教官的人說「你沒有教官」。
+  ///
+  /// 那正是使用者會回報成「我的教官不見了」的那件事，而它**不會報錯**：
+  /// 師徒那一塊是各自 try、吞掉錯誤的（那是對的，社群讀不到不該擋住訓練），
+  /// 代價就是出問題時完全沒有跡象。
+  ///
+  /// 專案守則第 5 條：**填錯的數字比留白更糟，留白會被看見，錯的不會。**
+  ///
+  /// 沒接雲端時（示範、既有測試）本機就是全部事實，所以直接算「知道」。
+  bool get mentorKnown => _mentorSource == null || _mentorLoaded;
 
   /// 我作為**學徒**的那一段關係在雲端的 ID。
   ///
@@ -3535,57 +4937,361 @@ class AppState extends ChangeNotifier {
   /// 補這一段要先讓本機模型帶上學徒身分，見 PROGRESS.md 的 `[BE-15]`。
   String? get _apprenticeBondId {
     final me = myUid;
-    final mentor = myInstructor?.name;
+    final mentor = myInstructor;
     if (me == null || mentor == null) return null;
-    final mentorUid = uidOf(mentor);
+    // **以教官身上那個 uid 為準，反查只是退路。** 反查是拿暱稱去翻
+    // `nameByUid`，而暱稱可以改；教官物件本來就帶著 uid 了。
+    final mentorUid = mentor.uid ?? uidOf(mentor.name);
     if (mentorUid == null) return null;
     return '${mentorUid}_$me';
   }
 
-  /// 師徒任務在雲端的識別碼。
+  /// 本機的任務轉成雲端那一份。
   ///
-  /// 本機的 [MentorTask] **沒有 ID 欄位** —— 它以標題辨識（同一位教官
-  /// 不會指派兩個同名任務）。這裡沿用同一套，才不會在本機與雲端
-  /// 長出兩套識別方式。標題若真的重複，兩者會落在同一份文件上，
-  /// 這是已知的取捨，補法是讓 MentorTask 帶上 ID（見 `[BE-15]`）。
-  String _taskId(MentorTask t) => t.title;
+  /// **識別碼用 `MentorTask.id`。** 在此之前是拿標題當 ID —— 教官指派
+  /// 兩個同名任務就會落在同一份文件上，互相覆蓋。`[BE-15]` 補上了 ID 欄位。
+  CloudMentorTask _asCloudTask(MentorTask t) => CloudMentorTask(
+        id: t.id,
+        title: t.title,
+        detail: t.detail,
+        state: t.state,
+        rewardCoins: t.rewardCoins,
+        rating: t.rating,
+      );
 
-  void _pushTask(MentorTask t) => _pushMentor((src, bond) => src.putTask(
-        bond,
-        CloudMentorTask(
-          id: _taskId(t),
-          title: t.title,
-          detail: t.detail,
-          state: t.state,
-          rewardCoins: t.rewardCoins,
-          rating: t.rating,
-        ),
-      ));
+  /// 學徒這一側動了任務（完成、領獎、評分）—— 掛在我與教官那段關係下。
+  void _pushTask(MentorTask t) => _pushMentorTask(t);
 
   void _pushMentor(Future<void> Function(MentorSource src, String bondId) job) {
     final src = mentorSource;
     final bond = _apprenticeBondId;
-    if (src == null || bond == null) return;
-    job(src, bond).catchError((_) {});
+    _write('師徒（學徒側）',
+        src == null || bond == null ? null : job(src, bond));
   }
 
-  /// 以雲端的師徒關係為準（[BE-14]）。
+  /// 我作為**教官**時，與這位學徒那一段關係在雲端的 ID。
   ///
-  /// 目前只還原**關係本身的狀態**（生效中／已解除與解除時點）——
-  /// 任務與問答要等本機模型帶上學徒身分之後才對應得起來。
+  /// 與 [_apprenticeBondId] 是同一套規則的另一側 ——
+  /// 關係 ID 一律是 `教官uid_學徒uid`，兩邊各自算出來的必須一致。
+  String? mentorBondIdFor(String? apprenticeUid) {
+    final me = myUid;
+    if (me == null || apprenticeUid == null) return null;
+    return '${me}_$apprenticeUid';
+  }
+
+  /// 我帶的那些學徒的關係 ID。星等統計要跑過它們。
+  Iterable<String> get myMentorBondIds =>
+      apprentices.map((a) => mentorBondIdFor(a.uid)).nonNulls;
+
+  /// 我收到的評分總數與平均（`[BE-15]`）。
+  ///
+  /// **在此之前 App 根本沒在記這個。** 學徒評分只會去動教官的聲望
+  /// （見 [rateMentorTask]），沒有累積成星等 —— 於是拜師頁上每位教官
+  /// 都寫著「0.0（0 則）」，而那不是「還沒被評過」，是這個數字從來
+  /// 不存在。
+  ///
+  /// **由任務上的評分推導，不另存一個會漂移的數字。** 每則任務至多
+  /// 一個評分，所以「幾則有評分」就是評分次數。
+  ({double avg, int count}) get myRatingStats {
+    final scored = mentorTasks
+        .where((t) => t.apprenticeUid != null && t.rating != null)
+        .map((t) => t.rating!)
+        .toList();
+    if (scored.isEmpty) return (avg: 0, count: 0);
+    return (
+      avg: scored.reduce((a, b) => a + b) / scored.length,
+      count: scored.length,
+    );
+  }
+
+  /// 把教官側的任務與問答從雲端讀回來（`[BE-15]`）。
+  ///
+  /// **在此之前 `MentorSource.tasks()` 與 `questions()` 一個呼叫端都沒有。**
+  /// 學徒的提問寫進了 Firestore，教官永遠讀不到；學徒給的評分也一樣 ——
+  /// 所以星等才會是 0。
+  ///
+  /// `data_source_wiring_test` 沒抓到這兩支：畫面上有個同名的
+  /// `s.questions` 欄位，方法名撞到欄位名。
+  /// 讀回來的這則任務帶著還沒算過的評分，就算進我的聲望。
+  ///
+  /// **在此之前學徒的評分永遠動不了教官的聲望。** `apprenticeRatesMe()`
+  /// 是唯一會動到我自己聲望的入口，而它在 `lib/` 只有一個呼叫端 ——
+  /// 設計模擬頁。正式流程裡沒有人叫它，於是評分寫上了雲、星等也算得出來，
+  /// 只有聲望（以及它連動的帶徒上限）停在原地。
+  ///
+  /// 記帳只在**真的加成功**之後 —— 學徒還沒進 `apprentices` 時
+  /// `apprenticeRatesMe()` 會回否，這時不可記，否則這筆評分就永遠遺失了。
+  void _creditTaskRating(MentorTask t, String apprenticeUid) {
+    final stars = t.rating;
+    if (stars == null) return;
+    if (creditedTaskRatings.contains(t.id)) return;
+    final name = nameByUid[apprenticeUid] ??
+        apprentices.where((a) => a.uid == apprenticeUid).firstOrNull?.name;
+    if (name == null) return;
+    if (apprenticeRatesMe(name, stars, uid: apprenticeUid)) {
+      creditedTaskRatings.add(t.id);
+    }
+  }
+
+  /// 這段關係上還沒算過的週互動評分，就算進我的聲望。
+  ///
+  /// 幅度遠大於單次任務評分（−2／0／+4／+8／+12），所以更不能重複計。
+  void _creditWeeklyRatings(CloudBond b) {
+    for (final e in b.weeklyRatings.entries) {
+      final key = '${b.id}@${e.key}';
+      if (creditedWeeklyRatings.contains(key)) continue;
+      final name = nameByUid[b.apprenticeUid] ?? b.apprenticeName;
+      if (name.isEmpty) continue;
+      if (apprenticeRatesMe(name, e.value,
+          weekly: true, uid: b.apprenticeUid, forWeek: e.key)) {
+        creditedWeeklyRatings.add(key);
+      }
+    }
+  }
+
+  Future<void> loadMentorSideOf(String apprenticeUid) async {
+    final src = mentorSource;
+    final bond = mentorBondIdFor(apprenticeUid);
+    if (src == null || bond == null) {
+      cloudReadReport['教官側'] = '沒讀 —— 來源或關係 id 是空的';
+      return;
+    }
+    cloudReadReport['我的 uid'] = myUid ?? '（空）';
+    cloudReadReport['教官側關係'] = bond;
+
+    // 兩種各自一個 `try` —— 理由見 [loadMyApprenticeSide]。
+    var changed = false;
+
+    try {
+      final ts = await src.tasks(bond);
+      cloudReadReport['教官側任務'] = '讀到 ${ts.length} 則';
+      changed = true;
+      for (final t in ts) {
+        final at = mentorTasks.indexWhere((x) => x.id == t.id);
+        final m = MentorTask(
+          id: t.id,
+          title: t.title,
+          detail: t.detail,
+          apprenticeUid: apprenticeUid,
+          state: t.state,
+          rewardCoins: t.rewardCoins,
+          rating: t.rating,
+        );
+        if (at >= 0) {
+          mentorTasks[at] = m;
+        } else {
+          mentorTasks.add(m);
+        }
+        _creditTaskRating(m, apprenticeUid);
+      }
+    } catch (e) {
+      // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的任務清空。
+      cloudReadReport['教官側任務'] = '失敗：${describeError(e)}';
+    }
+
+    try {
+      final qs = await src.questions(bond);
+      cloudReadReport['教官側提問'] = '讀到 ${qs.length} 則';
+      changed = true;
+      for (final q in qs) {
+        final at = questions.indexWhere((x) => x.id == q.id);
+        final m = MentorQuestion(
+          id: q.id,
+          from: nameByUid[q.fromUid] ?? '學徒',
+          apprenticeUid: apprenticeUid,
+          text: q.text,
+          at: q.at,
+          answer: q.answer,
+        );
+        if (at >= 0) {
+          questions[at] = m;
+        } else {
+          questions.add(m);
+        }
+      }
+    } catch (e) {
+      cloudReadReport['教官側提問'] = '失敗：${describeError(e)}';
+    }
+
+    if (!changed) return;
+    notifyListeners();
+
+    // 讀回來之後星等才算得出來，這時要把它發布出去。
+    publishMyProfile();
+  }
+
+  /// 把我帶的每位學徒那一段都讀一次。登入後呼叫。
+  Future<void> loadMentorSide() async {
+    for (final a in apprentices) {
+      final uid = a.uid;
+      if (uid != null) await loadMentorSideOf(uid);
+    }
+  }
+
+  /// 把**我當學徒**那一段讀回來（`[BE-15]` 漏掉的另一半）。
+  ///
+  /// ## 為什麼非有不可
+  ///
+  /// `loadMentorSide()` 跑的是「我帶的每位學徒」—— 一位學徒的
+  /// `apprentices` 是空的，所以它什麼都不做。於是**學徒從來不會重讀
+  /// 自己的問答**：他提的問題只有本機那一份，而教官的回答寫在雲端，
+  /// 兩者之間沒有橋。
+  ///
+  /// 使用者 2026-09-29 實測：B 收得到提問（訊號那一半修好了），
+  /// 而 **A 收不到回答** —— 重整幾次都一樣，因為沒有人去讀。
+  ///
+  /// 與 2K（教官資格的裁決回不到申請人）、2L（教官身分沒發布出去）
+  /// 同一家族：**一邊接上了，另一邊沒有。**
+  Future<void> loadMyApprenticeSide() async {
+    final src = mentorSource;
+    final bond = _apprenticeBondId;
+    if (src == null || bond == null) {
+      cloudReadReport['學徒側'] = '沒讀 —— 來源或關係 id 是空的';
+      return;
+    }
+    // 兩邊各自算出來的關係 id 必須一致，對不上就什麼都讀不到。
+    cloudReadReport['我的 uid'] = myUid ?? '（空）';
+    cloudReadReport['學徒側關係'] = bond;
+
+    // **提問與任務各自一個 `try`。** 共用一個的話，先讀的那種成功、
+    // 後讀的那種失敗，整段就靜靜結束 —— 使用者看到的是
+    // 「問答都在，任務一則都沒有」，而雲端明明有。
+    var changed = false;
+
+    try {
+      final qs = await src.questions(bond);
+      cloudReadReport['學徒側提問'] = '讀到 ${qs.length} 則';
+      changed = true;
+      for (final q in qs) {
+        final at = questions.indexWhere((x) => x.id == q.id);
+        final m = MentorQuestion(
+          id: q.id,
+          from: displayName,
+          // **空值＝這是我自己問的**（見 `isMyQuestion`）。
+          // 我是學徒那一側，這一段底下的提問都是我問的。
+          apprenticeUid: null,
+          text: q.text,
+          at: q.at,
+          answer: q.answer,
+        );
+        if (at >= 0) {
+          questions[at] = m;
+        } else {
+          questions.add(m);
+        }
+      }
+    } catch (e) {
+      // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的問答清空。
+      cloudReadReport['學徒側提問'] = '失敗：${describeError(e)}';
+    }
+
+    try {
+      final ts = await src.tasks(bond);
+      cloudReadReport['學徒側任務'] = '讀到 ${ts.length} 則';
+      changed = true;
+      for (final t in ts) {
+        final at = mentorTasks.indexWhere((x) => x.id == t.id);
+        final m = MentorTask(
+          id: t.id,
+          title: t.title,
+          detail: t.detail,
+          // 同上：這一段是「我與我的教官」，任務是指派給我的。
+          apprenticeUid: null,
+          state: t.state,
+          rewardCoins: t.rewardCoins,
+          rating: t.rating,
+        );
+        if (at >= 0) {
+          mentorTasks[at] = m;
+        } else {
+          mentorTasks.add(m);
+        }
+      }
+    } catch (e) {
+      cloudReadReport['學徒側任務'] = '失敗：${describeError(e)}';
+    }
+
+    if (changed) notifyListeners();
+  }
+
+  /// 以雲端的師徒關係為準（[BE-14]／[BE-15]）。
+  ///
+  /// **兩側都要處理。** 在此之前只看 `apprenticeUid == me`（我當學徒的
+  /// 那一段）—— 教官側完全接不上，於是真實使用者當了教官之後，
+  /// 學徒清單永遠是空的，而他明明收過徒。
   void applyCloudBonds(List<CloudBond> bonds) {
     final me = myUid;
     if (me == null) return;
 
+    // --- 教官側：我帶的學徒 ---
+    for (final b in bonds) {
+      if (b.mentorUid != me) continue;
+      // 已解除的關係不該讓學徒繼續留在名單上。
+      if (b.state != MentorBondState.active) {
+        apprentices.removeWhere((a) => a.uid == b.apprenticeUid);
+        // **但關係還在。** 3 天內可挽回，教官要看得到 ——
+        // 在此之前這裡只有上面那一行，學徒就此從畫面上消失，
+        // 而規格說「教官與學徒任一方皆可提出恢復」。
+        final rb = ReleasedBond(
+          apprenticeUid: b.apprenticeUid,
+          apprenticeName: nameByUid[b.apprenticeUid] ?? b.apprenticeName,
+          releasedAt: b.releasedAt ?? now,
+          reason: b.releasedReason,
+          restoreProposedBy: b.restoreProposedBy,
+        );
+        final rat =
+            releasedApprentices.indexWhere((x) => x.apprenticeUid == b.apprenticeUid);
+        if (rat >= 0) {
+          releasedApprentices[rat] = rb;
+        } else {
+          releasedApprentices.add(rb);
+        }
+        continue;
+      }
+      // 轉回生效中的，就不該還留在「已解除」那一欄。
+      releasedApprentices.removeWhere((x) => x.apprenticeUid == b.apprenticeUid);
+      final name = nameByUid[b.apprenticeUid] ?? b.apprenticeName;
+      final at = apprentices.indexWhere((a) => a.uid == b.apprenticeUid);
+      final a = Apprentice(
+        name: name,
+        uid: b.apprenticeUid,
+        rank: rankOf(name, uid: b.apprenticeUid),
+        // 六維與近期訓練是對方的資料，這裡拿不到 —— 畫面要把
+        // 「沒有資料」畫成沒有資料，不是拿我自己的頂上。
+        ability: abilityOf(name, uid: b.apprenticeUid) ?? const {},
+        recentWorkouts: const [],
+      );
+      if (at >= 0) {
+        apprentices[at] = a;
+      } else {
+        apprentices.add(a);
+      }
+      // **要等這位學徒進了名單才算得動** —— `apprenticeRatesMe()`
+      // 找不到人就回否。順序不能顛倒。
+      _creditWeeklyRatings(b);
+    }
+
+    // --- 學徒側：我的教官 ---
     for (final b in bonds) {
       if (b.apprenticeUid != me) continue; // 只處理我當學徒的那一段
-      final name = nameByUid[b.mentorUid];
-      if (name == null) continue;
+      // **在此之前這裡是 `nameByUid[...]`，查不到就 `continue`。**
+      // 上面教官那一段寫的是 `nameByUid[...] ?? b.apprenticeName`——
+      // 同一個決定寫在兩個地方，只有一處做對。
+      //
+      // 後果：`nameByUid` 是從公開檔案來的，而公開檔案是另一塊
+      // 各自成敗的同步。那一塊慢了或失敗了，這裡就靜靜地跳過整段
+      // 關係 —— 使用者看到的是「我的教官不見了」，而雲端好端端的。
+      // 關係文件上本來就帶著 `mentorName`，不必倚賴另一塊同步。
+      final name = nameByUid[b.mentorUid] ?? b.mentorName;
+      if (name.isEmpty) continue;
 
       myInstructor = instructors.where((i) => i.name == name).firstOrNull ??
           Instructor(
             name: name,
-            rank: 1,
+            uid: b.mentorUid,
+            // **在此之前這裡寫死 1。** 非示範帳號的 `instructors` 是空的，
+            // 所以真實使用者的教官一律顯示 1 階 —— 那不是過期，是根本沒查。
+            rank: rankOf(name, uid: b.mentorUid),
             reputation: kInstructorInitialReputation,
             apprentices: 0,
             apprenticeCap: kApprenticeCapInitial,
@@ -3596,23 +5302,86 @@ class AppState extends ChangeNotifier {
           );
       mentorReleasedAt = b.releasedAt;
       mentorReleaseReason = b.releasedReason;
+      // **以雲端為準。** 在此之前這是一個本機布林值，於是
+      // 「提出」與「同意」出現在同一台裝置上。
+      mentorRestoreProposedBy = b.restoreProposedBy;
       break;
     }
+    // **空清單也算載到了。** 「雲端確實沒有關係」是一個答案，
+    // 與「還沒問到」不同 —— 這支只在讀取成功之後才被呼叫。
+    _mentorLoaded = true;
     notifyListeners();
   }
   late List<MentorTask> mentorTasks = demo ? buildMentorTasks() : [];
 
   /// 教官已指派師徒任務。
   /// Precondition：該教官的「已確認指導責任聲明版本」為現行版本。
-  void assignMentorTask(String title, String detail) {
+  /// 教官已指派師徒任務。
+  ///
+  /// [apprenticeUid] **指派給哪位學徒**。在此之前沒有這個參數 ——
+  /// 任務進一份共用清單，誰都不知道是給誰的，也就寫不上雲端
+  /// （雲端的任務掛在特定師徒關係下）。
+  /// 指派不出去的原因。**畫面要說得出來** —— 原本一律跳「已指派」，
+  /// 使用者因此以為成功了，而兩道守衛靜靜把它擋掉。
+  String get assignBlockedReason {
+    if (communityBlocked) return '社群功能已停權，不能指派任務。';
+    if (instructorDutyNeeded) return '要先確認指導責任聲明，才能指派任務。';
+    return '指派不出去。';
+  }
+
+  /// 提問送不出去的原因。理由同 [assignBlockedReason]。
+  String get askBlockedReason {
+    if (communityBlocked) return '社群功能已停權，不能提問。';
+    if (myInstructor == null) return '你還沒有教官。';
+    if (mentorReleased) return '師徒關係已解除，恢復之後才能繼續提問。';
+    if (mentorDisclaimerNeeded) return '要先確認師徒免責聲明，才能提問。';
+    return '送不出去。';
+  }
+
+  /// 標記完成失敗的原因。
+  String get completeBlockedReason {
+    if (mentorReleased) return '師徒關係已解除，未完成的任務已經作廢了。';
+    if (mentorDisclaimerNeeded) return '要先確認師徒免責聲明，才能完成任務。';
+    return '這則任務現在不能標記完成。';
+  }
+
+  /// 回傳**有沒有真的指派出去**。
+  ///
+  /// 在此之前這一支回 `void` —— 兩道守衛靜靜 `return`，而畫面
+  /// 不管做了沒都跳「已指派『◯◯』」。2026-09-30 教官指派任務，
+  /// toast 跳了、雲端什麼都沒有、寫入報告連一行都沒有 ——
+  /// 因為 `instructorDutyVersion` 不進存檔，重新整理之後
+  /// `instructorDutyNeeded` 就回到 true。
+  ///
+  /// **能失敗的 Command 就要說得出失敗。** 呼叫端才有辦法誠實。
+  bool assignMentorTask(String title, String detail, {String? apprenticeUid}) {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
-    if (communityBlocked) return;
-    if (instructorDutyNeeded) return;
-    mentorTasks.insert(
-      0,
-      MentorTask(title: title, detail: detail),
+    if (communityBlocked) return false;
+    if (instructorDutyNeeded) return false;
+    final t = MentorTask(
+      id: newId('mt'),
+      title: title,
+      detail: detail,
+      apprenticeUid: apprenticeUid,
     );
+    mentorTasks.insert(0, t);
+    _pushMentorTask(t);
     notifyListeners();
+    return true;
+  }
+
+  /// 把一則任務寫上雲端，掛在**它所屬的那段關係**下。
+  ///
+  /// 教官指派的任務掛在「我與這位學徒」那段；學徒自己動的任務
+  /// （完成、領獎、評分）掛在「我與我的教官」那段。
+  void _pushMentorTask(MentorTask t) {
+    final src = mentorSource;
+    final bond = t.apprenticeUid == null
+        ? _apprenticeBondId
+        : mentorBondIdFor(t.apprenticeUid);
+    _write('師徒任務',
+        src == null || bond == null ? null : src.putTask(bond, _asCloudTask(t)),
+        into: bond);
   }
   late List<MentorQuestion> questions = demo ? buildQuestions() : [];
   late List<Apprentice> apprentices = demo ? buildApprentices() : [];
@@ -3641,9 +5410,14 @@ class AppState extends ChangeNotifier {
 
   /// 曾經關注過幾次。歷史計數，取消關注不扣。
   ///
-  /// **初始值取自已關注的人數**，不是 0 —— 這個帳號一開始就關注著三個人，
+  /// **初始值取自已關注的人數**，不是 0 —— 示範帳號一開始就關注著三個人，
   /// 計數卻從零起算的話，個人頁寫「關注 3」、師徒解鎖清單寫「關注 尚未做過」，
   /// 同一件事兩個答案。不變條件：曾經關注的次數不會少於現在關注中的人數。
+  ///
+  /// **真帳號是 0。** 在此之前 [following] 沒跟著 [demo] 走，於是
+  /// `AppState(demo: false)` 一開機就帶著三個假關注、`followTotal` 也是 3 ——
+  /// 師徒解鎖清單裡的「關注」對每一個新帳號**預設就是做過了**。
+  /// 這是「假資料撐著功能」的第五次（前四次見 PROGRESS 1N）。
   late int followTotal = following.length;
 
   /// 存檔還原用：解鎖旗標一經設定不可撤銷。
@@ -3652,11 +5426,188 @@ class AppState extends ChangeNotifier {
   bool isInstructor = false;
   InstructorStage instructorStage = InstructorStage.notApplied;
 
-  /// AI 訓練品質評分的加權平均，與其中的「紀錄合理性」單項。
-  /// 兩者皆為初審讀取的值 —— 加權平均比對通過／折抵門檻，
-  /// 單項另受一票否決門檻檢核，兩者並存。
-  int qualityScore = 72;
-  int sanityScore = 68;
+  /// AI 訓練品質評分。**空值＝還沒評過。**
+  ///
+  /// 在此之前這裡是寫死的 `qualityScore = 72`／`sanityScore = 68` ——
+  /// 每一位申請人拿到的都是同一組數字，而那兩個數字決定他能不能申請。
+  QualityScore? quality;
+
+  /// 依訓練紀錄重算一次品質評分。**申請教官時呼叫。**
+  ///
+  /// 規格：重新申請時產生新的一筆教官申請並**重新評分**，不沿用舊的 ——
+  /// 14 天只是最低重試間隔，數月後再申請時訓練紀錄已完全不同。
+  /// 把本次訓練的開始時點往前挪 —— **只給測試用**。
+  ///
+  /// 獎勵有「不到 5 分鐘不發」的門檻（使用者裁決 2026-09-26），
+  /// 而測試是 `startWorkout()` 之後立刻結束的，真實時間幾乎沒走。
+  /// 不挪的話每一場都會被判成太短，而那不是這些測試要驗的東西。
+  ///
+  /// 用這個而不是 `advanceDemoClock()`：後者會動到 `now`，
+  /// 在換日時點（04:00）附近會把日期一起推過去，連帶影響連續天數。
+  @visibleForTesting
+  void backdateSession(Duration by) {
+    final w = session;
+    if (w == null) return;
+    w.startedAt = w.startedAt.subtract(by);
+  }
+
+  /// 我上次練這份課表是什麼時候。**依訓練歷史推導，不存欄位。**
+  ///
+  /// 在此之前官方課表的 `lastTrainedAt`／`lastCompletion` 是**寫死在
+  /// `kPlans` 裡的**，而那份清單是平台給所有人的目錄 —— 於是一個從來
+  /// 沒練過「拉日」的人會看到「上次訓練 5 天前　完成度 70%」。
+  /// 使用者 2026-09-26 實測回報的正是這個。
+  ///
+  /// 自訂訓練那一側本來就是對的（結算時寫回 `customPlans`），
+  /// 只有官方課表這一側拿了假資料頂著。
+  ///
+  /// 依**課表名稱**比對，因為 `HistoryEntry` 存的是名稱不是 ID。
+  DateTime? lastTrainedOf(WorkoutPlan plan) =>
+      _lastEntryOf(plan)?.date ?? plan.lastTrainedAt;
+
+  /// 我上次練這份課表做了幾成。**沒有紀錄回空值**，畫面顯示「—」。
+  ///
+  /// 2026-09-26 之前結算的場次沒有存這個數字，所以舊紀錄仍然是空值 ——
+  /// 那是誠實的：那幾場的完成度我們真的不知道。
+  double? lastCompletionOf(WorkoutPlan plan) =>
+      _lastEntryOf(plan)?.completion ?? plan.lastCompletion;
+
+  /// 這份課表最近的一場。依**名稱**比對，因為訓練歷史存的是名稱不是 ID。
+  ///
+  /// **取日期最晚的那一場，不是清單裡的第一筆。**
+  /// 原本是 `for (…) if (名稱相符) return h` —— 那依賴「訓練歷史一定是
+  /// 新的在前」。2026-09-26 雲端的歷史順序真的反過來了一次
+  /// （見 `store_firestore.dart` 的 `_lastHistoryLength`），
+  /// 結果課表卡上的「上次訓練」顯示的是幾天前那一場、
+  /// 「上次完成度」顯示「—」（舊場次沒存完成度）。
+  ///
+  /// 順序那個缺陷已經修了，但「最近的一場」本來就該由日期決定 ——
+  /// 讓它依賴另一個地方的排序，是同一個決定寫在兩個地方。
+  HistoryEntry? _lastEntryOf(WorkoutPlan plan) {
+    HistoryEntry? best;
+    for (final h in history) {
+      if (h.planName != plan.name) continue;
+      if (best == null || h.date.isAfter(best.date)) best = h;
+    }
+    return best;
+  }
+
+  QualityScore rescoreTrainingQuality({bool settle = false}) {
+    final scored = scoreTrainingQuality(_sessionSummaries());
+    quality = scored;
+    // 端內規則算出來的分數**不推進初審** —— 規格要的是 AI 的評分，
+    // 而 AI 失敗時申請維持在初審中等隔日重跑。
+    // 只有「根本沒接雲端評分」那條路（`qualitySource` 為空）才在此結算，
+    // 否則既有的一千多條測試會走不到初審通過。
+    if (settle) _settleScreening();
+    notifyListeners();
+    return scored;
+  }
+
+  /// 還沒評過分。**畫面要據此顯示「尚未評分」，不是 0。**
+  ///
+  /// ## 為什麼不在打開頁面時先算一份
+  ///
+  /// 2026-09-26 我一度改成「讀到就算」，理由是使用者回報「練了 7 次
+  /// 分數還是 0」。**那個修法違反規格的時序**，使用者當場指出來：
+  ///
+  /// `教官申請流程.md` 的順序是「使用者已申請教官權限」→ 系統初審
+  /// （階級與累積訓練次數兩條門檻）→ 系統「分析歷史訓練品質」。
+  /// 而且「本 Event 的請求識別碼 ＝ 使用者 ID ＋ **教官申請 ID**，
+  /// 同一筆申請只評分一次」、「評分結果寫入教官申請 Aggregate，永久保存」。
+  ///
+  /// 也就是**評分屬於一筆申請，不屬於這個人**。沒有申請就沒有評分，
+  /// 不是「評了但還沒看」。
+  ///
+  /// 原本的問題其實不是「沒算」，是**把「沒有分數」畫成了 0** ——
+  /// 而 0 看起來像一個很低的分數。修法是把它畫成「尚未評分」。
+  bool get qualityScored => quality != null;
+
+  List<SessionSummary> _sessionSummaries() => [
+        for (final h in history)
+          SessionSummary(
+            date: h.date,
+            totalSets: h.totalSets,
+            minutes: h.minutes,
+            sets: [
+              for (final e in h.exercises)
+                for (final t in e.sets) t,
+            ],
+          ),
+      ];
+
+  /// 雲端的品質評分來源（Gemini）。**空值＝只走規則計算**，
+  /// 與 `aiSource` 同一個形狀，既有測試零改動。
+  QualityScoreSource? qualitySource;
+
+  /// 評分失敗的原因。**開發者模式看得到。**
+  ///
+  /// 規格明訂 AI 中斷時「不直接駁回」——申請者本身無過失。所以失敗要
+  /// 靜靜地退回規則，但**不能完全不說**：退回之後畫面上看到的分數
+  /// 與模型算的長得一模一樣，出問題時毫無跡象。
+  String? qualityScoreError;
+
+  /// 向 Gemini 要一次評分，失敗就退回規則計算。
+  ///
+  /// **規則那一份是退路，不是備胎** —— 無論模型通不通，它都必須存在，
+  /// 因為規格不允許因為平台的 AI 故障而駁回申請者。
+  Future<QualityScore> rescoreTrainingQualityAsync() async {
+    final src = qualitySource;
+    if (src == null) return rescoreTrainingQuality(settle: true);
+
+    try {
+      final q = await src.score(_sessionSummaries());
+      qualityScoreError = null;
+      quality = q;
+      _settleScreening();
+      notifyListeners();
+      return q;
+    } catch (e) {
+      // **失敗不改變申請狀態**（〈教官申請流程〉：「該教官申請維持在
+      // 初審中，不通過亦不駁回」、「由排程於隔日重跑」）。
+      // 申請者本身無過失，因平台的 AI 故障而駁回他，是把技術風險
+      // 轉嫁給使用者。
+      qualityScoreError = '$e';
+      debugPrint('品質評分改用規則計算：$e');
+      return rescoreTrainingQuality();
+    }
+  }
+
+  /// 評分回來了 —— 初審該有結果了。
+  ///
+  /// **在此之前這個轉換根本沒有實作。** 申請人停在「初審中」，唯一的出路
+  /// 是畫面上那顆「推進到下一階段（Demo）」—— 而那顆會跳過品質評分與測驗，
+  /// 還以滿分送出考卷。使用者回報「教官申請是寫 Demo」。
+  ///
+  /// 規格：「[分支] 初審 / 測驗 / 管理員審核任一階段未通過
+  /// → 教官資格已駁回」，而狀態值域是五值
+  /// （初審中 / 待作答測驗 / 待人工審核 / 已通過 / 已駁回）。
+  ///
+  /// **只在「初審中」動作** —— 其餘階段重新評分不該把人踢回去。
+  void _settleScreening() {
+    if (instructorStage != InstructorStage.screening) return;
+    instructorStage = instructorGate.passed
+        ? InstructorStage.screenPassed
+        : InstructorStage.rejected;
+  }
+
+  /// 這份分數是不是**暫時**的 —— 端內規則算的，還在等 AI。
+  ///
+  /// 使用者截圖回報：四項條件全部打勾（品質 77/60、合理性 90/40），
+  /// 階段卻停在「初審中」。那不是矛盾 —— AI 評分失敗時留在初審中是規格
+  /// 要求的，而畫面上那兩個分數是**端內規則算的備援值**，不是初審會採用
+  /// 的那一份。打勾讓它看起來像已經通過了。
+  ///
+  /// 規格：「初審除階級與累積訓練次數門檻外，另須通過 **AI** 訓練品質評分」。
+  bool get qualityIsProvisional =>
+      quality != null && quality!.source != 'gemini' && qualityScoreError != null;
+
+  /// 加權平均。**沒評過是 0** —— 畫面要先看 [qualityScored]，
+  /// 把「沒有分數」畫成「尚未評分」而不是 0 分。
+  int get qualityScore => quality?.weighted ?? 0;
+
+  /// 「紀錄合理性」單項。受一票否決門檻檢核，與加權平均並存。
+  int get sanityScore => quality?.sanity ?? 0;
 
   /// 教官資格初審的判定。門檻取自〈教官初審設定〉，管理員調整後即時反映。
   InstructorGate get instructorGate => evaluateInstructorGate(
@@ -3689,31 +5640,42 @@ class AppState extends ChangeNotifier {
   /// 名額佔用數 ＝ 已建立的師徒關係數 ＋ 狀態為申請中的師徒申請數 ——
   /// **待回應的申請佔名額**，與團隊邀請刻意不一致：教官的帶徒上限來自聲望、
   /// 是掙來的稀缺獎勵，佔名額是在保護教官不被灌爆。
-  /// 某位教官已佔用的帶徒名額。
+  /// 某位教官**實際帶著幾位學徒**。
   ///
-  /// 模型：**名額佔用數 ＝ 該教官已建立的師徒關係數 ＋ 狀態為申請中的
-  /// 師徒申請數**，三個終止狀態（接受／拒絕／逾期）各自釋放所佔名額。
+  /// ## 2026-09-29 使用者裁決：待回應的申請不再佔名額
   ///
-  /// [Instructor.apprentices] 只是那位教官**與別人**的關係數，是一個
-  /// 存下來就不動的數字。先前直接拿它當佔用數，於是我送出申請不佔名額、
-  /// 拜師成功之後他的「帶徒 3 / 5」也還是 3 —— 程式碼註解寫著
-  /// 「待回應的申請佔名額」，實際上一格都沒佔。
-  int slotsUsedOf(Instructor i) =>
-      i.apprentices +
-      (myInstructor?.name == i.name ? 1 : 0) +
-      (mentorApplications.any((a) => a.name == i.name) ? 1 : 0);
+  /// 原本的模型是「名額佔用數 ＝ 已建立的關係數 ＋ **申請中的申請數**」
+  /// （〈師徒申請 Aggregate〉規則）。規格在團隊那一節特地對照過，
+  /// 說兩者「刻意不一致」，理由是帶徒上限來自聲望、是稀缺的獎勵。
+  ///
+  /// 使用者指出的問題：**送出申請的當下數字就 +1，而對方還沒答應。**
+  /// 更要緊的是那條規則讓一位申請人被**別人還沒被回應的申請**擋在門外，
+  /// 而那些申請可能全部會被拒絕 —— 把「排隊」做成「佔位」，
+  /// 代價落在最無辜的人身上。
+  ///
+  /// 超收不會因此發生：教官接受第 N+1 位的當下就被擋下
+  /// （見 `inboundBlockedReason` 的 `apprenticeApply` 分支），
+  /// 與團隊「超收由加入當下的 Precondition 擋下，不重複防守」同一套。
+  ///
+  /// [Instructor.apprentices] 是那位教官與**別人**的關係數（雲端讀來的），
+  /// 所以我自己那一份要另外加 —— 它還沒反映在那個數字上。
+  int apprenticeCountOf(Instructor i) =>
+      i.apprentices + (myInstructor?.name == i.name ? 1 : 0);
 
   String? mentorApplyBlockedReason(Instructor i) {
     if (myInstructor != null) {
       return '一位學徒同時只能有一位教官，要先解除與 ${myInstructor!.name} 的師徒關係。';
     }
-    // 先講「你已經送出了」再講「滿了」——
-    // 我自己的申請本身就佔一格，順序反過來的話，送出之後看到的會是
-    // 「對方的帶徒名額已滿」，而那一格正是我佔的。
+    // 先講「你已經送出了」再講「滿了」。
+    //
+    // 2026-09-29 之前我自己的申請也佔一格，順序反過來的話送出之後
+    // 看到的會是「對方的帶徒名額已滿」，而那一格正是我佔的。
+    // 申請不再佔名額之後這個順序仍然對：已經送出的人該看到的是
+    // 「等對方回應」，而不是別人把名額佔滿了。
     if (mentorApplications.any((a) => a.name == i.name)) {
       return '已送出申請，等對方回應。';
     }
-    if (slotsUsedOf(i) >= i.apprenticeCap) return '對方的帶徒名額已滿。';
+    if (apprenticeCountOf(i) >= i.apprenticeCap) return '對方的帶徒名額已滿。';
     return null;
   }
 
@@ -3774,20 +5736,65 @@ class AppState extends ChangeNotifier {
   bool get mentorDisclaimerNeeded =>
       myInstructor != null && mentorDisclaimerVersion == null;
 
-  void askQuestion(String text) {
+  /// 回傳**有沒有真的送出**。理由同 [assignMentorTask]。
+  bool askQuestion(String text) {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
-    if (communityBlocked) return;
-    if (text.trim().isEmpty) return;
+    if (communityBlocked) return false;
+    if (text.trim().isEmpty) return false;
     // 未確認免責聲明者不得提問。
-    if (mentorDisclaimerNeeded) return;
-    questions.add(MentorQuestion(from: displayName, text: text.trim(), at: now));
+    if (mentorDisclaimerNeeded) return false;
+    // **已解除的關係不能再互動。** 未完成的任務都作廢了，提問自然也是 ——
+    // 而且教官那一側已經看不到這個人，問了也沒有人收得到。
+    // 3 天內可挽回，恢復之後就能繼續。
+    if (mentorReleased) return false;
+    // **本機與雲端用同一個 id。**
+    //
+    // 原本本機那筆用 `MentorQuestion` 的預設 id（`q${微秒}`），
+    // 而送上雲的那筆另外叫一次 `newId('q')` —— 同一則提問在兩邊
+    // 是兩個不同的識別碼。
+    //
+    // 在 `loadMyApprenticeSide()` 出現之前這不會被看見，因為學徒那側
+    // 從來不重讀。一旦重讀，雲端那筆就會因為 id 對不上而被當成新的一則
+    // 加進來 —— **每問一次就變成兩則**。
+    final id = newId('q');
+    final q = MentorQuestion(
+        id: id, from: displayName, text: text.trim(), at: now);
+    questions.add(q);
     weeklyQuestionCount += 1;
+    // **送到教官那邊去。** 在此之前提問只進本機清單 —— 學徒看得到自己
+    // 問了什麼，教官那一側完全收不到，而雙方都不會看到任何錯誤。
+    _pushMentor((src, bond) => src.ask(
+          bond,
+          CloudQuestion(
+            id: id,
+            fromUid: myUid ?? '',
+            text: q.text,
+            at: q.at,
+          ),
+        ));
     notifyListeners();
+    return true;
   }
 
-  void answerQuestion() {
+  /// 教官已回答提問。
+  ///
+  /// **在此之前這個函式只有一個計數器** —— 回答的文字由畫面直接寫進
+  /// `question.answer`，而且沒有任何雲端寫入，所以學徒永遠看不到。
+  /// `MentorSource.answer()` 寫好了卻沒有人呼叫，正是 `[BE-15]`。
+  bool answerQuestion(MentorQuestion q, String text) {
+    final body = text.trim();
+    if (body.isEmpty) return false;
+    q.answer = body;
+    q.answeredAt = now;
     weeklyAnswerCount += 1;
+
+    final src = mentorSource;
+    final bond = mentorBondIdFor(q.apprenticeUid);
+    if (src != null && bond != null) {
+      src.answer(bond, q.id, body, now).catchError((_) {});
+    }
     notifyListeners();
+    return true;
   }
 
   /// 本週已發放的師徒任務獎勵次數。**每週最多 3 次** ——
@@ -3813,14 +5820,18 @@ class AppState extends ChangeNotifier {
     return (exp: kMentorTaskExp, coins: kMentorTaskCoin);
   }
 
-  void completeMentorTask(MentorTask t) {
-    if (t.state != MentorTaskState.assigned) return;
+  /// 回傳**有沒有真的完成**。理由同 [assignMentorTask]。
+  bool completeMentorTask(MentorTask t) {
+    if (t.state != MentorTaskState.assigned) return false;
     // 未確認免責聲明者不得完成師徒任務。
-    if (mentorDisclaimerNeeded) return;
+    if (mentorDisclaimerNeeded) return false;
+    // 同上：已解除的關係不能再互動。未完成的任務本來就已作廢。
+    if (mentorReleased) return false;
     t.state = MentorTaskState.done;
     weeklyCompleted += 1;
     _pushTask(t);
     notifyListeners();
+    return true;
   }
 
   /// 師徒的週期計數器上次歸零所屬的週。空值表示尚未定基準。
@@ -3872,6 +5883,23 @@ class AppState extends ChangeNotifier {
   /// 本週已計入聲望的任務評分次數。每位學徒每週最多 2 次。
   int taskRatingsThisWeek = 0;
 
+  /// **已經計入我的聲望的任務評分。** 鍵為任務 id。
+  ///
+  /// 學徒的評分寫在雲端的任務文件上，我這一側從雲端讀回來才算數。
+  /// 而 `mentorTasks` 不進存檔 —— 重新整理之後它是空的，每一則評過的
+  /// 任務讀回來都會看起來像新的。**沒有這份清單，教官每重開一次
+  /// App 聲望就再加一次。**
+  ///
+  /// 所以它必須進存檔：它記的不是畫面上的東西，是「這筆帳已經算過了」。
+  final Set<String> creditedTaskRatings = {};
+
+  /// **已經計入我的聲望的週互動評分。** 鍵為 `關係 id@該週週一`。
+  ///
+  /// 與上面同理，但多一層：`apprenticeWeeklyRated` 每週會被清空
+  /// （那是「這週還能不能再評」的閘門），清空之後同一筆舊評分就會
+  /// 再次通過。這份清單不隨週重置，記的是永久的事實。
+  final Set<String> creditedWeeklyRatings = {};
+
   /// 我的聲望變動 —— 只有**我的學徒評我**才會走這裡。
   void _bumpReputation(int delta) {
     instructorReputation = applyReputation(instructorReputation, delta);
@@ -3892,18 +5920,33 @@ class AppState extends ChangeNotifier {
   ///
   /// [weekly] 為該週互動評分（每人每週一次、幅度較大）；
   /// 否則為單次師徒任務評分（每人每週最多 2 次計入聲望）。
-  bool apprenticeRatesMe(String who, int stars, {bool weekly = false}) {
+  /// [forWeek] 指定「這是哪一週的週互動評分」（該週週一的 ISO 日期）。
+  ///
+  /// 少了它，每週閘門是以**人**為鍵的：教官一次讀回兩週的評分時，
+  /// 第二週那筆會被第一週擋掉 —— 而那兩筆本來就分屬不同週，
+  /// 「每位學徒每週最多一次」對它們同時成立。
+  bool apprenticeRatesMe(String who, int stars,
+      {bool weekly = false, String? uid, String? forWeek}) {
     if (!isInstructor || !isValidStars(stars)) return false;
-    if (!apprentices.any((a) => a.name == who)) return false;
+    final a = apprentices
+        .where((a) => sameUser(a.name, a.uid, who, uid))
+        .firstOrNull;
+    if (a == null) return false;
+    // **以 uid 為鍵。** 只用暱稱的話，學徒改名之後那個「每週最多 2 次」
+    // 的上限會重新歸零 —— 而它是聲望的節流閥。
+    final key = personKeyOf(a.name, a.uid);
 
     if (weekly) {
-      if (!apprenticeWeeklyRated.add(who)) return false;
+      if (!apprenticeWeeklyRated.add(
+          forWeek == null ? key : '$key@$forWeek')) {
+        return false;
+      }
       _bumpReputation(kWeeklyInteractionReputationDelta[stars - 1]);
     } else {
-      final n = apprenticeTaskRatings[who] ?? 0;
+      final n = apprenticeTaskRatings[key] ?? 0;
       // 超出上限者仍可評分，只是不計入聲望 ——
       // 該擋的是計分，不是行為。
-      apprenticeTaskRatings[who] = n + 1;
+      apprenticeTaskRatings[key] = n + 1;
       if (n < kMentorTaskRatingWeeklyCap) {
         _bumpReputation(kMentorTaskReputationDelta[stars - 1]);
       }
@@ -3927,20 +5970,39 @@ class AppState extends ChangeNotifier {
   ///
   /// 每位學徒每週最多 2 次任務評分計入聲望；超出者仍可評分並領獎，只是不計分。
   /// 該擋的是計分，不是行為 —— 教官為教學需要多指派屬正當行為。
-  bool rateMentorTask(MentorTask t, int stars) {
-    if (!isValidStars(stars)) return false;
+  /// 本週的任務評分是否已用完計分額度。
+  ///
+  /// `taskRatingsThisWeek` **只在有計分的那個分支裡加一**，所以它
+  /// 永遠不會超過上限 —— 畫面原本寫 `> 上限` 來判斷「額度用完了」，
+  /// 那個條件因此**永遠不會成立**，死在那裡。
+  /// 使用者 2026-09-30 問「評了好幾個任務，那個數字是不是該跟著變」，
+  /// 才翻出來：第三則之後聲望確實不再動，而 toast 照樣報一個沒變的數字。
+  bool get taskRatingCapReached =>
+      taskRatingsThisWeek >= kMentorTaskRatingWeeklyCap;
+
+  /// 評分的結果。**「評得下去」與「有沒有計進聲望」是兩件事** ——
+  /// 回 `bool` 的時候畫面分不出來，只好一律報一個數字。
+  RateResult rateMentorTask(MentorTask t, int stars) {
+    if (!isValidStars(stars)) return RateResult.rejected;
     // 沒有師徒關係就沒有可評的對象。
-    if (myInstructor == null) return false;
-    if (t.state == MentorTaskState.assigned) return false;
+    if (myInstructor == null) return RateResult.rejected;
+    if (t.state == MentorTaskState.assigned) return RateResult.rejected;
     final first = t.rating == null;
     t.rating = stars;
     _pushTask(t);
-    if (first && taskRatingsThisWeek < kMentorTaskRatingWeeklyCap) {
-      taskRatingsThisWeek += 1;
-      _bumpInstructorReputation(kMentorTaskReputationDelta[stars - 1]);
+    if (!first) {
+      notifyListeners();
+      // 改分數可以，但聲望不重複計算。
+      return RateResult.alreadyRated;
     }
+    if (taskRatingCapReached) {
+      notifyListeners();
+      return RateResult.capReached;
+    }
+    taskRatingsThisWeek += 1;
+    _bumpInstructorReputation(kMentorTaskReputationDelta[stars - 1]);
     notifyListeners();
-    return true;
+    return RateResult.counted;
   }
 
   /// 學徒已評分該週互動。每位學徒每週最多一次；**未評分時聲望無變動，
@@ -3958,8 +6020,20 @@ class AppState extends ChangeNotifier {
     }
     ratedThisWeek = true;
     _bumpInstructorReputation(kWeeklyInteractionReputationDelta[stars - 1]);
+    // **送到教官那邊去。** 在此之前這一支一個字都不寫上雲 ——
+    // 它只改我裝置上那份教官副本的聲望，教官自己那一台什麼也沒發生。
+    _pushWeeklyRating(stars);
     notifyListeners();
     return true;
+  }
+
+  /// 該週互動評分寫上雲，掛在「我與我的教官」那段關係上。
+  void _pushWeeklyRating(int stars) {
+    final src = mentorSource;
+    final bond = _apprenticeBondId;
+    if (src == null || bond == null) return;
+    final (from, _) = periodOf(Board.personalWeekly, now);
+    _write('週互動評分', src.rateWeek(bond, weekKeyOf(from), stars));
   }
 
   // --- 終止路徑：解除、恢復 ---
@@ -3967,8 +6041,43 @@ class AppState extends ChangeNotifier {
   DateTime? mentorReleasedAt;
   MentorReleaseReason? mentorReleaseReason;
 
-  /// 對方（或我）提出的恢復提議尚待回應。
-  bool mentorRestorePending = false;
+  /// **誰提出了恢復**（我當學徒那一段）。空值＝還沒有人提出。
+  ///
+  /// 在此之前這是 `bool mentorRestorePending`，而且**只活在本機** ——
+  /// 於是「提出恢復」與「同意恢復」在同一台裝置、同一個人面前
+  /// 先後出現，自己按兩下就恢復了。規格的 `[決策]`：
+  /// **恢復需雙方同意，不採單方面恢復。**
+  String? mentorRestoreProposedBy;
+
+  /// 有人提出了恢復，還沒被回應。
+  bool get mentorRestorePending => mentorRestoreProposedBy != null;
+
+  /// 提出的人是我 —— 我只能等，不能自己同意。
+  bool get mentorRestoreByMe =>
+      mentorRestoreProposedBy != null && mentorRestoreProposedBy == myUid;
+
+  /// 對方提出的，等我回應。
+  bool get mentorRestoreAwaitingMe =>
+      mentorRestoreProposedBy != null && mentorRestoreProposedBy != myUid;
+
+  /// 我帶的學徒裡，**已解除但還在挽回窗口內**的那些。
+  ///
+  /// 教官那一側在此之前沒有這個東西 —— 見 [ReleasedBond]。
+  final List<ReleasedBond> releasedApprentices = [];
+
+  /// 這一段還能不能恢復（含帶徒上限）。
+  ///
+  /// 規格 `師徒互動流程.md` 108 行：
+  /// `[Rule] Precondition：教官的名額佔用數未達帶徒上限，方可發生
+  /// 「師徒關係已恢復」`。`acceptRestore()` 原本沒有這個檢查。
+  String? restoreBlockedReasonOf(ReleasedBond b) {
+    if (!b.recoverableAt(now)) return '已經超過 3 天，這段關係不能再恢復了。';
+    if (apprentices.length >= apprenticeCap) {
+      return '帶徒名額已滿（${apprentices.length} / $apprenticeCap），'
+          '要先讓出一個名額才能恢復。';
+    }
+    return null;
+  }
 
   /// 解除後 3 天內雙方皆不得與其他對象建立師徒關係，也是可挽回的窗口。
   Duration get mentorCooldownLeft {
@@ -3989,7 +6098,7 @@ class AppState extends ChangeNotifier {
     if (myInstructor == null) return;
     mentorReleasedAt = now;
     mentorReleaseReason = reason;
-    mentorRestorePending = false;
+    mentorRestoreProposedBy = null;
     // 未完成的師徒任務作廢（終止狀態）。
     for (final t in mentorTasks) {
       if (t.state == MentorTaskState.assigned) {
@@ -4005,10 +6114,31 @@ class AppState extends ChangeNotifier {
 
   bool get mentorReleased => mentorReleasedAt != null && myInstructor != null;
 
-  /// 使用者已提出恢復師徒關係。
+  /// 我當學徒那一段，恢復不了的原因。**空值＝可以恢復。**
+  ///
+  /// 與教官側的 [restoreBlockedReasonOf] 同一組判準，只是主體不同。
+  String? get myRestoreBlockedReason {
+    if (!mentorReleased) return '這段關係沒有被解除。';
+    if (!canRestoreMentor) return '已經超過 3 天，這段關係不能再恢復了。';
+    final ins = myInstructor;
+    if (ins != null && ins.apprentices >= ins.apprenticeCap) {
+      return '${ins.name} 的帶徒名額已滿（${ins.apprentices} / '
+          '${ins.apprenticeCap}），現在恢復不了。';
+    }
+    return null;
+  }
+
+  /// 使用者已提出恢復師徒關係（我當學徒那一段）。
+  ///
+  /// **提議要上雲**，否則對方看不到，「雙方同意」就無從成立。
   bool proposeRestore() {
     if (!mentorReleased || !canRestoreMentor) return false;
-    mentorRestorePending = true;
+    // 已經有人提出了就不再提一次 —— 重複提出會把對方的提議蓋掉。
+    if (mentorRestorePending) return false;
+    final me = myUid;
+    if (me == null) return false;
+    mentorRestoreProposedBy = me;
+    _pushMentor((src, bond) => src.proposeRestore(bond, me));
     notifyListeners();
     return true;
   }
@@ -4018,18 +6148,138 @@ class AppState extends ChangeNotifier {
   /// **同一筆關係轉回生效中，不新建一筆** —— 既有任務與問答的關係 ID
   /// 仍指向原筆，那些紀錄屬同一段關係。
   bool acceptRestore() {
-    if (!mentorRestorePending || !canRestoreMentor) return false;
+    if (!canRestoreMentor) return false;
+    // **同意的必須是另一方。** 在此之前只看「有沒有人提出」，
+    // 而提議只活在本機 —— 於是提出的人自己按下一顆就恢復了，
+    // 直接違反 `[決策]`「恢復需雙方同意，不採單方面恢復」。
+    if (!mentorRestoreAwaitingMe) return false;
+    // 規格 108 行：教官的名額佔用數未達帶徒上限，方可恢復。
+    final ins = myInstructor;
+    if (ins != null && ins.apprentices >= ins.apprenticeCap) return false;
     mentorReleasedAt = null;
     mentorReleaseReason = null;
-    mentorRestorePending = false;
+    mentorRestoreProposedBy = null;
+    // 雲端那一筆轉回生效中。**同一筆，不新建** —— 既有任務與問答的
+    // 關係 ID 仍指向原筆。在此之前這行不存在，恢復只在本機生效：
+    // 我這邊回到生效中，對方重整之後那段關係還是已解除。
+    final at = now;
+    _pushMentor((src, bond) => src.recover(bond, at));
     notifyListeners();
     return true;
   }
 
   /// 對方已拒絕恢復。該筆提議失效，3 天內可再次提出。
+  ///
+  /// **也要上雲** —— 否則提出的人那一側永遠停在「等對方回應」。
   void rejectRestore() {
-    mentorRestorePending = false;
+    if (!mentorRestorePending) return;
+    mentorRestoreProposedBy = null;
+    _pushMentor((src, bond) => src.dropRestore(bond));
     notifyListeners();
+  }
+
+  // --- 終止路徑：教官那一側 ---
+  //
+  // 規格：解除為單方面（任一方皆可），恢復需雙方同意（任一方皆可提出）。
+  // 在此之前這四支只有學徒那一側存在，教官連關係被解除了都看不到。
+
+  /// 把這位學徒那一段送上雲。教官側的四支共用。
+  void _pushApprenticeBond(
+      String apprenticeUid, Future<void> Function(MentorSource, String) job) {
+    final src = mentorSource;
+    final bond = mentorBondIdFor(apprenticeUid);
+    _write('師徒關係（教官側）',
+        src == null || bond == null ? null : job(src, bond), into: bond);
+  }
+
+  /// 教官解除與這位學徒的關係。**單方面，不需對方同意。**
+  bool releaseApprentice(String apprenticeUid, MentorReleaseReason reason) {
+    final a = apprentices.where((x) => x.uid == apprenticeUid).firstOrNull;
+    if (a == null) return false;
+    final at = now;
+    apprentices.removeWhere((x) => x.uid == apprenticeUid);
+    // 不帶 `restoreProposedBy` —— 新的一輪，舊提議不跨過來（雲端同理）。
+    releasedApprentices.removeWhere((x) => x.apprenticeUid == apprenticeUid);
+    releasedApprentices.add(ReleasedBond(
+      apprenticeUid: apprenticeUid,
+      apprenticeName: a.name,
+      releasedAt: at,
+      reason: reason,
+    ));
+    // 未完成的師徒任務作廢 —— 與學徒那一側同一條規則。
+    for (final t in mentorTasks) {
+      if (t.apprenticeUid == apprenticeUid &&
+          t.state == MentorTaskState.assigned) {
+        t.state = MentorTaskState.voided;
+      }
+    }
+    _pushApprenticeBond(
+        apprenticeUid, (src, bond) => src.release(bond, reason, at));
+    notifyListeners();
+    return true;
+  }
+
+  ReleasedBond? releasedBondOf(String apprenticeUid) => releasedApprentices
+      .where((x) => x.apprenticeUid == apprenticeUid)
+      .firstOrNull;
+
+  /// 教官提出恢復。
+  bool proposeRestoreFor(String apprenticeUid) {
+    final b = releasedBondOf(apprenticeUid);
+    final me = myUid;
+    if (b == null || me == null) return false;
+    if (b.restoreProposedBy != null) return false;
+    if (restoreBlockedReasonOf(b) != null) return false;
+    _replaceReleased(b, restoreProposedBy: me);
+    _pushApprenticeBond(
+        apprenticeUid, (src, bond) => src.proposeRestore(bond, me));
+    notifyListeners();
+    return true;
+  }
+
+  /// 教官同意學徒提出的恢復。**提出的必須是另一方。**
+  bool acceptRestoreFor(String apprenticeUid) {
+    final b = releasedBondOf(apprenticeUid);
+    if (b == null) return false;
+    if (b.restoreProposedBy == null || b.restoreProposedBy == myUid) {
+      return false;
+    }
+    if (restoreBlockedReasonOf(b) != null) return false;
+    final at = now;
+    releasedApprentices.removeWhere((x) => x.apprenticeUid == apprenticeUid);
+    apprentices.add(Apprentice(
+      name: b.apprenticeName,
+      uid: apprenticeUid,
+      rank: rankOf(b.apprenticeName, uid: apprenticeUid),
+      ability: abilityOf(b.apprenticeName, uid: apprenticeUid) ?? const {},
+      recentWorkouts: const [],
+    ));
+    _pushApprenticeBond(apprenticeUid, (src, bond) => src.recover(bond, at));
+    notifyListeners();
+    return true;
+  }
+
+  /// 教官拒絕恢復。提議失效，3 天內可再次提出。
+  bool rejectRestoreFor(String apprenticeUid) {
+    final b = releasedBondOf(apprenticeUid);
+    if (b == null || b.restoreProposedBy == null) return false;
+    _replaceReleased(b, restoreProposedBy: null);
+    _pushApprenticeBond(apprenticeUid, (src, bond) => src.dropRestore(bond));
+    notifyListeners();
+    return true;
+  }
+
+  void _replaceReleased(ReleasedBond b, {required String? restoreProposedBy}) {
+    final at =
+        releasedApprentices.indexWhere((x) => x.apprenticeUid == b.apprenticeUid);
+    if (at < 0) return;
+    releasedApprentices[at] = ReleasedBond(
+      apprenticeUid: b.apprenticeUid,
+      apprenticeName: b.apprenticeName,
+      releasedAt: b.releasedAt,
+      reason: b.reason,
+      restoreProposedBy: restoreProposedBy,
+    );
   }
 
   /// 冷卻期滿仍未恢復 —— 關係就此結束，教官欄位清空。
@@ -4038,6 +6288,7 @@ class AppState extends ChangeNotifier {
     myInstructor = null;
     mentorReleasedAt = null;
     mentorReleaseReason = null;
+    mentorRestoreProposedBy = null;
     notifyListeners();
   }
 
@@ -4076,11 +6327,59 @@ class AppState extends ChangeNotifier {
     return left.isNegative ? Duration.zero : left;
   }
 
+  /// 解除 14 天重考鎖（**開發者模式專用**）。
+  ///
+  /// 2026-09-28 使用者測完 P3–P5 之後沒到 80%，被駁回並鎖 14 天。
+  /// 他問「有沒有辦法跳過測驗進入待審核」—— **當下沒有**：
+  ///
+  /// - `advanceInstructorApplication()`（Demo 推進鍵）的階段清單裡
+  ///   **沒有 `rejected`**，`indexOf` 回 -1 就直接 return，按了沒反應
+  /// - `reapplyInstructor()` 擋在 `examRetakeLeft > 0`
+  ///
+  /// **開發者模式的逃生門，在最需要它的時候打不開。**
+  ///
+  /// 這一支只清掉時間鎖，**不改階段、不給分數** —— 解除之後仍要走
+  /// 「重新申請 → 初審 → 測驗」的完整流程。14 天是真實時間，
+  /// 而真實時間是測試唯一無法加速的東西。
+  void clearExamRetakeLock() {
+    lastExamAt = null;
+    notifyListeners();
+  }
+
+  /// 抽一份考卷。**題庫不足時回空清單**（訊息見 [examBankWarning]）。
+  ///
+  /// 在此之前作答畫面是一個拉桿，申請人自己拉答對幾題，那個數字直接
+  /// 被當成成績 —— 沒有出題，也沒有判卷。
+  List<ExamQuestion> drawExam() =>
+      drawExamPaper(examBank, platformConfig.i('exam', 'mcCount'));
+
+  /// 抽簡答題。**題庫不足時回空清單。**
+  List<ExamQuestion> drawShortAnswerQuestions() =>
+      drawShortAnswers(examBank, platformConfig.i('exam', 'saCount'));
+
+  /// 判卷。[answers] 是「題目 ID → 選了第幾個選項」，沒作答的算錯。
+  int gradeExam(List<ExamQuestion> paper, Map<String, int> answers) =>
+      gradeExamPaper(paper, answers);
+
+  /// 這份考卷答錯了幾題必答題。
+  int gradeMustPass(List<ExamQuestion> paper, Map<String, int> answers) =>
+      missedMustPass(paper, answers);
+
   /// 使用者已作答教官測驗。
   ///
   /// 選擇題由系統即時判定，簡答題送管理員人工審核（時限 7 個工作天）——
   /// 故作答後停在「待人工審核」，不是當場放行。
-  bool submitExam(int correctCount) {
+  ///
+  /// [correctCount] 由 [gradeExam] 算出來 —— **這支不自己判卷**，
+  /// 因為既有測試直接給題數驗「答對 N 題會怎樣」，那一層與判卷無關。
+  /// 這次作答**答錯了幾題必答題**。空值＝還沒考過。
+  ///
+  /// 與分數分開存：分數是程度，必答題是否決。混在一個數字裡的話，
+  /// 「80% 但胸痛那題答錯」與「80% 關鍵題全對」會得到同一個結果。
+  int? examMustPassMissed;
+
+  bool submitExam(int correctCount,
+      {int mustPassMissed = 0, List<(String, String)>? shortAnswers}) {
     if (instructorStage != InstructorStage.screenPassed &&
         instructorStage != InstructorStage.testing) {
       return false;
@@ -4089,6 +6388,7 @@ class AppState extends ChangeNotifier {
     lastExamAt = now;
     final total = platformConfig.i('exam', 'mcCount');
     examMcScore = (correctCount * 100 / total).round();
+    examMustPassMissed = mustPassMissed;
 
     // 及格採雙門檻：選擇題 ≥ 80% **且**簡答題全數通過。
     // 選擇題由系統即時判定 —— 這一關就沒過的，不必送人工審核。
@@ -4108,20 +6408,22 @@ class AppState extends ChangeNotifier {
       InstructorCase(
         id: newId('IC-'),
         applicant: displayName,
+        applicantUid: myUid,
+        // AI 訓練品質評分。**目前仍是寫死的** —— 規格說它由系統依申請人的
+        // 訓練紀錄算出（`02_Aggregate定義.md` 第 1475 行，Actor 為「系統」），
+        // 而那個計算還沒實作。見 PROGRESS.md 第 5 節 0j。
         aiScores: const {'訓練完成率': 78, '訓練規律性': 84, '紀錄合理性': 71},
         weighted: 77.9,
         concerns: const [],
-        answers: const [
-          ('學員深蹲膝蓋內夾，你會怎麼處理？',
-              '先確認是活動度還是肌力不足。降到能全程膝蓋外推的重量，'
-              '加側走彈力帶與腳踝背屈暖身，兩週後再評估。'),
-          ('學員說想一個月瘦 10 公斤，你怎麼回應？',
-              '說明這個速度多半會掉肌肉，改建議每週 0.5–1%，'
-              '並問清楚他的期限從哪裡來。'),
-        ],
+        // **簡答作答由呼叫端傳進來。** 在此之前這裡是兩題兩答的寫死內容 ——
+        // 管理員看到的是申請人從來沒寫過的答案，然後據此發教官資格。
+        // 空值＝沒有作答紀錄（既有測試直接叫 `submitExam(18)` 走這條）。
+        answers: shortAnswers ?? const [],
+        // ↓ 這一筆同時送上雲，見本函式末尾的 `_pushInstructorCase`。
         enteredAt: now,
       ),
     );
+    _pushInstructorCase(instructorCases.first);
     notifyListeners();
     return true;
   }
@@ -4137,6 +6439,11 @@ class AppState extends ChangeNotifier {
     instructorStage = InstructorStage.screening;
     instructorRejectStage = null;
     examMcScore = null;
+    // **重新評分，不沿用舊的**（規格：任何重試皆重跑 AI 訓練品質評分）。
+    // 14 天只是最低重試間隔，數月後再申請時訓練紀錄已完全不同，
+    // 沿用舊評分等於用過期資料判定。
+    // 即發即忘：規格明訂本路徑**使用者不在場**（按完申請即離開）。
+    rescoreTrainingQualityAsync();
     notifyListeners();
     return true;
   }
@@ -4147,7 +6454,12 @@ class AppState extends ChangeNotifier {
   String? instructorRejectStage;
 
   int get examPassMark => platformConfig.i('exam', 'mcPass');
-  bool get examMcPassed => (examMcScore ?? 0) >= examPassMark;
+  /// 選擇題是否過關 —— **雙重條件**。
+  ///
+  /// 百分比擋不住必答題：20 題錯 4 題仍是 80%，而那 4 題可能正好是
+  /// 「胸痛先休息一下」「未成年可以私下約」。
+  bool get examMcPassed =>
+      (examMcScore ?? 0) >= examPassMark && (examMustPassMissed ?? 0) == 0;
 
   /// **已確認的指導責任聲明版本。** 未確認現行版本者不得回答提問、
   /// 不得指派師徒任務 —— 聲明會改版，而「誰確認了哪一版」是爭議發生時的判定依據。
@@ -4183,6 +6495,19 @@ class AppState extends ChangeNotifier {
     isInstructor = true;
     instructorReputation = kInstructorInitialReputation;
     peakReputation = math.max(peakReputation, instructorReputation);
+    // **把教官身分發布到公開檔案上。**
+    //
+    // 拜師頁跑的是 `instructors`，而那份清單由別人的公開檔案建出來
+    // （`_applyInstructor` 讀 `p.isInstructor`）。不發布的話：
+    // 這個人自己看到「我是教官了」，而**其他人的拜師頁上沒有他** ——
+    // 也就是他當上了一個沒有人找得到的教官。
+    //
+    // 使用者 2026-09-29 實測撞到：B 通過審核（雲端 `state: passed`），
+    // 而 B 的公開檔案 `isInstructor` 仍是 false，A 的教官清單裡沒有他。
+    //
+    // `myPublicProfile()` 本來就帶 `isInstructor`／`reputation`／
+    // `apprentices`／`apprenticeCap`／`specialties` —— 缺的只是這一次發布。
+    publishMyProfile();
   }
 
   void advanceInstructorApplication() {
@@ -4200,6 +6525,9 @@ class AppState extends ChangeNotifier {
     if (i < 0 || i >= order.length - 1) return;
     final next = order[i + 1];
     if (next == InstructorStage.approved) return;
+
+    // 進「初審中」就評分 —— 那個狀態的定義就是「等 AI 產出訓練品質評分」。
+    if (next == InstructorStage.screening) rescoreTrainingQualityAsync();
 
     if (next == InstructorStage.pendingReview) {
       // 走 [submitExam]，不是直接改狀態 —— 待人工審核只該有一條路進得去，
@@ -4281,7 +6609,11 @@ class AppState extends ChangeNotifier {
               m.fromMeFor(me),
               m.text,
               m.at,
-              read: m.readBy.containsKey(me),
+              // **「已讀」問的是對方讀了沒，不是我讀了沒。**
+              // 畫面只在 `fromMe && read` 時顯示已讀，所以這裡要看
+              // 對方的 uid 在不在 `readBy` 裡。原本寫 `me` ——
+              // 我送的訊息只要我自己開過對話就會標成已讀。
+              read: m.readBy.containsKey(m.fromMeFor(me) ? peerUid : me),
               category: m.category,
               pendingReview: m.pendingReview,
             ),
@@ -4383,12 +6715,7 @@ class AppState extends ChangeNotifier {
 
     if (myInstructor?.name == c.peer) _messagedInstructorThisWeek = true;
 
-    final category = classifyMessage(
-      mutualFollow: following.contains(c.peer) && followers.contains(c.peer),
-      mentorBond: myInstructor?.name == c.peer ||
-          apprentices.any((a) => a.name == c.peer),
-      sameTeam: myTeam?.members.any((m) => m.name == c.peer) ?? false,
-    );
+    final category = currentCategoryWith(c.peer, peerUid: c.peerUid);
 
     c.messages.add(ChatMessage(
       true,
@@ -4445,6 +6772,7 @@ class AppState extends ChangeNotifier {
         target: ReportTarget.message,
         content: body,
         accused: displayName,
+        accusedUid: myUid,
       );
     }
     notifyListeners();
@@ -4460,6 +6788,9 @@ class AppState extends ChangeNotifier {
     required ReportTarget target,
     required String content,
     required String accused,
+    /// 被指的那個人的雲端身分。**記點與級距一律看它**（暱稱重構階段二）。
+    /// 私訊對方那一路可能查不到，空值代表「這一案記不了點」。
+    String? accusedUid,
   }) {
     if (reports.any(
         (r) => r.targetKey == targetKey && r.state == CaseState.pending)) {
@@ -4474,6 +6805,7 @@ class AppState extends ChangeNotifier {
       content: content,
       reason: '自動過濾命中疑似違規',
       accused: accused,
+      accusedUid: accusedUid,
     );
     reports.insert(
       0,
@@ -4487,7 +6819,11 @@ class AppState extends ChangeNotifier {
         reason: '自動過濾命中疑似違規',
         reporterCount: 0,
         accused: accused,
-        accusedViolations: violationsOf(accused),
+        // **這一行原本不在。** 自動開立的案件沒有 uid，
+        // 於是它們永遠記不了點（`_recordViolation` 看的就是這個欄位）——
+        // 管理員判成立、畫面說處罰了，而被指的人身上什麼都沒發生。
+        accusedUid: accusedUid,
+        accusedViolations: violationsOf(accusedUid, name: accused),
         enteredAt: now,
       ),
     );
@@ -4896,8 +7232,10 @@ class AppState extends ChangeNotifier {
   AiFailReason? aiLastFailReason;
   int aiRetryCount = 0;
 
-  void _say(AiSource src, AiTurnRole role, String text) {
-    aiConversations[src]!.add(AiTurn(role, text, now));
+  void _say(AiSource src, AiTurnRole role, String text,
+      {AdjustSuggestion? suggestion, String? scope}) {
+    aiConversations[src]!
+        .add(AiTurn(role, text, now, suggestion: suggestion, scope: scope));
   }
 
   // --- 訓練前調整的名額分流 ---
@@ -5033,6 +7371,44 @@ class AppState extends ChangeNotifier {
   ///
   /// 方向由 `fromMentor` 決定：教官發起＝他邀我當學徒；學徒發起＝
   /// 有人想拜我為師。兩者在模型裡是不同的 [InboundKind]。
+  /// 把**我自己送出去的**拜師申請讀回本機。
+  ///
+  /// ## 為什麼非有不可
+  ///
+  /// `applyMentor()` 把申請寫進了雲端，也把一筆放進 `mentorApplications`
+  /// —— 但那份清單**不進存檔**，而登入時只讀「別人送給我的」
+  /// （`requestsFor` 查 `toUid`）。於是重新整理之後：
+  ///
+  /// - 按鈕從「已申請」退回「申請師徒關係」
+  /// - `mentorApplyBlockedReason()` 的「已送出」守衛跟著失效
+  /// - 再按一次就再送一筆
+  ///
+  /// 使用者 2026-09-29 按了四次，雲端四筆。
+  ///
+  /// **整份取代而不是併入**：雲端是這件事的唯一事實。逾期的略過 ——
+  /// 那一筆在對方那側也已經沒有效力了。
+  void applyMySentMentorRequests(List<MentorRequest> cloud) {
+    // **要顯示的是對方的名字，不是 `fromName`** —— 那是我自己
+    // （我是送出的一方）。教官清單是唯一查得到對方階級的地方。
+    PendingRequest toPending(MentorRequest r) {
+      final ins = instructors.where((i) => i.uid == r.toUid).firstOrNull;
+      return PendingRequest(
+        ins?.name ?? nameByUid[r.toUid] ?? '（資料載入中）',
+        ins?.rank ?? 0,
+        r.expiresAt,
+        uid: r.toUid,
+      );
+    }
+
+    mentorApplications
+      ..clear()
+      ..addAll([
+        for (final r in cloud)
+          if (!r.fromMentor && !r.expiresAt.isBefore(now)) toPending(r),
+      ]);
+    notifyListeners();
+  }
+
   void applyCloudMentorRequests(List<MentorRequest> cloud) {
     for (final r in cloud) {
       if (r.expiresAt.isBefore(now)) continue;
@@ -5042,6 +7418,7 @@ class AppState extends ChangeNotifier {
             ? InboundKind.mentorInvite
             : InboundKind.apprenticeApply,
         from: r.fromName,
+        fromUid: r.fromUid,
         fromRank: r.fromRank,
         // 師徒兩向的 subject 都與 from 同值（見 `InboundRequest.subject`）。
         subject: r.fromName,
@@ -5093,14 +7470,27 @@ class AppState extends ChangeNotifier {
           id: 'ti-${r.teamId}',
           kind: InboundKind.teamInvite,
           from: r.name,
+          fromUid: r.uid,
           fromRank: r.rank,
           // 團隊邀請的 subject 是**團隊名**，from 才是隊長。
           subject: r.teamName,
           sentAt: r.expiresAt.subtract(kInboundTtl),
         ));
       } else if (t != null && r.teamId == t.id) {
-        if (t.applications.any((a) => a.name == r.name)) continue;
-        if (t.members.any((m) => m.name == r.name)) continue;
+        // **以 uid 去重，不比暱稱。**
+        //
+        // 兩道閘門都會**靜默丟掉**那一筆申請，而「雲端讀到了卻不顯示」
+        // 與「根本沒讀到」在畫面上長得一模一樣 —— T2 那條查了三輪
+        // 就是這個形狀。用暱稱比的話：撞名的人申請會被當成重複而消失，
+        // 改過暱稱的人退隊再申請也會對不上。
+        //
+        // 沒有 uid 的（示範資料）退回比暱稱。
+        bool same(String? otherUid, String otherName) =>
+            otherUid != null && r.uid.isNotEmpty
+                ? otherUid == r.uid
+                : otherName == r.name;
+        if (t.applications.any((a) => same(a.uid, a.name))) continue;
+        if (t.members.any((m) => same(m.uid, m.name))) continue;
         // **uid 一定要帶著。** 核准時要用它寫回雲端，靠名稱反查會失敗。
         t.applications
             .add(PendingRequest(r.name, r.rank, r.expiresAt, uid: r.uid));
@@ -5178,6 +7568,16 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// 動作名稱的相鄰二字集合 —— 用來衡量「是不是同一類動作」。
+  ///
+  /// 「三頭肌下壓」→ `{三頭, 頭肌, 肌下, 下壓}`。
+  /// 與「三頭肌伸展」重疊 2 個，與「二頭肌屈臂」只重疊 1 個。
+  /// **器材那一段不算** —— 我們要找的正是「同一個動作換個器材」。
+  static Set<String> _nameBigrams(String name) {
+    final base = name.split(' · ').first.replaceAll(RegExp(r'[\s()（）]'), '');
+    return {for (var i = 0; i + 1 < base.length; i++) base.substring(i, i + 2)};
+  }
+
   /// 這個動作的替代候選 —— 同肌群、且目前器材做得到。
   ///
   /// **候選由前端算，不把 527 筆動作庫送進 prompt。** 那樣 prompt 會
@@ -5185,9 +7585,29 @@ class AppState extends ChangeNotifier {
   /// 挑一個，驗證就變成「挑的在不在候選裡」——滴水不漏。
   ///
   /// 依據是「持有器材明細」（`02_Aggregate定義.md` §1324）。
+  ///
+  /// ## 排序為什麼不能只看相對強度
+  ///
+  /// 2026-09-28 使用者打「今天沒有滑輪機可以用」，
+  /// **三頭肌下壓 · 滑輪機** 被換成 **二頭肌屈臂 · 槓鈴** ——
+  /// 推變成拉。那不是模型亂挑：候選清單是我們給的，而**送過去的
+  /// 前五個全是二頭動作**。
+  ///
+  /// 原因是六維裡「手」是一維，三頭與二頭同屬 `Dim.arms`（依模型自己
+  /// 的粒度那確實是同肌群），而排序只比相對強度 —— 二頭在 2.1、
+  /// 三頭在 2.2，原動作 1.9。**差 0.1 就讓三頭訓練變成二頭訓練。**
+  /// 候選池裡本來有 16 個三頭動作，一個都沒進前五。
+  ///
+  /// 所以先比名稱相似度（[_nameBigrams]），再比相對強度。
+  /// 中文的動作名稱本來就把目標肌肉寫在裡面，那是現成的訊號。
+  ///
+  /// **這是權宜之計。** 真正乾淨的做法是動作庫多一個「細部肌群」欄位，
+  /// 但那要動 CSV 與匯入腳本，且屬於資料決策。記在 `PROGRESS.md` 0S。
   List<Exercise> swapCandidatesFor(Exercise e, {int limit = 5}) {
     final have = availableEquipment;
-    return [
+    final want = _nameBigrams(e.name);
+    int alike(Exercise x) => _nameBigrams(x.name).intersection(want).length;
+    final pool = [
       for (final x in platformExercises)
         if (x.id != e.id &&
             x.dim == e.dim &&
@@ -5197,11 +7617,19 @@ class AppState extends ChangeNotifier {
               return need.isEmpty || need.every(have.contains);
             }())
           x,
-    ]
-        // 相對強度相近的排前面 —— 換動作不該順便換掉訓練強度。
-        ..sort((a, b) => (a.relativeIntensity - e.relativeIntensity)
-            .abs()
-            .compareTo((b.relativeIntensity - e.relativeIntensity).abs()));
+    ];
+    pool.sort((a, b) {
+      // 名字越像的越前面 —— 同一個動作換個器材會排到第一。
+      final byName = alike(b).compareTo(alike(a));
+      if (byName != 0) return byName;
+      // 一樣像，才比相對強度 —— 換動作不該順便換掉訓練強度。
+      return (a.relativeIntensity - e.relativeIntensity)
+          .abs()
+          .compareTo((b.relativeIntensity - e.relativeIntensity).abs());
+    });
+    // [limit] 原本**寫了沒用** —— 函式回傳全部，兩個呼叫端各自
+    // `.take(5)`。參數騙人比沒有參數更糟：它看起來已經把關了。
+    return pool.take(limit).toList();
   }
 
   /// 送給模型的脈絡（`[BE-08]` 方案 A）。
@@ -5213,6 +7641,13 @@ class AppState extends ChangeNotifier {
   ///
   /// **不含身分**：沒有暱稱、uid、電子郵件、生日。體重與性別有送 ——
   /// DOTS 標準化本來就靠它們。
+  /// 測試接縫：`_aiContext` 是私有的，但**送出去的東西該長什麼樣**
+  /// 正是要釘住的事（2026-09-28 漏送完成度就是這樣才發現的）。
+  @visibleForTesting
+  AdjustContext aiContextForTest(List<PlanExercise> target,
+          {bool swap = false}) =>
+      _aiContext(target, swap: swap);
+
   AdjustContext _aiContext(List<PlanExercise> target, {bool swap = false}) {
     final stats = exerciseStats;
     return AdjustContext(
@@ -5230,11 +7665,18 @@ class AppState extends ChangeNotifier {
                 (weight: t.weight, reps: t.reps),
             ].reversed.toList(),
       },
+      // **最近幾場的完成度。** 一個 16 組只做 2 組的人需要的是減量，
+      // 而那件事寫在完成度裡，不在重量與次數裡（見 `AdjustContext.sessions`）。
+      // 只取最近五場 —— 再多對判斷沒有幫助，卻讓 prompt 變長。
+      sessions: [
+        for (final h in history.take(5))
+          (plan: h.planName, completion: h.completion, minutes: h.minutes),
+      ],
       candidates: {
         for (final pe in target)
           if (swap)
             pe.exercise.name: [
-              for (final c in swapCandidatesFor(pe.exercise).take(5)) c.name,
+              for (final c in swapCandidatesFor(pe.exercise)) c.name,
             ],
       },
     );
@@ -5256,6 +7698,16 @@ class AppState extends ChangeNotifier {
   /// 猜錯的代價最小」。那個推論是錯的：使用者打「早安」也會換來一份
   /// 降強度的課表**並且被扣一點**，而他從頭到尾沒要求調整強度。
   /// 猜錯的代價不是保守與否，是**做了他沒要求的事還收了錢**。
+  /// 值域原文的完全比對。四顆方向鍵送來的就是這個 ——
+  /// 那不需要問模型，也不該因為模型掛掉而失敗。
+  static AdjustIntent? _exactIntent(String answer) {
+    final a = answer.trim();
+    for (final i in AdjustIntent.values) {
+      if (a == adjustIntentNames[i]) return i;
+    }
+    return null;
+  }
+
   static AdjustIntent? parseIntent(String answer) {
     final a = answer.trim();
     for (final i in AdjustIntent.values) {
@@ -5271,22 +7723,99 @@ class AppState extends ChangeNotifier {
     // 猜錯方向讓人照著練才是問題。
     // 換動作要排在最前面 —— 「換掉臥推」含「換」，而不含其他方向的詞，
     // 但先比對強度類的話，未來加詞容易誤判。
-    if (a.contains('換') || a.contains('替代') || a.contains('做不了') ||
-        a.contains('沒有器材') || a.contains('器材不')) {
+    //
+    // **器材缺席要認得出來。** 使用者實測打「今天沒有啞鈴可以用」，
+    // 而原本的條件只有 `沒有器材` 與 `器材不` —— 沒有人會說
+    // 「我沒有器材」，他會說沒有**哪一樣**器材。系統回「我看不出你想
+    // 往哪個方向調」，但那句話講得再清楚不過了。
+    //
+    // 器材名稱直接取自值域（`kEquipmentItems`），不自己再列一份 ——
+    // 管理員在後台加了品項，這裡要跟著認得。
+    //
+    // **泛稱也要認得。** 2026-09-28 使用者打「我沒有任何器材」，
+    // 而條件寫的是 `contains('沒有器材')` —— 中間插一個「任何」，
+    // 整串比對就失效了。上一次的結論「沒有人會說我沒有器材」只對了
+    // 一半：他確實不會單講「器材」，但他會講「任何器材」「所有器材」。
+    //
+    // 所以泛稱走與具體品項**同一條路**（否定詞 ＋ 名稱），
+    // 而不是再加一串寫死的整句比對 —— 那種寫法下次換個副詞又會漏。
+    const generic = ['器材', '設備', '裝備', '器械'];
+    final missing = a.contains('沒有') || a.contains('沒') ||
+        a.contains('壞') || a.contains('不能用') || a.contains('被占') ||
+        a.contains('用不到') || a.contains('沒帶');
+    if (missing &&
+        (kEquipmentItems.any((e) => a.contains(e)) ||
+            generic.any((g) => a.contains(g)))) {
       return AdjustIntent.swap;
     }
-    if (a.contains('升') || a.contains('加重') || a.contains('加強')) {
+    if (a.contains('換') || a.contains('替代') || a.contains('做不了') ||
+        a.contains('器材不')) {
+      return AdjustIntent.swap;
+    }
+    // **2026-09-27 擴充了說法**（使用者：「希望能先判斷是否符合 4 個調整
+    // 方向其中一項，不要什麼都擋」）。
+    //
+    // 擴充的原則沒變：**只收指向唯一方向的說法**。
+    // 每加一個詞都要問「有沒有另一個方向的人也會這樣講」——
+    // 有的話就不收，寧可再問一次。猜錯方向讓人照著練才是問題。
+    //
+    // 順序有意義：升在降之前（「不要太輕」含『輕』但講的是升），
+    // 組數最後（「組」最容易被其他句子夾帶）。
+    if (a.contains('升') || a.contains('加重') || a.contains('加強') ||
+        // 「太輕」「不夠重」「重一點」—— 都只有升這一個解釋。
+        a.contains('太輕') || a.contains('重一點') || a.contains('不夠重') ||
+        a.contains('挑戰') || a.contains('加碼') || a.contains('更強') ||
+        a.contains('狀況很好') || a.contains('狀態很好')) {
       return AdjustIntent.harder;
     }
     if (a.contains('降') || a.contains('輕') || a.contains('簡單') ||
-        a.contains('緩') || a.contains('累')) {
+        a.contains('緩') || a.contains('累') ||
+        // 「太重」「吃力」「痠」「狀況不好」—— 沒有人用這些字要求加重。
+        a.contains('太重') || a.contains('吃力') || a.contains('痠') ||
+        a.contains('酸') || a.contains('疲') || a.contains('狀況不好') ||
+        a.contains('狀態不好') || a.contains('保守') || a.contains('撐不住')) {
       return AdjustIntent.easier;
+    }
+    // 時間不夠 → 減少組數。這是最常見卻認不出來的那一類：
+    // 使用者講的是「我只有 30 分鐘」，而不是「減少組數」。
+    if (a.contains('時間不夠') || a.contains('趕時間') || a.contains('沒時間') ||
+        a.contains('縮短') || a.contains('快點做完') || a.contains('提早')) {
+      return AdjustIntent.trim;
     }
     if (a.contains('組')) {
       return AdjustIntent.trim;
     }
     return null;
   }
+
+  /// **此刻**與某人的關係算一般訊息還是陌生訊息。
+  ///
+  /// 三種關係的定義只有這一份（`classifyMessage`），發送時與分區時共用。
+  /// **「一般訊息」要的是互相關注**，不是我單方追蹤 ——
+  /// 規格：「可直接發送私訊的對象：互相關注者、具師徒關係者、同團隊成員」。
+  MessageCategory currentCategoryWith(String peer, {String? peerUid}) =>
+      classifyMessage(
+        mutualFollow: isFollowing(peer, uid: peerUid) &&
+            isFollower(peer, uid: peerUid),
+        mentorBond: myInstructor?.name == peer ||
+            apprentices.any((a) => a.name == peer),
+        sameTeam: myTeam?.members.any((m) => m.name == peer) ?? false,
+      );
+
+  /// 這段對話在清單裡歸哪一區。
+  ///
+  /// **訊息的分類於發送當下固定，規格明訂不回溯改寫**（〈聊天私訊流程〉）。
+  /// 但「對話歸哪一區」是 Read Model 的事 —— 使用者回報
+  /// 「追蹤後沒有從陌生訊息更新到一般訊息」，而在那之前 `bucket` 讀的是
+  /// **最後一則訊息**的分類，所以關係轉正之後要等對方再傳一則才會移動。
+  ///
+  /// 改成「此刻的關係算一般 **或** 最後一則本來就是一般」——
+  /// **只升不降**：曾經是隊友、後來退隊，那段對話不該被丟回陌生訊息區。
+  MessageCategory bucketOf(Conversation c) =>
+      currentCategoryWith(c.peer, peerUid: c.peerUid) == MessageCategory.normal ||
+              c.bucket == MessageCategory.normal
+          ? MessageCategory.normal
+          : MessageCategory.stranger;
 
   /// 本次調整的意圖與建議，逐來源各一份。
   final Map<AiSource, AdjustIntent> aiIntent = {};
@@ -5314,6 +7843,35 @@ class AppState extends ChangeNotifier {
   /// 自動優化的對象課表範本 —— 掛著優化建議標記的那一份。
   WorkoutPlan? get aiOptimizePlan =>
       platformPlans.where((p) => p.hasOptimizationSuggestion).firstOrNull;
+
+  /// 目前掛著優化建議的課表 ID。
+  ///
+  /// **這是使用者自己的資料，不是課表目錄的。**
+  /// 在此之前只有 `platformPlans[i].hasOptimizationSuggestion` 這一個
+  /// 記號，而那份清單是平台目錄 —— `applyPlatformData()` 每次登入都
+  /// **整份重建**，記號當場蒸發；存檔也不含它，重新整理一樣沒了。
+  ///
+  /// 2026-09-28 使用者實測：訂閱後看不到「新的優化建議」標籤（P86）。
+  /// 產生是產生了，只是活不過下一次重新整理。
+  String? optimizedPlanId;
+
+  /// 把 [optimizedPlanId] 的記號貼回課表目錄上。
+  ///
+  /// **`applyPlatformData()` 之後與載入存檔之後都要跑一次** ——
+  /// 那兩個時機各自會把目錄換成一份沒有記號的新清單。
+  void applyOptimizationMark() {
+    final id = optimizedPlanId;
+    if (id == null) return;
+    final i = platformPlans.indexWhere((p) => p.id == id);
+    if (i < 0) {
+      // 課表被管理員下架了 —— 記號跟著失效，不要留一個指向空氣的 ID。
+      optimizedPlanId = null;
+      return;
+    }
+    if (platformPlans[i].hasOptimizationSuggestion) return;
+    platformPlans[i] = _copyPlan(platformPlans[i], suggestion: true);
+    if (currentPlan?.id == id) currentPlan = platformPlans[i];
+  }
 
   // --- AI 自動優化的觸發 Policy ---
 
@@ -5356,14 +7914,20 @@ class AppState extends ChangeNotifier {
 
   /// 要優化哪一份範本：最近練過的官方課表。
   /// 已經掛著建議的那一份優先 —— 後者覆蓋前者，不會同時存在兩份。
+  ///
+  /// **「最近練過」要從訓練歷史推**，不是讀 `WorkoutPlan.lastTrainedAt`。
+  /// 那個欄位在 0k③（2026-09-26）之後對官方課表**永遠是空值** ——
+  /// 當時把寫死在平台目錄裡的假日期移除了（那是「**我**上次練它是什麼
+  /// 時候」，每個人各自不同，不該長在共用目錄上），但沒有回頭看誰在讀它。
+  /// 於是這裡的排序整段失效，永遠退回「第一份官方課表」。
   WorkoutPlan? _autoOptimizeTarget() {
     final existing = aiOptimizePlan;
     if (existing != null) return existing;
-    final official =
-        platformPlans.where((p) => p.source == PlanSource.official && p.exercises.isNotEmpty);
+    final official = platformPlans.where(
+        (p) => p.source == PlanSource.official && p.exercises.isNotEmpty);
     if (official.isEmpty) return null;
-    final used = official.where((p) => p.lastTrainedAt != null).toList()
-      ..sort((a, b) => b.lastTrainedAt!.compareTo(a.lastTrainedAt!));
+    final used = official.where((p) => lastTrainedOf(p) != null).toList()
+      ..sort((a, b) => lastTrainedOf(b)!.compareTo(lastTrainedOf(a)!));
     return used.isNotEmpty ? used.first : official.first;
   }
 
@@ -5375,6 +7939,7 @@ class AppState extends ChangeNotifier {
     // 新的一份建議＝新的一段流程。上一輪若以「拒絕」結束，狀態機停在
     // rejected；不重設的話這一份建議按不動，等於白產出。
     aiReset(AiSource.autoOptimize);
+    optimizedPlanId = plan.id;
     platformPlans[i] = _copyPlan(plan, suggestion: true);
     if (currentPlan?.id == plan.id) currentPlan = platformPlans[i];
   }
@@ -5400,19 +7965,154 @@ class AppState extends ChangeNotifier {
         suitableGoals: p.suitableGoals,
       );
 
+  /// 直接打一次意圖分類，把結果或錯誤原樣回傳。**開發者模式的診斷鍵。**
+  ///
+  /// 在此之前要診斷 AI 通不通，得先開一場訓練、進調整畫面、打一句話，
+  /// 然後回到設定頁看一個只在判定過之後才出現的欄位 ——
+  /// 中間任何一步走岔，看到的都是「沒找到在哪看」。
+  ///
+  /// 這顆按鈕把那一串縮成一次點擊。
+  Future<String> probeAiClassify([String say = '我等一下要趕去接小孩']) async {
+    final ai = aiSource;
+    if (ai == null) return 'aiSource 沒有接上（本機或測試環境）';
+    final t = DateTime.now();
+    try {
+      final got = await ai.classify(say);
+      final ms = DateTime.now().difference(t).inMilliseconds;
+      return got.intent == null
+          ? 'AI 回「判不出來」（${ms}ms）'
+          : 'AI → ${adjustIntentNames[got.intent!]}（${ms}ms）';
+    } catch (e) {
+      final ms = DateTime.now().difference(t).inMilliseconds;
+      return '失敗（${ms}ms）：$e';
+    }
+  }
+
+  /// 最近一次診斷的結果。開發者模式顯示。
+  String? aiProbeResult;
+
+  /// 跑一次診斷並記下結果。
+  Future<String> runAiProbe() async {
+    aiProbeResult = '測試中…';
+    notifyListeners();
+    final r = await probeAiClassify();
+    aiProbeResult = r;
+    notifyListeners();
+    return r;
+  }
+
+  /// 上一次意圖是誰判的。**開發者模式看得到。**
+  ///
+  /// 「AI 判的」與「AI 掛了退回關鍵字比對」在畫面上長得一模一樣 ——
+  /// 而靜默退回在這個專案咬過五次。至少記下來。
+  String? intentDecidedBy;
+
   /// 使用者已確認需求 → 系統呼叫 AI API 分析（AI 僅產出建議，不套用）。
-  void aiConfirmDemand(AiSource src, String answer) {
+  ///
+  /// **2026-09-27 起先給 AI 判斷方向**（使用者裁決 B）。
+  /// 端內的 [parseIntent] 只當 AI 掛掉時的備援 —— 它很保守，
+  /// 曖昧一律不收，所以使用者打一句再自然不過的話常常換來一段
+  /// 「我看不出你想往哪個方向調」。
+  ///
+  /// **保守的原則沒有變**：模型也被要求「只在明確指向唯一方向時才回答，
+  /// 否則回 null」。交給模型是為了聽懂更多說法，
+  /// 不是為了「無論如何給個答案」。
+  /// 這一輪 AI 判讀有沒有掛掉。決定判不出來時要講哪一句話。
+  bool aiUnavailable = false;
+
+  /// 掛掉的原因是不是**額度用完**。
+  ///
+  /// 使用者實測拿到兩種：`429 You exceeded your current quota` 與
+  /// `503 high demand`。**它們對使用者的意義完全不同** ——
+  /// 忙線等一下再試就好，額度用完是今天不必再試了。
+  /// 說同一句「AI 暫時忙不過來」，他會一直重試一件不會成功的事。
+  bool aiQuotaExhausted = false;
+
+  /// 這一段錯誤訊息是不是在講額度。
+  ///
+  /// 字串比對是醜的，但錯誤從 Worker 一路包到這裡本來就只剩字串，
+  /// 而「429」與「quota」兩個線索同時出現時不會認錯。
+  static bool looksLikeQuota(String e) =>
+      e.contains('429') || e.toLowerCase().contains('quota');
+
+  /// 正在請 AI 判讀方向。畫面靠它顯示「判讀中」。
+  final Map<AiSource, bool> aiClassifying = {};
+
+  Future<void> aiConfirmDemand(AiSource src, String answer) async {
     if (aiStage[src] != AiStage.clarifying) return;
     _say(src, AiTurnRole.user, answer);
 
-    final intent = parseIntent(answer);
+    // 這一輪 AI 有沒有掛掉。影響的是**判不出來時要說哪一句話** ——
+    // 「你講的不在四個方向裡」與「AI 暫時忙線」是兩件完全不同的事，
+    // 而在此之前它們的回話一模一樣。
+    aiUnavailable = false;
+    aiQuotaExhausted = false;
+
+    // 使用者直接點了那四顆方向鍵 —— 不必問模型。
+    var intent = _exactIntent(answer);
+    if (intent != null) {
+      intentDecidedBy = '選項';
+    } else {
+      final ai = aiSource;
+      if (ai != null) {
+        // **先把畫面更新出來再去等網路。**
+        //
+        // 在此之前整段跑完才 `notifyListeners()` —— 於是使用者按下送出
+        // 之後，連**他自己打的那句話**都不會出現，畫面完全靜止
+        // 一秒多（AI 失敗時是二十秒）。他回報的「分析時間非常久，
+        // 得不到答案」有一半是這個：不是真的那麼久，是完全沒有跡象。
+        aiClassifying[src] = true;
+        notifyListeners();
+        try {
+          intent = (await ai.classify(answer)).intent;
+          intentDecidedBy = intent == null ? 'AI（判不出來）' : 'AI';
+        } catch (e) {
+          // **退回端內規則，而且要講出來**（只給開發者模式）。
+          intentDecidedBy = '端內規則（AI 失敗：$e）';
+          aiUnavailable = true;
+          aiQuotaExhausted = looksLikeQuota('$e');
+        } finally {
+          aiClassifying[src] = false;
+        }
+      }
+      // AI 沒接、或剛剛失敗 —— 用端內的關鍵字比對。
+      intent ??= parseIntent(answer);
+      intentDecidedBy ??= '端內規則';
+    }
+
     if (intent == null) {
       // **不推進階段、不扣點、不產建議。** 寧可再問一次，也不要送出
       // 一份使用者沒要求的課表 —— 他會照著那份練。
-      _say(src, AiTurnRole.ai,
-          '抱歉，我看不出你想往哪個方向調。請從這三個裡挑一個：'
-          '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
-          '本次未扣點。');
+      // **不說「我看不出你想往哪個方向調」。**
+      //
+      // 使用者實測打「我想多練上胸」，那句話講得再清楚不過了 ——
+      // 系統看得懂，只是**不支援**。回他「我看不出」是把自己的限制
+      // 說成他表達得不好。
+      //
+      // **數字由值域算出來，不寫死。** 原本寫「請從這三個裡挑一個」
+      // 而後面列了四個 —— `AdjustIntent` 加了 `swap` 之後沒人回來改
+      // 那兩個字。同一份清單同時決定「幾個」與「有哪些」，就不會再對不上。
+      // **AI 掛掉與「不在四個方向裡」要講不同的話。**
+      //
+      // 2026-09-27 使用者實測：Gemini 回 503「模型忙線」，
+      // 而畫面上顯示的是「目前只能往這 4 個方向調」——
+      // 使用者只會以為是自己講錯話，不會知道系統剛剛壞了一下。
+      _say(
+          src,
+          AiTurnRole.ai,
+          aiQuotaExhausted
+              ? '今天的 AI 額度已用完，沒辦法判讀你的需求。'
+                  '直接挑一個方向：'
+                  '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
+                  '本次未扣點。'
+              : aiUnavailable
+              ? 'AI 暫時忙不過來，沒辦法判讀你的需求。'
+                  '直接挑一個方向：'
+                  '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
+                  '本次未扣點。'
+              : '目前只能往這 ${AdjustIntent.values.length} 個方向調：'
+                  '${AdjustIntent.values.map((i) => adjustIntentNames[i]).join('／')}。'
+                  '請挑一個。本次未扣點。');
       notifyListeners();
       return;
     }
@@ -5463,7 +8163,7 @@ class AppState extends ChangeNotifier {
         candidates: intent == AdjustIntent.swap
             ? {
                 for (final pe in target)
-                  pe.exercise.name: swapCandidatesFor(pe.exercise).take(5).toList(),
+                  pe.exercise.name: swapCandidatesFor(pe.exercise),
               }
             : const {},
       );
@@ -5505,11 +8205,22 @@ class AppState extends ChangeNotifier {
     //
     // 折衷：標題有沒有「AI」兩個字就是答案。不佔版面，也分得出來。
     final byModel = got.origin == SuggestionOrigin.gemini;
+    // **帶著結構過去，不是只丟一段字串。**
+    //
+    // 原本這裡把整份建議拼成一大段文字（每筆之間空一行），再擠進一個
+    // 寬 260 的對話泡泡 —— 使用者回報「AI 建議給的排版不好做閱讀」。
+    // 而動作名、調整前後、替換動作、理由在 `AdjustChange` 裡本來就是
+    // 分開的欄位，是渲染時才被拼掉的。
+    //
+    // `text` 仍然給一份可讀的純文字：對話紀錄要留得下來，
+    // 而一段能唸出來的話比一個物件可靠。
     _say(src, AiTurnRole.ai,
-        '${byModel ? 'AI ' : ''}建議如下（${adjustIntentNames[intent]}）：\n'
-        '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n')}\n'
+        '${byModel ? 'AI ' : ''}建議如下（${adjustIntentNames[intent]}）：\n\n'
+        '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
         '${aiSuggestion[src]!.rationale == null ? '' : '\n${aiSuggestion[src]!.rationale}\n'}'
-        '\n作用範圍：${aiSourceScope[src]}');
+        '\n作用範圍：${aiSourceScope[src]}',
+        suggestion: aiSuggestion[src],
+        scope: aiSourceScope[src]);
     // **退回規則引擎時要說出來。** 不說的話，使用者看到的是一份
     // 看起來正常、其實沒經過模型的建議 —— 他只會覺得 AI 變笨了，
     // 而真正的原因躺在一個沒有人會去看的 log 裡。
@@ -5519,6 +8230,88 @@ class AppState extends ChangeNotifier {
     if (developerMode && got.error != null) {
       _say(src, AiTurnRole.system, '〔開發者〕${got.error}');
     }
+    aiStage[src] = AiStage.proposed;
+    notifyListeners();
+  }
+
+  /// 自動優化：**系統自己判斷方向並產出建議**，不問使用者。
+  ///
+  /// 規格（`01_Command清單.md`〈AI 自動優化訓練流程〉）把「優化訓練強度」
+  /// 的 Actor 寫成**系統** —— 流程裡只有「確認使用新訓練強度」與
+  /// 「拒絕調整」兩個使用者 Command，沒有「挑方向」這一步。
+  ///
+  /// 2026-09-28 之前的實作把它接到訓練前調整的同一條追問流程上，
+  /// 反過來問使用者要調哪個方向。那個差別不只是少一步：
+  /// **訓練前調整是免費功能，自動優化是會員權益** ——
+  /// 兩者都要人挑方向的話，付費買到的只是「幫你記得每三次提醒一次」。
+  ///
+  /// **不扣點**（會員權益），也**沒有規則退路**：判斷不出來就不掛，
+  /// 下次再說。用一條 ×0.9 假裝成教練的判斷比不給更糟。
+  Future<void> aiAutoPropose() async {
+    const src = AiSource.autoOptimize;
+    if (aiStage[src] != AiStage.idle) return;
+    if (aiConversations[src]!.isNotEmpty) return;
+
+    final target = _aiTarget(src);
+    if (target.isEmpty) return;
+
+    final remote = aiSource;
+    if (remote == null) {
+      // 沒接外部 AI —— 端內規則產不出「該升還是該降」的判斷，
+      // 那不是一條 ×0.9 算得出來的東西。退回舊的追問流程，
+      // 至少使用者挑得了方向。
+      aiOpen(src);
+      return;
+    }
+
+    aiStage[src] = AiStage.analyzing;
+    notifyListeners();
+
+    RemoteAutoAdjust got;
+    try {
+      got = await remote.suggestAuto(
+        exercises: target,
+        context: _aiContext(target, swap: true),
+        candidates: {
+          for (final pe in target)
+            pe.exercise.name: swapCandidatesFor(pe.exercise),
+        },
+      );
+    } catch (_) {
+      if (aiStage[src] != AiStage.analyzing) return;
+      aiStage[src] = AiStage.idle;
+      _say(src, AiTurnRole.system,
+          '這次沒能產出建議，稍後再試。建議標記還在，不會消失。');
+      notifyListeners();
+      return;
+    }
+    if (aiStage[src] != AiStage.analyzing) return;
+
+    final sug = got.suggestion;
+    final decided = got.intent;
+    if (decided == null || sug == null || sug.changes.isEmpty || sug.isEmpty) {
+      aiStage[src] = AiStage.idle;
+      _say(src, AiTurnRole.ai,
+          '這次看不出該往哪個方向調 —— 多練幾次、有了成績才說得出所以然。');
+      notifyListeners();
+      return;
+    }
+
+    aiIntent[src] = decided;
+    aiLastOrigin = SuggestionOrigin.gemini;
+    // 模型講得出「為什麼是這個方向」時，把那句話當成整份建議的依據 ——
+    // 這正是自動優化與訓練前調整的差別：方向本身也要有理由。
+    aiSuggestion[src] = got.why == null
+        ? sug
+        : AdjustSuggestion(
+            intent: sug.intent, changes: sug.changes, rationale: got.why);
+    _say(src, AiTurnRole.ai,
+        'AI 建議如下（${adjustIntentNames[decided]}）：\n\n'
+        '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
+        '${got.why == null ? '' : '\n${got.why}\n'}'
+        '\n作用範圍：${aiSourceScope[src]}',
+        suggestion: aiSuggestion[src],
+        scope: aiSourceScope[src]);
     aiStage[src] = AiStage.proposed;
     notifyListeners();
   }
@@ -5557,11 +8350,14 @@ class AppState extends ChangeNotifier {
       aiCharged[src] = true;
     }
     aiSuggestion[src] = suggestion;
+    // 結構與純文字一起給 —— 理由見上面那一處（端內規則這條路也要表格）。
     _say(src, AiTurnRole.ai,
-        '建議如下（${adjustIntentNames[intent]}）：\n'
-        '${suggestion.changes.map((c) => '· ${c.detail}').join('\n')}\n'
+        '建議如下（${adjustIntentNames[intent]}）：\n\n'
+        '${suggestion.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
         '${suggestion.rationale == null ? '' : '\n${suggestion.rationale}\n'}'
-        '\n作用範圍：${aiSourceScope[src]}');
+        '\n作用範圍：${aiSourceScope[src]}',
+        suggestion: suggestion,
+        scope: aiSourceScope[src]);
     aiStage[src] = AiStage.proposed;
     notifyListeners();
   }
@@ -5666,6 +8462,7 @@ class AppState extends ChangeNotifier {
     // 建議已處理，常駐標記隨之清除 —— 未處理前一直存在，處理後就不該還在。
     platformPlans[i] = _copyPlan(plan,
         suggestion: false, exercises: applySuggestion(plan.exercises, suggestion));
+    optimizedPlanId = null;
     if (currentPlan?.id == plan.id) currentPlan = platformPlans[i];
   }
 
@@ -5685,6 +8482,7 @@ class AppState extends ChangeNotifier {
     if (plan == null) return;
     final i = platformPlans.indexOf(plan);
     if (i < 0) return;
+    optimizedPlanId = null;
     platformPlans[i] = _copyPlan(plan, suggestion: false);
     if (currentPlan?.id == plan.id) currentPlan = platformPlans[i];
   }
@@ -6062,16 +8860,96 @@ class AppState extends ChangeNotifier {
     if (p == null || !p.canAppealAt(at)) return;
     p.appealed = true;
     p.appealState = AppealState.pending;
+    // 寫回雲端 —— 不寫的話重新整理就變回「還沒申訴」，可以一直申訴。
+    // 規則只讓當事人動這兩個欄位（`affectedKeys`）。
+    if (punishmentSource case final src?) {
+      if (myUid case final uid?) {
+        src.markAppealed(uid, AppealState.pending).catchError((Object _) {});
+      }
+    }
     // 申訴為獨立 Aggregate，且進管理員的待審佇列。
-    appeals.add(AppealCase(
-      id: newId('AP-'),
+    //
+    // **案件 ID 帶著處罰的時戳。** 同一筆處罰只能申訴一次（規格），
+    // 靠這個主鍵保證 —— 不是靠「送出前先查有沒有申訴過」，
+    // 那在連按兩下時仍會寫出兩筆。一個人一生可能被罰好幾次，
+    // 每一次各有一次申訴機會，所以不能只用 uid。
+    final uid = myUid;
+    final id = uid == null
+        ? newId('AP-')
+        : '${uid}__${p.issuedAt.millisecondsSinceEpoch}';
+    final c = AppealCase(
+      id: id,
       appellant: displayName,
+      appellantUid: uid,
       target: AppealTarget.punishment,
       subject: punishmentKindNames[p.kind]!,
       reason: reason,
       filedAt: at,
       daysSinceIncident: at.difference(p.issuedAt).inDays,
-    ));
+    );
+    appeals.add(c);
+
+    // **在此之前這裡沒有任何雲端寫入。** 使用者寫了理由、按下送出、
+    // 看到「已送出」，然後重新整理就沒了 —— 而且從頭到尾沒有任何
+    // 管理員看得到。檢舉至少寫進了 Firestore（只是沒人讀），
+    // 申訴連寫都沒寫。
+    if (appealSource case final src?) {
+      if (uid != null) {
+        src
+            .file(CloudAppeal(
+              id: id,
+              appellantUid: uid,
+              appellantName: displayName,
+              target: AppealTarget.punishment,
+              subject: punishmentKindNames[p.kind]!,
+              reason: reason,
+              filedAt: at,
+              daysSinceIncident: at.difference(p.issuedAt).inDays,
+            ))
+            .catchError((Object e) => reportSync('申訴', '送不出去：$e'));
+      }
+    }
+    notifyListeners();
+  }
+
+  /// 雲端的申訴佇列。**空值代表不同步** —— 既有測試走這條。
+  AppealSource? appealSource;
+
+  /// 把雲端的申訴佇列讀進來。**只有管理員叫得動。**
+  Future<void> loadAppealQueue() async {
+    final src = appealSource;
+    if (src == null || !isPlatformAdmin || !canReview) return;
+    try {
+      applyCloudAppeals(await src.queue(limit: 100));
+    } catch (_) {
+      // 讀不到就維持現狀。**不清空** —— 空佇列與讀取失敗長得一模一樣。
+    }
+  }
+
+  void applyCloudAppeals(List<CloudAppeal> cloud) {
+    for (final a in cloud) {
+      final at = appeals.indexWhere((c) => c.id == a.id);
+      final merged = AppealCase(
+        id: a.id,
+        appellant: a.appellantName,
+        appellantUid: a.appellantUid,
+        target: a.target,
+        subject: a.subject,
+        reason: a.reason,
+        filedAt: a.filedAt,
+        daysSinceIncident: a.daysSinceIncident,
+        // 已在審視中的不要被重讀打回待審 —— 管理員可能正開著它。
+        state: at >= 0 ? appeals[at].state : a.state,
+        handlerName: at >= 0 ? appeals[at].handlerName : a.handlerName,
+      );
+      if (at >= 0) {
+        appeals[at] = merged;
+      } else {
+        appeals.add(merged);
+      }
+    }
+    // 等最久的排前面。
+    appeals.sort((a, b) => a.filedAt.compareTo(b.filedAt));
     notifyListeners();
   }
 
@@ -6085,6 +8963,13 @@ class AppState extends ChangeNotifier {
   /// 佇列本身（裡面有別人的違規內容與檢舉者身分）。
   ReportSource? reportSource;
 
+  /// 教官申請案的雲端來源（`[BE-20]`）。
+  ///
+  /// **在此之前沒有這個東西**：`submitExam` 把案件放進申請人自己的
+  /// `instructorCases`，而那份清單從來沒有離開過他的裝置 ——
+  /// 管理員在另一台裝置上永遠看不到（見 PROGRESS 第 5 節 2I）。
+  InstructorCaseSource? instructorCaseSource;
+
   /// 把一筆檢舉送上雲。即發即忘，但**失敗要留下痕跡** ——
   /// 使用者以為自己回報了，實際上沒有人收到，是這裡最糟的結果。
   void _pushReport({
@@ -6094,6 +8979,7 @@ class AppState extends ChangeNotifier {
     required String content,
     required String reason,
     required String accused,
+    String? accusedUid,
     String? note,
   }) {
     final src = reportSource;
@@ -6109,6 +8995,7 @@ class AppState extends ChangeNotifier {
           reason: reason,
           note: note,
           accused: accused,
+          accusedUid: accusedUid,
           reporterUid: me,
           reporterName: displayName,
           at: now,
@@ -6127,6 +9014,7 @@ class AppState extends ChangeNotifier {
     required String content,
     required String accused,
     required String reason,
+    String? accusedUid,
     String? note,
   }) {
     final r = Reporter(
@@ -6143,6 +9031,9 @@ class AppState extends ChangeNotifier {
       reason: reason,
       note: note,
       accused: accused,
+      // 暱稱會改、也會撞名 —— 記點一律看 uid。查不到就傳空值，
+      // 案件仍然審得了，只是記不了點（管理端會標示）。
+      accusedUid: accusedUid ?? uidOf(accused),
     );
 
     final existing = reports.where((c) =>
@@ -6168,7 +9059,8 @@ class AppState extends ChangeNotifier {
         reason: reason,
         reporterCount: 1,
         accused: accused,
-        accusedViolations: violationsOf(accused),
+        accusedUid: accusedUid ?? uidOf(accused),
+        accusedViolations: violationsOf(accusedUid, name: accused),
         enteredAt: now,
       ),
     );
@@ -6177,25 +9069,182 @@ class AppState extends ChangeNotifier {
   }
 
   /// 各使用者的累計違規次數。自己的存在 [myViolations]。
+  ///
+  /// **鍵是 uid，不是暱稱**（暱稱重構階段二，2026-09-28）。
+  ///
+  /// 在此之前這裡以暱稱為鍵，而 `_recordViolation()` 的註解早就寫著
+  /// 「寫到暱稱底下的話，改名或撞名就記到別人頭上」—— 那句話講的是
+  /// 雲端那一側，**本機這一份卻正是那樣做的**。
+  /// 處罰級距依這個數字決定，記錯人就處罰錯人。
+  ///
   /// 初值取自佇列中既有案件所記的累計次數 —— 級距一律依它決定，
   /// 若不灌入，所有人都會從 0 起跳而算成「警告」。
+  /// **只灌有 uid 的**：沒有 uid 的舊案件本來就記不了點
+  /// （`_recordViolation` 也是這樣擋的），灌進來只會製造一個
+  /// 查得到卻寫不回去的數字。
   late final Map<String, int> _violations = {
-    for (final c in reports) c.accused: c.accusedViolations,
+    for (final c in reports) ?c.accusedUid: c.accusedViolations,
   };
 
-  int violationsOf(String user) =>
-      user == displayName ? myViolations : (_violations[user] ?? 0);
+  /// 某個人的累計違規次數。
+  ///
+  /// [uid] 是權威；[name] 只在**它就是我**時用得上（自己的存在
+  /// [myViolations]，而自己的 uid 在沒登入的測試裡可能是空的）。
+  int violationsOf(String? uid, {String? name}) {
+    if (_isMe(name ?? '', uid)) return myViolations;
+    return uid == null ? 0 : (_violations[uid] ?? 0);
+  }
 
-  void _setViolations(String user, int v) {
-    if (user == displayName) {
-      myViolations = v;
-    } else {
-      _violations[user] = v;
+  /// 這一案該用哪個累計次數算級距。
+  ///
+  /// **取「現在查得到的」與「案件當初記下的」之中較大者。**
+  ///
+  /// 暱稱重構階段二把 `_violations` 改成以 uid 為鍵之後，
+  /// **沒有 uid 的案件查出來一律是 0** —— 而級距依這個數字決定，
+  /// 於是一個累犯第五次的人會被算成「警告」。
+  /// `ReportCase.accusedViolations` 是檢舉建案當下記下的值，
+  /// 那些案件只剩它可用。
+  ///
+  /// 取較大者而不是「查不到才用案件的」：兩位管理員同時裁決同一個人時，
+  /// 本機查到的可能比案件當初記的還新。
+  int violationsForCase(ReportCase c) => math.max(
+        violationsOf(c.accusedUid, name: c.accused),
+        c.accusedViolations,
+      );
+
+  /// 雲端的累計違規次數。**空值代表不同步** —— 既有測試走這條。
+  ViolationSource? violationSource;
+
+  /// 把自己的累計違規次數讀回來。
+  ///
+  /// **這個數字不在存檔裡，也不該在** —— 存檔是本人寫得動的，
+  /// 而處罰級距靠它決定。登入時向 `violations/{uid}` 問一次。
+  Future<void> loadMyViolations() async {
+    final src = violationSource;
+    final uid = myUid;
+    if (src == null || uid == null) return;
+    try {
+      myViolations = await src.countOf(uid);
+      notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀。**往少的方向錯**比往多的方向錯好：
+      // 這個數字只決定處罰級距，讀不到而少罰，勝過讀不到而多罰。
     }
+  }
+
+  /// 記一次違規並寫上雲。回傳寫完之後的次數（寫不上去就回本機推算的）。
+  ///
+  /// 在此之前 `_setViolations()` 對別人寫的是本機一個 Map，**哪裡都沒去** ——
+  /// 管理員判了別人違規三次，對方那邊完全不知道，重開 App 還歸零。
+  /// [local] 是呼叫端已經加好並寫進本機的那個數字 —— **這裡不再加一次**。
+  /// （初版在這裡又加了一次，變成一次裁決記兩點。）
+  Future<int> _recordViolation(ReportCase c, int local) async {
+    final src = violationSource;
+    final uid = c.accusedUid;
+    // uid 缺席＝2026-09-25 之前送出的舊案件。審得了，但記不了點 ——
+    // 寫到暱稱底下的話，改名或撞名就記到別人頭上。
+    if (src == null || uid == null) return local;
+    try {
+      final cloud = await src.increment(uid, name: c.accused);
+      _setViolations(uid, cloud, name: c.accused);
+      notifyListeners();
+      return cloud;
+    } catch (_) {
+      return local;
+    }
+  }
+
+  void _setViolations(String? uid, int v, {String? name}) {
+    if (_isMe(name ?? '', uid)) {
+      myViolations = v;
+      return;
+    }
+    // **沒有 uid 就不記。** 記到暱稱底下的話，那個人改名之後
+    // 數字就跟著留在舊名字上，而下一個叫那個名字的人會繼承它。
+    if (uid != null) _violations[uid] = v;
   }
 
   /// 管理員已審視檢舉。待審視 → 審視中，寫入處理中的管理員 ID。
   /// 審視中**不自動退回待審視** —— 未下判定即離開者，案件留在審視中。
+  /// 每個案件對應到雲端的哪幾份文件。**一個標的可能有好幾位檢舉者。**
+  final Map<String, List<String>> _reportDocIds = {};
+
+  /// 把雲端的檢舉佇列讀進來。**只有管理員叫得動。**
+  ///
+  /// 在此之前使用者按的每一筆檢舉都寫進了 Firestore，而**沒有任何人讀它**
+  /// —— `ReportSource` 只有 `file()`，連讀的方法都沒有。後台那一頁列的是
+  /// 編出來的假案件（2026-09-24 已關掉），所以看起來一直都正常。
+  Future<void> loadReportQueue() async {
+    final src = reportSource;
+    if (src == null || !isPlatformAdmin || !canReview) return;
+    try {
+      applyCloudReports(await src.queue(limit: 100));
+    } catch (_) {
+      // 讀不到就維持現狀。**不清空** —— 空佇列與讀取失敗長得一模一樣，
+      // 而後者不該被畫成「沒有待審案件」。
+    }
+  }
+
+  /// 併案：多人檢舉**同一標的**合併為同一案件（`02_Aggregate定義.md`）。
+  ///
+  /// 併案在這裡做而不是在資料層，因為它需要看到所有人的那幾筆 ——
+  /// 而檢舉佇列正是一般使用者不該讀得到的東西。
+  void applyCloudReports(List<CloudReport> cloud) {
+    final byTarget = <String, List<CloudReport>>{};
+    for (final r in cloud) {
+      (byTarget[r.targetKey] ??= []).add(r);
+    }
+
+    for (final entry in byTarget.entries) {
+      final rows = entry.value..sort((a, b) => a.at.compareTo(b.at));
+      final first = rows.first;
+      _reportDocIds[entry.key] = [for (final r in rows) r.id];
+
+      final at = reports.indexWhere((c) => c.targetKey == entry.key);
+      final merged = ReportCase(
+        // 案件 ID 用標的 —— 併案之後「這一案」指的就是這個標的。
+        id: entry.key,
+        targetKey: entry.key,
+        reporters: [
+          for (final r in rows)
+            Reporter(
+                name: r.reporterName, reason: r.reason, note: r.note, at: r.at),
+        ],
+        target: first.target,
+        origin: first.origin,
+        // 內容與事由取**最早那一筆**：後來的檢舉者看到的是同一份內容。
+        content: first.content,
+        reason: first.reason,
+        reporterCount: rows.length,
+        accused: first.accused,
+        accusedUid: first.accusedUid,
+        accusedViolations: violationsOf(first.accusedUid, name: first.accused),
+        enteredAt: first.at,
+        // 已在審視中的案件不要被重讀打回待審 —— 管理員可能正開著它。
+        state: at >= 0 ? reports[at].state : CaseState.pending,
+        handlerName: at >= 0 ? reports[at].handlerName : null,
+      );
+      if (at >= 0) {
+        reports[at] = merged;
+      } else {
+        reports.add(merged);
+      }
+    }
+    // 等最久的排前面。
+    reports.sort((a, b) => a.enteredAt.compareTo(b.enteredAt));
+    notifyListeners();
+  }
+
+  /// 裁決寫回雲端。即發即忘 —— 本機已經改了，寫失敗下次重讀會以雲端為準。
+  void _pushVerdict(ReportCase c, {required bool upheld}) {
+    final src = reportSource;
+    final ids = _reportDocIds[c.targetKey];
+    if (src == null || ids == null || ids.isEmpty) return;
+    src
+        .judge(ids, upheld: upheld, handlerName: admin.name)
+        .catchError((Object _) {});
+  }
+
   void reviewReport(ReportCase c) {
     if (!canReview) return;
     if (c.state != CaseState.pending) return;
@@ -6206,38 +9255,74 @@ class AppState extends ChangeNotifier {
 
   /// 檢舉成立 → 管理員已下架違規內容（帳號類除外）＋ 使用者已受處罰。
   /// 管理員僅判斷檢舉是否成立，**不裁量處罰種類與時長** —— 級距由階梯累犯制決定。
-  void upholdReport(ReportCase c) {
-    if (!canReview) return;
-    if (c.state != CaseState.reviewing) return;
+  UpholdOutcome upholdReport(ReportCase c) {
+    if (!canReview) return const UpholdOutcome.refused('沒有內容審核權限。');
+    if (c.state != CaseState.reviewing) {
+      return const UpholdOutcome.refused('這一案不在審視中，不能裁決。');
+    }
     c.state = CaseState.upheld;
     c.handlerName = null; // 案件轉入終止狀態時清空
 
     // 管理員已下架違規內容。**帳號類不走下架路徑** ——
     // 帳號不是一則內容，沒有可下架的標的。
-    if (canTakeDownContent(c.target)) _takeDown(c);
+    final removed = canTakeDownContent(c.target) ? _takeDown(c) : -1;
 
-    final after = violationsOf(c.accused) + 1;
-    _setViolations(c.accused, after);
-    if (c.accused == displayName) _issuePunishment(c, after);
+    // 記點。本機先加（畫面立刻反映），雲端寫完再以雲端那份為準 ——
+    // 兩位管理員同時裁決同一個人時，本機推算會少算。
+    final after = violationsForCase(c) + 1;
+    _setViolations(c.accusedUid, after, name: c.accused);
+    _issuePunishment(c, after);
+    _pushVerdict(c, upheld: true);
     notifyListeners();
+    _recordViolation(c, after);
+    return UpholdOutcome(
+      removed: removed,
+      violationsAfter: after,
+      // 沒有 uid 就寫不進 `violations/{uid}` —— 被檢舉者那一側
+      // 永遠不會知道自己被記點（`CloudReport.accusedUid` 的註解寫著
+      // 舊案件沒有這個欄位）。**那件事要講出來**。
+      recordedForAccused: c.accusedUid != null,
+    );
   }
 
   /// 管理員已下架違規內容。僅適用貼文 / 留言 / 私訊。
   ///
   /// 一律為**軟刪除**，資料保留 —— 內容本身是案件的證據，
   /// 硬刪除會使其後的申訴無從調閱當時被判違規的是什麼。
-  void _takeDown(ReportCase c) {
+  /// 下架違規內容。
+  ///
+  /// **本機與雲端都要動。** 在此之前這裡只設了記憶體裡的 `deleted`：
+  /// 管理員按下「成立」，自己畫面上那則消失了，雲端一個位元都沒動 ——
+  /// **其他人照樣看得到**。而安全規則那一側也不允許管理員改別人的貼文，
+  /// 所以就算接了寫入也會被拒絕。兩邊 2026-09-25 一起補。
+  int _takeDown(ReportCase c) {
     final id = reportedId(c.targetKey);
+    var hit = 0;
     switch (c.target) {
       case ReportTarget.post:
         for (final p in posts) {
-          if (p.id == id) p.deleted = true;
+          if (p.id == id) {
+            p.deleted = true;
+            hit++;
+          }
         }
+        _pushSocial((src, _) => src.markPostDeleted(id));
       case ReportTarget.comment:
+        String? postId;
         for (final p in posts) {
           for (final m in p.comments) {
-            if (m.id == id) m.deleted = true;
+            if (m.id == id) {
+              m.deleted = true;
+              postId = p.id;
+              hit++;
+            }
           }
+        }
+        // 留言是貼文底下的子文件，要知道父層才寫得回去。
+        // 找不到父層代表那則貼文不在本機這批裡 —— 只好留著本機的標記，
+        // 下次重讀佇列還會看到這一案。
+        if (postId case final pid?) {
+          _pushSocial((src, _) => src.markCommentDeleted(pid, id));
         }
       case ReportTarget.message:
         // 檢舉入口在對話層級，鍵為對話 ID；下架的是**被檢舉的那一則**，
@@ -6245,17 +9330,47 @@ class AppState extends ChangeNotifier {
         for (final conv in conversations) {
           if (conv.id != id) continue;
           for (final m in conv.messages) {
-            if (m.text == c.content) m.deleted = true;
+            if (m.text == c.content) {
+              m.deleted = true;
+              hit++;
+            }
           }
         }
       case ReportTarget.account:
         break; // 帳號不走下架路徑，由 [upholdReport] 擋在前面
     }
+    return hit;
   }
 
+  /// 雲端的處罰狀態。**空值代表不同步** —— 既有測試走這條。
+  PunishmentSource? punishmentSource;
+
+  /// 把自己的處罰讀回來。
+  ///
+  /// **不在存檔裡，也不該在** —— 存檔是本人寫得動的，
+  /// 被罰的人自己就能解除。登入時向 `punishments/{uid}` 問一次。
+  Future<void> loadMyPunishment() async {
+    final src = punishmentSource;
+    final uid = myUid;
+    if (src == null || uid == null) return;
+    try {
+      punishment = await src.of(uid);
+      notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀。**往「沒罰」的方向錯** ——
+      // 一次讀取失敗不該把人鎖在門外。
+    }
+  }
+
+  /// 開出一個處罰。
+  ///
+  /// **在此之前這支只在「被罰的是我自己」時才被呼叫** ——
+  /// 也就是管理員只罰得到自己，判別人成立對方那邊什麼都沒發生。
+  /// 現在對任何人都成立：本機那一份只在罰到自己時才動，
+  /// 罰別人一律走雲端。
   void _issuePunishment(ReportCase c, int after) {
     final tier = tierForViolations(after);
-    punishment = Punishment(
+    final p = Punishment(
       kind: _kindOf(tier),
       reason: c.reason,
       evidence: c.content,
@@ -6267,14 +9382,28 @@ class AppState extends ChangeNotifier {
           ? null
           : now.add(Duration(days: tier.days!)),
     );
+
+    // 寫上雲。uid 缺席＝舊案件（2026-09-25 之前送出的），罰不了 ——
+    // 理由同記點：寫到暱稱底下的話，撞名就罰到別人頭上。
+    final src = punishmentSource;
+    final uid = c.accusedUid;
+    if (src != null && uid != null) {
+      src.issue(uid, p, name: c.accused).catchError((Object _) {});
+    }
+
+    // 以下三件事只在**罰到自己**時才成立 —— 別人的信箱、別人的教官
+    // 資格都不在這台裝置上。那幾件事要等對方登入時由雲端那份觸發。
+    if (c.accused != displayName) return;
+
+    punishment = p;
     // 已填電子郵件者，另以電子郵件通知處罰內容與 **30 天申訴期限**。
     _email('你的帳號已受處罰',
-        '處罰：${punishmentKindNames[punishment!.kind]}\n'
+        '處罰：${punishmentKindNames[p.kind]}\n'
         '事由：${c.reason}\n'
         '你可於收到本通知起 30 天內提出申訴，同一處罰限申訴一次。');
     // 受處罰者具教官身分且處罰為**停權以上**者，教官資格一併撤銷；
     // 警告不撤銷 —— 讓剛被判定違規者繼續帶徒，處罰就沒有效果。
-    if (isInstructor && isSuspension(punishment!.kind)) {
+    if (isInstructor && isSuspension(p.kind)) {
       revokeInstructor(byAdmin: false);
     }
   }
@@ -6293,6 +9422,7 @@ class AppState extends ChangeNotifier {
     if (c.state != CaseState.reviewing) return;
     c.state = CaseState.dismissed;
     c.handlerName = null;
+    _pushVerdict(c, upheld: false);
     notifyListeners();
   }
 
@@ -6311,6 +9441,16 @@ class AppState extends ChangeNotifier {
     if (c.state != CaseState.reviewing) return;
     c.state = CaseState.upheld;
     c.handlerName = null;
+    _pushAppealVerdict(c, upheld: true);
+
+    // **後果要傳到當事人。** 撤銷處罰與退回違規次數都是改別人的文件，
+    // 而那兩份都是管理員可寫、當事人唯讀 —— 在此之前這整段只在
+    // `c.appellant == displayName` 時跑，也就是只撤銷得了自己的處罰。
+    if (c.appellantUid case final uid?) {
+      punishmentSource?.revoke(uid).catchError((Object _) {});
+      violationSource?.decrement(uid).catchError((Object _) => 0);
+    }
+
     if (c.appellant == displayName) {
       final wasFrozen = clocksFrozen;
       punishment = null;
@@ -6364,11 +9504,21 @@ class AppState extends ChangeNotifier {
     if (c.state != CaseState.reviewing) return;
     c.state = CaseState.dismissed;
     c.handlerName = null;
+    _pushAppealVerdict(c, upheld: false);
     if (c.appellant == displayName) {
       punishment?.appealState = AppealState.dismissed;
       _email('申訴已駁回', '你的申訴經審視不成立，原處罰維持不變。');
     }
     notifyListeners();
+  }
+
+  /// 申訴裁決寫回雲端。即發即忘 —— 本機已經改了，寫失敗下次重讀以雲端為準。
+  void _pushAppealVerdict(AppealCase c, {required bool upheld}) {
+    final src = appealSource;
+    if (src == null || c.appellantUid == null) return;
+    src
+        .judge(c.id, upheld: upheld, handlerName: admin.name)
+        .catchError((Object _) {});
   }
 
   /// 申訴的判定入口，供既有畫面沿用。
@@ -6596,9 +9746,63 @@ class AppState extends ChangeNotifier {
   /// 訓練體驗評分。獨立 Aggregate，唯一鍵為 評分者 ＋ 對象類型 ＋ 對象 ID。
   final List<ExperienceRating> experienceRatings = [];
 
+  /// 雲端的評分（`[BE-18]`）。**空值代表不同步** —— 既有測試走這條。
+  RatingSource? ratingSource;
+
+  /// 全平台的評分。**只有管理員讀得到**（安全規則擋在雲端那一側），
+  /// 所以一般使用者身上這份永遠是空的。
+  final List<ExperienceRating> adminRatings = [];
+
+  /// 以雲端為準對齊我自己那一份（登入時）。
+  ///
+  /// **雲端有的以雲端為準，雲端沒有的留著並補送上去。**
+  ///
+  /// 原本這裡是「整份換掉」，理由是「在另一台裝置改過的評分才不會被
+  /// 本機的舊值蓋回去」。那個理由對，但**代價被我漏算了**：
+  /// 上傳失敗時雲端是空的，於是登入一次就把本機那筆也洗掉了 ——
+  /// 使用者 2026-09-28 測 P127 回報「評分不見了」，那比「沒同步」更糟。
+  ///
+  /// 而且這裡本來就要處理一次遷移：`[BE-18]` 之前的評分只存在本機存檔裡，
+  /// 雲端一筆都沒有。整份換掉等於把那些舊評分全部刪掉。
+  void applyCloudRatings(List<ExperienceRating> cloud) {
+    (RatingTarget, String) keyOf(ExperienceRating r) => (r.target, r.targetId);
+    final fromCloud = {for (final r in cloud) keyOf(r)};
+    // 本機有、雲端沒有的：留著，並補送一次。
+    final orphans = [
+      for (final r in experienceRatings)
+        if (!fromCloud.contains(keyOf(r))) r,
+    ];
+    experienceRatings
+      ..clear()
+      ..addAll(cloud)
+      ..addAll(orphans);
+    for (final r in orphans) {
+      _pushRating(r);
+    }
+    notifyListeners();
+  }
+
+  /// 管理員讀全平台的評分，填進 [adminRatings]。
+  ///
+  /// 分析用途、規格明訂**延遲更新**，所以是進後台時抓一批，不做即時訂閱。
+  Future<void> loadAdminRatings({int limit = 500}) async {
+    final src = ratingSource;
+    if (src == null || !isPlatformAdmin) return;
+    try {
+      final rows = await src.all(limit: limit);
+      adminRatings
+        ..clear()
+        ..addAll(rows);
+      notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀 —— 彙總表會顯示「還沒讀到」而不是一張空表。
+    }
+  }
+
   ExperienceRating? ratingFor(RatingTarget target, String targetId) {
     for (final r in experienceRatings) {
-      if (r.rater == displayName &&
+      // **以 uid 為準，暱稱只是退路**（舊存檔沒有 uid）。
+      if (_isMe(r.rater, r.raterUid) &&
           r.target == target &&
           r.targetId == targetId) {
         return r;
@@ -6632,14 +9836,41 @@ class AppState extends ChangeNotifier {
         target: target,
         targetId: targetId,
         rater: displayName,
+        raterUid: myUid,
         stars: stars,
         feedback: feedback,
         at: now,
       ));
     }
+    // **即發即忘。** 這份資料的讀者是管理員、用途是分析，而規格明訂
+    // 延遲更新 —— 為了一次網路失敗擋住使用者按「送出評分」，
+    // 換來的是他乾脆跳過不評，那才是真正的損失。
+    _pushRating(ratingFor(target, targetId)!);
     notifyListeners();
     return true;
   }
+
+  /// 送一筆評分上雲。**失敗要留下痕跡。**
+  ///
+  /// 原本這裡是 `catchError((_) {})` —— 吞得乾乾淨淨。
+  /// 2026-09-28 評分一筆都沒寫上去（安全規則把 `stars` 擋掉了），
+  /// 而畫面說「已送出評分」、開發者模式也看不出任何異狀，
+  /// 只能靠翻雲端才知道。**這是本專案第三次犯同一個錯**
+  /// （前兩次：`quotaHint`、`inboundFailure`）。
+  void _pushRating(ExperienceRating r) {
+    final src = ratingSource;
+    if (src == null) return;
+    src.put(r).then((_) {
+      ratingSyncError = null;
+    }).catchError((Object e) {
+      ratingSyncError = '$e';
+      notifyListeners();
+    });
+  }
+
+  /// 上一次評分寫不上雲的原因。**空值代表沒問題。**
+  /// 開發者模式的同步報告會顯示它。
+  String? ratingSyncError;
 
   /// 使用者已領取新手任務獎勵 → 新手任務獎勵已發放。
   ///
@@ -6797,12 +10028,60 @@ class AppState extends ChangeNotifier {
   // ===========================================================================
 
   /// 管理員與使用者為兩個不同的 Aggregate —— 管理員不必是平台使用者。
+  ///
+  /// 示範身分用的是寫死的 `kCurrentAdmin`（三種權限全開），
+  /// 真實帳號則由 [applyAdminClaim] 依 Firebase Auth 的 custom claim 建出來。
   Admin admin = kCurrentAdmin;
   bool adminMode = false;
 
-  late List<ReportCase> reports = buildReports();
-  late List<AppealCase> appeals = buildAppeals();
-  late List<InstructorCase> instructorCases = buildInstructorCases();
+  /// Firebase Auth 的 `admin` custom claim。**這是唯一的判準。**
+  ///
+  /// `firestore.rules` 的 `isAdmin()` 看的就是 `request.auth.token.admin`，
+  /// 所以畫面上的判斷必須與它同源 —— 不然會出現「後台進得去、
+  /// 每個寫入都被規則擋下」那種最難查的狀態。
+  ///
+  /// **在此之前根本沒有這個欄位。** `admin` 是寫死的假管理員，
+  /// `adminMode` 這個開關全 App 沒有任何地方切換它，後台只掛在
+  /// 開發者模式的「流程示範」底下 —— 也就是任何人長按三秒都進得去，
+  /// 而真正的管理員沒有入口。
+  bool adminClaim = false;
+
+  /// 我是不是平台管理員。
+  bool get isPlatformAdmin =>
+      adminClaim && admin.status == AdminStatus.active;
+
+  /// 套用登入時拿到的 custom claim。
+  ///
+  /// [scopes] 為 claim 裡的 `adminScopes`（權限組名稱陣列）。**沒給就是三種全開**
+  /// —— 規則那一側只認得 `admin == true`，分不出權限組；畫面上比規則嚴格
+  /// 是可以的（少給），比規則寬鬆才是問題。
+  void applyAdminClaim(bool isAdmin, {List<String>? scopes}) {
+    adminClaim = isAdmin;
+    if (!isAdmin) {
+      adminMode = false;
+      notifyListeners();
+      return;
+    }
+    final parsed = <AdminScope>{
+      for (final name in scopes ?? const <String>[])
+        ?AdminScope.values.where((v) => v.name == name).firstOrNull,
+    };
+    admin = Admin(
+      id: myUid ?? admin.id,
+      name: displayName,
+      scopes: parsed.isEmpty ? AdminScope.values.toSet() : parsed,
+    );
+    notifyListeners();
+  }
+
+  // 後台的待審佇列與名冊。**`demo ? ... : []`** —— 與 `posts`／`socialUsers`
+  // 同一個開關。在此之前這七份全都沒有開關，於是真管理員會看到一批
+  // 編出來的檢舉、申訴、教官審核案件，並對它們做裁決。
+  // （`ratingSummaries` 是同一個毛病，2026-09-24 一起修。）
+  late List<ReportCase> reports = demo ? buildReports() : [];
+  late List<AppealCase> appeals = demo ? buildAppeals() : [];
+  late List<InstructorCase> instructorCases =
+      demo ? buildInstructorCases() : [];
   // ===========================================================================
   // 自訂訓練 Aggregate —— 使用者端的管理頁與管理員端的待審佇列讀同一份
   // ===========================================================================
@@ -6916,7 +10195,9 @@ class AppState extends ChangeNotifier {
           !planQuotaLocked(p);
     }
     // 他人的：須開了對關注者可見，且我確實關注了作者。
-    return p.visibleToFollowers && following.contains(p.author);
+    // `CustomPlan` 身上沒有 `authorUid`，只能由暱稱反查 —— 這是退路，
+    // 作者改名之後就查不到了（暱稱重構階段四的範圍）。
+    return p.visibleToFollowers && isFollowing(p.author);
   }
 
   /// 刪除為釋放名額的唯一手段；已刪除為終止狀態，不再出現。
@@ -7025,10 +10306,42 @@ class AppState extends ChangeNotifier {
   bool planQuotaLocked(CustomPlan p) => quotaLockedPlanIds.contains(p.id);
 
 
-  late List<PublicPlanCase> publicPlanCases = buildPublicPlanCases();
-  late List<AdminProduct> adminProducts = buildAdminProducts();
-  late List<AdminOrder> adminOrders = buildAdminOrders();
-  late List<RatingSummary> ratingSummaries = buildRatingSummaries();
+  late List<PublicPlanCase> publicPlanCases =
+      demo ? buildPublicPlanCases() : [];
+  late List<AdminProduct> adminProducts = demo ? buildAdminProducts() : [];
+  late List<AdminOrder> adminOrders = demo ? buildAdminOrders() : [];
+  /// 管理員評分彙總（`04_ReadModel清單.md`）。
+  ///
+  /// **`demo ? ... : []`** —— 與 `posts`／`socialUsers`／`instructors` 同一個
+  /// 開關。在此之前這裡沒有開關，於是**真實的管理員會看到一張編出來的
+  /// 評分表**：幾份訓練計畫、各自的平均星等與則數，全都是假的。
+  ///
+  /// 而這張表的用途正是回答「哪一份訓練計畫該改」。給錯的數字比給空白
+  /// 更糟（守則第 5 條）—— 空白會被看見，錯的不會。
+  ///
+  /// **真實資料還沒接上**：使用者的評分存在 `users/{uid}` 的存檔裡，
+  /// 而那棵樹依 `firestore.rules` 只有本人讀得到。要讓管理員看得到，
+  /// 評分必須獨立成自己的 collection（規格本來就說它是獨立 Aggregate，
+  /// 理由正是「管理員評分彙總需要逐筆下鑽查詢」）。見 `[BE-18]`。
+  late final List<RatingSummary> _demoRatingSummaries =
+      demo ? buildRatingSummaries() : [];
+
+  /// 〈Read Model：管理員評分彙總〉。
+  ///
+  /// **讀到雲端資料就用雲端的**（`[BE-18]`）。在此之前這裡只有示範資料，
+  /// 真的管理員永遠看到一張空表 —— 而評分收集了卻沒有用途。
+  List<RatingSummary> get ratingSummaries => adminRatings.isEmpty
+      ? _demoRatingSummaries
+      : summarizeRatings(adminRatings, ratingTargetLabel);
+
+  /// 評分對象翻成看得懂的名字。查不到就退回 ID —— 課表被下架之後
+  /// 它的評分還在，那時候寫 ID 比寫「未知」有用（管理員查得回去）。
+  String ratingTargetLabel(RatingTarget target, String targetId) {
+    if (target == RatingTarget.noviceTask) return '新手任務';
+    return planSpecById[targetId]?.name ??
+        platformPlans.where((p) => p.id == targetId).firstOrNull?.name ??
+        targetId;
+  }
 
   void toggleAdminMode() {
     adminMode = !adminMode;
@@ -7268,8 +10581,33 @@ class AppState extends ChangeNotifier {
       unlockCoins: unlockCoins,
       memberUnlockable: p.memberUnlockable,
     );
+    // **規格也要改。** `applyPlatformData` 會用 `planSpecById` 重建整份
+    // `platformPlans`（見該函式），只改上面那一份的話，下一次載入雲端資料
+    // 就把這次的設定洗掉了 —— 而那看起來會像「雲端沒寫進去」。
+    // 七份示範用假課表（`kPlans`）沒有對應的規格，那是正常的，跳過即可。
+    if (planSpecById[p.id] case final spec?) {
+      planSpecById[p.id] = spec.withConfig(
+          requiredRank: requiredRank, unlockCoins: unlockCoins);
+    }
     notifyListeners();
     return null;
+  }
+
+  /// 一份平台課表的規格。
+  ///
+  /// **`[BE-12b]`：這是第五個、也是最後一個補上寫回路徑的平台集合。**
+  /// 它比另外四個晚，因為後台改的 `unlockCoins` 原本不在
+  /// [PlatformPlanSpec] 上，寫回去會被靜靜丟掉。
+  ///
+  /// 示範用假課表（`kPlans`）沒有規格，也不該有 —— 它們不在雲端。
+  /// 回一句話而不是默默成功：後台看得到那七份，改了卻不會上雲，
+  /// 不講的話就是又一次「改了以為有效」。
+  Future<String?> pushPlanSpec(String planId) {
+    final spec = planSpecById[planId];
+    if (spec == null) {
+      return Future.value('這是示範用的課表，不在雲端 —— 改動只留在本機。');
+    }
+    return pushPlatform('plans', planId, planSpecToMap(spec));
   }
 
   /// 平台動作庫與平台訓練計畫的當前內容。
@@ -7281,7 +10619,13 @@ class AppState extends ChangeNotifier {
   /// 那 27 份真的、有學理依據的課表。兩份並存 ——
   /// 假課表撐著 AI 優化、會員鎖定、自訂課表那幾條流程的示範，
   /// 真課表是使用者真的會照著練的內容。
-  late List<WorkoutPlan> platformPlans = [...kPlans, ...buildCsvPlans()];
+  /// 順序：平台課表（四份官方 ＋ 27 份 CSV）→ 示範課表 → 空白課表。
+  /// 空白課表**固定在最後** —— 它是入口不是內容，排在前面會擋住真的課表。
+  late List<WorkoutPlan> platformPlans = [
+    ...buildCsvPlans(),
+    if (demo) ...kDemoPlans,
+    ...kPlans,
+  ];
 
   /// 課表 ID → 詳情頁的說明性內容。由平台資料維護，故為狀態而非常數。
   late Map<String, PlatformPlanSpec> planSpecById = kPlanSpecById;
@@ -7300,10 +10644,102 @@ class AppState extends ChangeNotifier {
   /// 平台設定。來源可能是打包在本地的後備，也可能是 Firestore 上管理員維護的
   /// 即時內容 —— [AppState] 不需要知道是哪個。平台設定沿用管理員編輯路徑
   /// （[applySettings]）的 `isInt` 取整慣例。
+  /// 雲端的平台資料。**空值代表不同步** —— 既有測試與示範走這條。
+  ///
+  /// 在此之前這個來源只有 `AuthGate` 握著（讀完就丟），所以「管理員改了
+  /// 什麼」寫不回去。使用者 2026-09-28 測 P123 當場撞到。
+  PlatformDataSource? platformSource;
+
+  /// 把管理端改過的一筆寫回雲端。**回傳失敗的說明；null 表示成功。**
+  ///
+  /// **不即發即忘。** 關注、貼文那些可以晚一點一致，因為使用者當下看得到
+  /// 自己按了什麼；後台不一樣 —— 管理員改完就走了，而下次登入會從雲端
+  /// 重新載入，寫不上去的設定會**靜靜地**打回原形。那正是 P123 的症狀。
+  ///
+  /// 沒接雲端（測試、示範）時回 null —— 記憶體已經改好了，那就是全部。
+  Future<String?> pushPlatform(
+      String collection, String docId, Map<String, dynamic> data) async {
+    final src = platformSource;
+    if (src == null) return null;
+    if (_notReallyAdmin case final why?) return why;
+    try {
+      await src.put(collection, docId, data).timeout(_cloudWriteTimeout);
+      return null;
+    } catch (e) {
+      return '已改在本機，但沒有寫上雲（$e）。重新整理後會打回原形。';
+    }
+  }
+
+  /// 雲端寫入等多久才放棄。
+  ///
+  /// **不能無限等。** Firestore 的用戶端會把寫入排進本地佇列，
+  /// 被安全規則擋下時那個 Future 可能一直不完成 —— 畫面於是卡在
+  /// 「等雲端回覆」，連失敗訊息都吐不出來，看起來就像什麼都沒發生。
+  static const _cloudWriteTimeout = Duration(seconds: 8);
+
+  /// 「看起來是管理員，但雲端不認」的那句話；null 表示沒這個問題。
+  ///
+  /// `adminMode` 是開發者模式長按三秒就開得了的旗標，而
+  /// `firestore.rules` 的 `isAdmin()` 看的是帳號上的 custom claim。
+  /// 兩者不一致時後台每一頁都點得下去、每一個寫入都被擋下。
+  ///
+  /// **這個陷阱踩過兩次**（2026-09-28 審檢舉、2026-09-29 改成就門檻），
+  /// 兩次都查了很久才發現 —— 所以現在由程式自己講出來。
+  /// 這個帳號寫不寫得上雲 —— 寫不上就回一句話。
+  ///
+  /// **判準只有 `adminClaim` 一個。** 原本還 and 了 `adminMode`，
+  /// 而那個旗標全 App 沒有任何地方切換它（`toggleAdminMode()` 零個
+  /// 呼叫端），且 `applyAdminClaim(false)` 會把它強制設回 false ——
+  /// 兩個條件湊不齊，這整段判斷是死的。測試綠是因為它們直接
+  /// `..adminMode = true`，也就是從一個 App 不會進入的狀態出發。
+  String? get _notReallyAdmin => adminClaim
+      ? null
+      : '這個帳號沒有管理員標記，改的東西只會留在本機 —— 雲端會擋下。';
+
+  Future<String?> _dropPlatform(String collection, String docId) async {
+    final src = platformSource;
+    if (src == null) return null;
+    if (_notReallyAdmin case final why?) return why;
+    try {
+      await src.remove(collection, docId).timeout(_cloudWriteTimeout);
+      return null;
+    } catch (e) {
+      return '已在本機移除，但沒有寫上雲（$e）。重新整理後會回來。';
+    }
+  }
+
+  /// 一組平台參數的當前值，寫成雲端那一份的形狀。
+  Future<String?> pushConfigGroup(String groupId) {
+    final g = platformConfig.group(groupId);
+    return pushPlatform('platform_config', groupId, {'params': g.values});
+  }
+
+  /// 一枚成就定義。
+  Future<String?> pushAchievement(Achievement a) =>
+      pushPlatform('achievement_defs', achievementDocId(a), achievementToMap(a));
+
+  /// 一個平台動作。
+  Future<String?> pushExercise(Exercise e) =>
+      pushPlatform('exercises', e.id, exerciseToMap(e));
+
+  /// 一筆每日任務池項目。
+  Future<String?> pushTaskPoolItem(TaskPoolItem t) =>
+      pushPlatform('daily_task_pool', t.id, taskPoolItemToMap(t));
+
+  Future<String?> dropTaskPoolItem(TaskPoolItem t) =>
+      _dropPlatform('daily_task_pool', t.id);
+
   void applyPlatformData(PlatformData d) {
     platformExercises = List.of(d.exercises);
     planSpecById = {for (final s in d.planSpecs) s.id: s};
-    platformPlans = [...kPlans, ...buildCsvPlansFrom(d.planSpecs, d.exercises)];
+    platformPlans = [
+      ...buildCsvPlansFrom(d.planSpecs, d.exercises),
+      if (demo) ...kDemoPlans,
+      ...kPlans,
+    ];
+    // **整份重建會把優化建議的記號洗掉。** 它是使用者的資料，
+    // 不屬於這份目錄 —— 重建完貼回去。
+    applyOptimizationMark();
     // 這兩份之後會被改（成就解鎖、管理員增刪任務），必須是可變 list。
     achievements = List.of(d.achievements);
     taskPool = List.of(d.taskPool);
@@ -7516,7 +10952,7 @@ class AppState extends ChangeNotifier {
 
   // --- 管理員本身的維護（3 個 Command，權限組為平台設定）---
 
-  late List<Admin> admins = buildAdmins();
+  late List<Admin> admins = demo ? buildAdmins() : [];
 
   /// 內容審核組的**另一位**管理員。
   ///
@@ -7619,13 +11055,137 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// 把一筆申請案送上雲。**即發即忘** —— 送出測驗這個動作不該被
+  /// 一次網路失敗擋住，申請人重考要等 14 天。失敗留在
+  /// [instructorCaseError]，畫面說得出來。
+  void _pushInstructorCase(InstructorCase c) {
+    final src = instructorCaseSource;
+    final uid = c.applicantUid;
+    if (src == null || uid == null) return;
+    src
+        .file(CloudInstructorCase(
+          applicantUid: uid,
+          applicant: c.applicant,
+          aiScores: c.aiScores,
+          weighted: c.weighted,
+          concerns: c.concerns,
+          answers: c.answers,
+          at: c.enteredAt,
+        ))
+        .then((_) => instructorCaseError = null)
+        .catchError((Object e) {
+      instructorCaseError = '$e';
+      notifyListeners();
+    });
+  }
+
+  /// 申請案沒送上去時的原因。**空值＝沒問題。**
+  ///
+  /// 不留這一欄的話，失敗就完全無聲：申請人以為送出了，
+  /// 管理員的佇列裡沒有他，而兩邊都不會知道。
+  String? instructorCaseError;
+
+  /// 把**我自己那一筆**申請的裁決讀回來。
+  ///
+  /// 這一支與 [loadInstructorQueue] 的差別是「誰叫得動」：
+  /// 佇列只有管理員讀得到，而這一支**每個人都要跑** ——
+  /// 它回答的是「我的申請怎麼了」。
+  ///
+  /// ## 為什麼非有不可
+  ///
+  /// `instructorStage` **不進存檔**（`app_state_snapshot.dart` 零筆引用），
+  /// 而裁決只寫在雲端那份文件上。在此之前兩者之間沒有任何橋 ——
+  /// 管理員按了「通過」，申請人重新整理之後看到的是「你還沒申請」。
+  /// 使用者 2026-09-29 實測撞到。
+  ///
+  /// **不進存檔是刻意的**（雲端是唯一事實，不寫第二份會漂移的副本，
+  /// 同師徒關係的取捨），但那個取捨要成立，就必須有人去讀雲端。
+  Future<void> loadMyInstructorVerdict() async {
+    final src = instructorCaseSource;
+    if (src == null) return;
+    try {
+      final v = await src.mine();
+      if (v == null) return; // 沒申請過，維持現狀
+      switch (v) {
+        case InstructorVerdict.passed:
+          instructorStage = InstructorStage.approved;
+          instructorRejectStage = null;
+          _becomeInstructor();
+          // **每次登入都重發一次，不只在成為教官的那一刻。**
+          //
+          // `_becomeInstructor()` 開頭是 `if (isInstructor) return;` ——
+          // 已經是教官的人不會再跑到裡面那句發布。於是一個在「發布」
+          // 這件事修好之前就當上教官的人，公開檔案會永遠停在
+          // `isInstructor: false`，而別人的拜師頁上永遠沒有他。
+          //
+          // 這一行讓它自我修復：下次登入就補上。即發即忘、吞掉錯誤，
+          // 多發一次的成本是一次寫入。
+          publishMyProfile();
+        case InstructorVerdict.rejected:
+          instructorStage = InstructorStage.rejected;
+          instructorRejectStage = '管理員審核';
+        case InstructorVerdict.pending:
+          // 還沒判。**要把階段補回來** —— 不補的話畫面會說「你還沒申請」，
+          // 而他其實在等。
+          instructorStage = InstructorStage.pendingReview;
+      }
+      notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀，不要把「不知道」畫成「沒申請」。
+    }
+  }
+
+  /// 把雲端的教官申請佇列讀進來。**只有管理員叫得動。**
+  Future<void> loadInstructorQueue() async {
+    final src = instructorCaseSource;
+    if (src == null || !isPlatformAdmin || !canReview) return;
+    try {
+      applyCloudInstructorCases(await src.queue(limit: 100));
+    } catch (_) {
+      // 讀不到就維持現狀。**不清空** —— 空佇列與讀取失敗長得一模一樣，
+      // 而後者不該被畫成「沒有待審案件」。
+    }
+  }
+
+  /// 把雲端的申請案併進本機佇列。
+  ///
+  /// **以 uid 對齊。** 同一個人只會有一筆（文件 ID 就是 uid），
+  /// 所以雲端那一份直接取代同 uid 的本機那一份 —— 包括我自己剛送出的
+  /// 那一筆，那樣管理員看到的與申請人送出的是同一份內容。
+  void applyCloudInstructorCases(List<CloudInstructorCase> cloud) {
+    for (final c in cloud) {
+      final i =
+          instructorCases.indexWhere((x) => x.applicantUid == c.applicantUid);
+      final built = InstructorCase(
+        id: 'IC-${c.applicantUid}',
+        applicant: c.applicant,
+        applicantUid: c.applicantUid,
+        aiScores: c.aiScores,
+        weighted: c.weighted,
+        concerns: c.concerns,
+        answers: c.answers,
+        enteredAt: c.at,
+      );
+      if (i >= 0) {
+        instructorCases[i] = built;
+      } else {
+        instructorCases.insert(0, built);
+      }
+    }
+    notifyListeners();
+  }
+
   void decideInstructor(InstructorCase c, bool pass) {
     if (!canReview) return;
     if (c.state == CaseState.upheld || c.state == CaseState.dismissed) return;
     c.state = pass ? CaseState.upheld : CaseState.dismissed;
     // 判定的若是我的申請，我這一側的狀態也要跟著走完 ——
     // 先前這裡只改案件狀態，申請人永遠停在「待人工審核」。
-    if (c.applicant == displayName &&
+    // **以 uid 判定，不比暱稱**（暱稱重構階段二）。
+    // 撞名或改過名的話，原本會把教官資格發給錯的人 ——
+    // 而管理員自己審自己那條路（今天實測走過）更容易踩到：
+    // 兩邊的 `displayName` 本來就一樣。
+    if (_isMe(c.applicant, c.applicantUid) &&
         instructorStage == InstructorStage.pendingReview) {
       if (pass) {
         instructorStage = InstructorStage.approved;
@@ -7635,6 +11195,16 @@ class AppState extends ChangeNotifier {
         instructorStage = InstructorStage.rejected;
         instructorRejectStage = '管理員審核';
       }
+    }
+    // 裁決也要寫回雲端 —— 否則這筆案件會永遠留在別人的待審佇列裡，
+    // 而下一位管理員會重審一次已經判過的案子。
+    if (c.applicantUid case final uid?) {
+      instructorCaseSource
+          ?.decide(uid, passed: pass, handlerName: admin.name)
+          .catchError((Object e) {
+        instructorCaseError = '$e';
+        notifyListeners();
+      });
     }
     notifyListeners();
   }
@@ -7827,12 +11397,63 @@ class AppState extends ChangeNotifier {
 
   /// 註冊填入的 3 級器材。持有器材明細為空值時的比對基準。
   String equipmentTier = '健身房（全器材）';
+
+  /// 動機類健身目標（選填，最多 1 項）。值域見 [kMotiveGoals]。
+  ///
+  /// **註冊問卷問了，但在此之前沒有任何地方存它** —— 與生日同一個毛病。
+  /// `completeSignUp` 把草稿的其他欄位一項項落地，就是漏了這一個。
+  ///
+  /// 空值代表沒填 —— 它本來就是選填的。
+  ///
+  /// **不參與訓練計畫推薦**：規格明訂比對維度為器材、經驗、常見目標三項，
+  /// 「動機類與課表內容無對應關係，參與比對只會製造雜訊」（〈註冊流程〉）。
+  String? motiveGoal;
+
+  /// 生日。
+  ///
+  /// **註冊問卷問了，但在此之前沒有任何地方存它。** 設定頁那一列寫的是
+  /// 一個寫死的日期 `1996 / 03 / 12` —— 每一位使用者看到的都是它。
+  /// 使用者回報「生日也是假資料，不是我當初註冊填的」。
+  ///
+  /// 空值代表沒有 —— 示範身分沒有生日，就顯示「未填寫」。
+  /// 不預設一個日期：一個假的生日比沒有生日糟，因為它看起來是真的。
+  DateTime? birthday;
   /// 是否已完成註冊。
   ///
   /// 預設 true 是**示範用身分**的一部分：直接 `AppState()` 建出來的是
   /// 那位假使用者，已經註冊過。真正的第一次啟動由 [hydrate] 判定 ——
   /// 讀不到存檔就把它設為 false，走完整的註冊流程。
   bool signUpCompleted = true;
+
+  /// 已同意的條款版本（〈02_Aggregate定義〉的「已同意條款版本」欄位）。
+  ///
+  /// **預設為現行版本，是示範用身分的一部分** —— 與 [signUpCompleted]
+  /// 同一個道理：直接 `AppState()` 建出來的那位假使用者已經同意過了。
+  /// 真實使用者的值由存檔決定，讀不到就是空值（見 [termsReconsentNeeded]）。
+  String? agreedTermsVersion = kTermsVersion;
+
+  /// 下次登入要不要請他重新同意條款。
+  ///
+  /// 規格：「條款改版後，既有使用者於下次登入時須重新同意」
+  /// （〈註冊流程〉、〈02_Aggregate定義〉）。
+  ///
+  /// **空值代表沒同意過，也要重新同意。** 這個欄位是 2026-09-24 才加的，
+  /// 在那之前的存檔一律查無版本 —— 而他們實際同意的是 v3.2（v4.0 是
+  /// 2026-09-18 改的），本來就該重看。反過來把查無版本當成「已同意現行版」，
+  /// 等於替他們按了同意鍵。
+  ///
+  /// **還沒註冊完的人不算** —— 他們本來就會在註冊流程裡遇到條款頁，
+  /// 在這裡再擋一次會變成兩道。
+  bool get termsReconsentNeeded =>
+      signUpCompleted && agreedTermsVersion != kTermsVersion;
+
+  /// 使用者已同意服務條款（含條款改版後的重新同意）。
+  ///
+  /// 〈01_Command清單〉的「同意服務條款」。註冊流程走完時也會經過這裡。
+  void agreeTerms() {
+    agreedTermsVersion = kTermsVersion;
+    notifyListeners();
+  }
 
   /// 10 項全數填畢方可完成註冊；獎勵為金幣 100 ＋ 補簽券 ×1，無經驗值。
   /// 使用者帳號已建立的 Postcondition —— 把帳號層級的計數器一次歸位。
@@ -7893,6 +11514,11 @@ class AppState extends ChangeNotifier {
     _trainNoticeStage = DecayStage.normal;
     _checkInNoticeStage = CheckInStage.normal;
 
+    // 引導收尾：偏好時段與體驗評分屬於「這個人的回答」，不是平台資料。
+    // 新帳號還沒被問過。
+    preferredTimes = PreferredTimes.empty();
+    experienceRatings.clear();
+
     // 回歸任務：新帳號沒有任何紀錄。
     returnTaskAssigned = false;
     returnTaskDone = false;
@@ -7918,6 +11544,10 @@ class AppState extends ChangeNotifier {
     checkInRecords.clear();
     followers.clear();
     following.clear();
+    _followNames.clear();
+    // 新帳號沒有改過名，也沒有曾用名。
+    lastRenamedAt = null;
+    formerNames.clear();
     blockedUsers.clear();
     sentApplications.clear();
     // 加入／退出的時戳也要清 —— 新帳號沒有換隊冷卻，也沒有誤入窗口。
@@ -8027,6 +11657,11 @@ class AppState extends ChangeNotifier {
     signUpCompleted = true;
     // 使用者帳號已建立 —— 兩個 Aggregate 一併產生，計時自註冊日起算。
     resetToNewAccount();
+    // 註冊流程裡已經按過同意 —— 記下版本，否則他下一次登入又被要求一次。
+    // **排在 resetToNewAccount() 之後**，理由同下面那條暱稱：
+    // 那一步歸零的是進度不是身分，但順序顛倒的話，日後有人往那裡加一行
+    // 「條款版本歸位」，新註冊的人一進 App 就會再被要求同意一次。
+    agreedTermsVersion = kTermsVersion;
     coins += kSignUpCoins;
     grantMakeupTickets(kSignUpMakeupTickets);
     // 暱稱。**要排在 resetToNewAccount() 之後** —— 那一步不碰 displayName
@@ -8037,6 +11672,10 @@ class AppState extends ChangeNotifier {
     if (signUpDraft.weightKg != null) bodyweightKg = signUpDraft.weightKg!;
     if (signUpDraft.heightCm != null) heightCm = signUpDraft.heightCm!;
     if (signUpDraft.gender != null) isMale = signUpDraft.gender == '男';
+    // 生日在此之前是問了就丟 —— 註冊問卷第 4 題收了，沒有任何地方存。
+    if (signUpDraft.birthday != null) birthday = signUpDraft.birthday;
+    // 動機類目標同上。選填，所以沒填就是沒填，不給預設值。
+    if (signUpDraft.motiveGoal != null) motiveGoal = signUpDraft.motiveGoal;
     // 草稿落地為使用者屬性；其後由〈簽到畫面的週期更新〉維護。
     if (signUpDraft.daysPerWeek != null) daysPerWeek = signUpDraft.daysPerWeek!;
     if (signUpDraft.duration != null) duration = signUpDraft.duration!;
@@ -8129,12 +11768,27 @@ class AppState extends ChangeNotifier {
   /// 體重的顯示值與單位。
   (String, String) weightDisplay(double kg) => metricUnits
       ? (kg.toStringAsFixed(1), 'kg')
-      : ((kg * 2.20462).toStringAsFixed(1), 'lb');
+      : ((kg * kLbPerKg).toStringAsFixed(1), 'lb');
 
   /// 身高的顯示值與單位。
   (String, String) heightDisplay(double cm) => metricUnits
       ? (cm.round().toString(), 'cm')
-      : ((cm / 2.54).toStringAsFixed(1), 'in');
+      : ((cm / kCmPerInch).toStringAsFixed(1), 'in');
+
+  /// 換算係數。**存的一律是公制**，英制只是顯示 ——
+  /// 所以進出兩個方向都得經過同一組係數，不可以在畫面那邊各乘一次。
+  static const kLbPerKg = 2.20462;
+  static const kCmPerInch = 2.54;
+
+  /// 公制 → 顯示單位。[height] 為真時是身高（cm／in），否則體重（kg／lb）。
+  double toDisplayUnit(double metric, bool height) => metricUnits
+      ? metric
+      : (height ? metric / kCmPerInch : metric * kLbPerKg);
+
+  /// 顯示單位 → 公制。[toDisplayUnit] 的反向。
+  double toMetric(double shown, bool height) => metricUnits
+      ? shown
+      : (height ? shown * kCmPerInch : shown / kLbPerKg);
 
   /// 訓練重量的顯示值與單位。0 為徒手，不帶單位。
   (String, String) loadDisplay(double kg) {
@@ -8241,8 +11895,17 @@ class AppState extends ChangeNotifier {
 
 /// 極簡的狀態注入，不引入任何外部套件。
 class AppScope extends InheritedNotifier<AppState> {
-  const AppScope({super.key, required AppState state, required super.child})
-      : super(notifier: state);
+  /// **順手裝上 [PhotoScope]。**
+  ///
+  /// 上傳的照片畫在 `AppImageView` 裡，而那是設計層 —— 它只拿得到一個
+  /// ID，位元組得有人餵。裝在這裡的理由是「有 AppScope 的地方就有
+  /// AppState」，於是每一個既有畫面與既有測試都自動拿得到，
+  /// 不必每一處各包一層。
+  AppScope({super.key, required AppState state, required Widget child})
+      : super(
+          notifier: state,
+          child: PhotoScope(load: state.photoBytes, child: child),
+        );
 
   static AppState of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppScope>()!.notifier!;

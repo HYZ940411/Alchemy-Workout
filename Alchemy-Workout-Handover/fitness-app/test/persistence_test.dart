@@ -10,6 +10,7 @@ import 'store_contract.dart';
 import 'package:fitness_app/domain/ability.dart';
 import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/domain/models.dart';
+import 'package:fitness_app/domain/novice_wrapup.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/main.dart';
@@ -135,8 +136,14 @@ void main() {
       expect(a.unlocked, isTrue);
 
       // 手動把存檔裡的進度改低，模擬「解鎖過但當前值對不上」。
+      //
+      // **訓練歷史要一起清掉。** 2026-09-28 起 `repairLoadedState()` 會
+      // 由歷史補回累積訓練天數（歷史裡有幾天就至少是幾天，單調遞增）——
+      // 留著歷史卻把天數改成 0，那份存檔是自相矛盾的，會當場被修回去。
+      // 這一條要驗的是「解鎖不可撤銷」，不是「壞資料讀得回來」。
       final snap = s.toSnapshot();
       snap['totalWorkoutDays'] = 0;
+      snap['history'] = const [];
 
       final back = AppState();
       expect(back.applySnapshot(snap), isTrue);
@@ -155,6 +162,7 @@ void main() {
       s.startWorkout(plan);
       s.session!.records[0][0].weight = 57.5;
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       s.finishWorkout(EndKind.endedEarly);
 
       final back = await _roundTrip(s, store);
@@ -216,6 +224,7 @@ void main() {
       final s = await _connected(store);
       s.startWorkout(s.platformPlans.first);
       s.completeCurrentSet();
+      s.backdateSession(const Duration(minutes: 10));
       final first = s.finishWorkout(EndKind.completed);
       expect(first.rewards.coins, greaterThan(0));
 
@@ -223,6 +232,7 @@ void main() {
       final coins = back.coins;
       back.startWorkout(back.platformPlans.first);
       back.completeCurrentSet();
+      back.backdateSession(const Duration(minutes: 10));
       final second = back.finishWorkout(EndKind.completed);
       expect(second.rewards.coins, 0, reason: '重開 App 不是新的一天');
       expect(back.coins, coins);
@@ -524,6 +534,198 @@ void _bootGate() {
       await t.pumpAndSettle();
       expect(find.text('讀不到你的進度'), findsNothing);
       expect(t.takeException(), isNull);
+    });
+  });
+
+  _noviceWrapUp();
+}
+
+/// 新手任務收尾的兩步：偏好訓練時段與體驗評分（2026-09-24）。
+///
+/// 使用者回報「新手任務的訓練時段跟評分都沒有上雲」。查證後兩個都沒進存檔 ——
+/// `app_state_snapshot.dart` 對 `preferredTimes` 與 `experienceRatings`
+/// **零筆引用**。也就是問了使用者，然後在下一次重新整理時把答案丟掉。
+///
+/// 旁邊的 `noviceStarted`／`noviceSelected`／`noviceChecked`／`noviceFinished`
+/// ／`noviceRewardClaimed` **全都有存**，只有收尾這兩步漏掉 ——
+/// 那一段是後來才加的。
+///
+/// 後果不只是「要重填」：
+///   · 偏好時段沒了 → 訓練提醒沒有來源，`reminderSource` 會說「尚未填寫」，
+///     而使用者明明填過
+///   · 評分沒了 → 那一頁又會回頭問一次，看起來像沒收到
+void _noviceWrapUp() {
+  group('新手任務收尾要存得住', () {
+    test('偏好訓練時段', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.setPreferredTimes(PreferredTimes([
+        [const TimeRange(6 * 60, 8 * 60)], // 週一早上
+        [],
+        [const TimeRange(19 * 60, 21 * 60)], // 週三晚上
+        [], [], [], [],
+      ]));
+
+      final back = await _roundTrip(s, store);
+
+      expect(back.preferredTimes.isEmpty, isFalse, reason: '整份被丟掉了');
+      expect(back.preferredTimes.filledDays, 2);
+      expect(back.preferredTimes.byDay[0].single.startMin, 6 * 60);
+      expect(back.preferredTimes.byDay[0].single.endMin, 8 * 60);
+      expect(back.preferredTimes.byDay[2].single.startMin, 19 * 60);
+    });
+
+    test('偏好時段沒填也存得住空的 —— 跳過是一個答案', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.setPreferredTimes(PreferredTimes.empty());
+
+      final back = await _roundTrip(s, store);
+      expect(back.preferredTimes.byDay, hasLength(7));
+      expect(back.preferredTimes.isEmpty, isTrue);
+    });
+
+    test('存回來的時段仍然是提醒的來源', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.setPreferredTimes(PreferredTimes([
+        [const TimeRange(6 * 60, 8 * 60)], [], [], [], [], [], [],
+      ]));
+
+      final back = await _roundTrip(s, store);
+
+      // 這是使用者實際看得到的那句話。存不住的話它會說
+      // 「尚未填寫偏好時段，目前不發送訓練提醒」—— 而他明明填過。
+      //
+      // 不直接斷言「依你填的偏好時段」：示範身分最近 4 週的訓練筆數
+      // 已過門檻，會走「依訓練時戳推算」那一支。那不是壞掉，是優先序
+      // —— 這裡要釘的是**不會退回「沒有來源」**。
+      expect(back.reminderSource, isNot(contains('尚未填寫')));
+      expect(back.reminderAvailable, isTrue);
+    });
+
+    test('沒有訓練紀錄時，存回來的時段就是唯一來源', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.history.clear(); // 剛註冊的人
+      s.setPreferredTimes(PreferredTimes([
+        [const TimeRange(6 * 60, 8 * 60)], [], [], [], [], [], [],
+      ]));
+
+      final back = await _roundTrip(s, store);
+
+      expect(back.reminderSource, contains('依你填的偏好時段'));
+      expect(back.reminderSource, contains('1 天'));
+    });
+
+    test('訓練體驗評分', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.rateExperience(RatingTarget.noviceTask, kNoviceTaskId, 4,
+          feedback: '動作說明很清楚');
+
+      final back = await _roundTrip(s, store);
+
+      final r = back.noviceRating;
+      expect(r, isNotNull, reason: '存不住的話那一頁會再問一次');
+      expect(r!.stars, 4);
+      expect(r.feedback, '動作說明很清楚');
+      expect(r.rater, s.displayName);
+      expect(r.target, RatingTarget.noviceTask);
+      expect(r.targetId, kNoviceTaskId);
+    });
+
+    test('沒寫回饋也存得住 —— 回饋是選填', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.rateExperience(RatingTarget.noviceTask, kNoviceTaskId, 5);
+
+      final back = await _roundTrip(s, store);
+      expect(back.noviceRating?.stars, 5);
+      expect(back.noviceRating?.feedback, isNull);
+    });
+
+    test('改過的評分存的是改後的 —— 每人每對象終身一筆但可修改', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.rateExperience(RatingTarget.noviceTask, kNoviceTaskId, 1);
+      s.rateExperience(RatingTarget.noviceTask, kNoviceTaskId, 5,
+          feedback: '改觀了');
+
+      final back = await _roundTrip(s, store);
+      expect(back.experienceRatings, hasLength(1), reason: '不該變成兩筆');
+      expect(back.noviceRating?.stars, 5);
+      expect(back.noviceRating?.feedback, '改觀了');
+    });
+
+    // `AuthGate` 換帳號時是對**同一個 AppState** 呼叫 `hydrate()`
+    // （`widget.state.hydrate(...)`），不是重新 new 一個。所以讀回來要
+    // 覆蓋，不是疊加 —— 疊加的話上一個帳號的答案會跟著進來。
+    test('讀回來是覆蓋不是疊加 —— 換帳號時上一個人的評分不能留著', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.rateExperience(RatingTarget.noviceTask, kNoviceTaskId, 5);
+      await s.saveNow();
+
+      final back = AppState()
+        // 上一個帳號留下的
+        ..rateExperience(RatingTarget.noviceTask, kNoviceTaskId, 1);
+      expect(back.experienceRatings, hasLength(1), reason: '前提：本來有一筆');
+
+      await back.hydrate(store);
+
+      expect(back.experienceRatings, hasLength(1), reason: '不該變成兩筆');
+      expect(back.noviceRating?.stars, 5);
+    });
+
+    test('讀回來的時段覆蓋掉記憶體裡的', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.setPreferredTimes(PreferredTimes([
+        [const TimeRange(6 * 60, 8 * 60)], [], [], [], [], [], [],
+      ]));
+      await s.saveNow();
+
+      final back = AppState()
+        ..setPreferredTimes(PreferredTimes([
+          [], [], [], [], [], [], [const TimeRange(22 * 60, 23 * 60)],
+        ]));
+
+      await back.hydrate(store);
+
+      expect(back.preferredTimes.byDay[6], isEmpty, reason: '舊的那筆要被蓋掉');
+      expect(back.preferredTimes.byDay[0].single.startMin, 6 * 60);
+    });
+
+    test('歸零時真的清掉 —— 新帳號還沒被問過', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      s.setPreferredTimes(PreferredTimes([
+        [const TimeRange(6 * 60, 8 * 60)], [], [], [], [], [], [],
+      ]));
+      s.rateExperience(RatingTarget.noviceTask, kNoviceTaskId, 5);
+
+      s.resetToNewAccount();
+
+      // `reset_completeness_test` 驗的是存檔欄位的**形狀**是空的，
+      // 而 `preferredTimes` 空的樣子是七個空清單 —— 那條驗不到內容。
+      expect(s.preferredTimes.isEmpty, isTrue);
+      expect(s.experienceRatings, isEmpty);
+    });
+
+    test('舊存檔沒有這兩個鍵也不會爆 —— 缺鍵維持空的', () async {
+      final store = MemoryStore();
+      final s = await _connected(store);
+      final snap = s.toSnapshot()
+        ..remove('preferredTimes')
+        ..remove('experienceRatings');
+      await store.save(snap);
+
+      final back = AppState();
+      await back.hydrate(store);
+
+      expect(back.preferredTimes.isEmpty, isTrue);
+      expect(back.experienceRatings, isEmpty);
     });
   });
 }

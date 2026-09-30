@@ -9,6 +9,7 @@ import '../../theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/radar_chart.dart';
 import '../social/chat_screen.dart';
+import '../social/post_card.dart';
 import '../social/social_lock.dart';
 
 /// Read Model：使用者個人檔案頁
@@ -27,31 +28,68 @@ import '../social/social_lock.dart';
 /// 六維點數、動態牆上的前兩則貼文。於是每個人的檔案頁長得一模一樣，
 /// 而且顯示的是看的人自己。與 `[QA-02f]`／`[QA-02i]` 同一種病：
 /// 每一塊各自是對的，接縫是斷的。
-void openProfile(BuildContext context, String name) {
+/// [uid] 是呼叫端手上那個人的雲端身分，**拿得到就一定要傳**。
+///
+/// 暱稱可以改 —— 只給名字的話，對方改名之後這一頁的階級與六維會一起
+/// 掉回預設值。貼文、私訊、名冊上本來就帶著 uid。
+void openProfile(BuildContext context, String name, {String? uid}) {
   final self = AppScope.of(context).displayName;
   Navigator.of(context).push(MaterialPageRoute(
-    builder: (_) => ProfileScreen(viewing: name == self ? null : name),
+    builder: (_) =>
+        ProfileScreen(viewing: name == self ? null : name, viewingUid: uid),
   ));
 }
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   final String? viewing; // null 表示看自己
-  const ProfileScreen({super.key, this.viewing});
+
+  /// 被看的人的雲端身分。空值時退回用暱稱反查（見 [openProfile]）。
+  final String? viewingUid;
+  const ProfileScreen({super.key, this.viewing, this.viewingUid});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  String? get viewing => widget.viewing;
+  String? get viewingUid => widget.viewingUid;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // **去數一次他現在有幾個粉絲。**
+    //
+    // 公開檔案上那個數字只有他本人寫得了，所以我關注他不會讓它變動 ——
+    // 直接顯示那個值，等於顯示「他上次登入時的粉絲數」。
+    // 不 await：數回來會 notifyListeners，畫面自己重畫。
+    final s = AppScope.of(context);
+    final name = viewing;
+    if (name != null) {
+      s.ensureFollowerCount(name, viewingUid ?? s.uidOf(name));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     final isSelf = viewing == null;
-    final name = viewing ?? s.displayName;
+    final frozen = viewing ?? s.displayName;
     // **可見度不是由我這邊的開關決定的。** 原本寫 `s.abilityPublic`，
     // 那是「我要不要公開我的」，拿來決定「我看不看得到他的」是反的。
     // 對方公開了什麼，就由我們手上有沒有他那份資料如實反映。
-    final ability = s.abilityOf(name);
-    final grade = s.gradeOf(name);
-    final reputation = s.reputationOf(name);
+    // 拿得到 uid 就用 uid 查 —— 暱稱可以改，uid 不會。
+    final uid = isSelf ? s.myUid : (viewingUid ?? s.uidOf(frozen));
+    // 這個人**現在**的名字。呼叫端手上那份是他當時叫什麼 ——
+    // 從三個月前的貼文點進來的話，那個名字早就過期了。
+    final name = isSelf ? s.displayName : s.nameOf(frozen, uid: uid);
+    final ability = s.abilityOf(name, uid: uid);
+    final grade = s.gradeOf(name, uid: uid);
+    final reputation = s.reputationOf(name, uid: uid);
     final isInstructor =
         isSelf ? s.isInstructor : s.instructors.any((i) => i.name == name);
-    final myPosts = s.postsBy(name);
+    // 帶上 uid —— 與上面那幾個 `abilityOf`／`gradeOf` 同一個理由。
+    final myPosts = s.postsBy(name, uid: uid);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -104,7 +142,7 @@ class ProfileScreen extends StatelessWidget {
                     Expanded(
                       child: StatTile(
                         label: '階級',
-                        value: '${s.rankOf(name)}',
+                        value: '${s.rankOf(name, uid: uid)}',
                         unit: '/ 99',
                       ),
                     ),
@@ -124,7 +162,7 @@ class ProfileScreen extends StatelessWidget {
                         behavior: HitTestBehavior.opaque,
                         child: StatTile(
                           label: '粉絲數',
-                          value: '${s.followersOf(name)}',
+                          value: '${s.followersOf(name, uid: uid)}',
                         ),
                       ),
                     ),
@@ -153,13 +191,13 @@ class ProfileScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: AppButton(
-                    label: s.following.contains(name) ? '已關注' : '關注',
+                    label: s.isFollowing(name, uid: uid) ? '已關注' : '關注',
                     onPressed: () {
                       if (socialLocked(context, '關注')) return;
-                      s.toggleFollow(name);
+                      s.toggleFollow(name, uid: uid);
                     },
                     // 已關注＝取消關注，屬破壞性動作，用次要樣式（§4.5）
-                    kind: s.following.contains(name)
+                    kind: s.isFollowing(name, uid: uid)
                         ? BtnKind.secondary
                         : BtnKind.primary,
                   ),
@@ -216,7 +254,56 @@ class ProfileScreen extends StatelessWidget {
               ],
             ),
           ],
-          const SectionLabel('能力值'),
+          // **自己的檔案照常顯示，但要標出哪些別人看不到。**
+          //
+          // 2026-09-28 使用者裁決 A。在此之前兩個畫面做法不一樣：
+          // 「我的」分頁把「綜合 X」整顆藏起來（註解寫「免得誤以為別人
+          // 看得到」），而這一頁完整顯示卻**沒有任何標示** ——
+          // 同一件事兩種處理，而且都不對。
+          //
+          // 藏起來是錯的方向：那是我自己的檔案，我當然該看得到我自己的
+          // 能力值。**用「資訊消失」來表達「未公開」，使用者只會以為壞了**
+          // —— 使用者找不到那顆標籤就是這樣（他問「我要去哪裡找更多」）。
+          SectionLabel('能力值',
+              trailing: isSelf && !(s.abilityPublic && s.overallGradePublic)
+                  ? '部分未公開'
+                  : null),
+          if (isSelf && !s.abilityPublic) ...[
+            Panel(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.visibility_off_outlined,
+                      size: Sz.iconDense, color: AppColors.textDim),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s.overallGradePublic
+                          ? '六維能力值只有你看得到，別人只看得到綜合能力等級。'
+                          : '能力值只有你看得到，別人檢視你的檔案時不呈現這一區。',
+                      style: T.caption(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ] else if (isSelf && !s.overallGradePublic) ...[
+            Panel(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.visibility_off_outlined,
+                      size: Sz.iconDense, color: AppColors.textDim),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('綜合能力等級只有你看得到。', style: T.caption()),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           if (ability != null)
             // F 圖表型骨架：六邊形實心 ＋ 數值列。
             // 新使用者六維有初始值，故本區塊沒有空狀態。
@@ -269,42 +356,33 @@ class ProfileScreen extends StatelessWidget {
                 style: TextStyle(color: AppColors.textDim, fontSize: 12.5),
               ),
             ),
-          const SectionLabel('公開貼文'),
-          Panel(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Column(
-              children: [
-                // 原本取的是 `s.visiblePosts` —— 那是整個動態牆，
-                // 於是別人的檔案頁列的是不相干的人寫的東西。
-                if (myPosts.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      isSelf ? '你還沒有發過貼文。' : '$name 沒有公開的貼文。',
-                      style: const TextStyle(
-                          color: AppColors.textDim, fontSize: 12.5),
-                    ),
-                  ),
-                for (final p in myPosts.take(2))
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        p.text,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          height: 1.6,
-                          color: AppColors.textDim,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+          // 原本取的是 `s.visiblePosts` —— 那是整個動態牆，
+          // 於是別人的檔案頁列的是不相干的人寫的東西。
+          SectionLabel('公開貼文',
+              trailing: myPosts.isEmpty ? null : '${myPosts.length} 篇'),
+          if (myPosts.isEmpty)
+            Panel(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: Text(
+                isSelf ? '你還沒有發過貼文。' : '$name 沒有公開的貼文。',
+                style: const TextStyle(
+                    color: AppColors.textDim, fontSize: 12.5),
+              ),
             ),
-          ),
+          // **與動態牆同一張卡**（`PostCard`）。
+          //
+          // 在此之前這裡是自己畫的兩行純文字、`take(2)`、沒有按讚留言
+          // 檢舉，也點不進貼文詳情 —— 使用者回報「公開貼文顯示不完整，
+          // 少了更早發布的文章」。
+          //
+          // 不補按鈕、改抽出來共用：補的話就是第二張會慢慢長歪的卡片，
+          // 而這個專案的 bug 有一整排正是「同一個決定寫在兩個地方，
+          // 只有一處做對」。
+          //
+          // 也不再截斷。截斷本身沒有壞處，壞的是**截斷而不說** ——
+          // 使用者以為那就是全部。要截就得有「看更多」，而這一頁
+          // 本來就會捲動，那顆按鈕只是多一次點擊。
+          for (final p in myPosts) PostCard(post: p),
         ],
       ),
     );

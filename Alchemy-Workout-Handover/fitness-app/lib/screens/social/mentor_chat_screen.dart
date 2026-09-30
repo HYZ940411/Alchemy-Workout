@@ -55,7 +55,7 @@ class _MentorChatScreenState extends State<MentorChatScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    final asked = s.questions.where((q) => q.from == s.displayName).toList();
+    final asked = s.questions.where(s.isMyQuestion).toList();
     final answered = asked.where((q) => q.answer != null).length;
 
     return Scaffold(
@@ -166,9 +166,10 @@ class _MentorChatScreenState extends State<MentorChatScreen> {
                     onPressed: ctrl.text.trim().isEmpty
                         ? null
                         : () {
-                            s.askQuestion(ctrl.text);
-                            ctrl.clear();
-                            showToast(context, '已送出提問');
+                            final ok = s.askQuestion(ctrl.text);
+                            if (ok) ctrl.clear();
+                            showToast(context,
+                                ok ? '已送出提問' : s.askBlockedReason);
                             setState(() {});
                           },
                   ),

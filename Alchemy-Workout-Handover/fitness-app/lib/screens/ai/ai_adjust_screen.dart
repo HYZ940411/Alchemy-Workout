@@ -29,11 +29,23 @@ class _AiAdjustScreenState extends State<AiAdjustScreen> {
   @override
   void initState() {
     super.initState();
-    // 一進來就直接問「要怎麼調」，不必先打一句話。
-    // **要等第一幀之後** —— `aiOpen` 會 `notifyListeners()`，在 build
-    // 期間觸發的話 Flutter 當場拋例外。
+    // **自動優化不問方向。** 規格（〈AI 自動優化訓練流程〉）把
+    // 「優化訓練強度」的 Actor 寫成系統，使用者只負責確認或拒絕 ——
+    // 它一進來就該直接算好一份給你看。
+    //
+    // 其餘兩條（訓練前／訓練中調整）是使用者主動要求的，
+    // 一進來就問「要怎麼調」，不必先打一句話。
+    //
+    // **要等第一幀之後** —— 兩者都會 `notifyListeners()`，
+    // 在 build 期間觸發的話 Flutter 當場拋例外。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) AppScope.of(context).aiOpen(src);
+      if (!mounted) return;
+      final s = AppScope.of(context);
+      if (src == AiSource.autoOptimize) {
+        s.aiAutoPropose();
+      } else {
+        s.aiOpen(src);
+      }
     });
   }
 
@@ -99,9 +111,21 @@ class _AiAdjustScreenState extends State<AiAdjustScreen> {
                     controller: scroll,
                     padding: const EdgeInsets.fromLTRB(
                         S.base, S.base, S.base, S.base),
-                    itemCount: turns.length + (stage == AiStage.analyzing ? 1 : 0),
+                    // 「判讀方向」與「產生建議」是兩段等待，兩段都要有跡象。
+                    // 在此之前只有後者有 —— 前者那一秒多（失敗時二十秒）
+                    // 畫面完全靜止，連使用者自己打的那句話都還沒出現。
+                    itemCount: turns.length +
+                        (stage == AiStage.analyzing ||
+                                (s.aiClassifying[src] ?? false)
+                            ? 1
+                            : 0),
                     itemBuilder: (context, i) {
-                      if (i >= turns.length) return const _Analyzing();
+                      if (i >= turns.length) {
+                        return _Analyzing(
+                            label: (s.aiClassifying[src] ?? false)
+                                ? '判讀你的需求…'
+                                : '分析中…');
+                      }
                       return _Turn(turn: turns[i]);
                     },
                   ),
@@ -174,6 +198,15 @@ class _Turn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 建議有結構就排成表格，不塞進對話泡泡。
+    //
+    // **對話泡泡最寬 260**，而一份建議有四五個動作、每個動作還帶一句理由
+    // —— 擠進去就是使用者回報的那一坨字。建議本來就不是一句話，
+    // 是一份清單，該佔整個寬度。
+    if (turn.suggestion case final sug?) {
+      return _SuggestionTable(suggestion: sug, scope: turn.scope);
+    }
+
     // 系統訊息置中呈現，與對話往返區分
     if (turn.role == AiTurnRole.system) {
       return Padding(
@@ -215,7 +248,8 @@ class _Turn extends StatelessWidget {
 }
 
 class _Analyzing extends StatelessWidget {
-  const _Analyzing();
+  final String label;
+  const _Analyzing({this.label = '分析中…'});
   @override
   Widget build(BuildContext context) => Align(
         alignment: Alignment.centerLeft,
@@ -237,7 +271,7 @@ class _Analyzing extends StatelessWidget {
                     strokeWidth: 2, color: C.textSecondary),
               ),
               const SizedBox(width: S.md),
-              Text('分析中…', style: T.body(color: C.textSecondary)),
+              Text(label, style: T.body(color: C.textSecondary)),
             ],
           ),
         ),
@@ -346,18 +380,12 @@ class _Composer extends StatelessWidget {
         ));
 
       case AiStage.analyzing:
-        return wrap(Row(
-          children: [
-            Expanded(
-              child: Text('AI 分析中，請稍候…', style: T.caption()),
-            ),
-            // Demo：手動觸發失敗路徑，供驗收
-            TextButton(
-              onPressed: () => state.aiFail(source, AiFailReason.timeout),
-              child: Text('模擬逾時', style: T.caption(color: C.accentInfo)),
-            ),
-          ],
-        ));
+        // **這裡曾經有一顆「模擬逾時」。** 那是驗收用的 Demo 按鈕，
+        // 但它沒有藏在開發者模式後面 —— 使用者等 AI 回話時，
+        // 右下角就擺著一顆會讓它失敗的按鈕（2026-09-28 截圖回報）。
+        // 失敗路徑由 `ai_source_test.dart` 直接呼叫 `aiFail()` 驗，
+        // 不需要畫面上留一個入口。
+        return wrap(Text('AI 分析中，請稍候…', style: T.caption()));
 
       case AiStage.idle:
       case AiStage.clarifying:
@@ -399,8 +427,12 @@ class _Composer extends StatelessWidget {
                 children: [
                   for (final i in AdjustIntent.values)
                     OutlinedButton(
-                      onPressed: () {
-                        state.aiConfirmDemand(source, adjustIntentNames[i]!);
+                      // **要等它。** `aiConfirmDemand` 自 2026-09-27 起是
+                      // 非同步的（先問 AI 判方向）—— 不等的話 `onSent()`
+                      // 跑的時候 stage 還是 clarifying，見下面那一處的說明。
+                      onPressed: () async {
+                        await state.aiConfirmDemand(
+                            source, adjustIntentNames[i]!);
                         onSent();
                       },
                       child: Text(adjustIntentNames[i]!, style: T.caption()),
@@ -441,15 +473,25 @@ class _Composer extends StatelessWidget {
                   width: Sz.tapTarget,
                   height: Sz.tapTarget,
                   child: IconButton(
-                    onPressed: () {
+                    // **要等 `aiConfirmDemand` 完成再 `onSent()`。**
+                    //
+                    // 它自 2026-09-27 起是非同步的（先問 AI 判方向）。
+                    // 不等的話，`onSent()` 執行的那一刻 stage 還是
+                    // `clarifying` —— 而它裡面的
+                    // `if (stage == analyzing) _startAnalyzing()`
+                    // 因此永遠不成立：方向判出來了、stage 也變成
+                    // `analyzing` 了，卻**沒有任何人去產生建議**。
+                    // 畫面就停在「分析中…」轉圈，永遠不會結束。
+                    // 使用者回報 P62 C「一直轉圈不停」。
+                    onPressed: () async {
                       final text = ctrl.text.trim();
                       if (text.isEmpty) return;
+                      ctrl.clear();
                       if (stage == AiStage.idle) {
                         state.aiRequest(source, text);
                       } else {
-                        state.aiConfirmDemand(source, text);
+                        await state.aiConfirmDemand(source, text);
                       }
-                      ctrl.clear();
                       onSent();
                     },
                     icon: const Icon(Icons.send_rounded, color: C.actionPrimary),
@@ -460,5 +502,165 @@ class _Composer extends StatelessWidget {
           ],
         ));
     }
+  }
+}
+
+
+/// AI 建議的表格呈現。
+///
+/// 使用者回報「AI 建議給的排版不好做閱讀。可否用好看的表格呈現？」——
+/// 在此之前整份建議被拼成一段字串塞進寬 260 的對話泡泡裡。
+///
+/// 而那些欄位在 `AdjustChange` 裡本來就是分開的（`title`／`change`／
+/// `reason`），是渲染時才被拼掉的。這裡把它們排回兩欄。
+///
+/// **沒動的那幾列降一階呈現**：一份建議裡多半有一半是「維持不變」，
+/// 它們不該跟真正的改動一樣搶眼 —— 但也不能不顯示，
+/// 使用者要看得出 AI 把每個動作都看過了。
+class _SuggestionTable extends StatelessWidget {
+  final AdjustSuggestion suggestion;
+  final String? scope;
+  const _SuggestionTable({required this.suggestion, this.scope});
+
+  @override
+  Widget build(BuildContext context) {
+    final changed = suggestion.changes.where((c) => !c.unchanged).length;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: S.md),
+      child: AppCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 標題列：這份建議是什麼方向、動了幾個動作。
+            Container(
+              padding: const EdgeInsets.fromLTRB(S.base, S.md, S.base, S.md),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: C.lineDivider)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.auto_awesome_outlined,
+                      size: Sz.iconDense, color: C.accentDeep),
+                  const SizedBox(width: S.sm),
+                  Expanded(
+                    child: Text(adjustIntentNames[suggestion.intent] ?? '調整建議',
+                        style: T.body(weight: FontWeight.w700)),
+                  ),
+                  Text(
+                    changed == 0
+                        ? '無異動'
+                        : '$changed / ${suggestion.changes.length} 項調整',
+                    style: T.caption(),
+                  ),
+                ],
+              ),
+            ),
+            for (final (i, c) in suggestion.changes.indexed)
+              _Row(change: c, last: i == suggestion.changes.length - 1),
+            // 整份建議的依據（端內規則走這一條；模型是逐筆給理由）。
+            if (suggestion.rationale case final r?)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(S.base),
+                decoration: const BoxDecoration(
+                  color: C.bgPage,
+                  border: Border(top: BorderSide(color: C.lineDivider)),
+                ),
+                child: Text(r, style: T.caption()),
+              ),
+            if (scope != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(S.base, S.md, S.base, S.md),
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: C.lineDivider)),
+                ),
+                child: Text('作用範圍：$scope', style: T.caption()),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 表格的一列：動作 ｜ 調整，理由另起一行。
+///
+/// **不用 `Table` 或 `DataTable`。** 動作名長短差很多（「深蹲」到
+/// 「站姿單腳屈腿 · 器械」），固定欄寬要嘛把長名字擠成三行、要嘛讓短的
+/// 那幾列空一大半。左右各自伸縮、理由橫跨整列，在 375 寬才讀得下去。
+class _Row extends StatelessWidget {
+  final AdjustChange change;
+  final bool last;
+  const _Row({required this.change, required this.last});
+
+  @override
+  Widget build(BuildContext context) {
+    final dim = change.unchanged;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(S.base, S.md, S.base, S.md),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : const Border(bottom: BorderSide(color: C.lineDivider)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // **兩欄都要可伸縮。**
+              //
+              // 第一版是 `Expanded(動作名)` ＋ 固定寬的標籤，而調整字串
+              // 可以很長（「60kg × 8 下 → 55kg × 10 下」）—— 在 375 寬
+              // 溢出 1.3px，`screen_crawl_test` 與 smoke 當場紅。
+              //
+              // 兩邊都給 flex，長的那一欄自己折行。比例 5:4 是讓動作名
+              // 優先拿到空間 —— 它是這一列的主詞。
+              Expanded(
+                flex: 5,
+                child: Text(
+                  change.title,
+                  style: T.body(
+                    color: dim ? C.textSecondary : C.textPrimary,
+                    weight: dim ? FontWeight.w500 : FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: S.sm),
+              // 「維持不變」用灰底，真正的改動用重點色 ——
+              // 掃過去就看得出哪幾列動過。
+              Flexible(
+                flex: 4,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: S.sm, vertical: 3),
+                  decoration: BoxDecoration(
+                    // 輔助色在 v0.8 已移除（設計稿裁決：資訊沿用中性色），
+                    // 所以重點色標籤用品牌深藍的淡色底，與設定頁那塊
+                    // 存檔失敗面板同一個手法。
+                    color:
+                        dim ? C.bgPage : C.accentDeep.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(R.child),
+                  ),
+                  child: Text(
+                    change.change,
+                    textAlign: TextAlign.right,
+                    style: T.caption(
+                        color: dim ? C.textSecondary : C.accentDeep),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (change.reason case final r?) ...[
+            const SizedBox(height: S.xs),
+            Text(r, style: T.caption(color: C.textSecondary)),
+          ],
+        ],
+      ),
+    );
   }
 }
