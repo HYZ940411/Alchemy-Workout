@@ -17,6 +17,7 @@
 /// 金鑰寫在裡面等同公開。這是整個 `functions/` 目錄存在的理由。
 library;
 
+import '../domain/adjust_volume.dart';
 import '../domain/ai_adjust.dart';
 import '../domain/models.dart';
 
@@ -64,7 +65,20 @@ class RemoteAutoAdjust {
 /// 由呼叫端再問一次。真的失敗是擲例外。
 class RemoteIntent {
   final AdjustIntent? intent;
-  const RemoteIntent(this.intent);
+
+  /// 同時要求的所有方向（2026-10-04 起一句話可以有兩個要求）。
+  /// 空值＝只有 [intent]。
+  final List<AdjustIntent>? _intents;
+
+  /// 使用者在這句話裡講了還剩幾分鐘。空值＝沒講。
+  final int? minutes;
+
+  const RemoteIntent(this.intent, {List<AdjustIntent>? intents, this.minutes})
+      // ignore: prefer_initializing_formals
+      : _intents = intents;
+
+  List<AdjustIntent> get intents =>
+      _intents ?? (intent == null ? const [] : [intent!]);
 }
 
 abstract class AiSuggestionSource {
@@ -110,6 +124,16 @@ abstract class AiSuggestionSource {
 
     /// 動作名稱 → 允許替換成的動作。空的代表這一次不換動作。
     Map<String, List<Exercise>> candidates = const {},
+
+    /// 同時處理的方向。空值＝只有 [intent]。
+    List<AdjustIntent>? intents,
+
+    /// 時間預算決定的組數安排。**模型給的組數要對得上它**，
+    /// 對不上的那幾筆由呼叫端改用規則（見 `AppState`）。
+    VolumePlan? volume,
+
+    /// 新動作只能從這裡挑。空的代表這一次不加新動作。
+    List<Exercise> addCandidates = const [],
   });
 }
 
@@ -189,6 +213,16 @@ class AdjustContext {
       };
 }
 
+/// 時間預算送出去的形狀。**索引扣掉 [onlyFrom]** —— 送上去的課表是
+/// 切過的，伺服器看到的位置也要是切片裡的位置。
+Map<String, dynamic> encodeVolume(VolumePlan v, int onlyFrom) => {
+      if (v.minutes != null) 'minutes': v.minutes,
+      'add': {for (final e in v.addSets.entries) '${e.key - onlyFrom}': e.value},
+      'cut': {for (final e in v.cutSets.entries) '${e.key - onlyFrom}': e.value},
+      'newSets': v.newExerciseSets,
+      'weightOnly': v.weightOnly,
+    };
+
 /// 送出去的形狀。
 ///
 /// **仍然不送身分**：沒有暱稱、沒有 uid、沒有電子郵件。送的是
@@ -226,6 +260,8 @@ AdjustSuggestion decodeSuggestion(
   AdjustIntent intent,
   int onlyFrom, {
   Map<String, List<Exercise>> candidates = const {},
+  List<AdjustIntent>? intents,
+  List<Exercise> addCandidates = const [],
 }) {
   final raw = (data['changes'] as List?) ?? const [];
   final changes = <AdjustChange>[];
@@ -273,10 +309,32 @@ AdjustSuggestion decodeSuggestion(
           : null,
     ));
   }
+  // 新加的動作。**只認候選清單裡的** —— 伺服器驗過一次，這裡是第二道。
+  // 模型可能憑空發明一個動作庫裡沒有的名字，使用者照著做不出來。
+  for (final item in (data['added'] as List?) ?? const []) {
+    if (item is! Map) continue;
+    final m = item.cast<String, dynamic>();
+    final ex = addCandidates.where((c) => c.name == m['name']).firstOrNull;
+    if (ex == null) continue;
+    final after = [
+      for (final s in (m['after'] as List? ?? const []))
+        if (s is Map)
+          PlannedSet(
+            (s['weight'] as num).toDouble(),
+            (s['reps'] as num).toInt(),
+          ),
+    ];
+    if (after.isEmpty) continue;
+    final reason = m['reason'];
+    changes.add(AdjustChange.addition(ex, after,
+        reason: reason is String && reason.trim().isNotEmpty
+            ? reason.trim()
+            : null));
+  }
   // 模型逐筆各給一條理由，那比一句通則有用 —— 所以遠端來的建議
   // 不附整體依據。退回規則時那一份是 `buildSuggestion()` 產的，
   // 它自己會帶上 `adjustRationale`。
-  return AdjustSuggestion(intent: intent, changes: changes);
+  return AdjustSuggestion(intent: intent, intents: intents, changes: changes);
 }
 
 SuggestionOrigin originOf(Map<String, dynamic> data) =>

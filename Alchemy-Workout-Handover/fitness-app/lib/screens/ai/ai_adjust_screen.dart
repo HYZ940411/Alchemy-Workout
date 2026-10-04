@@ -420,7 +420,26 @@ class _Composer extends StatelessWidget {
             // 追問階段直接給三顆按鈕。**打字不是必要的** ——
             // 意圖本來就只有三個值，讓人用猜的去打字，猜不中就換來
             // 一句「我看不懂」，那是把系統的限制變成使用者的問題。
-            if (stage == AiStage.clarifying) ...[
+            // **在問時間的時候，按鈕換成時間。** 四顆方向鍵此時按下去
+            // 會被當成「時間的答案」而讀不出來 —— 那是給錯了選項。
+            if (stage == AiStage.clarifying &&
+                (state.aiAwaitingMinutes[source] ?? false)) ...[
+              Wrap(
+                spacing: S.sm,
+                runSpacing: S.sm,
+                children: [
+                  for (final m in AppState.aiMinuteChoices)
+                    OutlinedButton(
+                      onPressed: () async {
+                        await state.aiConfirmDemand(source, m);
+                        onSent();
+                      },
+                      child: Text(m, style: T.caption()),
+                    ),
+                ],
+              ),
+              const SizedBox(height: S.sm),
+            ] else if (stage == AiStage.clarifying) ...[
               Wrap(
                 spacing: S.sm,
                 runSpacing: S.sm,
@@ -544,7 +563,7 @@ class _SuggestionTable extends StatelessWidget {
                       size: Sz.iconDense, color: C.accentDeep),
                   const SizedBox(width: S.sm),
                   Expanded(
-                    child: Text(adjustIntentNames[suggestion.intent] ?? '調整建議',
+                    child: Text(suggestion.title,
                         style: T.body(weight: FontWeight.w700)),
                   ),
                   Text(

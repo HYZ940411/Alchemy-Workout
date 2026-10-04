@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fitness_app/domain/adjust_volume.dart';
 import 'package:fitness_app/data/ai_suggestion.dart';
 import 'package:fitness_app/domain/ai_adjust.dart';
 import 'package:fitness_app/domain/community.dart';
@@ -47,6 +48,9 @@ void main() {
   testWidgets('打一句 AI 判得出來的話 → 真的看得到建議，不是卡在轉圈', (t) async {
     final s = await open(t, ai: _Classifies(AdjustIntent.trim));
     await send(t, '我等一下要趕去接小孩');
+    // 減組數先問時間（2026-10-04）。回一個一定做不完的時間，才會真的砍。
+    expect(s.aiAwaitingMinutes[src], isTrue, reason: '要先問還剩多久');
+    await send(t, '5 分鐘');
 
     expect(s.aiIntent[src], AdjustIntent.trim, reason: '方向要判出來');
     expect(s.aiStage[src], AiStage.proposed,
@@ -94,6 +98,9 @@ class _Classifies implements AiSuggestionSource {
     required List<PlanExercise> exercises,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) =>
       throw UnimplementedError('這個假件不支援自動優化');
 
@@ -113,6 +120,9 @@ class _Classifies implements AiSuggestionSource {
     String? note,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) async =>
       RemoteSuggestion(SuggestionOrigin.rule,
           buildSuggestion(exercises, intent, onlyFrom: onlyFrom));
@@ -126,6 +136,9 @@ class _Throws implements AiSuggestionSource {
     required List<PlanExercise> exercises,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) =>
       throw UnimplementedError('這個假件不支援自動優化');
 
@@ -140,6 +153,9 @@ class _Throws implements AiSuggestionSource {
     String? note,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) async =>
       RemoteSuggestion(SuggestionOrigin.rule,
           buildSuggestion(exercises, intent, onlyFrom: onlyFrom));

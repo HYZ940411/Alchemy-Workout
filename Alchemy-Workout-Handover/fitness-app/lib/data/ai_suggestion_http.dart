@@ -16,6 +16,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../domain/adjust_volume.dart';
 import '../domain/ai_adjust.dart';
 import '../domain/models.dart';
 import 'ai_suggestion.dart';
@@ -71,10 +72,21 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
         (jsonDecode(utf8.decode(res.bodyBytes)) as Map).cast<String, dynamic>();
     final raw = data['intent'];
     // 模型回什麼都不信，只認四個值之一。
-    final match = AdjustIntent.values
-        .where((i) => i.name == raw)
-        .firstOrNull;
-    return RemoteIntent(match);
+    AdjustIntent? named(Object? v) =>
+        AdjustIntent.values.where((i) => i.name == v).firstOrNull;
+    final match = named(raw);
+    // **多個方向**（2026-10-04 起）。舊版 Worker 沒有這個欄位 ——
+    // 那時就只有 [match] 一個。
+    final list = data['intents'];
+    final intents = list is List
+        ? resolveIntents([for (final v in list) ?named(v)])
+        : null;
+    final m = data['minutes'];
+    return RemoteIntent(
+      intents == null ? match : intents.firstOrNull,
+      intents: intents,
+      minutes: m is num && m >= 1 && m <= 600 ? m.round() : null,
+    );
   }
 
   @override
@@ -130,6 +142,9 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
     String? note,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) async {
     final token = await idToken();
     if (token == null || token.isEmpty) {
@@ -145,8 +160,14 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
             'Authorization': 'Bearer $token',
           },
           body: jsonEncode({
+            // `intent` 留著給舊版 Worker；新版看 `intents`。
             'intent': intent.name,
+            if (intents != null && intents.length > 1)
+              'intents': [for (final i in intents) i.name],
             if (note != null && note.isNotEmpty) 'note': note,
+            if (volume != null) 'volume': encodeVolume(volume, onlyFrom),
+            if (addCandidates.isNotEmpty)
+              'addCandidates': [for (final e in addCandidates) e.name],
             ...encodePlan(exercises, onlyFrom, context: context),
           }),
         )
@@ -163,7 +184,9 @@ class HttpAiSuggestionSource implements AiSuggestionSource {
     return RemoteSuggestion(
       originOf(data),
       decodeSuggestion(data, exercises, intent, onlyFrom,
-          candidates: candidates),
+          candidates: candidates,
+          intents: intents,
+          addCandidates: addCandidates),
       error: errorOf(data),
     );
   }

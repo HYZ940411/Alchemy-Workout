@@ -15,6 +15,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fitness_app/domain/clock.dart';
 import 'package:fitness_app/data/mentor_data.dart';
 import 'package:fitness_app/data/public_profile.dart';
 import 'package:fitness_app/domain/ability.dart';
@@ -116,7 +117,9 @@ InboundRequest _req(InboundKind kind, String from, String uid) =>
       fromUid: uid,
       fromRank: 30,
       subject: from,
-      sentAt: DateTime(2026, 9, 24),
+      // **相對於現在，不寫死日期。** 原本是 2026-09-24 —— 請求七天逾期，
+      // 10-01 之後信箱就不收它，這幾條測試在日曆翻過去那天一起紅。
+      sentAt: appNow().subtract(const Duration(hours: 1)),
     );
 
 void main() {

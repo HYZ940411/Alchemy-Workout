@@ -40,6 +40,8 @@ AppState _withSuggestion() {
 Future<void> _upToProposal(AppState s, AiSource src, String intent) async {
   s.aiRequest(src, '今天狀況不太好');
   await s.aiConfirmDemand(src, intent);
+  // 加強度、減組數會先問時間（2026-10-04）。這裡驗的是不看時間的舊規則。
+  if (s.aiAwaitingMinutes[src] ?? false) await s.aiConfirmDemand(src, '不確定');
   s.aiProduceSuggestion(src);
 }
 

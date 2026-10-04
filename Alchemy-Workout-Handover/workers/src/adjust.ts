@@ -68,6 +68,32 @@ const INTENT_TEXT: Record<Intent, string> = {
 export const isIntent = (v: unknown): v is Intent =>
   v === "easier" || v === "harder" || v === "trim" || v === "swap";
 
+/**
+ * App 依剩餘時間算好的組數安排（2026-10-04 使用者裁決）。
+ *
+ * **結構由 App 決定，這裡不重算** —— 同一條規則寫兩份就會漂移。
+ * 模型只負責填重量、次數、理由，以及從候選挑新動作；
+ * 組數對不上安排的那幾筆，由 App 改用它自己的規則。
+ * 索引是送上來那份（切過的）課表裡的位置。
+ */
+export interface Volume {
+  minutes?: number;
+  add?: Record<string, number>;
+  cut?: Record<string, number>;
+  newSets?: number;
+  weightOnly?: boolean;
+}
+
+/** 一個新加的動作。名稱必須在候選清單裡。 */
+export interface Added {
+  name: string;
+  after: PlannedSet[];
+  reason?: string;
+}
+
+/** 自體重或計時動作：強度只能動在次數上，幅度兩成、至少一下。 */
+const repsStep = (reps: number) => Math.max(1, Math.round(reps * 0.2));
+
 /** 場館槓片以 2.5kg 為級距，推到小數點沒有意義。 */
 const round2p5 = (kg: number) => Math.round(kg / 2.5) * 2.5;
 
@@ -87,16 +113,17 @@ export function ruleFallback(
     let after: PlannedSet[];
     switch (intent) {
     case "easier":
-      after = e.sets.map((s) => ({
-        weight: s.weight === 0 ? 0 : Math.max(2.5, round2p5(s.weight * 0.9)),
-        reps: s.reps + 2,
-      }));
+      // **自體重動作減次數。** 原本是一律「次數 +2」—— 重量 0 的動作
+      // 只剩那一半，伏地挺身越降越難（2026-10-04 修正，與 Dart 那份同步）。
+      after = e.sets.map((s) => s.weight === 0 ?
+        {weight: 0, reps: Math.max(1, s.reps - repsStep(s.reps))} :
+        {weight: Math.max(2.5, round2p5(s.weight * 0.9)), reps: s.reps + 2});
       break;
     case "harder":
-      after = e.sets.map((s) => ({
-        weight: s.weight === 0 ? 0 : round2p5(s.weight * 1.05),
-        reps: s.reps,
-      }));
+      // 自體重動作加次數 —— 原本只動重量，重量 0 的動作什麼都不會發生。
+      after = e.sets.map((s) => s.weight === 0 ?
+        {weight: 0, reps: s.reps + repsStep(s.reps)} :
+        {weight: round2p5(s.weight * 1.05), reps: s.reps});
       break;
     case "trim":
       // 砍到 0 組等於刪掉這個動作，那是「移除動作」不是「減量」。
@@ -227,7 +254,23 @@ export function buildPrompt(
   intent: Intent,
   note?: string,
   ctx?: AdjustContext,
+  extra?: {intents?: Intent[]; volume?: Volume; addCandidates?: string[]},
 ): string {
+  const intents = extra?.intents?.length ? extra.intents : [intent];
+  const volume = extra?.volume;
+  const addPool = extra?.addCandidates ?? [];
+  const newSets = volume?.newSets ?? 0;
+  // 組數安排的白話說明。**這是指令，不是建議** —— 對不上的那一筆不收。
+  const structure: string[] = [];
+  if (volume) {
+    for (let i = 0; i < exercises.length; i++) {
+      const d = (volume.add?.[String(i)] ?? 0) - (volume.cut?.[String(i)] ?? 0);
+      if (d !== 0) {
+        structure.push(`- 第 ${i} 個（${exercises[i].name}）：` +
+          `${exercises[i].sets.length} 組 → ${exercises[i].sets.length + d} 組`);
+      }
+    }
+  }
   const who: string[] = [];
   if (ctx?.experience) who.push(`經驗：${ctx.experience}`);
   if (ctx?.goal) who.push(`目標：${ctx.goal}`);
@@ -248,8 +291,19 @@ export function buildPrompt(
     "你是重量訓練的課表調整助手。只依照下列這份課表作答，",
     "不得新增、刪除或替換任何動作，不得引用課表以外的動作。",
     "",
-    `調整方向：${INTENT_TEXT[intent]}`,
+    `調整方向：${intents.map((i) => INTENT_TEXT[i]).join("；並且")}`,
     "",
+    ...(volume ?
+      [
+        `使用者還有 ${volume.minutes ?? "?"} 分鐘。**組數必須照下列安排**，` +
+          "其餘動作組數不變：",
+        ...(structure.length ? structure : ["（組數都不變）"]),
+        ...(volume.weightOnly ?
+          ["多出的時間不夠加一組，只調重量；自體重動作（重量 0）改加次數。"] :
+          []),
+        "",
+      ] :
+      []),
     ...(who.length ? ["使用者：", who.join("；"), ""] : []),
     ...history,
     ...(intent === "swap" && ctx?.candidates ?
@@ -275,9 +329,23 @@ export function buildPrompt(
         "",
       ] :
       []),
-    "請只輸出 JSON 陣列，不要有任何說明文字或程式碼框，格式為：",
-    "[{\"index\":0,\"name\":\"動作名稱\",\"after\":[{\"weight\":60,\"reps\":8}]," +
-      "\"reason\":\"為什麼這樣調\"}]",
+    ...(newSets > 0 && addPool.length ?
+      [
+        `另外**新增一個動作、${newSets} 組**，只能從這裡挑一個（不得自行發明）：`,
+        JSON.stringify(addPool),
+        "挑最能配合這份課表目標、而且這位使用者做得來的那一個，",
+        "並給出合適的重量（自體重動作為 0）與次數。",
+        "請只輸出 JSON 物件，不要有任何說明文字或程式碼框，格式為：",
+        "{\"changes\":[{\"index\":0,\"name\":\"動作名稱\"," +
+          "\"after\":[{\"weight\":60,\"reps\":8}],\"reason\":\"為什麼這樣調\"}]," +
+          "\"added\":[{\"name\":\"候選動作名稱\",\"after\":[{\"weight\":20,\"reps\":10}]," +
+          "\"reason\":\"為什麼加這個\"}]}",
+      ] :
+      [
+        "請只輸出 JSON 陣列，不要有任何說明文字或程式碼框，格式為：",
+        "[{\"index\":0,\"name\":\"動作名稱\",\"after\":[{\"weight\":60,\"reps\":8}]," +
+          "\"reason\":\"為什麼這樣調\"}]",
+      ]),
     "",
     "reason 用繁體中文、一句話、60 字以內，**要講得出依據** ——",
     "有歷來成績就引用它（例如「上次 60 公斤第三組只完成 6 下」），",
@@ -430,4 +498,67 @@ export async function askGemini(
     {temperature: 0.2, timeoutMs: 20000},
   );
   return clamp(exercises, JSON.parse(text), ctx);
+}
+
+/**
+ * 驗證模型新加的動作。**名稱必須在候選裡、組數必須等於安排的組數**，
+ * 重量不得為負、不超過體重三倍（或 300 公斤），次數 1–50。
+ * 不合格就整個不要 —— App 會把那段時間改加在既有動作上。
+ */
+export function clampAdded(
+  raw: unknown,
+  addCandidates: string[],
+  newSets: number,
+  bodyweightKg?: number,
+): Added[] {
+  if (!Array.isArray(raw) || newSets <= 0) return [];
+  const ceiling = bodyweightKg ? bodyweightKg * 3 : 300;
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const a = item as Record<string, unknown>;
+    if (typeof a.name !== "string" || !addCandidates.includes(a.name)) continue;
+    if (!Array.isArray(a.after) || a.after.length !== newSets) continue;
+    const after: PlannedSet[] = [];
+    let ok = true;
+    for (const s0 of a.after) {
+      const s = s0 as Record<string, unknown>;
+      const w = typeof s?.weight === "number" ? s.weight : NaN;
+      const r = typeof s?.reps === "number" ? Math.round(s.reps) : NaN;
+      if (!Number.isFinite(w) || w < 0 || w > ceiling) { ok = false; break; }
+      if (!Number.isFinite(r) || r < 1 || r > 50) { ok = false; break; }
+      after.push({weight: w === 0 ? 0 : round2p5(w), reps: r});
+    }
+    if (!ok) continue;
+    const reason = typeof a.reason === "string" ? a.reason.trim().slice(0, 120) : "";
+    // 只收一個 —— 安排裡只有一個新動作的位置。
+    return [{name: a.name, after, ...(reason ? {reason} : {})}];
+  }
+  return [];
+}
+
+/** 帶時間安排與新動作的版本。回傳模型的逐筆調整與新動作（皆已驗證）。 */
+export async function askGeminiFull(
+  exercises: PlanExercise[],
+  intent: Intent,
+  apiKey: string,
+  note?: string,
+  ctx?: AdjustContext,
+  extra?: {intents?: Intent[]; volume?: Volume; addCandidates?: string[]},
+): Promise<{changes: Change[]; added: Added[]}> {
+  const text = await callGemini(
+    buildPrompt(exercises, intent, note, ctx, extra),
+    apiKey,
+    {temperature: 0.2, timeoutMs: 20000},
+  );
+  const raw = JSON.parse(text) as unknown;
+  const obj = raw && typeof raw === "object" && !Array.isArray(raw) ?
+    raw as Record<string, unknown> :
+    null;
+  return {
+    changes: clamp(exercises, obj ? obj.changes : raw, ctx),
+    added: obj ?
+      clampAdded(obj.added, extra?.addCandidates ?? [],
+        extra?.volume?.newSets ?? 0, ctx?.bodyweightKg) :
+      [],
+  };
 }

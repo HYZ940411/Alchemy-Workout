@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:fitness_app/domain/adjust_volume.dart';
 import 'package:fitness_app/data/ai_suggestion.dart';
 import 'package:fitness_app/data/ai_suggestion_http.dart';
 import 'package:fitness_app/domain/ability.dart';
@@ -32,6 +33,9 @@ class _FakeSource implements AiSuggestionSource {
     required List<PlanExercise> exercises,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) =>
       throw UnimplementedError('這個假件不支援自動優化');
 
@@ -73,6 +77,9 @@ class _FakeSource implements AiSuggestionSource {
     String? note,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) async {
     sent = {
       'intent': intent.name,
@@ -534,6 +541,8 @@ void main() {
       s.aiRequest(AiSource.beforeTraining, '早安');
       await s.aiConfirmDemand(AiSource.beforeTraining, '我早餐吃蘑菇麵');
       await s.aiConfirmDemand(AiSource.beforeTraining, '減少組數');
+      // 減組數會先問時間（2026-10-04）。
+      await s.aiConfirmDemand(AiSource.beforeTraining, '不確定');
 
       expect(s.aiStage[AiSource.beforeTraining], AiStage.analyzing);
       expect(s.aiIntent[AiSource.beforeTraining], AdjustIntent.trim);
@@ -603,6 +612,7 @@ void main() {
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.duringTraining, '幫我保留一個動作就好');
       await s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
+      await s.aiConfirmDemand(AiSource.duringTraining, '不確定');
 
       await s.aiProduceSuggestionAsync(AiSource.duringTraining);
 
@@ -627,6 +637,7 @@ void main() {
       s.startWorkout(s.platformPlans.firstWhere((p) => p.exercises.isNotEmpty));
       s.aiRequest(AiSource.duringTraining, '很' * 500);
       await s.aiConfirmDemand(AiSource.duringTraining, '減少組數');
+      await s.aiConfirmDemand(AiSource.duringTraining, '不確定');
 
       await s.aiProduceSuggestionAsync(AiSource.duringTraining);
       expect((fake.sent!['note'] as String).length, 200);
@@ -749,7 +760,14 @@ void main() {
       await s.aiProduceSuggestionAsync(AiSource.beforeTraining);
 
       final sug = s.aiSuggestion[AiSource.beforeTraining]!;
-      expect(sug.changes.single.after.single.targetReps, 33,
+      // 模型的建議逐筆疊在規則上（2026-10-04）—— 看第 0 筆。
+      expect(
+          sug.changes
+              .firstWhere((c) => c.exerciseIndex == 0)
+              .after
+              .single
+              .targetReps,
+          33,
           reason: '33 是規則引擎絕對算不出來的數字');
       expect(s.aiLastOrigin, SuggestionOrigin.gemini);
     });
@@ -907,6 +925,9 @@ class _SlowSource implements AiSuggestionSource {
     required List<PlanExercise> exercises,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) =>
       throw UnimplementedError('這個假件不支援自動優化');
 
@@ -924,6 +945,9 @@ class _SlowSource implements AiSuggestionSource {
     String? note,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) =>
       throw UnimplementedError();
 }

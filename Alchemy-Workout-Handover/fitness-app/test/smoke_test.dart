@@ -263,6 +263,10 @@ void main() {
     await t.tap(find.byIcon(Icons.send_rounded));
     await t.pump(const Duration(seconds: 2));
     await t.pumpAndSettle();
+    // 減組數會先問時間（2026-10-04），按鈕換成時間 —— 點「不確定」。
+    await t.tap(find.widgetWithText(OutlinedButton, '不確定'));
+    await t.pump(const Duration(seconds: 2));
+    await t.pumpAndSettle();
 
     await t.tap(find.widgetWithText(AppButton, '拒絕調整'));
     await t.pumpAndSettle();

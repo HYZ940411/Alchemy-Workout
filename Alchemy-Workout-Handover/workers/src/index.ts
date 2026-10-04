@@ -15,8 +15,8 @@
 import {verifyIdToken} from "./auth.ts";
 import {
   fill,
-  askGemini, askGeminiAuto, isIntent, ruleFallback,
-  type AdjustContext, type PlanExercise,
+  askGeminiFull, askGeminiAuto, isIntent, ruleFallback,
+  type AdjustContext, type PlanExercise, type Volume, type Added, type Intent,
 } from "./adjust.ts";
 import {askQuality, isSessions} from "./screen.ts";
 import {askIntent, isSay} from "./classify.ts";
@@ -67,6 +67,7 @@ export default {
       intent?: unknown; exercises?: unknown;
       note?: unknown; context?: unknown; sessions?: unknown;
       say?: unknown;
+      intents?: unknown; volume?: unknown; addCandidates?: unknown;
     };
     try {
       body = await req.json();
@@ -106,10 +107,15 @@ export default {
         // 不先探測模型 —— `callGemini` 直接用偏好的那個，
         // 只有它 404 時才去問清單。原本每次都多一趟 `listModels`，
         // 冷啟動時會超過前端等待的上限（使用者回報「分析時間非常久」）。
-        const intent = await askIntent(body.say, env.GEMINI_API_KEY);
-        // `intent: null` 是**合法結果**，不是錯誤 ——
-        // 模型判不出來時就該這樣回，由 App 再問一次。
-        return new Response(JSON.stringify({intent, source: "gemini"}), {
+        const got = await askIntent(body.say, env.GEMINI_API_KEY);
+        // 判不出來（`intents` 為空）是**合法結果**，不是錯誤 ——
+        // 由 App 再問一次。`intent` 留給舊版 App，只有第一個方向。
+        return new Response(JSON.stringify({
+          intent: got.intents[0] ?? null,
+          intents: got.intents,
+          minutes: got.minutes,
+          source: "gemini",
+        }), {
           headers: {"Content-Type": "application/json", ...cors(origin)},
         });
       } catch (e) {
@@ -196,13 +202,31 @@ export default {
     const blocked = await overLimit();
     if (blocked) return blocked;
 
+    // 2026-10-04：多個方向、時間安排、新動作候選。**都是外部輸入**，
+    // 型別不對就當作沒給；真正的防線仍是模型回話之後的 clamp。
+    const intents = Array.isArray(body.intents) ?
+      body.intents.filter(isIntent) as Intent[] :
+      undefined;
+    const volume = body.volume && typeof body.volume === "object" ?
+      body.volume as Volume :
+      undefined;
+    const addCandidates = Array.isArray(body.addCandidates) ?
+      body.addCandidates.filter((x): x is string => typeof x === "string")
+        .slice(0, 20) :
+      [];
+
     let source = "rule";
     let error: string | undefined;
     let changes = ruleFallback(exercises, intent);
+    let added: Added[] = [];
     try {
-      const fromModel =
-        await askGemini(exercises, intent, env.GEMINI_API_KEY, note, ctx);
-      if (fromModel.length > 0) {
+      const full = await askGeminiFull(
+        exercises, intent, env.GEMINI_API_KEY, note, ctx,
+        {intents, volume, addCandidates},
+      );
+      const fromModel = full.changes;
+      added = full.added;
+      if (fromModel.length > 0 || added.length > 0) {
         source = "gemini";
         // **被丟掉的那幾項要補回來，而且要出聲。**
         //
@@ -228,7 +252,7 @@ export default {
 
     // **把失敗原因回給前端。** 只寫進 log 的話，使用者看到的是一份
     // 「看起來正常、其實是規則產的」建議 —— 靜默退回比失敗更難查。
-    return new Response(JSON.stringify({source, changes, error}), {
+    return new Response(JSON.stringify({source, changes, added, error}), {
       headers: {"Content-Type": "application/json", ...cors(origin)},
     });
   },
