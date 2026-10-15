@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design/tokens.dart';
+import '../../domain/social.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import '../me/profile_screen.dart';
@@ -98,10 +99,10 @@ class _FindPeopleScreenState extends State<FindPeopleScreen> {
                             ),
                             title: s.nameOf(people[i].name, uid: people[i].uid),
                             // 現在的階級與綜合等級，不是我第一次見到他時那個。
+                            // 對方沒公開綜合等級就整段不印，不印一個猜的。
                             subtitle: '階級 '
                                 '${s.rankOf(people[i].name, uid: people[i].uid, fallback: people[i].rank)}'
-                                '　·　綜合 '
-                                '${s.gradeOf(people[i].name, uid: people[i].uid) ?? people[i].grade}'
+                                '${gradeSubtitle(s.gradeOf(people[i].name, uid: people[i].uid))}'
                                 '${s.isFollowing(people[i].name, uid: people[i].uid) ? '　·　追蹤中' : ''}',
                             chevron: true,
                             // 點進公開檔案，「開始聊天」在那裡。

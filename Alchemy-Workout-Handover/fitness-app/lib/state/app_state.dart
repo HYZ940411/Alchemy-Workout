@@ -2577,13 +2577,14 @@ class AppState extends ChangeNotifier {
       // 不升級的話他會在名單上變成兩個人 —— 一個舊的按不動、一個新的。
       _upgradeFollowKey(_nameKey(p.displayName), p.uid);
 
-      // 對方關閉了綜合等級的對外可見時，畫面顯示最低階 ——
-      // 不猜、也不留空白造成版面破洞。
+      // 對方關閉了綜合等級的對外可見時，這裡就是空值。原本墊一個 'E'
+      // 「免得版面有洞」，結果找人與關注清單對隱藏的人照樣印出「綜合 E」——
+      // 既洩漏了「有這個欄位」，內容還是假的（真人實測 V3）。
       final u = SocialUser(
         name: p.displayName,
         uid: p.uid,
         rank: p.rank,
-        grade: p.grade ?? 'E',
+        grade: p.grade,
       );
       // **已經在清單裡的人要更新，不是跳過。**
       //

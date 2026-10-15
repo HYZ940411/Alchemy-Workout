@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design/tokens.dart';
+import '../../domain/social.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import '../me/profile_screen.dart';
@@ -114,8 +115,9 @@ class _List extends StatelessWidget {
       // 現在的階級與綜合等級。`u` 那份是我第一次見到他時存下來的 ——
       // 在此之前 `applyPublicProfiles` 對已在清單裡的人直接跳過，
       // 所以這裡顯示的比貼文上那個凍結值還舊。
+      // 對方沒公開綜合等級就整段不印，不印一個猜的。
       subtitle: '階級 ${s.rankOf(name, uid: uid, fallback: u.rank)}'
-          '　·　綜合 ${s.gradeOf(name, uid: uid) ?? u.grade}',
+          '${gradeSubtitle(s.gradeOf(name, uid: uid))}',
       // 點整列進他的公開檔案（`[QA-02i]`）。關注鍵在右邊，各自的觸控區。
       onTap: () => openProfile(context, name, uid: uid),
       // 取消關注屬破壞性動作，用次要樣式（§4.5 R-23）；

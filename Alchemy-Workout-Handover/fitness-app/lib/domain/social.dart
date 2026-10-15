@@ -16,7 +16,8 @@ class SocialUser {
 
   /// **這不是要顯示的值**，只在查不到他的公開檔案時墊底。
   final int rank;
-  final String grade; // 綜合能力等級
+  /// 綜合能力等級。**空值＝對方沒有公開**（不是最低階）。
+  final String? grade;
   const SocialUser({
     required this.name,
     required this.rank,
@@ -24,6 +25,10 @@ class SocialUser {
     this.uid,
   });
 }
+
+/// 清單副標題裡「綜合 X」那一段。對方沒公開綜合等級（空值）就整段不印 ——
+/// 不印一個猜的、也不印「未公開」（那等於告訴人家有東西被藏起來）。
+String gradeSubtitle(String? grade) => grade == null ? '' : '　·　綜合 $grade';
 
 /// 一筆封鎖。單向關係，唯一鍵為 封鎖者 ID ＋ 被封鎖者 ID。
 /// 一個人在「以人為鍵」的集合裡長什麼樣（暱稱重構）。
