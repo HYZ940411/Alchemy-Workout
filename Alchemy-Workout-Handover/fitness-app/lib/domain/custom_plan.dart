@@ -31,7 +31,7 @@ class CustomPlan {
 
   /// **我自己**用這份課表訓練的次數，取自訓練紀錄的課表 ID。
   /// 回答的是「這份課表我還在用嗎」—— 正是決定該不該刪除以釋放名額的依據。
-  final int myUses;
+  int myUses;
 
   /// 建立者。他人的課表也會進管理員的待審佇列。
   final String author;

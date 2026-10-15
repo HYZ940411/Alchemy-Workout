@@ -82,6 +82,11 @@ class CloudMentorTask {
   /// 學徒對該次任務的評分（1–5）。空值＝尚未評分。
   final int? rating;
 
+  /// 指派與完成的時點。兩邊的「本週互動摘要」都是數這兩個欄位，
+  /// 所以它們要跟著任務一起上雲，不能只留在動手那一台裝置的計數器裡。
+  final DateTime? assignedAt;
+  final DateTime? doneAt;
+
   const CloudMentorTask({
     required this.id,
     required this.title,
@@ -89,6 +94,8 @@ class CloudMentorTask {
     this.state = MentorTaskState.assigned,
     this.rewardCoins = kMentorTaskCoin,
     this.rating,
+    this.assignedAt,
+    this.doneAt,
   });
 }
 

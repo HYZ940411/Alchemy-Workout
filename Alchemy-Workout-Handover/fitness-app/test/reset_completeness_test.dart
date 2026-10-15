@@ -143,10 +143,9 @@ void dirtyEverything(AppState s) {
   s.ratedThisWeek = true;
   s.taskRatingsThisWeek = 2;
   s.mentorRewardsThisWeek = 2;
-  s.weeklyQuestionCount = 2;
-  s.weeklyAnswerCount = 1;
-  s.weeklyAssigned = 2;
-  s.weeklyCompleted = 1;
+  // 本週互動摘要的四個數字由提問與任務推導，不另存（見 `AppState.weeklyAssigned`）。
+  s.questions.add(MentorQuestion(from: '學徒', text: '問', at: s.now));
+  s.mentorTasks.add(MentorTask(title: '任務', detail: '', assignedAt: s.now));
 
   s.myViolations = 2;
   s.email = 'a@b.c';

@@ -666,6 +666,13 @@ class MentorTask {
   /// 學徒對該次任務的評分（1~5）。null ＝ 尚未評分。
   int? rating;
 
+  /// 指派的時點。**「本週互動摘要」的任務指派數就是數這個。**
+  /// 空值＝這則是加上這個欄位之前就存在的，不算進任何一週。
+  DateTime? assignedAt;
+
+  /// 學徒完成的時點。完成數同樣數這個。
+  DateTime? doneAt;
+
   MentorTask({
     required this.title,
     required this.detail,
@@ -674,6 +681,8 @@ class MentorTask {
     this.state = MentorTaskState.assigned,
     this.rewardCoins = kMentorTaskCoin,
     this.rating,
+    this.assignedAt,
+    this.doneAt,
   }) : id = id ?? 't${title.hashCode}';
 }
 

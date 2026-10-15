@@ -187,7 +187,7 @@ void main() {
         ..applyCloudBonds([_bond()]);
       expect(a.myInstructor, isNotNull, reason: '前提：關係載得進來');
       // Precondition：該週內雙方要有互動。
-      a.weeklyQuestionCount = 1;
+      a.questions.add(MentorQuestion(from: '學徒', text: '請教', at: a.now));
 
       expect(a.rateWeeklyInteraction(5), isTrue);
 

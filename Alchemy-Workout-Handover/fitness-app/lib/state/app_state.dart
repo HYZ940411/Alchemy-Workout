@@ -2057,6 +2057,9 @@ class AppState extends ChangeNotifier {
     // 課表選擇頁要講得出這份課表我上次練得怎麼樣。
     for (final p in customPlans) {
       if (p.id != s.plan.id) continue;
+      // 「我的使用次數」：和訓練歷史同一個條件（至少完成一組才算練過）。
+      // 在此之前這個數字建立之後再也不動，畫面上永遠是 0。
+      if (recorded && p.isMine) p.myUses += 1;
       p.lastTrainedAt = now;
       p.lastCompletion = result.plannedSets == 0
           ? null
@@ -5022,6 +5025,8 @@ class AppState extends ChangeNotifier {
         state: t.state,
         rewardCoins: t.rewardCoins,
         rating: t.rating,
+        assignedAt: t.assignedAt,
+        doneAt: t.doneAt,
       );
 
   /// 學徒這一側動了任務（完成、領獎、評分）—— 掛在我與教官那段關係下。
@@ -5141,6 +5146,8 @@ class AppState extends ChangeNotifier {
           state: t.state,
           rewardCoins: t.rewardCoins,
           rating: t.rating,
+          assignedAt: t.assignedAt,
+          doneAt: t.doneAt,
         );
         if (at >= 0) {
           mentorTasks[at] = m;
@@ -5167,6 +5174,7 @@ class AppState extends ChangeNotifier {
           text: q.text,
           at: q.at,
           answer: q.answer,
+          answeredAt: q.answeredAt,
         );
         if (at >= 0) {
           questions[at] = m;
@@ -5238,6 +5246,7 @@ class AppState extends ChangeNotifier {
           text: q.text,
           at: q.at,
           answer: q.answer,
+          answeredAt: q.answeredAt,
         );
         if (at >= 0) {
           questions[at] = m;
@@ -5265,6 +5274,8 @@ class AppState extends ChangeNotifier {
           state: t.state,
           rewardCoins: t.rewardCoins,
           rating: t.rating,
+          assignedAt: t.assignedAt,
+          doneAt: t.doneAt,
         );
         if (at >= 0) {
           mentorTasks[at] = m;
@@ -5439,6 +5450,7 @@ class AppState extends ChangeNotifier {
       title: title,
       detail: detail,
       apprenticeUid: apprenticeUid,
+      assignedAt: now,
     );
     mentorTasks.insert(0, t);
     _pushMentorTask(t);
@@ -5692,10 +5704,33 @@ class AppState extends ChangeNotifier {
         quality: qualityScore,
         sanity: sanityScore,
       );
-  int weeklyQuestionCount = 2;
-  int weeklyAnswerCount = 1;
-  int weeklyAssigned = 2;
-  int weeklyCompleted = 1;
+  // 「本週互動摘要」的四個數字。**由資料推導，不另存計數器。**
+  //
+  // 原本是四個各自累加的整數，只有動手的那一台裝置會加：學徒那台的「回覆」永遠是
+  // 0、教官那台的「提問」永遠是 0，而「任務指派」根本沒有人加（指派時漏了）。
+  // 兩邊其實是同一段關係的同一週，要數的是同一批提問與任務 —— 數資料，不數動作。
+  DateTime get _mentorWeekStart => periodOf(Board.personalWeekly, now).$1;
+
+  /// 本週的提問數（學徒那側是我問的，教官那側是我帶的學徒問的）。
+  int get weeklyQuestionCount =>
+      questions.where((q) => !q.at.isBefore(_mentorWeekStart)).length;
+
+  /// 本週的回覆數。
+  int get weeklyAnswerCount => questions
+      .where((q) =>
+          q.answeredAt != null && !q.answeredAt!.isBefore(_mentorWeekStart))
+      .length;
+
+  /// 本週指派的任務數。
+  int get weeklyAssigned => mentorTasks
+      .where((t) =>
+          t.assignedAt != null && !t.assignedAt!.isBefore(_mentorWeekStart))
+      .length;
+
+  /// 本週完成的任務數。
+  int get weeklyCompleted => mentorTasks
+      .where((t) => t.doneAt != null && !t.doneAt!.isBefore(_mentorWeekStart))
+      .length;
   bool ratedThisWeek = false;
 
   /// 本週是否與教官有私訊往來。週互動評分的前提為
@@ -5847,7 +5882,6 @@ class AppState extends ChangeNotifier {
     final q = MentorQuestion(
         id: id, from: displayName, text: text.trim(), at: now);
     questions.add(q);
-    weeklyQuestionCount += 1;
     // **送到教官那邊去。** 在此之前提問只進本機清單 —— 學徒看得到自己
     // 問了什麼，教官那一側完全收不到，而雙方都不會看到任何錯誤。
     _pushMentor((src, bond) => src.ask(
@@ -5873,7 +5907,6 @@ class AppState extends ChangeNotifier {
     if (body.isEmpty) return false;
     q.answer = body;
     q.answeredAt = now;
-    weeklyAnswerCount += 1;
 
     final src = mentorSource;
     final bond = mentorBondIdFor(q.apprenticeUid);
@@ -5917,7 +5950,7 @@ class AppState extends ChangeNotifier {
     // 同上：已解除的關係不能再互動。未完成的任務本來就已作廢。
     if (mentorReleased) return false;
     t.state = MentorTaskState.done;
-    weeklyCompleted += 1;
+    t.doneAt = now;
     _pushTask(t);
     notifyListeners();
     return true;
@@ -5940,10 +5973,6 @@ class AppState extends ChangeNotifier {
     }
     if (!from.isAfter(last)) return false;
     _mentorWeek = from;
-    weeklyQuestionCount = 0;
-    weeklyAnswerCount = 0;
-    weeklyAssigned = 0;
-    weeklyCompleted = 0;
     ratedThisWeek = false;
     taskRatingsThisWeek = 0;
     mentorRewardsThisWeek = 0;
@@ -11914,10 +11943,6 @@ class AppState extends ChangeNotifier {
     markMentorLocked();
     mentorTasks.clear();
     questions.clear();
-    weeklyQuestionCount = 0;
-    weeklyAnswerCount = 0;
-    weeklyAssigned = 0;
-    weeklyCompleted = 0;
     ratedThisWeek = false;
     taskRatingsThisWeek = 0;
     mentorRewardsThisWeek = 0;

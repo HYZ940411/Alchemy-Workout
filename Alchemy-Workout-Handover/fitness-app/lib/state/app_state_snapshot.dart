@@ -430,10 +430,6 @@ extension AppStateSnapshot on AppState {
         // 一併存檔，否則重開 App 就等於過了一個新的週 ——
         // 「每週最多 N 次」的上限會從另一道門重新變成無上限。
         'mentorWeek': _iso(_mentorWeek),
-        'weeklyQuestionCount': weeklyQuestionCount,
-        'weeklyAnswerCount': weeklyAnswerCount,
-        'weeklyAssigned': weeklyAssigned,
-        'weeklyCompleted': weeklyCompleted,
         'ratedThisWeek': ratedThisWeek,
         'taskRatingsThisWeek': taskRatingsThisWeek,
         'mentorRewardsThisWeek': mentorRewardsThisWeek,
@@ -933,10 +929,6 @@ extension AppStateSnapshot on AppState {
     instructorReputation = intOf('instructorReputation', instructorReputation);
     peakReputation = intOf('peakReputation', peakReputation);
     _mentorWeek = _date(j['mentorWeek']) ?? _mentorWeek;
-    weeklyQuestionCount = intOf('weeklyQuestionCount', weeklyQuestionCount);
-    weeklyAnswerCount = intOf('weeklyAnswerCount', weeklyAnswerCount);
-    weeklyAssigned = intOf('weeklyAssigned', weeklyAssigned);
-    weeklyCompleted = intOf('weeklyCompleted', weeklyCompleted);
     ratedThisWeek = boolOf('ratedThisWeek', ratedThisWeek);
     taskRatingsThisWeek = intOf('taskRatingsThisWeek', taskRatingsThisWeek);
     mentorRewardsThisWeek =

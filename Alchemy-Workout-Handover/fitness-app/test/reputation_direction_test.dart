@@ -13,7 +13,8 @@ import 'package:fitness_app/state/app_state.dart';
 AppState apprenticeOf(AppState s) {
   final i = s.instructors.first;
   s.myInstructor = i;
-  s.weeklyQuestionCount = 1; // 該週須有互動方可評分
+  // 該週須有互動方可評分：本週要有一則提問。
+  s.questions.add(MentorQuestion(from: '學徒', text: '請教', at: s.now));
   return s;
 }
 
