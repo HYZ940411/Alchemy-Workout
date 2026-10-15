@@ -2821,10 +2821,13 @@ class AppState extends ChangeNotifier {
   /// 某人的綜合能力等級。回空值代表對方未公開。
   String? gradeOf(String name, {String? uid}) {
     if (_isMe(name, uid)) return overallGrade(points);
-    final a = abilityOf(name, uid: uid);
-    if (a != null) return overallGrade(a);
+    // **公開檔案說了算。** 對方關掉「綜合能力等級對外可見」但六維還開著時，
+    // 檔案上 `grade` 是空的 —— 不能因為看得到六維就自己算一個出來，
+    // 那等於無視他的開關（2026-10-15 實測 V3：兩個開關各自獨立，卻看得到綜合等級）。
     final p = _profile(name, uid);
     if (p != null) return p.grade;
+    final a = abilityOf(name, uid: uid);
+    if (a != null) return overallGrade(a);
     // 示範用的使用者沒有六維明細，但帶著綜合等級。
     return socialUsers.any((u) => u.name == name) ? userOf(name).grade : null;
   }
