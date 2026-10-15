@@ -11661,6 +11661,100 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 登出，或換另一個帳號登入之前：把**不在存檔裡、綁在帳號上**的記憶體內容清掉。
+  ///
+  /// `AppState` 在整個網頁連線期間只有一份，登出再登入另一個帳號並不會重新建立。
+  /// 存檔裡的欄位（金幣、經驗值…）會被下一個帳號的存檔整份蓋掉；但團隊、貼文、
+  /// 封鎖名單、師徒關係、處罰、各種資料來源這些**不進存檔**，不清的話會原封不動
+  /// 留給下一個人 —— 例如帳號 A 的團隊出現在帳號 B 的團隊頁（2026-10-15 實測）。
+  ///
+  /// 只在有接帳號的連線用（`AuthGate`）；示範身分沒有「換人」這回事。
+  /// 新增帳號綁定的、不進存檔的欄位時，**要加在這裡**。
+  void endSession() {
+    stopCloudWatch();
+    // 不再寫入前一個帳號的存檔；下一次 hydrate 會重新打開。
+    _hydrated = false;
+    _store = null;
+
+    // 身分與資料來源。來源綁著建立它時的 uid，留著就會替上一個人讀寫。
+    myUid = null;
+    adminClaim = false;
+    adminMode = false;
+    deleteAccountJob = null;
+    profileSource = null;
+    followSource = null;
+    postSource = null;
+    photoSource = null;
+    teamSource = null;
+    chatSource = null;
+    _mentorSource = null;
+    _mentorLoaded = false;
+    appealSource = null;
+    reportSource = null;
+    instructorCaseSource = null;
+    violationSource = null;
+    punishmentSource = null;
+    ratingSource = null;
+
+    // 社群。
+    myTeam = null;
+    teamJoinedAt = null;
+    teamLeftAt = null;
+    sentApplications.clear();
+    publicTeams = [];
+    disbandedTeams.clear();
+    posts = [];
+    conversations = [];
+    inbox.clear();
+    blockedUsers = [];
+    socialUsers = [];
+    nameByUid.clear();
+    publicProfiles.clear();
+    otherFollowerCounts = {};
+
+    // 師徒。
+    myInstructor = null;
+    apprentices = [];
+    mentorTasks = [];
+    questions = [];
+    mentorApplications.clear();
+    releasedApprentices.clear();
+    mentorReleasedAt = null;
+    mentorReleaseReason = null;
+    mentorRestoreProposedBy = null;
+    apprenticeTaskRatings.clear();
+    apprenticeWeeklyRated.clear();
+
+    // 處罰。
+    punishment = null;
+    myViolations = 0;
+    blockedUntil = null;
+
+    // 商店與帳務。
+    orders = [];
+    creditHistory = [];
+    emailOutbox.clear();
+
+    // 後台。
+    reports = [];
+    appeals = [];
+    instructorCases = [];
+    adminRatings.clear();
+    admins = [];
+    adminProducts = [];
+    publicPlanCases = [];
+
+    // 其餘。
+    lastSettlement = null;
+    for (final k in aiConversations.keys) {
+      aiConversations[k] = <AiTurn>[];
+    }
+    syncReport.clear();
+    cloudWriteReport.clear();
+    cloudReadReport.clear();
+    notifyListeners();
+  }
+
   /// 10 項全數填畢方可完成註冊；獎勵為金幣 100 ＋ 補簽券 ×1，無經驗值。
   /// 使用者帳號已建立的 Postcondition —— 把帳號層級的計數器一次歸位。
   ///

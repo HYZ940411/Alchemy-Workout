@@ -21,6 +21,48 @@ DateTime? _date(Object? v) =>
 String _achievementKey(Achievement a) => '${a.category}#${a.threshold}';
 
 
+Map<String, dynamic> _plannedToJson(List<PlannedSet> l) => {
+      // Firestore 不收「陣列裡面再放陣列」，每組用一個小物件。
+      'sets': [
+        for (final p in l) {'w': p.targetWeight, 'r': p.targetReps},
+      ],
+    };
+
+List<PlannedSet>? _plannedFromJson(Object? v) {
+  if (v is! Map) return null;
+  final sets = v['sets'];
+  if (sets is! List) return null;
+  return [
+    for (final e in sets)
+      if (e is Map && e['w'] is num && e['r'] is num)
+        PlannedSet((e['w'] as num).toDouble(), (e['r'] as num).round()),
+  ];
+}
+
+Map<String, dynamic> _customPlanToJson(CustomPlan p) => {
+      'id': p.id,
+      'name': p.name,
+      'state': p.state.name,
+      'myUses': p.myUses,
+      'visibleToFollowers': p.visibleToFollowers,
+      'appliedAt': _iso(p.appliedAt),
+      'rejectReason': p.rejectReason,
+      'lastTrainedAt': _iso(p.lastTrainedAt),
+      'lastCompletion': p.lastCompletion,
+      'exercises': [
+        for (final e in p.exercises)
+          {
+            'exerciseId': e.exercise.id,
+            'planned': _plannedToJson(e.planned),
+            if (e.replacedFrom != null) 'replacedFromId': e.replacedFrom!.id,
+            if (e.replacedPlanned != null)
+              'replacedPlanned': _plannedToJson(e.replacedPlanned!),
+            if (e.restSeconds != null) 'restSeconds': e.restSeconds,
+            'unit': e.unit.name,
+          },
+      ],
+    };
+
 extension AppStateSnapshot on AppState {
   // ===========================================================================
   // 匯出
@@ -30,6 +72,56 @@ extension AppStateSnapshot on AppState {
   ///
   /// **不含**平台目錄與社群假資料（動作庫、貼文、訂單、團隊、後台佇列）——
   /// 那些在真實系統裡本來就來自伺服器，不是這台裝置上的東西。
+  /// 存檔裡的一份自訂訓練讀回來。動作用 id 對回動作庫（平台＋自建）；
+  /// **找不到動作的那一筆跳過**，其餘照常讀 —— 一個動作被下架不該讓整份課表消失。
+  /// 整份讀不出來（缺 id／名稱）就回空值。
+  CustomPlan? _customPlanFromJson(Map<String, dynamic> j) {
+    final id = j['id'];
+    final name = j['name'];
+    if (id is! String || name is! String) return null;
+    Exercise? find(Object? exId) {
+      if (exId is! String) return null;
+      for (final e in [...platformExercises, ...kAllExercises, ...myExercises]) {
+        if (e.id == exId) return e;
+      }
+      return null;
+    }
+
+    final exs = <PlanExercise>[];
+    final raw = j['exercises'];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is! Map) continue;
+        final ex = find(e['exerciseId']);
+        final planned = _plannedFromJson(e['planned']);
+        if (ex == null || planned == null) continue;
+        exs.add(PlanExercise(
+          exercise: ex,
+          planned: planned,
+          replacedFrom: find(e['replacedFromId']),
+          replacedPlanned: _plannedFromJson(e['replacedPlanned']),
+          restSeconds:
+              e['restSeconds'] is num ? (e['restSeconds'] as num).round() : null,
+          unit: _enumByName(PlanUnit.values, e['unit']) ?? PlanUnit.reps,
+        ));
+      }
+    }
+    return CustomPlan(
+      id: id,
+      name: name,
+      exercises: exs,
+      myUses: j['myUses'] is num ? (j['myUses'] as num).round() : 0,
+      state: _enumByName(CustomPlanState.values, j['state']) ??
+          CustomPlanState.saved,
+      visibleToFollowers: j['visibleToFollowers'] == true,
+      appliedAt: _date(j['appliedAt']),
+      rejectReason: j['rejectReason'] as String?,
+    )
+      ..lastTrainedAt = _date(j['lastTrainedAt'])
+      ..lastCompletion =
+          j['lastCompletion'] is num ? (j['lastCompletion'] as num).toDouble() : null;
+  }
+
   Map<String, dynamic> toSnapshot() => {
         'v': kSnapshotVersion,
         'savedAt': DateTime.now().toIso8601String(),
@@ -304,6 +396,15 @@ extension AppStateSnapshot on AppState {
                 'type': e.type.name,
                 'defaultRestSeconds': e.defaultRestSeconds,
               },
+        ],
+
+        // --- 我的自訂訓練 ---
+        //
+        // 只存「我的」。**在此之前整份沒存**：建好的課表重新整理就不見了，
+        // 而畫面上寫著「已儲存」（第二批第 4 項實測，2026-10-15）。
+        'customPlans': [
+          for (final p in customPlans)
+            if (p.isMine) _customPlanToJson(p),
         ],
 
         // --- 教官 ---
@@ -804,6 +905,24 @@ extension AppStateSnapshot on AppState {
                   : null,
             ),
       ];
+    }
+
+    final savedPlans = pick<List>('customPlans');
+    if (savedPlans != null) {
+      // 只換掉「我的」，其餘（別人送審的）不是這份存檔的東西，不動。
+      customPlans = [
+        for (final e in savedPlans)
+          if (e is Map<String, dynamic>) ?_customPlanFromJson(e),
+        ...customPlans.where((p) => !p.isMine),
+      ];
+      // 目前選的課表若是自訂訓練，上面照 platformPlans 找是找不到的。
+      final cur = pick<String>('currentPlanId');
+      if (currentPlan == null && cur != null) {
+        currentPlan = customPlans
+            .where((p) => p.id == cur)
+            .map((p) => p.toWorkoutPlan())
+            .firstOrNull;
+      }
     }
 
     isInstructor = boolOf('isInstructor', isInstructor);

@@ -187,6 +187,9 @@ class _AuthGateState extends State<AuthGate> {
       if (dev != null) markSignedIn(dev).catchError((_) {});
     }
     if (user != null && _hydratedFor != user.uid) {
+      // 不經過登出畫面直接換人的話（例如另一個帳號的登入事件先到），
+      // 上一個帳號的記憶體內容也要清掉。
+      if (_hydratedFor != null) widget.state.endSession();
       _hydratedFor = user.uid;
       // 先呼叫再 setState：hydrate 是同步把狀態設成 loading 的，
       // 所以這之後的第一次 build 就會畫載入中，不會閃到上一個帳號的數字。
@@ -219,6 +222,8 @@ class _AuthGateState extends State<AuthGate> {
       // uid），Source 換掉了舊訂閱不會自己停 —— 不收的話下一個登入的
       // 人會被上一個帳號的變動叫醒。
       widget.state.stopCloudWatch();
+      // **登出就把上一個帳號的記憶體內容清掉**，否則下一個登入的人會看到它。
+      widget.state.endSession();
     }
     if (mounted) {
       setState(() {
