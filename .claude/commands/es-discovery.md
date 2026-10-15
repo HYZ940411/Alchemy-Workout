@@ -8,7 +8,7 @@ description: 掃描當前事件風暴（Event Storming）模型，識別 Event /
 
 先讀取事件風暴的模型檔案（流程與 Event 清單），並列出將要掃描的檔案清單。
 
-- 方法論參考：`Event-Storming_事件風暴/事件風暴模型.md`
+- 方法論參考：`Alchemy-Workout-Handover/Event-Storming_事件風暴/事件風暴模型.md`
 - 若找不到任何「流程 / Event 清單」檔案，**停止並回報**，不得自行臆造 Event。
 
 事件風暴的六大元素與其串聯關係（掃描時的判準基礎）：

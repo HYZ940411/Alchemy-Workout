@@ -29,7 +29,7 @@
 # 前置：讀這三個
 
 1. `Gherkin_行為規格/00_翻譯規約.md`（§1–§8，全部翻譯規則）
-2. `Event-Storming_事件風暴/01_Command清單.md` 該流程的區段
+2. `Alchemy-Workout-Handover/Event-Storming_事件風暴/01_Command清單.md` 該流程的區段
 3. 該流程的流程檔全文
 
 需要欄位定義時再讀 `02_Aggregate定義.md`、`04_ReadModel清單.md` 的相關區塊，
