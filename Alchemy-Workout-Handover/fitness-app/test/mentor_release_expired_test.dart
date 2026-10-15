@@ -182,4 +182,74 @@ void main() {
     expect(s.apprentices.map((a) => a.uid), ['u-hyz']);
     expect(s.releasedApprentices, isEmpty);
   });
+
+  group('測試用開關：解除後立刻可重新申請', () {
+    AppState releasedNow() {
+      final s = _hyz()..developerMode = true;
+      s.applyCloudBonds([_released(s, const Duration(hours: 1))]);
+      return s;
+    }
+
+    test('預設關：冷卻期內照規格擋住', () {
+      final s = releasedNow();
+      expect(s.mentorApplyBlockedReason(_ins('別人', uid: 'u-x')), isNotNull);
+    });
+
+    test('開著 → 冷卻期內也可以申請，載入時也不會再把舊關係讀回來', () {
+      final s = _hyz()
+        ..developerMode = true
+        ..devSkipMentorCooldown = true;
+      s.applyCloudBonds([_released(s, const Duration(hours: 1))]);
+
+      expect(s.myInstructor, isNull, reason: '舊關係視為已結束');
+      expect(s.mentorApplyBlockedReason(_ins('別人', uid: 'u-x')), isNull);
+    });
+
+    test('開著 → 同一個連線期間，剛解除就能申請別人', () {
+      final s = _hyz()
+        ..developerMode = true
+        ..devSkipMentorCooldown = true;
+      s.applyCloudBonds([
+        CloudBond(
+          id: 'u-123_u-hyz',
+          mentorUid: 'u-123',
+          apprenticeUid: 'u-hyz',
+          mentorName: '123',
+          apprenticeName: 'HYZ',
+          state: MentorBondState.active,
+          bondedAt: s.now.subtract(const Duration(days: 30)),
+        )
+      ]);
+      s.releaseMentor(MentorReleaseReason.byApprentice);
+
+      expect(s.applyMentor(_ins('別人', uid: 'u-x')), isTrue);
+    });
+
+    test('開著 → 剛解除的舊關係排在前面，新的生效中關係仍要讀到', () {
+      final s = _hyz()
+        ..developerMode = true
+        ..devSkipMentorCooldown = true;
+      s.applyCloudBonds([
+        _released(s, const Duration(hours: 1)),
+        CloudBond(
+          id: 'u-456_u-hyz',
+          mentorUid: 'u-456',
+          apprenticeUid: 'u-hyz',
+          mentorName: '456',
+          apprenticeName: 'HYZ',
+          state: MentorBondState.active,
+          bondedAt: s.now.subtract(const Duration(days: 1)),
+        ),
+      ]);
+      expect(s.myInstructor?.name, '456');
+    });
+
+    test('只在開發者模式有效：開發者模式關掉，開關就失效', () {
+      final s = _hyz()..devSkipMentorCooldown = true; // developerMode 預設關
+      s.applyCloudBonds([_released(s, const Duration(hours: 1))]);
+
+      expect(s.myInstructor, isNotNull);
+      expect(s.mentorApplyBlockedReason(_ins('別人', uid: 'u-x')), isNotNull);
+    });
+  });
 }

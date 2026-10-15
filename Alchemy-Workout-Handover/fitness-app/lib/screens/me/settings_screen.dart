@@ -348,6 +348,37 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: S.base),
+            const SectionLabel('師徒解除冷卻', trailing: '開發者模式'),
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '規格是解除後 3 天內不能與其他對象建立師徒關係。'
+                    '開啟這個開關後，解除就立刻視為結束，可以馬上重新申請 ——'
+                    '代價是這段期間沒有「恢復」可以測。'
+                    '只在開發者模式有效，不進存檔。',
+                    style: T.caption(),
+                  ),
+                  const SizedBox(height: S.md),
+                  AppButton(
+                    label: s.devSkipMentorCooldown
+                        ? '關閉：解除後照規格等 3 天'
+                        : '開啟：解除後立刻可重新申請',
+                    kind: BtnKind.secondary,
+                    onPressed: () {
+                      s.toggleDevSkipMentorCooldown();
+                      showToast(
+                          context,
+                          s.devSkipMentorCooldown
+                              ? '已開啟，解除後可立刻重新申請'
+                              : '已關閉，恢復照規格 3 天');
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: S.base),
             const SectionLabel('教官門檻', trailing: '開發者模式'),
             Panel(
               child: Column(

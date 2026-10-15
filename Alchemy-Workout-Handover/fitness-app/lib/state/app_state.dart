@@ -5350,7 +5350,10 @@ class AppState extends ChangeNotifier {
       // 評分歷史要用），所以每次載入都讀得到它；沒有這一行，它每次都被重新讀成
       // 「我的教官」，學徒就永遠申請不了別人（2026-10-15 HYZ 與 123）。
       // 冷卻期內的照舊留著，才有得恢復。
-      if (b.state != MentorBondState.active && !b.recoverableAt(now)) continue;
+      if (b.state != MentorBondState.active &&
+          (!b.recoverableAt(now) || _skipMentorCooldown)) {
+        continue;
+      }
 
       myInstructor = instructors.where((i) => i.name == name).firstOrNull ??
           Instructor(
@@ -6199,7 +6202,8 @@ class AppState extends ChangeNotifier {
   /// 解除之後冷卻期已經過完 —— 這段關係結束了，不再佔著「我的教官」。
   /// 不靠排程：時間一到這個判斷自己就成立，收尾（清欄位）可以晚一點。
   bool get _mentorReleaseEnded =>
-      mentorReleased && mentorCooldownLeft == Duration.zero;
+      mentorReleased &&
+      (mentorCooldownLeft == Duration.zero || _skipMentorCooldown);
 
   /// 我當學徒那一段，恢復不了的原因。**空值＝可以恢復。**
   ///
@@ -12038,6 +12042,21 @@ class AppState extends ChangeNotifier {
     developerMode = !developerMode;
     notifyListeners();
   }
+
+  /// 測試用：**解除師徒關係後立刻可以重新申請**，不等 3 天冷卻期。
+  ///
+  /// 規格是「解除後 3 天內雙方不得與其他對象建立師徒關係」，這個開關**不改規格**：
+  /// 預設關、不進存檔，而且只在開發者模式開著時才生效（[developerMode] 關掉就失效）。
+  /// 代價是開著的期間**沒有恢復可以測** —— 解除當下那段關係就視為結束。
+  /// 理由同改名冷卻的逃生門：測的人一按解除就把自己鎖住 3 天。
+  bool devSkipMentorCooldown = false;
+
+  void toggleDevSkipMentorCooldown() {
+    devSkipMentorCooldown = !devSkipMentorCooldown;
+    notifyListeners();
+  }
+
+  bool get _skipMentorCooldown => developerMode && devSkipMentorCooldown;
   /// 電子郵件。**選填** —— 第三方登入者於授權時帶入，手機註冊者可自願填寫。
   ///
   /// 僅供三類通知使用：出貨、處罰與申訴結果、帳號刪除排程。
