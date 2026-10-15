@@ -30,11 +30,12 @@ export const isSay = (v: unknown): v is string =>
 export function buildPrompt(say: string): string {
   return [
     "你是健身 App 的意圖分類器。使用者被問「這份課表要怎麼調？」，",
-    "他的回答如下。請判斷他想往哪一個方向調。",
+    "他的回答如下。請判斷他想往哪些方向調，以及他有沒有講還剩多少時間。",
     "",
     "四個方向：",
     "- easier：整體降強度 —— 他覺得太吃力、狀況不好、想練得輕一點",
-    "- harder：整體升強度 —— 他覺得太輕鬆、狀態好、想加重或挑戰",
+    "- harder：整體升強度 —— 他覺得太輕鬆、狀態好、想加重或挑戰，",
+    "  **或想多練一些量：加動作、加組、加量都是 harder**",
     "- trim：減少組數 —— **他今天能練的時間變少了**",
     "- swap：替換做不了的動作 —— 某個器材或動作他今天用不了",
     "",
@@ -43,43 +44,75 @@ export function buildPrompt(say: string): string {
     "任何「我待會要去做別的事」「只剩多久」「得早點走」的意思，",
     "都是 trim。",
     "",
+    "**一句話可以有兩個方向**，例如「累了而且只剩 20 分鐘」是 easier 與 trim，",
+    "「增加動作（增加整體強度）」只是 harder（加動作就是加強度）。",
+    "",
     "判斷範例：",
-    "- 「我等一下要趕去接小孩」→ trim（他時間變少了）",
-    "- 「待會還要開會」→ trim",
-    "- 「只有半小時」→ trim",
-    "- 「想早點回家」→ trim",
-    "- 「今天有點累」→ easier",
-    "- 「肩膀怪怪的」→ easier",
-    "- 「昨天睡得很好，想拼一下」→ harder",
-    "- 「臥推架被占走了」→ swap",
-    "- 「我想多練上胸」→ null（改變訓練部位，不是這四個方向）",
-    "- 「今天這個太難」→ null（可能想降強度，也可能想換動作）",
-    "- 「早安」→ null",
+    "- 「我等一下要趕去接小孩」→ [\"trim\"]",
+    "- 「只有半小時」→ [\"trim\"]，minutes 30",
+    "- 「今天有點累」→ [\"easier\"]",
+    "- 「昨天睡得很好，想拼一下」→ [\"harder\"]",
+    "- 「請幫我根據這個課表目標增加動作」→ [\"harder\"]",
+    "- 「再加兩組」→ [\"harder\"]",
+    "- 「臥推架被占走了，其他的加重一點」→ [\"swap\",\"harder\"]",
+    "- 「有點累，而且只剩 20 分鐘」→ [\"easier\",\"trim\"]，minutes 20",
+    "- 「我想多練上胸」→ []（改變訓練部位，不是這四個方向）",
+    "- 「今天這個太難」→ []（可能想降強度，也可能想換動作）",
+    "- 「早安」→ []",
     "",
     "**規則（很重要）**：",
-    "1. 只在他的話**明確指向唯一一個方向**時才回答那個方向。",
-    "2. 同時指向兩個方向、或指向以上四者以外的事情（例如改變訓練部位、",
-    "   改變動作順序），一律回 null。",
-    "3. 寧可回 null 讓系統再問一次，也不要猜 —— 猜錯方向會讓他照著",
-    "   一份他沒要求的課表去練。",
+    "1. 只列出他的話**明確指向**的方向；不確定的那個就不要列。",
+    "2. 指向以上四者以外的事情（例如改變訓練部位、改變動作順序），",
+    "   那一部分不列；全部都不明確就回空陣列。",
+    "3. 同時要降又要升是矛盾的，回空陣列。",
+    "4. minutes 是他**明講**還剩幾分鐘（「半小時」＝30、「一小時」＝60）；",
+    "   沒講就是 null，不要自己估。",
     "",
-    "只輸出 JSON：{\"intent\": \"easier\"} 或 {\"intent\": null}。",
+    "只輸出 JSON：{\"intents\": [\"harder\"], \"minutes\": null}。",
     "",
     `使用者的回答：${say}`,
   ].join("\n");
 }
 
-/** 模型回什麼都不信，只認四個值之一，其餘一律 null。 */
+/** 分類結果。`intents` 為空代表判不出來。 */
+export interface Classified {
+  intents: Intent[];
+  minutes: number | null;
+}
+
+/** 模型回什麼都不信：只認四個值、去重、擋掉矛盾、分鐘限在 1–600。 */
+export function parseClassified(raw: unknown): Classified {
+  const none: Classified = {intents: [], minutes: null};
+  if (!raw || typeof raw !== "object") return none;
+  const r = raw as {intents?: unknown; intent?: unknown; minutes?: unknown};
+  // 舊格式（單一 intent）也收 —— 模型偶爾不照新格式回。
+  const list = Array.isArray(r.intents) ? r.intents : [r.intent];
+  const intents: Intent[] = [];
+  for (const v of list) {
+    if (typeof v === "string" && INTENTS.includes(v) &&
+        !intents.includes(v as Intent)) {
+      intents.push(v as Intent);
+    }
+  }
+  const m = r.minutes;
+  const minutes = typeof m === "number" && m >= 1 && m <= 600 ?
+    Math.round(m) :
+    null;
+  if (intents.includes("easier") && intents.includes("harder")) {
+    return {intents: [], minutes};
+  }
+  return {intents, minutes};
+}
+
+/** 舊介面：只取第一個方向。 */
 export function parseIntent(raw: unknown): Intent | null {
-  if (!raw || typeof raw !== "object") return null;
-  const v = (raw as {intent?: unknown}).intent;
-  return typeof v === "string" && INTENTS.includes(v) ? v as Intent : null;
+  return parseClassified(raw).intents[0] ?? null;
 }
 
 export async function askIntent(
   say: string,
   apiKey: string,
-): Promise<Intent | null> {
+): Promise<Classified> {
   // **走共用的 `callGemini`。**
   //
   // 第一版這裡自己 fetch，於是少了 `adjust.ts` 那個「404 時照錯誤訊息
@@ -92,8 +125,8 @@ export async function askIntent(
   // 放得進前端的 20 秒預算。單次拉長的話，一次忙線就會直接吃掉整個預算。
   const text = await callGemini(buildPrompt(say), apiKey, {timeoutMs: 5000});
   try {
-    return parseIntent(JSON.parse(text));
+    return parseClassified(JSON.parse(text));
   } catch {
-    return null;
+    return {intents: [], minutes: null};
   }
 }

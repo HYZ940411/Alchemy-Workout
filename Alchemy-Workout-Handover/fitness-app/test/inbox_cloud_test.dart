@@ -18,6 +18,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fitness_app/domain/clock.dart';
 import 'package:fitness_app/data/mentor_data.dart';
 import 'package:fitness_app/data/team_data.dart';
 import 'package:fitness_app/domain/community.dart';
@@ -130,7 +131,9 @@ InboundRequest _req(InboundKind kind, String subject,
       fromUid: uid,
       fromRank: 30,
       subject: subject,
-      sentAt: DateTime(2026, 9, 24),
+      // **相對於現在，不寫死日期。** 原本是 2026-09-24 —— 請求七天逾期，
+      // 10-01 之後信箱就不收它，這幾條測試在日曆翻過去那天一起紅。
+      sentAt: appNow().subtract(const Duration(hours: 1)),
     );
 
 /// 一個接好雲端、而且有一支公開團隊可以加入的狀態。

@@ -17,6 +17,7 @@ import '../data/appeal_data.dart';
 import '../data/punishment_data.dart';
 import '../data/quality_score_data.dart';
 import '../data/violation_data.dart';
+import '../domain/adjust_volume.dart';
 import '../domain/ai_adjust.dart';
 import '../domain/decay.dart';
 import '../domain/novice.dart';
@@ -7354,7 +7355,10 @@ class AppState extends ChangeNotifier {
   /// 只是佔篇幅。截斷到 200 字：這是要送進 prompt 的外部輸入，
   /// 不設上限等於讓使用者決定 prompt 有多長。
   String? _aiNote(AiSource src) {
-    final names = adjustIntentNames.values.toSet();
+    final names = {
+      ...adjustIntentNames.values,
+      ...?_aiMinuteReplies[src],
+    };
     final said = aiConversations[src]!
         .where((t) => t.role == AiTurnRole.user)
         .map((t) => t.text.trim())
@@ -7765,7 +7769,13 @@ class AppState extends ChangeNotifier {
         // 「太輕」「不夠重」「重一點」—— 都只有升這一個解釋。
         a.contains('太輕') || a.contains('重一點') || a.contains('不夠重') ||
         a.contains('挑戰') || a.contains('加碼') || a.contains('更強') ||
-        a.contains('狀況很好') || a.contains('狀態很好')) {
+        a.contains('狀況很好') || a.contains('狀態很好') ||
+        // **加量也是加強度**（2026-10-04）：「加動作」「加組」「加量」。
+        // 要排在減組數的 `組` 之前 —— 「加一組」含「組」，但講的是加。
+        // **不收「多練」「多做」**：「我想多練上胸」講的是改練部位，
+        // 不是加量 —— 第一版收了，既有測試當場紅。
+        a.contains('加動作') || a.contains('增加動作') || a.contains('加組') ||
+        a.contains('加一組') || a.contains('多一組') || a.contains('加量')) {
       return AdjustIntent.harder;
     }
     if (a.contains('降') || a.contains('輕') || a.contains('簡單') ||
@@ -7819,6 +7829,34 @@ class AppState extends ChangeNotifier {
 
   /// 本次調整的意圖與建議，逐來源各一份。
   final Map<AiSource, AdjustIntent> aiIntent = {};
+
+  /// 同時要求的所有方向（第一個就是 [aiIntent]）。
+  ///
+  /// 2026-10-04 起一句話可以有兩個要求。在此之前分類器一看到兩個方向
+  /// 就整句判不出來 —— 使用者說「增加動作（增加整體強度）」，
+  /// 換來的是「目前只能往這 4 個方向調」。
+  final Map<AiSource, List<AdjustIntent>> aiIntents = {};
+
+  /// 使用者說他還有幾分鐘。**空值＝不知道或沒說**，退回不看時間的舊規則。
+  final Map<AiSource, int?> aiMinutes = {};
+
+  /// 正在等使用者回答「你還有多少時間？」。
+  final Map<AiSource, bool> aiAwaitingMinutes = {};
+
+  /// 使用者回答時間問題的那幾句。**它們是答案，不是補充說明** ——
+  /// 「不確定」「20 分鐘」不該被當成脈絡送進 prompt（[_aiNote]）。
+  final Map<AiSource, Set<String>> _aiMinuteReplies = {};
+
+  /// 回答時間問題的快捷鍵。最後一個是「不確定」——
+  /// 不知道就退回不看時間的舊規則，不要逼人猜一個數字。
+  static const aiMinuteChoices = ['10 分鐘', '20 分鐘', '30 分鐘', '45 分鐘', '不確定'];
+
+  /// 加強度、減組數要看時間（2026-10-04 裁決）。
+  /// **只在訓練前／訓練中問** —— 自動優化沒有人在等，課表調整是換器材。
+  bool _needsMinutes(AiSource src, List<AdjustIntent> intents) =>
+      (src == AiSource.beforeTraining || src == AiSource.duringTraining) &&
+      (intents.contains(AdjustIntent.harder) ||
+          intents.contains(AdjustIntent.trim));
   final Map<AiSource, AdjustSuggestion> aiSuggestion = {};
 
   /// 這一輪有沒有真的扣過點。
@@ -8042,6 +8080,24 @@ class AppState extends ChangeNotifier {
     if (aiStage[src] != AiStage.clarifying) return;
     _say(src, AiTurnRole.user, answer);
 
+    // **這一輪是在回答「你還有多少時間？」**，不是新的要求。
+    if (aiAwaitingMinutes[src] ?? false) {
+      (_aiMinuteReplies[src] ??= {}).add(answer.trim());
+      final m = parseMinutes(answer, bareNumber: true);
+      if (m == null && !minutesUnknown(answer)) {
+        _say(src, AiTurnRole.ai,
+            '我沒讀出時間。直接回分鐘數就好，例如「20 分鐘」；'
+            '不確定的話回「不確定」。本次未扣點。');
+        notifyListeners();
+        return;
+      }
+      aiMinutes[src] = m;
+      aiAwaitingMinutes[src] = false;
+      aiStage[src] = AiStage.analyzing;
+      notifyListeners();
+      return;
+    }
+
     // 這一輪 AI 有沒有掛掉。影響的是**判不出來時要說哪一句話** ——
     // 「你講的不在四個方向裡」與「AI 暫時忙線」是兩件完全不同的事，
     // 而在此之前它們的回話一模一樣。
@@ -8050,6 +8106,8 @@ class AppState extends ChangeNotifier {
 
     // 使用者直接點了那四顆方向鍵 —— 不必問模型。
     var intent = _exactIntent(answer);
+    List<AdjustIntent>? intents;
+    int? minutes;
     if (intent != null) {
       intentDecidedBy = '選項';
     } else {
@@ -8064,7 +8122,10 @@ class AppState extends ChangeNotifier {
         aiClassifying[src] = true;
         notifyListeners();
         try {
-          intent = (await ai.classify(answer)).intent;
+          final got = await ai.classify(answer);
+          intents = got.intents;
+          minutes = got.minutes;
+          intent = intents.firstOrNull;
           intentDecidedBy = intent == null ? 'AI（判不出來）' : 'AI';
         } catch (e) {
           // **退回端內規則，而且要講出來**（只給開發者模式）。
@@ -8078,6 +8139,8 @@ class AppState extends ChangeNotifier {
       // AI 沒接、或剛剛失敗 —— 用端內的關鍵字比對。
       intent ??= parseIntent(answer);
       intentDecidedBy ??= '端內規則';
+      // 時間有講就用：「只剩 20 分鐘」不必再問一次。
+      minutes ??= parseMinutes(answer);
     }
 
     if (intent == null) {
@@ -8116,9 +8179,87 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    aiIntent[src] = intent;
+    final all = resolveIntents(intents == null || intents.isEmpty
+        ? [intent]
+        : intents);
+    aiIntent[src] = all.first;
+    aiIntents[src] = all;
+    aiMinutes[src] = minutes;
+
+    // **加強度、減組數先問時間**（2026-10-04 裁決）——
+    // 能多加多少、該砍多少，取決於他還剩多久。講過了就不問。
+    if (minutes == null && _needsMinutes(src, all)) {
+      aiAwaitingMinutes[src] = true;
+      _say(src, AiTurnRole.ai,
+          '你還有多少時間可以練？我會依時間決定'
+          '${all.contains(AdjustIntent.harder) ? '要加多少' : '要砍多少'}。'
+          '（例如：20 分鐘；不確定的話回「不確定」）');
+      notifyListeners();
+      return;
+    }
     aiStage[src] = AiStage.analyzing;
     notifyListeners();
+  }
+
+  /// 每個動作已經**不在待做清單上**的組數（做完或略過）。
+  /// 這些組不算時間、也不能被砍。訓練前全部是 0。
+  Map<int, int> _doneSetsOf(AiSource src) {
+    final s = session;
+    if (s == null || src != AiSource.duringTraining) return const {};
+    return {
+      for (var i = 0; i < s.records.length; i++)
+        i: s.records[i]
+            .where((r) => r.state == SetState.done || r.state == SetState.skipped)
+            .length,
+    };
+  }
+
+  /// 這一次的時間預算。
+  VolumePlan _aiVolume(AiSource src, List<PlanExercise> target, int from,
+          {required bool allowNewExercise}) =>
+      planVolume(
+        exercises: target,
+        intents: aiIntents[src] ?? [aiIntent[src] ?? AdjustIntent.easier],
+        minutes: aiMinutes[src],
+        restSecondsOf: restSecondsFor,
+        onlyFrom: from,
+        doneSets: _doneSetsOf(src),
+        allowNewExercise: allowNewExercise,
+      );
+
+  /// 訓練中加新動作的候選（2026-10-04 裁決：比照換動作，**AI 只能從這裡挑**）。
+  ///
+  /// 與剩下的動作同類型、練同一個能力值維度、器材做得到、而且不在課表裡。
+  /// 排序依剩下動作出現的維度順序 —— 課表前面練的部位優先。
+  @visibleForTesting
+  List<Exercise> addCandidatesFor(List<PlanExercise> target, int from,
+      {int limit = 8}) {
+    final remaining = target.skip(from).map((pe) => pe.exercise).toList();
+    if (remaining.isEmpty) return const [];
+    // 依出現順序去重：課表前面練的部位排前面。
+    final dims = <Dim>[];
+    for (final e in remaining) {
+      if (e.dim != null && !dims.contains(e.dim)) dims.add(e.dim!);
+    }
+    final types = remaining.map((e) => e.type).toSet();
+    final inPlan = target.map((pe) => pe.exercise.id).toSet();
+    final have = availableEquipment;
+    final pool = [
+      for (final x in platformExercises)
+        if (!inPlan.contains(x.id) &&
+            x.dim != null &&
+            dims.contains(x.dim) &&
+            types.contains(x.type) &&
+            () {
+              final need = requiredEquipment(x.equipment);
+              return need.isEmpty || need.every(have.contains);
+            }())
+          x,
+    ]..sort((a, b) {
+        final d = dims.indexOf(a.dim!).compareTo(dims.indexOf(b.dim!));
+        return d != 0 ? d : a.name.compareTo(b.name);
+      });
+    return pool.take(limit).toList();
   }
 
   // --- 外部 AI（[BE-08]）---
@@ -8151,21 +8292,34 @@ class AppState extends ChangeNotifier {
     }
     final from = src == AiSource.duringTraining ? (session?.exerciseIndex ?? 0) : 0;
     final intent = aiIntent[src] ?? AdjustIntent.easier;
+    final intents = aiIntents[src] ?? [intent];
+    final swap = intents.contains(AdjustIntent.swap);
+    // 新動作的候選只在訓練中算 —— 規格「加入動作至本次訓練」的
+    // Precondition 是本次訓練進行中。
+    final addPool = src == AiSource.duringTraining &&
+            intents.contains(AdjustIntent.harder)
+        ? addCandidatesFor(target, from)
+        : const <Exercise>[];
+    final volume =
+        _aiVolume(src, target, from, allowNewExercise: addPool.isNotEmpty);
 
     RemoteSuggestion got;
     try {
       got = await remote.suggest(
         exercises: target,
         intent: intent,
+        intents: intents,
         onlyFrom: from,
         note: _aiNote(src),
-        context: _aiContext(target, swap: intent == AdjustIntent.swap),
-        candidates: intent == AdjustIntent.swap
+        context: _aiContext(target, swap: swap),
+        candidates: swap
             ? {
                 for (final pe in target)
                   pe.exercise.name: swapCandidatesFor(pe.exercise),
               }
             : const {},
+        volume: aiMinutes[src] == null ? null : volume,
+        addCandidates: volume.newExerciseSets > 0 ? addPool : const [],
       );
     } catch (_) {
       // 逾時與服務錯誤在使用者眼裡沒有差別，都是「這次沒成功」。
@@ -8175,10 +8329,9 @@ class AppState extends ChangeNotifier {
     // 畫面可能在等待期間被關掉或重設。
     if (aiStage[src] != AiStage.analyzing) return;
 
-    if (got.suggestion.changes.isEmpty || got.suggestion.isEmpty) {
-      _say(src, AiTurnRole.system, '以目前的內容，這個方向沒有可調的空間。未扣點。');
-      aiStage[src] = AiStage.idle;
-      notifyListeners();
+    final merged = _mergeWithRule(src, got, target, from, volume);
+    if (merged.changes.isEmpty || merged.isEmpty) {
+      _sayNothingToAdjust(src, volume);
       return;
     }
 
@@ -8187,16 +8340,7 @@ class AppState extends ChangeNotifier {
       aiCharged[src] = true;
     }
     aiLastOrigin = got.origin;
-    // 伺服器退回規則時，逐筆是沒有理由的（規則只會算）。至少補上
-    // 這條規則的訓練學依據 —— 使用者要的是「為什麼這樣改」，
-    // 不是三行數字。
-    aiSuggestion[src] = got.origin == SuggestionOrigin.rule
-        ? AdjustSuggestion(
-            intent: got.suggestion.intent,
-            changes: got.suggestion.changes,
-            rationale: adjustRationale[intent],
-          )
-        : got.suggestion;
+    aiSuggestion[src] = merged;
     // **用標題區分來源，不另外加一個灰框。**
     //
     // 原本退回規則時會多一句「AI 分析暫時無法使用」—— 那句話對使用者
@@ -8215,7 +8359,7 @@ class AppState extends ChangeNotifier {
     // `text` 仍然給一份可讀的純文字：對話紀錄要留得下來，
     // 而一段能唸出來的話比一個物件可靠。
     _say(src, AiTurnRole.ai,
-        '${byModel ? 'AI ' : ''}建議如下（${adjustIntentNames[intent]}）：\n\n'
+        '${byModel ? 'AI ' : ''}建議如下（${merged.title}）：\n\n'
         '${aiSuggestion[src]!.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
         '${aiSuggestion[src]!.rationale == null ? '' : '\n${aiSuggestion[src]!.rationale}\n'}'
         '\n作用範圍：${aiSourceScope[src]}',
@@ -8231,6 +8375,76 @@ class AppState extends ChangeNotifier {
       _say(src, AiTurnRole.system, '〔開發者〕${got.error}');
     }
     aiStage[src] = AiStage.proposed;
+    notifyListeners();
+  }
+
+  /// 把模型的建議**逐筆**疊到規則上。
+  ///
+  /// **結構由時間預算決定，模型只填內容。** 模型給的那一筆組數對得上
+  /// 安排才收（重量、次數、理由都用模型的）；對不上就用規則那一筆 ——
+  /// 模型可能多加一組、少砍一組，使用者照著練就會超時。
+  ///
+  /// 新動作同理：模型沒挑出合格的新動作（不在候選裡、組數不對、
+  /// 或根本沒挑），就改用**不加新動作**的那份安排，多出的時間
+  /// 全部加在現有動作上 —— 使用者要的「加量」仍然成立。
+  ///
+  /// 伺服器退回規則時（模型失敗），**用 App 這一份規則**，不用 Worker 的。
+  /// 時間預算只寫在這裡，Worker 那一份規則不知道它。
+  AdjustSuggestion _mergeWithRule(AiSource src, RemoteSuggestion got,
+      List<PlanExercise> target, int from, VolumePlan planned) {
+    final intent = aiIntent[src] ?? AdjustIntent.easier;
+    final intents = aiIntents[src] ?? [intent];
+    final timed = aiMinutes[src] != null;
+    final byModel = got.origin == SuggestionOrigin.gemini;
+
+    final addition = byModel && planned.newExerciseSets > 0
+        ? got.suggestion.additions
+            .where((a) => a.after.length == planned.newExerciseSets)
+            .firstOrNull
+        : null;
+    final volume = planned.newExerciseSets > 0 && addition == null
+        ? _aiVolume(src, target, from, allowNewExercise: false)
+        : planned;
+    final rule = buildSuggestion(target, intent,
+        onlyFrom: from, intents: intents, volume: timed ? volume : null);
+    if (!byModel) return rule;
+
+    final fromModel = {
+      for (final c in got.suggestion.changes)
+        if (c.addition == null) c.exerciseIndex: c,
+    };
+    return AdjustSuggestion(
+      intent: intent,
+      intents: intents,
+      changes: [
+        for (final r in rule.changes)
+          switch (fromModel[r.exerciseIndex]) {
+            final m? when !timed ||
+                m.after.length ==
+                    volume.expectedSets(r.exerciseIndex, r.before.length) =>
+              m,
+            _ => r,
+          },
+        ?addition,
+      ],
+      // 模型逐筆給理由；時間怎麼換算成組數則是這裡算的，要講出來。
+      rationale: timed ? volumeRationale(intents, volume) : null,
+    );
+  }
+
+  /// 這一次沒有東西可以調。**講得出為什麼就講** ——
+  /// 「時間夠，不用砍」比「這個方向沒有可調的空間」有用得多。
+  void _sayNothingToAdjust(AiSource src, VolumePlan volume) {
+    final intents = aiIntents[src] ?? const [];
+    final m = aiMinutes[src];
+    _say(
+        src,
+        AiTurnRole.system,
+        m != null && intents.contains(AdjustIntent.trim) && volume.fits
+            ? '剩下的組約 ${minutesOf(volume.remainingSeconds)} 分鐘，'
+                '在你的 $m 分鐘內做得完，不用減。未扣點。'
+            : '以目前的內容，這個方向沒有可調的空間。未扣點。');
+    aiStage[src] = AiStage.idle;
     notifyListeners();
   }
 
@@ -8336,11 +8550,15 @@ class AppState extends ChangeNotifier {
     // 訓練中調整只動**尚未完成**的剩餘動作。
     final from = src == AiSource.duringTraining ? (session?.exerciseIndex ?? 0) : 0;
     final intent = aiIntent[src] ?? AdjustIntent.easier;
-    final suggestion = buildSuggestion(target, intent, onlyFrom: from);
+    final intents = aiIntents[src] ?? [intent];
+    // **規則不挑新動作**：多出的時間全部加在現有動作上。
+    final volume = _aiVolume(src, target, from, allowNewExercise: false);
+    final suggestion = buildSuggestion(target, intent,
+        onlyFrom: from,
+        intents: intents,
+        volume: aiMinutes[src] == null ? null : volume);
     if (suggestion.changes.isEmpty || suggestion.isEmpty) {
-      _say(src, AiTurnRole.system, '以目前的內容，這個方向沒有可調的空間。未扣點。');
-      aiStage[src] = AiStage.idle;
-      notifyListeners();
+      _sayNothingToAdjust(src, volume);
       return;
     }
 
@@ -8352,7 +8570,7 @@ class AppState extends ChangeNotifier {
     aiSuggestion[src] = suggestion;
     // 結構與純文字一起給 —— 理由見上面那一處（端內規則這條路也要表格）。
     _say(src, AiTurnRole.ai,
-        '建議如下（${adjustIntentNames[intent]}）：\n\n'
+        '建議如下（${suggestion.title}）：\n\n'
         '${suggestion.changes.map((c) => '· ${c.detail}').join('\n\n')}\n'
         '${suggestion.rationale == null ? '' : '\n${suggestion.rationale}\n'}'
         '\n作用範圍：${aiSourceScope[src]}',
@@ -8407,6 +8625,12 @@ class AppState extends ChangeNotifier {
         _landAdjustedPlan();
       case AiSource.duringTraining:
         _applyToSession(suggestion);
+        // **新動作走規格的 Command**「加入動作至本次訓練」——
+        // 與使用者手動加動作同一條路：只改本次快照、總計畫組數只增不減、
+        // 進度條跟著分母重算。不另寫一套「AI 版的加動作」。
+        for (final a in suggestion.additions) {
+          addExerciseToSession(a.addition!, a.after);
+        }
       case AiSource.autoOptimize:
         _applyToTemplate(suggestion);
     }
@@ -8491,6 +8715,10 @@ class AppState extends ChangeNotifier {
     aiConversations[src]!.clear();
     aiStage[src] = AiStage.idle;
     aiIntent.remove(src);
+    aiIntents.remove(src);
+    aiMinutes.remove(src);
+    aiAwaitingMinutes.remove(src);
+    _aiMinuteReplies.remove(src);
     aiSuggestion.remove(src);
     aiCharged[src] = false;
     aiRetryCount = 0;

@@ -16,6 +16,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fitness_app/domain/adjust_volume.dart';
 import 'package:fitness_app/data/ai_suggestion.dart';
 import 'package:fitness_app/domain/ai_adjust.dart';
 import 'package:fitness_app/domain/community.dart';
@@ -40,6 +41,9 @@ class _Auto implements AiSuggestionSource {
     required List<PlanExercise> exercises,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) async {
     calls++;
     if (throws) throw StateError('雲端掛了');
@@ -76,6 +80,9 @@ class _Auto implements AiSuggestionSource {
     String? note,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) =>
       throw UnimplementedError('自動優化不該走這一支');
 }

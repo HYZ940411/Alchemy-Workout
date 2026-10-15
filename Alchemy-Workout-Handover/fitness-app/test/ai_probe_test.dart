@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:fitness_app/domain/adjust_volume.dart';
 import 'package:fitness_app/data/ai_suggestion.dart';
 import 'package:fitness_app/data/ai_suggestion_http.dart';
 import 'package:fitness_app/domain/ai_adjust.dart';
@@ -95,6 +96,9 @@ class _Fake implements AiSuggestionSource {
     required List<PlanExercise> exercises,
     AdjustContext? context,
     Map<String, List<Exercise>> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List<Exercise> addCandidates = const [],
   }) =>
       throw UnimplementedError('這個假件不支援自動優化');
 
@@ -116,6 +120,9 @@ class _Fake implements AiSuggestionSource {
     String? note,
     Object? context,
     Map<String, List> candidates = const {},
+    List<AdjustIntent>? intents,
+    VolumePlan? volume,
+    List addCandidates = const [],
   }) =>
       throw UnimplementedError();
 }

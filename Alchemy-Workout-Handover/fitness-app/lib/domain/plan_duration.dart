@@ -64,12 +64,20 @@ Duration? estimatePlanDuration(
   for (final pe in plan.exercises) {
     final rest = restSecondsOf(pe);
     for (final set in pe.planned) {
-      final work = pe.isTimed ? set.targetReps : set.targetReps * kSecondsPerRep;
-      total += work + rest;
+      total += setSeconds(pe, set, rest);
     }
   }
   return Duration(seconds: total);
 }
+
+/// 做一組要花幾秒：工作時間＋組間休息。
+///
+/// **全專案只有這一份。** 課表頁的「預估訓練時長」與 AI 調整的時間預算
+/// （`adjust_volume.dart`）都從這裡算 —— 兩邊各算各的話，畫面說
+/// 「約 30 分鐘」而 AI 說「你多出 5 分鐘」的那 5 分鐘會對不上。
+int setSeconds(PlanExercise pe, PlannedSet set, int restSeconds) =>
+    (pe.isTimed ? set.targetReps : set.targetReps * kSecondsPerRep) +
+    restSeconds;
 
 /// 取到 5 分鐘的倍數 —— 這是估的，不是量的。說「37 分鐘」會讓人
 /// 以為那個 7 有意義。不足 5 分鐘的課表算 5 分鐘，不是 0。

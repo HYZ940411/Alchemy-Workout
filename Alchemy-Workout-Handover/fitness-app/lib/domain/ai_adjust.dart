@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'adjust_volume.dart';
 import 'models.dart';
 
 /// 調整的意圖。對應 AI 追問「要怎麼調」的幾個答案。
@@ -56,6 +57,13 @@ class AdjustChange {
   /// 他需要的是「為什麼是 55 不是 50」。
   final String? reason;
 
+  /// **這一筆是新加的動作**（2026-10-04 裁決：AI 可在訓練中加動作）。
+  ///
+  /// 有值時 [exerciseIndex] 為 -1、[before] 為空 —— 它不在原課表裡。
+  /// 套用不走 [applySuggestion]（索引對位會跳過它），走規格的
+  /// 「加入動作至本次訓練」，與使用者手動加動作同一條路。
+  final Exercise? addition;
+
   const AdjustChange({
     required this.exerciseIndex,
     required this.exerciseName,
@@ -63,7 +71,15 @@ class AdjustChange {
     required this.after,
     this.replacement,
     this.reason,
+    this.addition,
   });
+
+  /// 一個新加的動作。
+  const AdjustChange.addition(Exercise this.addition, this.after, {this.reason})
+      : exerciseIndex = -1,
+        exerciseName = '',
+        before = const [],
+        replacement = null;
 
   bool get setsChanged => before.length != after.length;
 
@@ -73,14 +89,18 @@ class AdjustChange {
   /// 這一筆改了什麼都沒有。表格用它把沒動的那幾列降一階呈現 ——
   /// 一份建議裡多半有一半是「維持不變」，它們不該跟真正的改動一樣搶眼。
   bool get unchanged =>
+      addition == null &&
       replacement == null &&
       !setsChanged &&
       before.first.targetWeight == after.first.targetWeight &&
       before.first.targetReps == after.first.targetReps;
 
   /// 表格第一欄：動作。換了動作就是「原動作 → 新動作」。
-  String get title =>
-      replacement == null ? exerciseName : '$exerciseName → ${replacement!.name}';
+  String get title => addition != null
+      ? '＋ ${addition!.name}（新動作）'
+      : replacement == null
+          ? exerciseName
+          : '$exerciseName → ${replacement!.name}';
 
   /// 表格第二欄：調整成什麼。
   ///
@@ -89,7 +109,7 @@ class AdjustChange {
   /// 表格要分欄就得把那個字串再切開，而「用分隔符切字串」是個
   /// 遲早會遇到動作名裡剛好有全形空格的做法。
   String get change {
-    final r = replacement;
+    final r = replacement ?? addition;
     if (r != null) {
       final a = after.first;
       final load = a.targetWeight == 0
@@ -146,18 +166,38 @@ class AdjustSuggestion {
   /// —— 模型會針對每個動作各給一條理由，那比一句通則有用。
   final String? rationale;
 
+  /// 這份建議同時處理的方向。第一個就是 [intent]。
+  ///
+  /// **一句話可以有兩個要求**（2026-10-04 裁決）：「加動作而且加強度」、
+  /// 「累了而且只剩 20 分鐘」。在此之前分類器一看到兩個方向就整句判不出來。
+  final List<AdjustIntent>? _intents;
+
   const AdjustSuggestion({
     required this.intent,
     required this.changes,
     this.rationale,
-  });
+    List<AdjustIntent>? intents,
+  })
+      // 私有欄位不能當具名參數，只能這樣接。
+      // ignore: prefer_initializing_formals
+      : _intents = intents;
+
+  List<AdjustIntent> get intents => _intents ?? [intent];
+
+  /// 標題：「整體升強度＋替換做不了的動作」。
+  String get title => intents.map((i) => adjustIntentNames[i]!).join('＋');
+
+  /// 新加的動作。
+  Iterable<AdjustChange> get additions =>
+      changes.where((c) => c.addition != null);
 
   /// 這份建議等於什麼都沒改。
   ///
   /// **換了動作就不算空的**，即使逐組目標一模一樣 —— 把做不了的動作
   /// 換成做得到的，本身就是改動。漏掉這一項的話，一次成功的替換會被
-  /// 當成「沒有可調的空間」擋下來。
+  /// 當成「沒有可調的空間」擋下來。新加的動作同理。
   bool get isEmpty => changes.every((c) =>
+      c.addition == null &&
       c.replacement == null &&
       !c.setsChanged &&
       c.before.first.targetWeight == c.after.first.targetWeight &&
@@ -167,6 +207,17 @@ class AdjustSuggestion {
 /// 場館的槓片以 2.5kg 為級距，推到小數點沒有意義。
 double _round(double kg) => (kg / 2.5).round() * 2.5;
 
+/// 自體重（重量 0）或計時動作，強度只能動在次數（秒數）上。
+///
+/// **2026-10-04 修正兩個方向相反的錯：**
+/// - 降強度原本是「重量 ×0.9、次數 +2」—— 重量 0 的動作只剩「次數 +2」，
+///   伏地挺身越降越難
+/// - 加強度原本只動重量 —— 重量 0 的動作什麼都不會發生
+///
+/// 幅度取兩成、至少一下（一秒），與有重量動作的「降一成重量、多兩下」
+/// 量級相當。
+int _repsStep(int reps) => math.max(1, (reps * 0.2).round());
+
 /// 依**當前課表**產生建議。
 ///
 /// 這是本專案端內模擬的「AI」：模型把 LLM 放在軟體邊界之外，
@@ -175,48 +226,63 @@ double _round(double kg) => (kg / 2.5).round() * 2.5;
 /// **重點是它讀的是使用者眼前這份課表**，而非一段與課表無關的固定文字。
 ///
 /// [onlyFrom] 為起始索引，訓練中調整用它把已完成的動作排除在外。
+///
+/// [intents] 為同時處理的方向（空值＝只有 [intent]）；[volume] 為時間預算
+/// 決定的組數安排（見 `adjust_volume.dart`）。沒給 [volume] 時沿用不看時間的
+/// 舊規則：加強度只加重量、減組數每個動作砍一組。
+///
+/// **規則不挑新動作** —— [VolumePlan.newExerciseSets] 在這裡被忽略。
+/// 要加新動作得從候選裡挑一個適合這個人的，那不是一條公式算得出來的；
+/// 模型沒能回應時，呼叫端應改用不加新動作的那一份安排。
 AdjustSuggestion buildSuggestion(
   List<PlanExercise> exercises,
   AdjustIntent intent, {
   int onlyFrom = 0,
+  List<AdjustIntent>? intents,
+  VolumePlan? volume,
 }) {
+  final all = intents ?? [intent];
+  final easier = all.contains(AdjustIntent.easier);
+  final harder = all.contains(AdjustIntent.harder);
+  final trim = all.contains(AdjustIntent.trim);
+  // 加強度要不要動重量：沒有時間預算時一律動；有預算時只在「不夠加一組」時動。
+  final raiseLoad = harder && (volume == null || volume.weightOnly);
+
   final changes = <AdjustChange>[];
   for (var i = onlyFrom; i < exercises.length; i++) {
     final pe = exercises[i];
     if (pe.planned.isEmpty) continue;
     final before = [...pe.planned];
-    late List<PlannedSet> after;
+    var after = [...before];
 
-    switch (intent) {
-      case AdjustIntent.easier:
-        // 降重量 10%、次數 +2：維持總反覆量，降低單組負荷。
-        after = [
-          for (final s in before)
-            PlannedSet(
-              s.targetWeight == 0 ? 0 : math.max(2.5, _round(s.targetWeight * 0.9)),
-              s.targetReps + 2,
-            ),
-        ];
-      case AdjustIntent.harder:
-        after = [
-          for (final s in before)
-            PlannedSet(
-              s.targetWeight == 0 ? 0 : _round(s.targetWeight * 1.05),
-              s.targetReps,
-            ),
-        ];
-      case AdjustIntent.swap:
-        // **規則引擎不換動作。** 挑替代動作要看肌群、器材與這個人的
-        // 水準，那不是一條 ×0.9 算得出來的東西。沒有模型時這個方向
-        // 產不出建議 —— `aiProduceSuggestion` 會回「沒有可調的空間」。
-        after = before;
-      case AdjustIntent.trim:
-        // 砍最後一組，但至少留一組 —— 砍到 0 組等於刪掉這個動作，
-        // 那是「移除動作」不是「減量」。
-        after = before.length > 1
-            ? before.sublist(0, before.length - 1)
-            : before;
+    if (easier) {
+      after = [
+        for (final s in after)
+          s.targetWeight == 0
+              ? PlannedSet(0, math.max(1, s.targetReps - _repsStep(s.targetReps)))
+              // 降重量 10%、次數 +2：維持總反覆量，降低單組負荷。
+              : PlannedSet(math.max(2.5, _round(s.targetWeight * 0.9)),
+                  s.targetReps + 2),
+      ];
     }
+    if (raiseLoad) {
+      after = [
+        for (final s in after)
+          s.targetWeight == 0
+              ? PlannedSet(0, s.targetReps + _repsStep(s.targetReps))
+              : PlannedSet(_round(s.targetWeight * 1.05), s.targetReps),
+      ];
+    }
+    // 組數：先砍後加。加的組照抄這個動作的最後一組。
+    final cut = volume == null
+        ? (trim && after.length > 1 ? 1 : 0)
+        : (volume.cutSets[i] ?? 0);
+    if (cut > 0) after = after.sublist(0, math.max(1, after.length - cut));
+    final add = volume?.addSets[i] ?? 0;
+    if (add > 0) after = [...after, for (var k = 0; k < add; k++) after.last];
+    // **規則引擎不換動作。** 挑替代動作要看肌群、器材與這個人的
+    // 水準，那不是一條 ×0.9 算得出來的東西。
+
     changes.add(AdjustChange(
       exerciseIndex: i,
       exerciseName: pe.exercise.name,
@@ -225,11 +291,57 @@ AdjustSuggestion buildSuggestion(
     ));
   }
   return AdjustSuggestion(
-    intent: intent,
+    intent: all.first,
+    intents: all,
     changes: changes,
     // 規則產的建議逐筆說不出話（它只會算），但整條規則的依據講得出來。
-    rationale: adjustRationale[intent],
+    rationale: volume == null
+        ? (all.length == 1
+            ? adjustRationale[all.first]
+            : all.map((i) => adjustRationale[i]).join('\n'))
+        : volumeRationale(all, volume),
   );
+}
+
+/// 有時間預算時的依據。**講的是這一次的數字**，不是一條通則。
+String volumeRationale(List<AdjustIntent> intents, VolumePlan v) {
+  final lines = <String>[];
+  final have = v.minutes;
+  final need = minutesOf(v.remainingSeconds);
+  if (intents.contains(AdjustIntent.easier)) {
+    lines.add(adjustRationale[AdjustIntent.easier]!);
+  }
+  if (intents.contains(AdjustIntent.trim)) {
+    if (have == null) {
+      lines.add(adjustRationale[AdjustIntent.trim]!);
+    } else if (v.cutSetCount == 0) {
+      lines.add('剩下的組約 $need 分鐘，在你的 $have 分鐘內做得完，不用減。');
+    } else {
+      lines.add('剩下的組約 $need 分鐘、你有 $have 分鐘 —— '
+          '從排在後面的動作開始砍了 ${v.cutSetCount} 組，前面的主項保留。'
+          '${v.overSeconds > 0 ? '每個動作都只剩一組了，仍會超出約 ${minutesOf(v.overSeconds)} 分鐘。' : ''}');
+    }
+  }
+  if (intents.contains(AdjustIntent.harder)) {
+    if (v.weightOnly) {
+      lines.add(have == null || intents.contains(AdjustIntent.trim)
+          ? adjustRationale[AdjustIntent.harder]!
+          : '剩下的組約 $need 分鐘、你有 $have 分鐘，多出的時間不夠再做一組 —— '
+              '所以只加重量（自體重動作加次數），不加量。');
+    } else {
+      final extra = minutesOf(v.budgetSeconds ?? 0);
+      final onExisting = v.addSets.values.fold(0, (a, b) => a + b);
+      lines.add('剩下的組約 $need 分鐘、你有 $have 分鐘，多出約 $extra 分鐘 —— '
+          '${v.newExerciseSets > 0 ? '加一個新動作 ${v.newExerciseSets} 組' : ''}'
+          '${v.newExerciseSets > 0 && onExisting > 0 ? '，' : ''}'
+          '${onExisting > 0 ? '在前面的主項加 $onExisting 組' : ''}'
+          '，重量與次數不變。');
+    }
+  }
+  if (intents.contains(AdjustIntent.swap)) {
+    lines.add(adjustRationale[AdjustIntent.swap]!);
+  }
+  return lines.join('\n');
 }
 
 /// 把建議套進一份課表，回傳新的動作清單。**不就地修改傳入的清單。**
