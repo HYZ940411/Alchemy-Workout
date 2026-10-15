@@ -11040,6 +11040,22 @@ class AppState extends ChangeNotifier {
     return pushPlatform('platform_config', groupId, {'params': g.values});
   }
 
+  /// 一道題寫上雲：題目與正解一份（登入者讀得到）、說明性欄位一份（只有管理員讀得到）。
+  /// 兩份都成功才回 null，否則回第一個失敗的那句話。
+  Future<String?> pushExamQuestion(ExamQuestion q) async {
+    final a = await pushPlatform('exam_questions', q.id, examQuestionToMap(q));
+    if (a != null) return a;
+    return pushPlatform('exam_notes', q.id, examNotesToMap(q));
+  }
+
+  /// 一道題從雲端拿掉：題目那份寫墓碑（內建題庫的題目不能靠「沒有文件」表示被刪），
+  /// 說明那份直接刪掉。
+  Future<String?> pushExamRemoval(ExamQuestion q) async {
+    final a = await pushPlatform('exam_questions', q.id, examTombstone);
+    if (a != null) return a;
+    return _dropPlatform('exam_notes', q.id);
+  }
+
   /// 一枚成就定義。
   Future<String?> pushAchievement(Achievement a) =>
       pushPlatform('achievement_defs', achievementDocId(a), achievementToMap(a));
@@ -11081,6 +11097,8 @@ class AppState extends ChangeNotifier {
     // 商品：雲端合併過的清單（內建底 ＋ 雲端覆蓋）。空清單＝來源這次沒給，不動。
     if (d.products.isNotEmpty) adminProducts = List.of(d.products);
     _rebuildShopProducts();
+    // 題庫：內建與雲端合併過的清單。空清單＝來源這次沒給，不動。
+    if (d.examQuestions.isNotEmpty) examBank = List.of(d.examQuestions);
     notifyListeners();
   }
 

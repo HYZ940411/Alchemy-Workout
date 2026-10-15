@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
+import '../domain/task_pool.dart';
 import '../mock/mock_admin.dart';
 import 'platform_data.dart';
 
@@ -53,6 +55,13 @@ class FirestorePlatformData implements PlatformDataSource {
       } catch (_) {
         products = bundle.products;
       }
+      // 題庫與管理員專用的說明文件：各自單獨讀、單獨失敗。
+      // 非管理員讀不到 `exam_notes` 是正常的，不能因此連題目都拿不到。
+      final exam = await loadExamBank(
+        questions: () => _db.collection('exam_questions').get(),
+        notes: () => _db.collection('exam_notes').get(),
+        bundle: bundle.examQuestions,
+      );
       return PlatformData(
         exercises: _listOr(fetched[0], exerciseFromDoc, bundle.exercises),
         planSpecs: _listOr(fetched[1], planSpecFromDoc, bundle.planSpecs),
@@ -61,11 +70,76 @@ class FirestorePlatformData implements PlatformDataSource {
         taskPool: _listOr(fetched[3], taskPoolItemFromDoc, bundle.taskPool),
         config: _configOr(fetched[4], bundle.config),
         products: products,
+        examQuestions: exam,
       );
     } catch (_) {
       // 連線或權限層級的整體失敗：整份退回後備，不擋使用者進場。
       return bundle;
     }
+  }
+
+  /// 題庫：內建當底，雲端按 id 蓋上去；墓碑（`deleted`）把那題拿掉；
+  /// 雲端獨有的接在後面。說明性欄位（理由、細則、追問）來自 [notes]，
+  /// 讀不到時沿用內建同 id 那題的，沒有就留空。
+  /// 題目與說明各自讀、各自失敗：非管理員讀不到說明文件是正常的，
+  /// 不能因此連題目都拿不到；題目整類讀不到才退回內建。
+  @visibleForTesting
+  static Future<List<ExamQuestion>> loadExamBank({
+    required Future<QuerySnapshot<Map<String, dynamic>>> Function() questions,
+    required Future<QuerySnapshot<Map<String, dynamic>>> Function() notes,
+    required List<ExamQuestion> bundle,
+  }) async {
+    try {
+      final q = await questions();
+      QuerySnapshot<Map<String, dynamic>>? n;
+      try {
+        n = await notes();
+      } catch (_) {
+        n = null;
+      }
+      return _mergeExam(q, n, bundle);
+    } catch (_) {
+      return bundle;
+    }
+  }
+
+  static List<ExamQuestion> _mergeExam(
+      QuerySnapshot<Map<String, dynamic>> questions,
+      QuerySnapshot<Map<String, dynamic>>? notes,
+      List<ExamQuestion> bundle) {
+    final noteDocs = {
+      if (notes != null)
+        for (final d in notes.docs) d.id: d.data(),
+    };
+    final cloud = <String, ExamQuestion?>{}; // null＝墓碑
+    for (final d in questions.docs) {
+      final m = d.data();
+      if (m['deleted'] == true) {
+        cloud[d.id] = null;
+        continue;
+      }
+      try {
+        cloud[d.id] = examQuestionFromDocs(d.id, m, noteDocs[d.id]);
+      } catch (_) {
+        // 單筆壞掉略過，沿用內建的那一題。
+      }
+    }
+    final out = <ExamQuestion>[];
+    for (final b in bundle) {
+      if (!cloud.containsKey(b.id)) {
+        out.add(b);
+        continue;
+      }
+      final c = cloud.remove(b.id);
+      if (c == null) continue; // 墓碑
+      // 讀不到說明文件（非管理員）時，說明性欄位留空，不拿內建的補 ——
+      // 內建那份的細則可能已經被管理員改掉了。
+      out.add(c);
+    }
+    for (final c in cloud.values) {
+      if (c != null) out.add(c);
+    }
+    return out;
   }
 
   /// 商品：內建的當底，雲端的按 id 蓋上去（被下架的也算數），雲端獨有的接在後面。

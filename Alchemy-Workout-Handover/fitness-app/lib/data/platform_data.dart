@@ -57,6 +57,10 @@ class PlatformData {
   /// 雲端有的以雲端為準（包括被下架），沒有的沿用內建。空清單＝這次不更動目前的商品。
   final List<AdminProduct> products;
 
+  /// 教官測驗題庫。**內建與雲端按 id 合併**（雲端的蓋過內建，刪除用墓碑標記）。
+  /// 空清單＝這次不更動目前的題庫。
+  final List<ExamQuestion> examQuestions;
+
   const PlatformData({
     required this.exercises,
     required this.planSpecs,
@@ -64,6 +68,7 @@ class PlatformData {
     required this.taskPool,
     required this.config,
     this.products = const [],
+    this.examQuestions = const [],
   });
 }
 
@@ -97,6 +102,7 @@ class BundledPlatformData implements PlatformDataSource {
             g.id: {for (final p in g.params) p.key: p.value},
         },
         products: buildAdminProducts(),
+        examQuestions: buildExamBank(),
       );
 }
 
@@ -171,6 +177,50 @@ AdminProduct productFromDoc(String id, Map<String, dynamic> m) => AdminProduct(
           AdminProductSpec((s as Map)['name'] as String,
               (s['price'] as num).toInt(), (s['stock'] as num).toInt()),
       ],
+    );
+
+/// 題庫的雲端形狀 —— **拆成兩份文件**（使用者 2026-10-15 裁決 A）：
+///
+/// - `exam_questions/{id}`：題目、選項、選擇題正解、是否必答。**登入者讀得到**，
+///   因為選擇題在考生自己的手機上批改，正解必須送得到手機。
+/// - `exam_notes/{id}`：出題理由、簡答題評分細則、追問範例。**只有管理員讀得到** ——
+///   追問範例的用途是辨識背稿者，考生看到就失去作用。
+///
+/// 代價（已知悉）：有心人能查到選擇題正解。簡答題全數要人工審核且必須通過，
+/// 所以只靠正解拿不到教官資格。
+Map<String, dynamic> examQuestionToMap(ExamQuestion q) => {
+      'type': q.type.name,
+      'text': q.text,
+      'options': q.options,
+      'answerIndex': q.answerIndex,
+      'mustPass': q.mustPass,
+    };
+
+Map<String, dynamic> examNotesToMap(ExamQuestion q) => {
+      'rationale': q.rationale,
+      'rubricPass': q.rubricPass,
+      'rubricFail': q.rubricFail,
+      'followUp': q.followUp,
+    };
+
+/// 刪除用墓碑：內建題庫的題目不能靠「雲端沒有這份文件」表示被刪，
+/// 所以寫一份 `{deleted: true}`；載入時看到就把那題拿掉。
+const Map<String, dynamic> examTombstone = {'deleted': true};
+
+/// 兩份文件合回一題。[notes] 為空（不是管理員、讀不到）時，說明性欄位留空。
+ExamQuestion examQuestionFromDocs(
+        String id, Map<String, dynamic> m, Map<String, dynamic>? notes) =>
+    ExamQuestion(
+      id: id,
+      type: ExamQuestionType.values.byName(m['type'] as String),
+      text: m['text'] as String,
+      options: [for (final o in (m['options'] as List? ?? const [])) o as String],
+      answerIndex: (m['answerIndex'] as num?)?.toInt() ?? 0,
+      mustPass: m['mustPass'] as bool? ?? false,
+      rationale: notes?['rationale'] as String? ?? '',
+      rubricPass: notes?['rubricPass'] as String? ?? '',
+      rubricFail: notes?['rubricFail'] as String? ?? '',
+      followUp: notes?['followUp'] as String? ?? '',
     );
 
 Map<String, dynamic> planSpecToMap(PlatformPlanSpec s) => {

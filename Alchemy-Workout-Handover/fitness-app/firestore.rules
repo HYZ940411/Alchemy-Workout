@@ -515,6 +515,20 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 教官測驗題庫（2026-10-15，使用者裁決 A：拆成兩份）。
+    // `exam_questions`：題目、選項、選擇題正解 —— 登入者讀得到，因為選擇題在考生
+    // 自己的手機上批改。已知代價：有心人能查到選擇題正解；簡答題全數要人工審核且
+    // 必須通過，所以只靠正解拿不到教官資格。
+    // `exam_notes`：出題理由、簡答題評分細則、追問範例 —— **只有管理員**。追問範例
+    // 的用途是辨識背稿者，考生看到就失去作用。
+    match /exam_questions/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /exam_notes/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
     // --- 其餘一律拒絕 ---
     //
     // 尚未上雲的跨使用者關聯資料（檢舉／申訴…見 [BE-13]）與其他集合

@@ -545,3 +545,20 @@ custom claim（`request.auth.token.admin == true`）區分管理員/一般使用
 - `fitness-app/lib/state/app_state.dart`
 - `fitness-app/lib/domain/ability.dart`、`commerce.dart`、`community.dart`、`platform_config.dart`
 - `Event-Storming_事件風暴/02_Aggregate定義.md`、`03_能力值.md`
+
+---
+
+## 教官測驗題庫（2026-10-15 補）
+
+```
+exam_questions/{id}     登入者唯讀、管理端寫入
+{ "type": "multipleChoice|shortAnswer", "text": "string", "options": ["string"],
+  "answerIndex": 0, "mustPass": false }
+  或墓碑：{ "deleted": true }   —— 內建題庫的題目被刪時寫這個
+
+exam_notes/{id}         只有管理員讀寫
+{ "rationale": "string", "rubricPass": "string", "rubricFail": "string", "followUp": "string" }
+```
+
+拆成兩份是為了讓考生讀得到題目與選擇題正解（手機上批改），卻讀不到評分細則與追問範例。
+已知代價：有心人能查到選擇題正解；簡答題全數人工審核且必須通過。

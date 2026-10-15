@@ -170,8 +170,13 @@ class _ExamBankScreenState extends State<ExamBankScreen> {
                       destructive: true,
                     );
                     if (ok != true || !context.mounted) return;
-                    showToast(context, s.removeExamQuestion(list[i]) ?? '已移除');
+                    final q = list[i];
+                    final failure = s.removeExamQuestion(q);
                     setState(() {});
+                    // 本機先移除，再送上雲；雲端那一趟的結果才是管理員看到的那句話。
+                    final cloud = failure ?? await s.pushExamRemoval(q);
+                    if (!context.mounted) return;
+                    showToast(context, cloud ?? '已移除');
                   },
                   child: const Icon(Icons.delete_outline,
                       size: Sz.iconDense, color: C.textSecondary),
@@ -303,14 +308,18 @@ class _ExamBankScreenState extends State<ExamBankScreen> {
       for (final c in options)
         if (c.text.trim().isNotEmpty) c.text.trim(),
     ];
-    final failure = s.addExamQuestion(ExamQuestion(
+    final q = ExamQuestion(
       id: 'q${DateTime.now().millisecondsSinceEpoch}',
       type: type,
       text: text.text,
       options: type == ExamQuestionType.multipleChoice ? opts : [],
       answerIndex: answer < opts.length ? answer : 0,
-    ));
-    showToast(context, failure ?? '已加入題庫');
+    );
+    final failure = s.addExamQuestion(q);
     setState(() {});
+    // 本機先加，再送上雲；雲端那一趟的結果才是管理員看到的那句話。
+    final cloud = failure ?? await s.pushExamQuestion(q);
+    if (!context.mounted) return;
+    showToast(context, cloud ?? '已加入題庫');
   }
 }
