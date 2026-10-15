@@ -3159,6 +3159,7 @@ class AppState extends ChangeNotifier {
         applyCloudTeam(await teams.myTeam());
         applyCloudTeamRequests(
             await teams.requestsFor(uid, myTeamId: myTeam?.id));
+        _rewatchIfTeamChanged();
       } catch (_) {/* 同上 */}
     }
     final mentor = mentorSource;
@@ -3253,6 +3254,19 @@ class AppState extends ChangeNotifier {
 
   bool get isWatchingCloud => _cloudWatches.isNotEmpty;
 
+  /// 目前這批訂閱是替哪一隊掛的。「別人申請加入我的隊」那條訂閱掛在
+  /// 隊伍底下，登入當下沒有隊就掛不上 —— 之後建隊、或被核准入隊，
+  /// 都要補掛，否則隊長要登出再登入才看得到申請（T11）。
+  String? _watchedTeamId;
+
+  /// 隊伍換了（建隊、入隊、退隊）而訂閱還是舊的，就重新掛。
+  /// 沒在監看時不動 —— 那是還沒登入同步完，或測試不接雲端。
+  void _rewatchIfTeamChanged() {
+    if (!isWatchingCloud) return;
+    if (myTeam?.id == _watchedTeamId) return;
+    startCloudWatch();
+  }
+
   /// 開始監聽雲端變動。登入同步跑完之後呼叫。
   ///
   /// **重複呼叫是安全的** —— 會先把舊的收掉。`myTeam` 換了之後
@@ -3261,6 +3275,7 @@ class AppState extends ChangeNotifier {
   void startCloudWatch() {
     stopCloudWatch();
     cloudWatchReport.clear();
+    _watchedTeamId = myTeam?.id;
 
     void sub(String what, Stream<void>? stream) {
       if (stream == null) return;
