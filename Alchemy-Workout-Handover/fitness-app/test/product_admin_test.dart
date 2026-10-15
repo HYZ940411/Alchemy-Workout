@@ -172,13 +172,12 @@ void main() {
   });
 
   group('下架', () {
-    test('待付款訂單自動取消，庫存與金幣回補', () {
+    test('待付款訂單自動取消，已扣的金幣退回；商品從商城消失', () {
       final s = AppState();
       final p = s.adminProducts.firstWhere((x) => x.id == 'v1');
       final order = s.orders.firstWhere((o) => o.id == 'O-20260826-004');
       expect(order.state, OrderState.pendingPayment, reason: '前提：示範訂單待付款');
-      final spec = s.products.firstWhere((x) => x.id == 'v1').specs.first;
-      final stockBefore = spec.stock;
+      expect(s.products.any((x) => x.id == 'v1'), isTrue);
       final coinsBefore = s.coins;
 
       final cancelled = s.delistProduct(p);
@@ -186,9 +185,9 @@ void main() {
       expect(cancelled, ['O-20260826-004']);
       expect(order.state, OrderState.cancelled);
       expect(order.cancelledBySystem, isTrue, reason: '由系統取消，非使用者自行取消');
-      expect(spec.stock, stockBefore + 1, reason: '回補待付款訂單佔用的 1 件');
       expect(s.coins, coinsBefore + order.coinPaid, reason: '已扣的金幣退回');
       expect(p.listing, ListingState.delisted);
+      expect(s.products.any((x) => x.id == 'v1'), isFalse, reason: '下架後商城看不到');
     });
 
     test('別的商品的待付款訂單不受牽連', () {

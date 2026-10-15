@@ -6989,13 +6989,47 @@ class AppState extends ChangeNotifier {
   // 商城 / 訂單 / 金幣
   // ===========================================================================
 
-  late List<Product> products = buildProducts();
+  /// 使用者看得到的商城商品 —— 由後台的商品清單（[adminProducts]）推導，**只含已上架的**。
+  ///
+  /// 原本是一份獨立的內建清單，與後台那份互不相干：管理員在後台改的商品不會改到商城。
+  late List<Product> products = _shopProductsFrom(adminProducts);
+
+  /// 後台商品 → 商城商品。已下架的不出現；權限解鎖類的價格一律是全站統一定價、
+  /// 不適用庫存；消耗品類的庫存照後台設的數字（購買不會改它，見 [confirmPurchase]）。
+  List<Product> _shopProductsFrom(List<AdminProduct> admin) => [
+        for (final a in admin)
+          if (a.listing == ListingState.listed && a.specs.isNotEmpty)
+            Product(
+              id: a.id,
+              name: a.name,
+              emoji: a.emoji,
+              images: List.of(a.images),
+              aiCredits: a.aiCredits,
+              note: a.note,
+              specs: [
+                for (final sp in a.specs)
+                  ProductSpec(
+                    sp.name,
+                    a.subtype == VirtualSubtype.unlock
+                        ? kPlanUnlockCoins
+                        : sp.price,
+                    a.stockApplies ? sp.stock : 999,
+                  ),
+              ],
+            ),
+      ];
+
+  /// 後台動了商品、或載入了雲端商品之後，重算商城看到的清單。
+  void _rebuildShopProducts() => products = _shopProductsFrom(adminProducts);
   late List<Order> orders = demo ? buildOrders() : [];
 
-  /// 確認購買 → 訂單成立為**待付款**，並扣減庫存。
+  /// 確認購買 → 訂單成立為**待付款**。
   ///
-  /// 取消或支付失敗時回補（見 [_releaseStock]）。權限解鎖類商品不走這條，
-  /// 見 [purchasePlan]。回傳失敗原因；null 表示成功，成立的訂單為 [orders.first]。
+  /// **庫存只當購買條件，不會被購買扣掉**（使用者 2026-10-15 裁決 A）：庫存是全站共用的數字，
+  /// 使用者端沒有被信任的寫入權，真要限量得靠伺服器。管理員設庫存 0 就買不了，
+  /// 設多少就顯示多少，但賣出去不會自動減少。取消或支付失敗時退回已扣的金幣
+  /// （見 [_refundCoins]）。權限解鎖類商品不走這條，見 [purchasePlan]。
+  /// 回傳失敗原因；null 表示成功，成立的訂單為 [orders.first]。
   FailReason? confirmPurchase(Product p, ProductSpec spec, int qty) {
     if (spec.stock < qty) return FailReason.soldOut;
 
@@ -7004,7 +7038,6 @@ class AppState extends ChangeNotifier {
     final coinPart = coins >= total ? total : coins;
     final cashPart = cashForShortfall(total - coinPart);
 
-    spec.stock -= qty;
     coins -= coinPart;
     orders.insert(
       0,
@@ -7153,32 +7186,24 @@ class AppState extends ChangeNotifier {
   List<Order> get undeliveredOrders =>
       orders.where((o) => o.awaitingDelivery).toList();
 
-  /// 支付已失敗 → 已失敗（終止狀態），並一併回補庫存與已扣的金幣。
+  /// 支付已失敗 → 已失敗（終止狀態），並退回已扣的金幣。
   void failPayment(Order o, FailReason reason) {
     if (o.state != OrderState.pendingPayment) return;
-    _releaseStock(o);
+    _refundCoins(o);
     _replaceOrder(o, OrderState.failed, failReason: reason);
     notifyListeners();
   }
 
-  /// 使用者已取消訂單 → 已取消，並回補庫存與已扣的金幣。
+  /// 使用者已取消訂單 → 已取消，並退回已扣的金幣。
   void cancelOrder(Order o) {
     if (!o.cancellable) return;
-    _releaseStock(o);
+    _refundCoins(o);
     o.state = OrderState.cancelled;
     notifyListeners();
   }
 
-  /// 庫存已回補：所扣的庫存回補至該商品規格，已扣的金幣一併退回。
-  void _releaseStock(Order o) {
-    coins += o.coinPaid;
-    for (final p in products) {
-      if (p.name != o.productName) continue;
-      for (final spec in p.specs) {
-        if (spec.name == o.spec) spec.stock += o.qty;
-      }
-    }
-  }
+  /// 取消或失敗：已扣的金幣退回。（庫存不會被購買扣掉，所以沒有庫存要回補。）
+  void _refundCoins(Order o) => coins += o.coinPaid;
 
   /// 失敗原因為 final 欄位，故以整筆替換而非就地改值。
   void _replaceOrder(Order o, OrderState state, {FailReason? failReason}) {
@@ -10590,7 +10615,9 @@ class AppState extends ChangeNotifier {
 
   late List<PublicPlanCase> publicPlanCases =
       demo ? buildPublicPlanCases() : [];
-  late List<AdminProduct> adminProducts = demo ? buildAdminProducts() : [];
+  /// 後台商品清單。內建一份預設商品當底，雲端的按 id 蓋上去（見 `applyPlatformData`）。
+  /// 它是平台目錄，不是某個使用者的假紀錄，所以真帳號也有。
+  late List<AdminProduct> adminProducts = buildAdminProducts();
   /// 管理員評分彙總（`04_ReadModel清單.md`）。
   ///
   /// **`demo ? ... : []`** —— 與 `posts`／`socialUsers`／`instructors` 同一個
@@ -10710,16 +10737,7 @@ class AppState extends ChangeNotifier {
   ///
   /// 商品清單建立時就把當時的價格寫進規格，管理員之後改平台設定，
   /// 同一次連線裡商城仍是舊價（重開才對）。庫存沿用，不動。
-  void _syncPlanProductPrice() {
-    for (final p in products) {
-      if (p.id != 'v4') continue;
-      for (var i = 0; i < p.specs.length; i++) {
-        final old = p.specs[i];
-        if (old.coinPrice == kPlanUnlockCoins) continue;
-        p.specs[i] = ProductSpec(old.name, kPlanUnlockCoins, old.stock);
-      }
-    }
-  }
+  void _syncPlanProductPrice() => _rebuildShopProducts();
 
   /// 設定成就定義 —— 門檻調整不改動既有解鎖紀錄。
   String? setAchievementDefinition(Achievement a,
@@ -11060,7 +11078,9 @@ class AppState extends ChangeNotifier {
         p.value = p.isInt ? v.round() : v;
       }
     }
-    _syncPlanProductPrice();
+    // 商品：雲端合併過的清單（內建底 ＋ 雲端覆蓋）。空清單＝來源這次沒給，不動。
+    if (d.products.isNotEmpty) adminProducts = List.of(d.products);
+    _rebuildShopProducts();
     notifyListeners();
   }
 
@@ -11538,7 +11558,8 @@ class AppState extends ChangeNotifier {
     if (!canManageProducts) return '權限不足：本 Command 需要「商品管理」權限組。';
     if (name.trim().isEmpty) return '商品名稱不得為空。';
     if (subtype == null) return '虛擬商品須指定子類型。';
-    final id = 'v${adminProducts.length + 1}';
+    // 不用「現有幾件＋1」：兩位管理員各自新增會撞同一個 id，後寫的把先寫的蓋掉。
+    final id = newId('p');
     adminProducts.add(AdminProduct(
       id: id,
       name: name.trim(),
@@ -11563,9 +11584,11 @@ class AppState extends ChangeNotifier {
     required List<AdminProductSpec> specs,
     VirtualSubtype? subtype,
     String? unlockTarget,
+    int? aiCredits,
   }) {
     if (!canManageProducts) return '權限不足：本 Command 需要「商品管理」權限組。';
     if (name.trim().isEmpty) return '商品名稱不得為空。';
+    if (aiCredits != null && aiCredits < 0) return '發放的 AI 點數不得為負。';
     if (specs.isEmpty) return '至少須有一個規格。';
     if (specs.length > 1) return '虛擬商品僅有一個預設規格。';
     if (specs.any((x) => x.name.trim().isEmpty)) return '規格名稱不得為空。';
@@ -11575,13 +11598,17 @@ class AppState extends ChangeNotifier {
     p.name = name.trim();
     p.images = [...images];
     p.subtype = subtype ?? p.subtype;
+    if (aiCredits != null) p.aiCredits = aiCredits;
     // 解鎖標的僅權限解鎖類有值，其餘一律清空 —— 欄位不留舊值。
     p.unlockTarget =
         p.subtype == VirtualSubtype.unlock ? unlockTarget?.trim() : null;
+    // 先複製再換：呼叫端傳進來的若就是 `p.specs` 本身，先 clear() 會把來源一起清空。
+    final next = [
+      for (final x in specs) AdminProductSpec(x.name.trim(), x.price, x.stock),
+    ];
     p.specs
       ..clear()
-      ..addAll(specs.map((x) =>
-          AdminProductSpec(x.name.trim(), x.price, x.stock)));
+      ..addAll(next);
 
     // 已上架商品被改到「商品資訊不完整」者，當場退回已下架 ——
     // 否則商品頁會出現一個沒有名稱或沒有圖片的品項。
@@ -11591,9 +11618,15 @@ class AppState extends ChangeNotifier {
     if (p.listing == ListingState.listed && !p.infoComplete) {
       p.listing = ListingState.delisted;
     }
+    _rebuildShopProducts();
     notifyListeners();
     return null;
   }
+
+  /// 把一件商品寫上雲（`products/{id}`）。回 null＝成功，否則是給管理員看的一句話。
+  /// 與其他平台資料同一套：本機先改，再送上去，雲端那一趟的結果才是管理員看到的那句話。
+  Future<String?> pushProduct(AdminProduct p) =>
+      pushPlatform('products', p.id, productToMap(p));
 
   /// 上架商品。Precondition：已設定完商品資訊，且至少一個規格的庫存 > 0。
   String? listProduct(AdminProduct p) {
@@ -11602,6 +11635,7 @@ class AppState extends ChangeNotifier {
     if (!p.infoComplete) return '尚未設定完商品資訊（名稱、圖片、解鎖標的）。';
     if (!p.hasStock) return '所有規格皆無庫存，不得上架。';
     p.listing = ListingState.listed;
+    _rebuildShopProducts();
     notifyListeners();
     return null;
   }
@@ -11621,11 +11655,12 @@ class AppState extends ChangeNotifier {
       if (u.state != OrderState.pendingPayment || u.productName != p.name) {
         continue;
       }
-      _releaseStock(u);
+      _refundCoins(u);
       u.state = OrderState.cancelled;
       u.cancelledBySystem = true;
       cancelled.add(u.id);
     }
+    _rebuildShopProducts();
     notifyListeners();
     return cancelled;
   }
@@ -11797,7 +11832,9 @@ class AppState extends ChangeNotifier {
     instructorCases = [];
     adminRatings.clear();
     admins = [];
-    adminProducts = [];
+    // 商品是平台目錄，不是這個帳號的東西 —— 回到內建的樣子，下次登入再讀雲端。
+    adminProducts = buildAdminProducts();
+    _rebuildShopProducts();
     publicPlanCases = [];
 
     // 其餘。

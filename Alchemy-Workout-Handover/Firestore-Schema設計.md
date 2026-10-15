@@ -273,9 +273,11 @@ mentor_bonds/{mentorId}_{apprenticeId}/questions/{questionId}
 ### 2.12 訂單 / 商品
 
 ```
-products/{productId}
-{ "name": "string", "images": ["url"], "aiCredits": 10,
-  "specs": [ { "name": "string", "coinPrice": 300, "stock": 10 } ] }
+products/{productId}                      ← 管理端寫、登入者唯讀（2026-10-15 已實作）
+{ "name": "string", "emoji": "✨", "images": ["圖庫 id"],
+  "subtype": "consumable|unlock", "unlockTarget": "計畫名|null",
+  "listing": "listed|delisted", "aiCredits": 10, "note": "string|null",
+  "specs": [ { "name": "string", "price": 300, "stock": 10 } ] }
 
 users/{uid}/orders/{orderId}
 { "productId": "string", "productName": "string", "spec": "string", "qty": 1,

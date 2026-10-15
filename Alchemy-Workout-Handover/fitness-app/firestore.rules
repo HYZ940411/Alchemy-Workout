@@ -507,6 +507,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 商城商品（2026-10-15）。同樣是一般使用者唯讀、管理端寫入。
+    // **庫存不會被購買扣掉**（使用者端沒有被信任的寫入權，所以庫存是管理員設的上架條件與顯示用），
+    // 因此這裡不需要「使用者可以改 stock」的例外。
+    match /products/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
     // --- 其餘一律拒絕 ---
     //
     // 尚未上雲的跨使用者關聯資料（檢舉／申訴…見 [BE-13]）與其他集合

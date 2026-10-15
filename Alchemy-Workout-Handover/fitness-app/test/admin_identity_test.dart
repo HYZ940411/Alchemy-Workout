@@ -94,7 +94,8 @@ void main() {
       expect(s.appeals, isEmpty);
       expect(s.instructorCases, isEmpty);
       expect(s.publicPlanCases, isEmpty);
-      expect(s.adminProducts, isEmpty);
+      // 商品是平台目錄（內建一份預設，雲端覆蓋），不是假案件，真帳號也有。
+      expect(s.adminProducts, isNotEmpty);
       expect(s.admins, isEmpty);
     });
 

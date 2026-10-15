@@ -24,6 +24,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   late final AdminProduct p = widget.product;
   late final name = TextEditingController(text: p.name);
   late final unlock = TextEditingController(text: p.unlockTarget ?? '');
+  late final credits = TextEditingController(text: '${p.aiCredits}');
   late List<String> images = [...p.images];
   late VirtualSubtype? subtype = p.subtype;
 
@@ -38,6 +39,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   void dispose() {
     name.dispose();
     unlock.dispose();
+    credits.dispose();
     for (final d in drafts) {
       d.dispose();
     }
@@ -60,7 +62,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
     setState(() => images = picked);
   }
 
-  void _save(AppState s) {
+  Future<void> _save(AppState s) async {
     final specs = <AdminProductSpec>[];
     for (final d in drafts) {
       final price = int.tryParse(d.price.text.trim());
@@ -75,6 +77,13 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
       }
       specs.add(AdminProductSpec(d.name.text, price, stock));
     }
+    // 只有消耗品類發 AI 點數；解鎖類固定是 0。
+    final grantsCredits = subtype == VirtualSubtype.consumable;
+    final creditsValue = grantsCredits ? int.tryParse(credits.text.trim()) : 0;
+    if (creditsValue == null) {
+      setState(() => error = '發放的 AI 點數不是有效的整數。');
+      return;
+    }
     final failure = s.setProductInfo(
       p,
       name: name.text,
@@ -82,12 +91,16 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
       specs: specs,
       subtype: subtype,
       unlockTarget: unlock.text,
+      aiCredits: creditsValue,
     );
     if (failure != null) {
       setState(() => error = failure);
       return;
     }
-    showToast(context, '已設定商品資訊');
+    // 本機先改了，再送上雲；雲端那一趟的結果才是管理員看到的那句話。
+    final cloud = await s.pushProduct(p);
+    if (!mounted) return;
+    showToast(context, cloud ?? '已設定商品資訊');
     Navigator.of(context).pop();
   }
 
@@ -197,6 +210,12 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
               plans: [for (final x in s.platformPlans) x.name],
               onChanged: (v) => setState(() => unlock.text = v),
             ),
+          ],
+
+          if (subtype == VirtualSubtype.consumable) ...[
+            const SectionTitle('發放', trailing: '購買後永久加進 AI 點數'),
+            _Field(controller: credits, hint: '發放的 AI 點數（沒有就填 0）', number: true),
+            const SizedBox(height: S.md),
           ],
 
           const SectionTitle('規格', trailing: '價格與庫存屬規格層級'),

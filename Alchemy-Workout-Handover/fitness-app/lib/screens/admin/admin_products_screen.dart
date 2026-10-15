@@ -264,8 +264,16 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   Future<void> _toggle(BuildContext context, AppState s, AdminProduct p) async {
     if (p.listing == ListingState.delisted) {
       final failure = s.listProduct(p);
-      showToast(context, failure ?? '已上架');
+      if (failure != null) {
+        showToast(context, failure);
+        setState(() {});
+        return;
+      }
       setState(() {});
+      // 本機先改了，再送上雲；雲端那一趟的結果才是管理員看到的那句話。
+      final cloud = await s.pushProduct(p);
+      if (!context.mounted) return;
+      showToast(context, cloud ?? '已上架');
       return;
     }
     final pending = s.pendingOrdersOf(p);
@@ -274,17 +282,22 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       title: '確認下架',
       message:
           '${p.name} 下架後不再販售。'
-          '${pending > 0 ? '$pending 筆待付款訂單將自動取消並釋放庫存；' : ''}',
+          '${pending > 0 ? '$pending 筆待付款訂單將自動取消並退回金幣；' : ''}',
       confirmLabel: '下架',
       // 破壞性動作仍用次要樣式（§4.5 R-23），安全由本彈窗承擔。
       destructive: true,
     );
     if (ok != true || !context.mounted) return;
     final cancelled = s.delistProduct(p);
+    setState(() {});
+    final cloud = await s.pushProduct(p);
+    if (!context.mounted) return;
     showToast(
       context,
-      cancelled.isEmpty ? '已下架' : '已下架，並取消 ${cancelled.length} 筆待付款訂單',
+      cloud ??
+          (cancelled.isEmpty
+              ? '已下架'
+              : '已下架，並取消 ${cancelled.length} 筆待付款訂單'),
     );
-    setState(() {});
   }
 }

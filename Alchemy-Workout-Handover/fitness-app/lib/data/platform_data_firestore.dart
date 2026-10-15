@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../mock/mock_admin.dart';
 import 'platform_data.dart';
 
 /// Firestore 版的平台資料來源（[BE-12]）。
@@ -43,6 +44,15 @@ class FirestorePlatformData implements PlatformDataSource {
         _db.collection('daily_task_pool').get(),
         _db.collection('platform_config').get(),
       ]);
+      // 商品單獨讀、單獨失敗：安全規則還沒放行 `products`（或這一類單獨出事）時，
+      // 不能把前面五類一起拖回後備 —— 那會讓所有使用者的動作庫、課表整份退回打包版。
+      List<AdminProduct> products;
+      try {
+        products = _mergeProducts(
+            await _db.collection('products').get(), bundle.products);
+      } catch (_) {
+        products = bundle.products;
+      }
       return PlatformData(
         exercises: _listOr(fetched[0], exerciseFromDoc, bundle.exercises),
         planSpecs: _listOr(fetched[1], planSpecFromDoc, bundle.planSpecs),
@@ -50,11 +60,32 @@ class FirestorePlatformData implements PlatformDataSource {
             _listOr(fetched[2], achievementFromDoc, bundle.achievements),
         taskPool: _listOr(fetched[3], taskPoolItemFromDoc, bundle.taskPool),
         config: _configOr(fetched[4], bundle.config),
+        products: products,
       );
     } catch (_) {
       // 連線或權限層級的整體失敗：整份退回後備，不擋使用者進場。
       return bundle;
     }
+  }
+
+  /// 商品：內建的當底，雲端的按 id 蓋上去（被下架的也算數），雲端獨有的接在後面。
+  ///
+  /// 不用「雲端非空就整份取代」（其他平台資料的做法）：管理員第一次只改了其中一件商品，
+  /// 雲端就只有一份文件，整份取代的話商城會只剩那一件。
+  List<AdminProduct> _mergeProducts(
+      QuerySnapshot<Map<String, dynamic>> snap, List<AdminProduct> bundle) {
+    final cloud = <String, AdminProduct>{};
+    for (final d in snap.docs) {
+      try {
+        cloud[d.id] = productFromDoc(d.id, d.data());
+      } catch (_) {
+        // 單筆壞掉略過，沿用內建的那一件。
+      }
+    }
+    return [
+      for (final b in bundle) cloud.remove(b.id) ?? b,
+      ...cloud.values,
+    ];
   }
 
   /// 空集合或逐筆解析全失敗時退回 [bundle]；否則回傳解析成功的那些。

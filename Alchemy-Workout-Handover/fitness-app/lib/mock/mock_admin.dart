@@ -229,6 +229,13 @@ class AdminProduct {
   ListingState listing;
   final List<AdminProductSpec> specs;
 
+  /// 這件商品發放幾點**永久** AI 點數。不發點數的（補簽券、計畫解鎖）為 0。
+  /// 發放的是數額不是名稱 —— 改個名字不該讓它發不出來。
+  int aiCredits;
+
+  /// 商品頁的補充說明。
+  String? note;
+
   AdminProduct({
     required this.id,
     required this.name,
@@ -237,6 +244,8 @@ class AdminProduct {
     required this.specs,
     this.subtype,
     this.unlockTarget,
+    this.aiCredits = 0,
+    this.note,
     List<String>? images,
   }) : images = images ?? [];
 
@@ -265,7 +274,8 @@ List<AdminProduct> buildAdminProducts() => [
         id: 'v1', name: 'AI 點數 ×10', emoji: '✨',
         subtype: VirtualSubtype.consumable,
         listing: ListingState.listed,
-        images: ['im_ticket'],
+        images: ['im_badge'],
+        aiCredits: 10,
         specs: [AdminProductSpec('10 點', 1500, 999)],
       ),
       AdminProduct(
@@ -273,6 +283,8 @@ List<AdminProduct> buildAdminProducts() => [
         subtype: VirtualSubtype.consumable,
         listing: ListingState.listed,
         images: ['im_chart'],
+        aiCredits: 1,
+        note: '150 金幣 ＝ 30 元',
         specs: [AdminProductSpec('1 次', 150, 999)],
       ),
       AdminProduct(

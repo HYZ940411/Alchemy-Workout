@@ -20,7 +20,7 @@ void main() {
   });
 
   group('確認購買', () {
-    test('確認購買當下就扣庫存，而非支付成功後才扣減', () {
+    test('購買不會扣庫存 —— 庫存是管理員設的上架條件與顯示用（裁決 A）', () {
       final s = AppState();
       final p = s.products.firstWhere((x) => x.id == 'v2');
       final spec = p.specs.single;
@@ -28,7 +28,7 @@ void main() {
 
       expect(s.confirmPurchase(p, spec, 2), isNull);
 
-      expect(spec.stock, before - 2, reason: '確認購買當下就扣');
+      expect(spec.stock, before, reason: '使用者端沒有被信任的寫入權，不扣共用庫存');
       expect(s.orders.first.state, OrderState.pendingPayment);
     });
 
@@ -73,7 +73,7 @@ void main() {
       expect(s.orders.first.state, OrderState.delivered);
     });
 
-    test('支付失敗一併回補庫存與金幣', () {
+    test('支付失敗退回金幣', () {
       final s = AppState();
       final p = s.products.firstWhere((x) => x.id == 'v3');
       final coins = s.coins;
@@ -87,7 +87,7 @@ void main() {
       expect(s.coins, coins);
     });
 
-    test('取消訂單一併回補庫存與金幣', () {
+    test('取消訂單退回金幣', () {
       final s = AppState();
       final p = s.products.firstWhere((x) => x.id == 'v3');
       final coins = s.coins;

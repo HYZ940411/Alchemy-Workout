@@ -1,9 +1,11 @@
 import '../domain/ability.dart';
+import '../domain/admin.dart';
 import '../domain/models.dart';
 import '../domain/platform_config.dart';
 import '../domain/platform_plan.dart';
 import '../domain/task_pool.dart';
 import '../mock/mock_data.dart';
+import '../mock/mock_admin.dart';
 import '../mock/mock_extra.dart';
 
 /// 平台公用唯讀資料的來源。
@@ -51,12 +53,17 @@ class PlatformData {
   /// 獎勵定義亦在此（`reward` 群組），不另立集合。
   final Map<String, Map<String, num>> config;
 
+  /// 商城商品（含已下架者，後台要看得到）。**打包的內建商品與雲端按 id 合併**：
+  /// 雲端有的以雲端為準（包括被下架），沒有的沿用內建。空清單＝這次不更動目前的商品。
+  final List<AdminProduct> products;
+
   const PlatformData({
     required this.exercises,
     required this.planSpecs,
     required this.achievements,
     required this.taskPool,
     required this.config,
+    this.products = const [],
   });
 }
 
@@ -89,6 +96,7 @@ class BundledPlatformData implements PlatformDataSource {
           for (final g in platformConfig.groups)
             g.id: {for (final p in g.params) p.key: p.value},
         },
+        products: buildAdminProducts(),
       );
 }
 
@@ -125,6 +133,44 @@ Exercise exerciseFromDoc(String id, Map<String, dynamic> m) => Exercise(
       type: ExerciseType.values.byName(m['type'] as String? ?? 'strength'),
       equipment: m['equipment'] as String? ?? '徒手',
       defaultRestSeconds: (m['defaultRestSeconds'] as num?)?.toInt(),
+    );
+
+/// 商品的雲端文件形狀（`products/{id}`）。
+///
+/// 庫存只是**上架條件與顯示用**：使用者買東西不會改這個數字（使用者端沒有被信任的寫入權，
+/// 共用庫存得靠伺服器，使用者 2026-10-15 裁決 A）。
+Map<String, dynamic> productToMap(AdminProduct p) => {
+      'name': p.name,
+      'emoji': p.emoji,
+      'images': p.images,
+      'subtype': p.subtype?.name,
+      'unlockTarget': p.unlockTarget,
+      'listing': p.listing.name,
+      'aiCredits': p.aiCredits,
+      'note': p.note,
+      'specs': [
+        for (final s in p.specs)
+          {'name': s.name, 'price': s.price, 'stock': s.stock},
+      ],
+    };
+
+AdminProduct productFromDoc(String id, Map<String, dynamic> m) => AdminProduct(
+      id: id,
+      name: m['name'] as String,
+      emoji: m['emoji'] as String? ?? '🛒',
+      images: [for (final v in (m['images'] as List? ?? const [])) v as String],
+      subtype: m['subtype'] == null
+          ? null
+          : VirtualSubtype.values.byName(m['subtype'] as String),
+      unlockTarget: m['unlockTarget'] as String?,
+      listing: ListingState.values.byName(m['listing'] as String? ?? 'delisted'),
+      aiCredits: (m['aiCredits'] as num?)?.toInt() ?? 0,
+      note: m['note'] as String?,
+      specs: [
+        for (final s in (m['specs'] as List? ?? const []))
+          AdminProductSpec((s as Map)['name'] as String,
+              (s['price'] as num).toInt(), (s['stock'] as num).toInt()),
+      ],
     );
 
 Map<String, dynamic> planSpecToMap(PlatformPlanSpec s) => {

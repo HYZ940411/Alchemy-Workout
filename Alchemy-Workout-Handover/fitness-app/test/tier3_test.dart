@@ -77,16 +77,15 @@ void main() {
   });
 
   group('商品下架連帶取消待付款訂單', () {
-    test('使用者端的待付款訂單一起取消並回補庫存', () {
+    test('使用者端的待付款訂單一起取消並退回金幣', () {
       final s = AppState();
       final p = s.products.firstWhere((x) => x.id == 'v2');
       final spec = p.specs.firstWhere((x) => x.inStock);
-      final stock = spec.stock;
       s.coins = 99999;
       expect(s.confirmPurchase(p, spec, 1), isNull);
       final order = s.orders.first;
       expect(order.state, OrderState.pendingPayment);
-      expect(spec.stock, stock - 1, reason: '確認購買時扣減庫存');
+      final coinsAfterBuy = s.coins;
 
       final admin = s.adminProducts.firstWhere((a) => a.name == p.name);
       s.adminMode = true;
@@ -95,7 +94,7 @@ void main() {
       expect(order.state, OrderState.cancelled,
           reason: '下架後使用者那一側不該還停在待付款');
       expect(order.cancelledBySystem, isTrue, reason: 'Actor 為系統，非使用者');
-      expect(spec.stock, stock, reason: '扣減的庫存回補');
+      expect(s.coins, coinsAfterBuy + order.coinPaid, reason: '扣的金幣退回');
     });
 
     test('已付款（已發放）者照常履行，不被下架取消', () {
