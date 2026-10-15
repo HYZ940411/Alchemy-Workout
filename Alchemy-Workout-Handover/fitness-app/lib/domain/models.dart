@@ -1,4 +1,5 @@
 import 'ability.dart';
+import 'commerce.dart' show kPlanUnlockCoins;
 import 'rewards.dart';
 
 /// 動作類型。所屬肌群為空值當且僅當類型為有氧。
@@ -145,8 +146,18 @@ class WorkoutPlan {
   final bool hasOptimizationSuggestion;
   final String equipmentTier;
 
+  /// 這份計畫開不開放金幣提前購買。建構時給的數字只當「開放」的記號，**價格不讀它**。
+  final int? _unlockMarker;
+
   /// 金幣提前購買的解鎖價格。空值者不呈現該解鎖方式（〈未解鎖進階計畫的呈現〉）。
-  final int? unlockCoins;
+  ///
+  /// **價格一律讀全站統一定價**（`kPlanUnlockCoins`，平台設定「進階訓練計畫解鎖價格」）。
+  /// 規格是統一定價、不逐計畫區分；原本每份課表各存一個數字，管理員改了平台設定，
+  /// 課表的實際售價卻不動（2026-10-15 實測，使用者裁決 A）。
+  int? get unlockCoins => _unlockMarker == null ? null : kPlanUnlockCoins;
+
+  /// 雲端與規格上存的那個記號值（寫回雲端用，**不是售價**）。
+  int? get unlockMarker => _unlockMarker;
 
   /// 會員身分可直接解鎖。
   final bool memberUnlockable;
@@ -167,11 +178,11 @@ class WorkoutPlan {
     this.lastCompletion,
     this.hasOptimizationSuggestion = false,
     this.equipmentTier = '徒手',
-    this.unlockCoins,
+    int? unlockCoins,
     this.memberUnlockable = false,
     this.suitableExperience = const {},
     this.suitableGoals = const {},
-  });
+  }) : _unlockMarker = unlockCoins;
 
   int get totalSets => exercises.fold(0, (a, e) => a + e.planned.length);
 

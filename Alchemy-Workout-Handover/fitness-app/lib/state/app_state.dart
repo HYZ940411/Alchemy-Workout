@@ -10643,8 +10643,26 @@ class AppState extends ChangeNotifier {
       _logSetting(g.event, p.label, before, p.display);
       changed += 1;
     }
-    if (changed > 0) notifyListeners();
+    if (changed > 0) {
+      _syncPlanProductPrice();
+      notifyListeners();
+    }
     return null;
+  }
+
+  /// 商城裡「進階訓練計畫解鎖」那件商品的價格跟著全站統一定價走。
+  ///
+  /// 商品清單建立時就把當時的價格寫進規格，管理員之後改平台設定，
+  /// 同一次連線裡商城仍是舊價（重開才對）。庫存沿用，不動。
+  void _syncPlanProductPrice() {
+    for (final p in products) {
+      if (p.id != 'v4') continue;
+      for (var i = 0; i < p.specs.length; i++) {
+        final old = p.specs[i];
+        if (old.coinPrice == kPlanUnlockCoins) continue;
+        p.specs[i] = ProductSpec(old.name, kPlanUnlockCoins, old.stock);
+      }
+    }
   }
 
   /// 設定成就定義 —— 門檻調整不改動既有解鎖紀錄。
@@ -10774,22 +10792,27 @@ class AppState extends ChangeNotifier {
   }
 
   /// 設定訓練計畫 —— 調整不影響已產生的快照與已解鎖者。
+  ///
+  /// [unlockCoins] **只決定開不開放金幣購買**（空值＝不開放，有值＝開放）；
+  /// 售價一律是全站統一定價 [kPlanUnlockCoins]，存進去的數字會被正規化成當下的統一價。
   String? setPlanConfig(WorkoutPlan p,
       {required int? requiredRank, required int? unlockCoins}) {
     if (!canConfigure) return '權限不足：本 Command 需要「平台設定」權限組。';
     if (requiredRank != null && (requiredRank < 1 || requiredRank > 99)) {
       return '所需階級須介於 1 與 99 之間。';
     }
-    if (unlockCoins != null && unlockCoins < 0) return '解鎖價格不得為負。';
+    // 開放就一律記成當下的統一定價，不收逐課表的價格。
+    unlockCoins = unlockCoins == null ? null : kPlanUnlockCoins;
     const event = '管理員已設定訓練計畫';
     String show(int? v) => v == null ? '未設定' : '$v';
     if (p.requiredRank != requiredRank) {
       _logSetting(event, '${p.name}．所需階級', show(p.requiredRank),
           show(requiredRank));
     }
-    if (p.unlockCoins != unlockCoins) {
-      _logSetting(event, '${p.name}．解鎖價格', show(p.unlockCoins),
-          show(unlockCoins));
+    if ((p.unlockCoins == null) != (unlockCoins == null)) {
+      _logSetting(event, '${p.name}．金幣購買',
+          p.unlockCoins == null ? '不開放' : '開放',
+          unlockCoins == null ? '不開放' : '開放');
     }
     final i = platformPlans.indexWhere((x) => x.id == p.id);
     if (i < 0) return '找不到該計畫。';
@@ -10981,6 +11004,7 @@ class AppState extends ChangeNotifier {
         p.value = p.isInt ? v.round() : v;
       }
     }
+    _syncPlanProductPrice();
     notifyListeners();
   }
 

@@ -5,10 +5,14 @@ import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/domain/rank.dart';
+import 'package:fitness_app/domain/rewards.dart' show PlanSource;
 import 'package:fitness_app/state/app_state.dart';
 
 WorkoutPlan _advanced(AppState s) =>
     s.platformPlans.firstWhere((p) => p.unlockCoins != null);
+
+WorkoutPlan _advanced0(AppState s, String id) =>
+    s.platformPlans.firstWhere((p) => p.id == id);
 
 void main() {
   setUp(platformConfig.reset);
@@ -213,19 +217,79 @@ void main() {
     });
   });
 
+  group('全站統一定價是唯一的售價來源', () {
+    test('平台設定改價 → 課表售價、購買扣款、商城商品價格都跟著變', () {
+      final s = AppState();
+      s.adminMode = true;
+      final p = _advanced(s);
+      expect(p.unlockCoins, 600);
+      // 商品清單是 late 的：先碰一次讓它以舊價建好，才測得出「同一次連線有沒有跟著變」。
+      expect(s.products.firstWhere((x) => x.id == 'v4').specs.first.coinPrice,
+          600);
+
+      expect(s.applySettings('commerce', {'planUnlockCoins': 800}), isNull);
+
+      final q = _advanced(s);
+      expect(q.unlockCoins, 800, reason: '課表售價讀的是統一定價');
+      expect(
+          s.products.firstWhere((x) => x.id == 'v4').specs.first.coinPrice, 800,
+          reason: '商城的計畫解鎖商品同一次連線就要變');
+
+      s.coins = 1000;
+      expect(s.purchasePlan(q), isNull);
+      expect(s.coins, 1000 - 800, reason: '用新價格扣');
+    });
+
+    test('改價不追溯已成立的訂單', () {
+      final s = AppState();
+      s.adminMode = true;
+      final p = _advanced(s);
+      s.coins = 1000;
+      s.purchasePlan(p);
+      final paid = s.orders.first.coinPaid;
+      expect(paid, 600);
+
+      s.applySettings('commerce', {'planUnlockCoins': 800});
+      expect(s.orders.first.coinPaid, 600);
+      expect(s.planUnlocked(_advanced(s)), isTrue, reason: '買過的不因改價而鎖');
+    });
+
+    test('不開放金幣購買的課表，改價不會讓它變成可賣', () {
+      final s = AppState();
+      s.adminMode = true;
+      final p = _advanced(s);
+      s.setPlanConfig(p, requiredRank: p.requiredRank, unlockCoins: null);
+      s.applySettings('commerce', {'planUnlockCoins': 800});
+      expect(_advanced0(s, p.id).unlockCoins, isNull);
+    });
+
+    test('課表上存的舊價格不再影響售價（雲端留著過期的數字也沒關係）', () {
+      const plan = WorkoutPlan(
+        id: 'x',
+        name: 'x',
+        source: PlanSource.official,
+        exercises: [],
+        requiredRank: 40,
+        unlockCoins: 123,
+      );
+      expect(plan.unlockCoins, kPlanUnlockCoins);
+      expect(plan.unlockMarker, 123, reason: '寫回雲端的記號值照原樣保留');
+    });
+  });
+
   group('後台改課表的階級與價格（setPlanConfig）', () {
-    test('前台跟著變：所需階級與解鎖價格都用新的', () {
+    test('前台跟著變：所需階級用新的，售價仍是統一定價', () {
       final s = AppState();
       s.adminMode = true;
       final p = _advanced(s);
       expect(s.setPlanConfig(p, requiredRank: 70, unlockCoins: 250), isNull);
       final q = s.platformPlans.firstWhere((x) => x.id == p.id);
       expect(q.requiredRank, 70);
-      expect(q.unlockCoins, 250);
+      expect(q.unlockCoins, kPlanUnlockCoins, reason: '售價是統一定價，不收逐課表的 250');
 
       s.coins = 1000;
       expect(s.purchasePlan(q), isNull);
-      expect(s.coins, 1000 - 250, reason: '用新價格扣');
+      expect(s.coins, 1000 - kPlanUnlockCoins);
     });
 
     test('改階級或價格不能洗掉這份課表的其他欄位', () {
@@ -247,7 +311,8 @@ void main() {
       final p = _advanced(s);
       s.setPlanConfig(p, requiredRank: 70, unlockCoins: 250);
       expect(s.planSpecById[p.id]!.requiredRank, 70);
-      expect(s.planSpecById[p.id]!.unlockCoins, 250);
+      expect(s.planSpecById[p.id]!.unlockCoins, kPlanUnlockCoins,
+          reason: '規格上記的是當下的統一定價');
     });
   });
 }

@@ -217,7 +217,7 @@ class _PlatformPlansScreenState extends State<PlatformPlansScreen> {
   /// 要在他點進去之前就看得出來。
   String _rowSubtitle(AppState s, WorkoutPlan p) {
     final rank = p.requiredRank ?? '初階';
-    final price = p.unlockCoins == null ? '不販售' : '${p.unlockCoins} 金幣';
+    final price = p.unlockCoins == null ? '不販售' : '${p.unlockCoins} 金幣（統一定價）';
     final demo = !s.planSpecById.containsKey(p.id);
     return '${demo ? "示範課表 · 改動不上雲　·　" : ""}'
         '所需階級 $rank　·　解鎖價格 $price　·　${p.totalSets} 組';
@@ -227,35 +227,48 @@ class _PlatformPlansScreenState extends State<PlatformPlansScreen> {
     final rank = TextEditingController(
       text: p.requiredRank == null ? '' : '${p.requiredRank}',
     );
-    final coins = TextEditingController(
-      text: p.unlockCoins == null ? '' : '${p.unlockCoins}',
-    );
+    var sellable = p.unlockCoins != null;
     final ok = await showAppDialog(
       context,
       title: p.name,
       size: DialogSize.medium,
       confirmLabel: '儲存',
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Field(label: '所需階級', controller: rank, hint: '留空＝初階'),
-          const SizedBox(height: S.md),
-          _Field(label: '金幣解鎖價格', controller: coins, hint: '留空＝不呈現該解鎖方式'),
-        ],
+      content: StatefulBuilder(
+        builder: (_, setInner) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _Field(label: '所需階級', controller: rank, hint: '留空＝初階'),
+            const SizedBox(height: S.md),
+            Row(
+              children: [
+                const Expanded(child: Text('開放金幣購買')),
+                AppSwitch(
+                    value: sellable,
+                    onChanged: (v) => setInner(() => sellable = v)),
+              ],
+            ),
+            const SizedBox(height: S.xs),
+            // 售價不在這裡改：規格是全站統一定價，到「平台設定」改一處就全部跟著變。
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('售價固定是統一定價 $kPlanUnlockCoins 金幣，到「平台設定」調整。',
+                  style: T.caption()),
+            ),
+          ],
+        ),
       ),
     );
     if (ok != true || !context.mounted) return;
-    // 留空為合法輸入：所需階級留空＝初階，解鎖價格留空＝不呈現該解鎖方式。
+    // 所需階級留空＝初階。
     int? parse(TextEditingController c) =>
         c.text.trim().isEmpty ? null : int.tryParse(c.text.trim());
 
     final r = parse(rank);
-    final u = parse(coins);
-    if ((rank.text.trim().isNotEmpty && r == null) ||
-        (coins.text.trim().isNotEmpty && u == null)) {
+    if (rank.text.trim().isNotEmpty && r == null) {
       showToast(context, '請填入整數或留空');
       return;
     }
+    final u = sellable ? kPlanUnlockCoins : null;
     final failure = s.setPlanConfig(p, requiredRank: r, unlockCoins: u);
     if (failure != null) {
       showToast(context, failure);

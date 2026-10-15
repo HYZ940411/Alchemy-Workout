@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/data/platform_data.dart';
 import 'package:fitness_app/data/platform_data_firestore.dart';
+import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/domain/task_pool.dart';
@@ -164,18 +165,19 @@ void main() {
     WorkoutPlan cloudPlan(AppState s) =>
         s.platformPlans.firstWhere((p) => s.planSpecById.containsKey(p.id));
 
-    test('訓練計畫：階級門檻與解鎖價格都進得了雲端', () async {
+    test('訓練計畫：階級門檻與是否開放金幣購買都進得了雲端', () async {
       final p = cloudPlan(s);
       expect(s.setPlanConfig(p, requiredRank: 40, unlockCoins: 300), isNull);
       expect(await s.pushPlanSpec(p.id), isNull);
 
       final doc = await db.collection('plans').doc(p.id).get();
       expect(doc.data()!['requiredRank'], 40);
-      expect(doc.data()!['unlockCoins'], 300,
-          reason: '這一欄就是 [BE-12b] 卡住的原因 —— 它原本無處可存');
+      expect(doc.data()!['unlockCoins'], kPlanUnlockCoins,
+          reason: '這一欄就是 [BE-12b] 卡住的原因 —— 它原本無處可存；'
+              '存的是當下的統一定價，不是逐課表的價格');
     });
 
-    test('把價格清空也要寫得上去 —— 那與「沒改」是兩件事', () async {
+    test('把「開放金幣購買」關掉也要寫得上去 —— 那與「沒改」是兩件事', () async {
       final p = cloudPlan(s);
       s.setPlanConfig(p, requiredRank: 40, unlockCoins: 300);
       await s.pushPlanSpec(p.id);
@@ -200,7 +202,7 @@ void main() {
           await FirestorePlatformData(firestore: db).load());
 
       final back = s.platformPlans.firstWhere((x) => x.id == p.id);
-      expect(back.unlockCoins, 300);
+      expect(back.unlockCoins, kPlanUnlockCoins);
       expect(back.requiredRank, 40);
     });
 

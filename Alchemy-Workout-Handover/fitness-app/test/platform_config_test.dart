@@ -260,12 +260,13 @@ void main() {
       expect(s.settingLog.length, 2);
     });
 
-    test('設定訓練計畫改得動所需階級與解鎖價格', () {
+    test('設定訓練計畫改得動所需階級與是否開放金幣購買', () {
       final s = AppState();
       final p = s.platformPlans.first;
       expect(s.setPlanConfig(p, requiredRank: 40, unlockCoins: 300), isNull);
       expect(s.platformPlans.first.requiredRank, 40);
-      expect(s.platformPlans.first.unlockCoins, 300);
+      // 開放金幣購買，但售價是全站統一定價，不收逐課表的 300。
+      expect(s.platformPlans.first.unlockCoins, kPlanUnlockCoins);
     });
   });
 
