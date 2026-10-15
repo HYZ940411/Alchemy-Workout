@@ -95,7 +95,6 @@ void main() {
       expect(s.instructorCases, isEmpty);
       expect(s.publicPlanCases, isEmpty);
       expect(s.adminProducts, isEmpty);
-      expect(s.adminOrders, isEmpty);
       expect(s.admins, isEmpty);
     });
 

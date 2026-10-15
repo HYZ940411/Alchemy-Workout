@@ -7,26 +7,19 @@ import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import 'order_detail_screen.dart';
 
-/// 結帳確認頁（〈實體商品購買流程〉：使用者已確認購買）
+/// 結帳確認頁（〈虛擬商品購買流程〉：使用者已確認購買）
 ///
-/// 確認購買時**預扣庫存**，非支付成功後才扣減 —— 實體商品超賣的後果是
-/// 須向真實顧客道歉退款，非可由失敗補償帶過的技術問題。
-/// 預扣保留一段時間（平台級可調參數），逾時未付款自動釋放。
-///
-/// 支付邊界：實體商品的支付由第三方金流執行，不走 App Store 應用內購買
-/// （App Store 3.1.3(e)：於 App 外消費的實體商品須以 IAP 以外的方式收款）。
+/// 確認購買時訂單成立為待付款並扣減庫存，取消或支付失敗時回補。
 class CheckoutScreen extends StatelessWidget {
   final Product product;
   final ProductSpec spec;
   final int qty;
-  final ShippingInfo? shipping;
 
   const CheckoutScreen({
     super.key,
     required this.product,
     required this.spec,
     required this.qty,
-    this.shipping,
   });
 
   @override
@@ -35,7 +28,6 @@ class CheckoutScreen extends StatelessWidget {
     final total = spec.coinPrice * qty;
     final coinPart = s.coins >= total ? total : s.coins;
     final cashPart = cashForShortfall(total - coinPart);
-    final physical = product.kind == ProductKind.physical;
 
     return Scaffold(
       backgroundColor: C.bgPage,
@@ -72,27 +64,6 @@ class CheckoutScreen extends StatelessWidget {
             ),
           ),
 
-          if (physical && shipping != null) ...[
-            const SectionTitle('收貨資訊'),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(shipping!.name, style: T.body(weight: FontWeight.w600)),
-                  const SizedBox(height: S.xs),
-                  Text(shipping!.phone, style: T.caption()),
-                  const SizedBox(height: S.xs),
-                  Text('${shipping!.zip} ${shipping!.address}',
-                      style: T.caption()),
-                  if (shipping!.note.isNotEmpty) ...[
-                    const SizedBox(height: S.xs),
-                    Text('備註：${shipping!.note}', style: T.caption()),
-                  ],
-                ],
-              ),
-            ),
-          ],
-
           // 支付明細拆分呈現：僅顯示總額者，使用者數月後無從對照
           // 當時扣了多少金幣、補了多少現金 —— 而那正是爭議發生時他要查的資料。
           const SectionTitle('支付明細', trailing: '金幣與法幣分列'),
@@ -120,33 +91,6 @@ class CheckoutScreen extends StatelessWidget {
             ),
           ),
 
-          if (physical) ...[
-            const SectionTitle('付款方式'),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.credit_card_rounded,
-                          size: Sz.iconDense, color: C.textSecondary),
-                      const SizedBox(width: S.md),
-                      Expanded(
-                        child: Text('第三方金流（信用卡／行動支付）',
-                            style: T.body()),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: S.md),
-                  Text(
-                    '實體商品不走 App Store 應用內購買。確認後訂單成立為待付款，'
-                    '庫存立即預扣並保留 ${kStockHold.inMinutes} 分鐘，逾時未付款自動釋放。',
-                    style: T.caption(),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
       bottomNavigationBar: Padding(
@@ -157,12 +101,7 @@ class CheckoutScreen extends StatelessWidget {
             AppButton(
               label: '確認購買',
               onPressed: () {
-                final failure = s.confirmPurchase(
-                  product,
-                  spec,
-                  qty,
-                  shipping: shipping,
-                );
+                final failure = s.confirmPurchase(product, spec, qty);
                 if (failure != null) {
                   showToast(context, '購買失敗：${failReasonNames[failure]}');
                   return;

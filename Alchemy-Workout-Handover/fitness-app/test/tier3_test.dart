@@ -77,40 +77,40 @@ void main() {
   });
 
   group('商品下架連帶取消待付款訂單', () {
-    test('使用者端的待付款訂單一起取消並釋放庫存', () {
+    test('使用者端的待付款訂單一起取消並回補庫存', () {
       final s = AppState();
-      final p = s.products.firstWhere((x) => x.kind == ProductKind.physical);
+      final p = s.products.firstWhere((x) => x.id == 'v2');
       final spec = p.specs.firstWhere((x) => x.inStock);
       final stock = spec.stock;
       s.coins = 99999;
-      expect(s.confirmPurchase(p, spec, 1, shipping: s.lastShipping), isNull);
+      expect(s.confirmPurchase(p, spec, 1), isNull);
       final order = s.orders.first;
       expect(order.state, OrderState.pendingPayment);
-      expect(spec.stock, stock - 1, reason: '確認購買時預扣庫存');
+      expect(spec.stock, stock - 1, reason: '確認購買時扣減庫存');
 
       final admin = s.adminProducts.firstWhere((a) => a.name == p.name);
       s.adminMode = true;
       s.delistProduct(admin);
 
       expect(order.state, OrderState.cancelled,
-          reason: '後台已取消，使用者那一側不該還停在待付款');
+          reason: '下架後使用者那一側不該還停在待付款');
       expect(order.cancelledBySystem, isTrue, reason: 'Actor 為系統，非使用者');
-      expect(spec.stock, stock, reason: '預扣的庫存回補');
+      expect(spec.stock, stock, reason: '扣減的庫存回補');
     });
 
-    test('已付款而未出貨者照常履行，不被下架取消', () {
+    test('已付款（已發放）者照常履行，不被下架取消', () {
       final s = AppState();
-      final p = s.products.firstWhere((x) => x.kind == ProductKind.physical);
+      final p = s.products.firstWhere((x) => x.id == 'v2');
       final spec = p.specs.firstWhere((x) => x.inStock);
       s.coins = 99999;
-      s.confirmPurchase(p, spec, 1, shipping: s.lastShipping);
+      s.confirmPurchase(p, spec, 1);
       final order = s.orders.first;
       s.payOrder(order);
-      expect(order.state, OrderState.paid);
+      expect(order.state, OrderState.delivered);
 
       s.adminMode = true;
       s.delistProduct(s.adminProducts.firstWhere((a) => a.name == p.name));
-      expect(order.state, OrderState.paid, reason: '下架僅停止新訂單成立');
+      expect(order.state, OrderState.delivered, reason: '下架僅停止新訂單成立');
     });
   });
 

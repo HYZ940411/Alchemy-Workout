@@ -6959,31 +6959,11 @@ class AppState extends ChangeNotifier {
   late List<Product> products = buildProducts();
   late List<Order> orders = demo ? buildOrders() : [];
 
-  /// 上次填寫的收貨資訊。購買時預帶 ——
-  /// 實體訂單有 5 個必填欄位，每次重填為純粹的摩擦。
-  ShippingInfo? lastShipping = const ShippingInfo(
-    name: '王小明',
-    phone: '0912345678',
-    zip: '110',
-    address: '台北市信義區松高路 1 號 5 樓',
-  );
-
-  void setShipping(ShippingInfo info) {
-    lastShipping = info;
-    notifyListeners();
-  }
-
-  /// 確認購買 → 訂單成立為**待付款**，並**預扣庫存**。
+  /// 確認購買 → 訂單成立為**待付款**，並扣減庫存。
   ///
-  /// 預扣而非支付成功後才扣減：實體商品超賣的後果是須向真實顧客道歉退款。
-  /// 預扣保留 [kStockHold]，逾時未付款由 [releaseExpiredHolds] 釋放。
-  /// 回傳失敗原因；null 表示成功，成立的訂單為 [orders.first]。
-  FailReason? confirmPurchase(
-    Product p,
-    ProductSpec spec,
-    int qty, {
-    ShippingInfo? shipping,
-  }) {
+  /// 取消或支付失敗時回補（見 [_releaseStock]）。權限解鎖類商品不走這條，
+  /// 見 [purchasePlan]。回傳失敗原因；null 表示成功，成立的訂單為 [orders.first]。
+  FailReason? confirmPurchase(Product p, ProductSpec spec, int qty) {
     if (spec.stock < qty) return FailReason.soldOut;
 
     // 支付明細拆分：金幣扣到不足為止，其餘以法幣補差額。
@@ -6991,14 +6971,8 @@ class AppState extends ChangeNotifier {
     final coinPart = coins >= total ? total : coins;
     final cashPart = cashForShortfall(total - coinPart);
 
-    // 實體商品的收貨資訊為必要條件。
-    if (p.kind == ProductKind.physical && shipping == null) {
-      return FailReason.other;
-    }
-
-    spec.stock -= qty; // 預扣
+    spec.stock -= qty;
     coins -= coinPart;
-    final now = this.now;
     orders.insert(
       0,
       Order(
@@ -7006,21 +6980,15 @@ class AppState extends ChangeNotifier {
         productName: p.name,
         spec: spec.name,
         qty: qty,
-        kind: p.kind,
         placedAt: now,
         coinPaid: coinPart,
         cashPaid: cashPart,
         state: OrderState.pendingPayment,
-        shipping: shipping,
-        // 每筆訂單於確認購買當下鎖定自己的到期時點 ——
-        // 事後調整保留時間不影響已成立的訂單。
-        holdUntil: p.kind == ProductKind.physical ? now.add(kStockHold) : null,
         // **在這裡凍結，不在發放時回頭查商品** —— 管理員事後調整發放量
         // 不該回溯影響已成立的訂單。
         aiCredits: p.aiCredits * qty,
       ),
     );
-    if (shipping != null) lastShipping = shipping;
     notifyListeners();
     return null;
   }
@@ -7079,11 +7047,10 @@ class AppState extends ChangeNotifier {
         productName: p.name,
         spec: '永久解鎖',
         qty: 1,
-        kind: ProductKind.virtual,
         placedAt: now,
         coinPaid: coinPart,
         cashPaid: cashPart,
-        // 權限解鎖類不適用庫存，故無預扣、無 holdUntil。
+        // 權限解鎖類不適用庫存。
         // 交易成立為已付款；發放是另一個事實，緊接著發生但不合併。
         state: OrderState.paid,
       ),
@@ -7096,49 +7063,15 @@ class AppState extends ChangeNotifier {
   }
 
   /// 使用者已支付 —— Actor 為外部系統（第三方金流回呼）。
-  /// 實體：待付款 → 已付款；虛擬：待付款 → 已付款，再由發放轉為已發放。
+  /// 待付款 → 已付款，再由發放轉為已發放。
   ///
-  /// 虛擬訂單不再直接跳到已發放：「使用者已購買虛擬商品」與「商品已發放」
+  /// 訂單不直接跳到已發放：「使用者已購買虛擬商品」與「商品已發放」
   /// 是兩個不同事實，模型明訂不合併，且**發放可為非同步**。
   void payOrder(Order o) {
     if (o.state != OrderState.pendingPayment) return;
     o.state = OrderState.paid;
-    if (o.kind == ProductKind.virtual) {
-      deliverOrder(o);
-    } else {
-      // 實體訂單付款後進出貨佇列。**先前完全沒有這一步** ——
-      // 後台的假訂單與我的訂單是兩份不相干的清單，
-      // 我買的東西永遠不會出現在後台，[shipOrder] 裡那段
-      // 「同一筆訂單在使用者端亦轉為已出貨」也就永遠對不到。
-      _enqueueForFulfilment(o);
-    }
+    deliverOrder(o);
     notifyListeners();
-  }
-
-  /// 把一筆已付款的實體訂單送進出貨佇列，**沿用同一個訂單 ID**。
-  ///
-  /// 兩側是同一筆訂單的兩個投影，不是兩筆訂單 —— ID 一致，
-  /// 後台出貨才找得到使用者那一側該更新哪一筆。
-  void _enqueueForFulfilment(Order o) {
-    if (o.kind != ProductKind.physical) return;
-    if (adminOrders.any((a) => a.id == o.id)) return;
-    final sh = o.shipping;
-    adminOrders.insert(
-      0,
-      AdminOrder(
-        id: o.id,
-        product: o.productName,
-        spec: o.spec,
-        qty: o.qty,
-        coinAmount: o.coinPaid,
-        placedAt: o.placedAt,
-        paidAt: now,
-        address: sh == null
-            ? ''
-            : '${sh.zip} ${sh.address}　${sh.name}　${sh.phone}',
-        state: '已付款',
-      ),
-    );
   }
 
   /// 商品已發放。虛擬訂單自已付款轉入已發放（終止狀態）。
@@ -7187,44 +7120,24 @@ class AppState extends ChangeNotifier {
   List<Order> get undeliveredOrders =>
       orders.where((o) => o.awaitingDelivery).toList();
 
-  /// 支付已失敗 → 已失敗（終止狀態），並一併釋放預扣庫存。
+  /// 支付已失敗 → 已失敗（終止狀態），並一併回補庫存與已扣的金幣。
   void failPayment(Order o, FailReason reason) {
     if (o.state != OrderState.pendingPayment) return;
-    _releaseHold(o);
+    _releaseStock(o);
     _replaceOrder(o, OrderState.failed, failReason: reason);
     notifyListeners();
   }
 
-  /// 使用者已取消訂單 → 已取消，並釋放預扣庫存與已扣的金幣。
+  /// 使用者已取消訂單 → 已取消，並回補庫存與已扣的金幣。
   void cancelOrder(Order o) {
     if (!o.cancellable) return;
-    _releaseHold(o);
+    _releaseStock(o);
     o.state = OrderState.cancelled;
     notifyListeners();
   }
 
-  /// 預扣逾時 → 系統釋放庫存並取消訂單。回傳被取消的訂單 ID。
-  ///
-  /// 真實系統由排程觸發；本專案於進入訂單相關畫面時呼叫，
-  /// 效果相同：使用者看到的一定是已經結算過的狀態。
-  List<String> releaseExpiredHolds() {
-    final now = this.now;
-    final out = <String>[];
-    for (final o in orders) {
-      final until = o.holdUntil;
-      if (o.state != OrderState.pendingPayment || until == null) continue;
-      if (now.isBefore(until)) continue;
-      _releaseHold(o);
-      o.state = OrderState.cancelled;
-      o.cancelledBySystem = true;
-      out.add(o.id);
-    }
-    if (out.isNotEmpty) notifyListeners();
-    return out;
-  }
-
-  /// 庫存已釋放：所預扣的庫存回補至該商品規格，已扣的金幣一併退回。
-  void _releaseHold(Order o) {
+  /// 庫存已回補：所扣的庫存回補至該商品規格，已扣的金幣一併退回。
+  void _releaseStock(Order o) {
     coins += o.coinPaid;
     for (final p in products) {
       if (p.name != o.productName) continue;
@@ -7243,23 +7156,13 @@ class AppState extends ChangeNotifier {
       productName: o.productName,
       spec: o.spec,
       qty: o.qty,
-      kind: o.kind,
       placedAt: o.placedAt,
       coinPaid: o.coinPaid,
       cashPaid: o.cashPaid,
       state: state,
       failReason: failReason,
-      shipping: o.shipping,
-      trackingNo: o.trackingNo,
       cancelledBySystem: o.cancelledBySystem,
     );
-  }
-
-  /// 尚未查看的出貨通知（我的訂單頁紅點）。
-  final Set<String> unreadShipped = {};
-
-  void markOrderSeen(Order o) {
-    if (unreadShipped.remove(o.id)) notifyListeners();
   }
 
   // ===========================================================================
@@ -10632,7 +10535,6 @@ class AppState extends ChangeNotifier {
   late List<PublicPlanCase> publicPlanCases =
       demo ? buildPublicPlanCases() : [];
   late List<AdminProduct> adminProducts = demo ? buildAdminProducts() : [];
-  late List<AdminOrder> adminOrders = demo ? buildAdminOrders() : [];
   /// 管理員評分彙總（`04_ReadModel清單.md`）。
   ///
   /// **`demo ? ... : []`** —— 與 `posts`／`socialUsers`／`instructors` 同一個
@@ -11547,29 +11449,22 @@ class AppState extends ChangeNotifier {
   /// 上架另有 Precondition，不能靠新增繞過。
   String? addProduct({
     required String name,
-    required bool physical,
     required VirtualSubtype? subtype,
   }) {
     if (!canManageProducts) return '權限不足：本 Command 需要「商品管理」權限組。';
     if (name.trim().isEmpty) return '商品名稱不得為空。';
-    if (!physical && subtype == null) return '虛擬商品須指定子類型。';
-    final id = '${physical ? 'g' : 'v'}${adminProducts.length + 1}';
+    if (subtype == null) return '虛擬商品須指定子類型。';
+    final id = 'v${adminProducts.length + 1}';
     adminProducts.add(AdminProduct(
       id: id,
       name: name.trim(),
-      emoji: physical ? '📦' : '✨',
-      physical: physical,
-      subtype: physical ? null : subtype,
+      emoji: '✨',
+      subtype: subtype,
       listing: ListingState.delisted,
-      // 實體商品的規格為尺寸；虛擬商品僅有一個預設規格。
-      specs: physical
-          ? [AdminProductSpec('單一尺寸', 0, 0)]
-          // 庫存一律自 0 起算。權限解鎖類根本不適用庫存
-          // （見 AdminProduct.stockApplies），道具類則由管理員上架前自行設定。
-          // 原本這裡寫 `subtype == unlock ? 0 : 0` —— 兩個分支同值，
-          // 那個判斷讀起來像有差別，實際上什麼都沒做。
-          : [AdminProductSpec('預設規格', 0, 0)],
-      unshippedOrders: 0,
+      // 虛擬商品僅有一個預設規格。
+      // 庫存一律自 0 起算。權限解鎖類根本不適用庫存
+      // （見 AdminProduct.stockApplies），道具類則由管理員上架前自行設定。
+      specs: [AdminProductSpec('預設規格', 0, 0)],
     ));
     notifyListeners();
     return null;
@@ -11588,21 +11483,17 @@ class AppState extends ChangeNotifier {
     if (!canManageProducts) return '權限不足：本 Command 需要「商品管理」權限組。';
     if (name.trim().isEmpty) return '商品名稱不得為空。';
     if (specs.isEmpty) return '至少須有一個規格。';
-    if (!p.physical && specs.length > 1) return '虛擬商品僅有一個預設規格。';
+    if (specs.length > 1) return '虛擬商品僅有一個預設規格。';
     if (specs.any((x) => x.name.trim().isEmpty)) return '規格名稱不得為空。';
-    final names = specs.map((x) => x.name.trim()).toSet();
-    if (names.length != specs.length) return '規格名稱不得重複。';
     if (specs.any((x) => x.price < 0)) return '價格不得為負。';
     if (specs.any((x) => x.stock < 0)) return '庫存不得為負值。';
 
     p.name = name.trim();
     p.images = [...images];
-    if (!p.physical) {
-      p.subtype = subtype ?? p.subtype;
-      // 解鎖標的僅權限解鎖類有值，其餘一律清空 —— 欄位不留舊值。
-      p.unlockTarget =
-          p.subtype == VirtualSubtype.unlock ? unlockTarget?.trim() : null;
-    }
+    p.subtype = subtype ?? p.subtype;
+    // 解鎖標的僅權限解鎖類有值，其餘一律清空 —— 欄位不留舊值。
+    p.unlockTarget =
+        p.subtype == VirtualSubtype.unlock ? unlockTarget?.trim() : null;
     p.specs
       ..clear()
       ..addAll(specs.map((x) =>
@@ -11633,69 +11524,33 @@ class AppState extends ChangeNotifier {
 
   /// 下架商品。
   ///
-  /// 下架僅停止新訂單成立，不影響已成立的訂單：
-  /// 待付款訂單自動取消並釋放庫存，已付款而未出貨者照常履行。
+  /// 下架僅停止新訂單成立，不影響已成立的訂單：待付款訂單自動取消並回補庫存。
   /// 回傳被連帶取消的訂單 ID —— 管理員要看得到自己按下去發生了什麼。
   List<String> delistProduct(AdminProduct p) {
     if (!canManageProducts || p.listing == ListingState.delisted) {
       return const [];
     }
     p.listing = ListingState.delisted;
+    // 「訂單已因商品下架取消」—— Actor 為系統，非使用者。
     final cancelled = <String>[];
-    for (final o in adminOrders) {
-      if (o.product != p.name || o.state != '待付款') continue;
-      // 「訂單已因商品下架取消」—— Actor 為系統，非使用者。
-      o.state = '已因商品下架取消';
-      cancelled.add(o.id);
-      // 連帶「庫存已釋放」：待付款期間佔用的庫存還回該規格。
-      for (final spec in p.specs) {
-        if (spec.name == o.spec) spec.stock += o.qty;
-      }
-    }
-    // 使用者那一側的同一筆訂單也要跟著取消 ——
-    // 後台顯示已取消、使用者的訂單頁卻還停在待付款，是兩份互相矛盾的紀錄。
     for (final u in orders) {
-      if (u.state != OrderState.pendingPayment) continue;
-      if (!cancelled.contains(u.id) && u.productName != p.name) continue;
-      _releaseHold(u);
+      if (u.state != OrderState.pendingPayment || u.productName != p.name) {
+        continue;
+      }
+      _releaseStock(u);
       u.state = OrderState.cancelled;
       u.cancelledBySystem = true;
+      cancelled.add(u.id);
     }
     notifyListeners();
     return cancelled;
   }
 
   /// 待付款訂單佔用的庫存筆數 —— 下架前的告知依據。
-  int pendingOrdersOf(AdminProduct p) =>
-      adminOrders.where((o) => o.product == p.name && o.state == '待付款').length;
-
-  /// 商品已出貨 —— 記錄物流單號，系統不再追蹤後續物流狀態。
-  /// 同一筆訂單在使用者端亦轉為已出貨，並於我的訂單頁標紅點。
-  void shipOrder(AdminOrder o, {String? trackingNo}) {
-    if (!canManageProducts) return;
-    if (o.state != '已付款') return;
-    o.state = '已出貨';
-    final no = trackingNo ??
-        'TW${now.millisecondsSinceEpoch % 1000000000}';
-    o.trackingNo = no;
-    for (final u in orders) {
-      if (u.id == o.id && u.state == OrderState.paid) {
-        u.state = OrderState.shipped;
-        u.trackingNo = no;
-        unreadShipped.add(u.id);
-      }
-    }
-    // App 內通知（我的訂單頁紅點）為主；已填電子郵件者另以信件通知。
-    _email('你的訂單已出貨', '${o.product}　物流單號 $no');
-    notifyListeners();
-  }
-
-  void refundOrder(AdminOrder o) {
-    if (!canManageProducts) return;
-    if (o.state != '待退款') return;
-    o.state = '已退款';
-    notifyListeners();
-  }
+  int pendingOrdersOf(AdminProduct p) => orders
+      .where((o) =>
+          o.productName == p.name && o.state == OrderState.pendingPayment)
+      .length;
 
   int get pendingReviewCount =>
       reports.where((c) => c.state == CaseState.pending || c.state == CaseState.reviewing).length +

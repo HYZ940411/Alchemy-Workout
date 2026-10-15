@@ -219,8 +219,6 @@ class AdminProduct {
   String name;
   final String emoji;
 
-  /// 類型：實體 / 虛擬。新增後不再變更 —— 兩者的規格語意不同。
-  final bool physical;
   VirtualSubtype? subtype;
 
   /// 解鎖標的。僅權限解鎖類有值，指向該商品所解鎖的訓練計畫。
@@ -230,16 +228,13 @@ class AdminProduct {
   List<String> images;
   ListingState listing;
   final List<AdminProductSpec> specs;
-  final int unshippedOrders; // 下架決策的必要依據
 
   AdminProduct({
     required this.id,
     required this.name,
     required this.emoji,
-    required this.physical,
     required this.listing,
     required this.specs,
-    required this.unshippedOrders,
     this.subtype,
     this.unlockTarget,
     List<String>? images,
@@ -267,111 +262,40 @@ class AdminProduct {
 
 List<AdminProduct> buildAdminProducts() => [
       AdminProduct(
-        id: 'g1', name: '健金術 訓練 T', emoji: '👕', physical: true,
-        listing: ListingState.listed,
-        images: ['im_tee'],
-        specs: [AdminProductSpec('S', 900, 12), AdminProductSpec('M', 900, 4), AdminProductSpec('L', 900, 0), AdminProductSpec('XL', 950, 7)],
-        unshippedOrders: 3,
-      ),
-      AdminProduct(
-        id: 'g2', name: '助力帶', emoji: '🧤', physical: true,
-        listing: ListingState.listed,
-        images: ['im_strap'],
-        specs: [AdminProductSpec('單一尺寸', 600, 25)],
-        unshippedOrders: 0,
-      ),
-      AdminProduct(
-        id: 'g4', name: '限量毛巾（春季）', emoji: '🧻', physical: true,
-        listing: ListingState.delisted,
-        images: ['im_bottle'],
-        specs: [AdminProductSpec('單一尺寸', 300, 0)],
-        unshippedOrders: 0,
-      ),
-      AdminProduct(
-        id: 'v1', name: 'AI 點數 ×10', emoji: '✨', physical: false,
+        id: 'v1', name: 'AI 點數 ×10', emoji: '✨',
         subtype: VirtualSubtype.consumable,
         listing: ListingState.listed,
         images: ['im_ticket'],
         specs: [AdminProductSpec('10 點', 1500, 999)],
-        unshippedOrders: 0,
       ),
       AdminProduct(
-        id: 'v4', name: '進階訓練計畫解鎖', emoji: '🔓', physical: false,
+        id: 'v2', name: '單次 AI 調整使用權', emoji: '⚡',
+        subtype: VirtualSubtype.consumable,
+        listing: ListingState.listed,
+        images: ['im_chart'],
+        specs: [AdminProductSpec('1 次', 150, 999)],
+      ),
+      AdminProduct(
+        id: 'v3', name: '補簽券 ×3', emoji: '🎫',
+        subtype: VirtualSubtype.consumable,
+        listing: ListingState.listed,
+        images: ['im_ticket'],
+        specs: [AdminProductSpec('3 張', 400, 999)],
+      ),
+      AdminProduct(
+        id: 'v5', name: '限量點數包（春季）', emoji: '🎁',
+        subtype: VirtualSubtype.consumable,
+        listing: ListingState.delisted,
+        images: ['im_badge'],
+        specs: [AdminProductSpec('5 點', 300, 0)],
+      ),
+      AdminProduct(
+        id: 'v4', name: '進階訓練計畫解鎖', emoji: '🔓',
         subtype: VirtualSubtype.unlock,
         listing: ListingState.listed,
         images: ['im_plan'],
         unlockTarget: '推日：胸肩三頭',
         specs: [AdminProductSpec('單一計畫', 800, 999)],
-        unshippedOrders: 0,
-      ),
-    ];
-
-/// 管理員訂單佇列：只收實體訂單 —— 虛擬商品無出貨作業。
-class AdminOrder {
-  final String id;
-  final String product;
-  final String spec;
-  final int qty;
-
-  /// 訂單金額，單位為**金幣**（商品定價一律以金幣標示，見 [ProductSpec.coinPrice]）。
-  /// 欄位名叫 amount 不叫 price 是歷史遺留；別把它當成法幣。
-  final int coinAmount;
-  final DateTime placedAt;
-  final DateTime paidAt;
-  final String address;
-  String state; // 已付款 / 已出貨 / 已退款 / 待付款 / 已因商品下架取消
-
-  /// 物流單號。出貨時記錄，系統不再追蹤後續物流狀態。
-  String? trackingNo;
-  AdminOrder({
-    required this.id,
-    required this.product,
-    required this.spec,
-    required this.qty,
-    required this.coinAmount,
-    required this.placedAt,
-    required this.paidAt,
-    required this.address,
-    required this.state,
-  });
-}
-
-List<AdminOrder> buildAdminOrders() => [
-      AdminOrder(
-        id: 'O-20260824-001', product: '健金術 訓練 T', spec: 'M', qty: 1,
-        coinAmount: 900, placedAt: _h(60), paidAt: _h(59),
-        address: '台北市信義區松高路 1 號 5 樓　王小明　0912-345-678',
-        state: '已付款',
-      ),
-      AdminOrder(
-        id: 'O-20260826-007', product: '健金術 訓練 T', spec: 'S', qty: 2,
-        coinAmount: 1800, placedAt: _h(14), paidAt: _h(14),
-        address: '新北市板橋區文化路二段 88 號　陳美玲　0922-111-222',
-        state: '已付款',
-      ),
-      AdminOrder(
-        id: 'O-20260819-002', product: '助力帶', spec: '單一尺寸', qty: 2,
-        coinAmount: 1200, placedAt: _h(180), paidAt: _h(179),
-        address: '台中市西屯區台灣大道三段 99 號　林大同　0933-444-555',
-        state: '已出貨',
-      ),
-      AdminOrder(
-        id: 'O-20260902-011', product: '健金術 訓練 T', spec: 'M', qty: 1,
-        coinAmount: 900, placedAt: _h(2), paidAt: _h(2),
-        address: '桃園市中壢區中大路 300 號　張俊彥　0977-888-999',
-        state: '待付款',
-      ),
-      AdminOrder(
-        id: 'O-20260902-012', product: '助力帶', spec: '單一尺寸', qty: 1,
-        coinAmount: 600, placedAt: _h(1), paidAt: _h(1),
-        address: '台南市東區大學路 1 號　李欣怡　0966-222-333',
-        state: '待付款',
-      ),
-      AdminOrder(
-        id: 'O-20260822-005', product: '健金術 訓練 T', spec: 'XL', qty: 1,
-        coinAmount: 950, placedAt: _h(110), paidAt: _h(109),
-        address: '高雄市前鎮區中山二路 2 號　黃志偉　0955-666-777',
-        state: '待退款',
       ),
     ];
 

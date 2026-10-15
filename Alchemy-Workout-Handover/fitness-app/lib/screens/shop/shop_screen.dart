@@ -16,73 +16,47 @@ class ShopScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(
-          backgroundColor: AppColors.bg,
-          surfaceTintColor: Colors.transparent,
-          title: const Text(
-            '商城',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          actions: [
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.monetization_on_rounded,
-                      size: 15,
-                      color: AppColors.gold,
+        surfaceTintColor: Colors.transparent,
+        title: const Text(
+          '商城',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        actions: [
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.monetization_on_rounded,
+                    size: 15,
+                    color: AppColors.gold,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${s.coins}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: [FontFeature.tabularFigures()],
                     ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '${s.coins}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-          ],
-          bottom: const TabBar(
-            indicatorColor: AppColors.accent,
-            labelColor: AppColors.accent,
-            unselectedLabelColor: AppColors.textDim,
-            labelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-            tabs: [
-              Tab(text: '實體商品'),
-              Tab(text: '虛擬商品'),
-            ],
           ),
-        ),
-        // C 卡片格狀型骨架：首屏約三列，一列兩張。
-        body: LoadBoundary(
-          id: 'shop',
-          kind: SkeletonKind.gridC,
-          rows: 3,
-          builder: (context) => TabBarView(
-            children: [
-              _Grid(
-                items: s.products
-                    .where((p) => p.kind == ProductKind.physical)
-                    .toList(),
-              ),
-              _Grid(
-                items: s.products
-                    .where((p) => p.kind == ProductKind.virtual)
-                    .toList(),
-              ),
-            ],
-          ),
-        ),
+        ],
+      ),
+      // C 卡片格狀型骨架：首屏約三列，一列兩張。
+      body: LoadBoundary(
+        id: 'shop',
+        kind: SkeletonKind.gridC,
+        rows: 3,
+        builder: (context) => _Grid(items: s.products),
       ),
     );
   }
@@ -104,7 +78,7 @@ class _Grid extends StatelessWidget {
     if (items.isEmpty) {
       return const EmptyState(
         icon: Icons.storefront_outlined,
-        title: '這個分頁還沒有商品',
+        title: '還沒有商品',
         message: '上架後就會出現在這裡。',
       );
     }
@@ -189,8 +163,11 @@ class _ProductCard extends StatelessWidget {
           else
             Row(
               children: [
-                const Icon(Icons.monetization_on_rounded,
-                    size: 14, color: AppColors.gold),
+                const Icon(
+                  Icons.monetization_on_rounded,
+                  size: 14,
+                  color: AppColors.gold,
+                ),
                 const SizedBox(width: S.xs),
                 Flexible(
                   child: Text(
@@ -206,8 +183,12 @@ class _ProductCard extends StatelessWidget {
             ),
           if (p.note != null) ...[
             const SizedBox(height: S.xs),
-            Text(p.note!, style: T.caption(), maxLines: 1,
-                overflow: TextOverflow.ellipsis),
+            Text(
+              p.note!,
+              style: T.caption(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ],
       ),

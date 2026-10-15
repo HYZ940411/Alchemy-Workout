@@ -8,7 +8,6 @@ import '../../state/app_state.dart';
 import '../../widgets/load_boundary.dart';
 import '../../widgets/common.dart';
 import 'checkout_screen.dart';
-import 'shipping_screen.dart';
 
 /// Read Model：商品頁（商品詳情）
 ///
@@ -60,7 +59,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             Row(
               children: [
                 Expanded(child: Text(p.name, style: T.h2())),
-                TagBadge(p.kind == ProductKind.physical ? '實體' : '虛擬'),
+                const TagBadge('虛擬'),
               ],
             ),
             if (p.note != null) ...[
@@ -132,11 +131,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 ],
               ),
             ),
-
-            if (p.kind == ProductKind.physical) ...[
-              const SizedBox(height: S.base),
-              Text('下一步填寫收貨資訊，會帶入上次填寫的內容。', style: T.caption()),
-            ],
           ],
         ),
       ),
@@ -146,30 +140,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             AppButton(
-              label: spec.inStock
-                  ? (p.kind == ProductKind.physical ? '填寫收貨資訊' : '前往結帳')
-                  : '暫無庫存',
+              label: spec.inStock ? '前往結帳' : '暫無庫存',
               onPressed: !spec.inStock
                   ? null
                   : () async {
-                      final shipping = p.kind == ProductKind.physical
-                          ? await Navigator.of(context).push<ShippingInfo>(
-                              MaterialPageRoute(
-                                builder: (_) => const ShippingScreen(),
-                              ),
-                            )
-                          : null;
-                      if (!context.mounted) return;
-                      if (p.kind == ProductKind.physical && shipping == null) {
-                        return; // 使用者中途離開，不成立任何訂單
-                      }
                       await Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => CheckoutScreen(
                             product: p,
                             spec: spec,
                             qty: qty,
-                            shipping: shipping,
                           ),
                         ),
                       );

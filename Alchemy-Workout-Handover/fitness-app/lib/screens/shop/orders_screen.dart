@@ -21,7 +21,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
       case OrderState.pendingPayment:
         return AppColors.gold;
       case OrderState.paid:
-      case OrderState.shipped:
         return AppColors.blue;
       case OrderState.delivered:
         return AppColors.accent;
@@ -35,8 +34,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    // 進頁先結算逾期的預扣，使用者看到的一定是已結算過的狀態。
-    WidgetsBinding.instance.addPostFrameCallback((_) => s.releaseExpiredHolds());
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -54,7 +51,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               child: EmptyState(
                 icon: Icons.receipt_long_outlined,
                 title: '還沒有訂單',
-                message: '在商城購買實體或虛擬商品後，訂單會出現在這裡。',
+                message: '在商城購買商品後，訂單會出現在這裡。',
               ),
             ),
           for (final o in s.orders)
@@ -66,18 +63,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   children: [
                     Row(
                       children: [
-                        // 出貨通知為 App 內通知類（不推播）：未查看者標紅點。
-                        if (s.unreadShipped.contains(o.id)) ...[
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: C.statusError,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: S.sm),
-                        ],
                         Expanded(
                           child: Text('${o.productName}　${o.spec}',
                               style: const TextStyle(
@@ -89,7 +74,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '${o.kind == ProductKind.physical ? '實體' : '虛擬'}　·　'
                       '數量 ${o.qty}　·　'
                       '${o.placedAt.month}/${o.placedAt.day} 下單',
                       style: const TextStyle(

@@ -161,9 +161,11 @@ void main() {
       // 審核組只有內容審核權限，碰不了商品。
       final reviewer = s.admins.firstWhere((a) =>
           a.can(AdminScope.contentReview) && !a.can(AdminScope.productManage));
-      final o = s.adminOrders.firstWhere((x) => x.state == '已付款');
-      s.runAsAdmin(reviewer, () => s.shipOrder(o));
-      expect(o.state, '已付款', reason: '沒有商品管理權限就出不了貨');
+      final before = s.adminProducts.length;
+      final why = s.runAsAdmin(reviewer,
+          () => s.addProduct(name: '新商品', subtype: VirtualSubtype.consumable));
+      expect(why, contains('權限不足'), reason: '沒有商品管理權限就動不了商品');
+      expect(s.adminProducts.length, before);
     });
   });
 }

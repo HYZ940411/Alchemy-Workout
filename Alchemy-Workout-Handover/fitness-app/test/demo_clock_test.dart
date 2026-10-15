@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/decay.dart';
 import 'package:fitness_app/domain/clock.dart';
-import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/state/app_state.dart';
@@ -79,23 +78,6 @@ void main() {
       expect(s.timedTaskExpired, isTrue);
       s.completeTimedTask();
       expect(s.timedTask.doneBy(s.displayName), isFalse);
-    });
-
-    test('訂單的 15 分鐘預扣，推進時鐘後會釋放並回補庫存', () {
-      final s = AppState();
-      final p = s.products.firstWhere((p) => p.kind == ProductKind.physical);
-      final spec = p.specs.first;
-      final stock = spec.stock;
-      s.coins += 100000;
-      s.confirmPurchase(p, spec, 1, shipping: s.lastShipping);
-      expect(spec.stock, stock - 1, reason: '確認購買當下即預扣');
-      final o = s.orders.first;
-      expect(o.state, OrderState.pendingPayment);
-
-      s.advanceDemoClock(const Duration(minutes: 20));
-      expect(s.releaseExpiredHolds(), isNotEmpty);
-      expect(o.state, OrderState.cancelled);
-      expect(spec.stock, stock, reason: '預扣的庫存回補至該規格');
     });
 
     test('補簽的可選範圍跟著時鐘走', () {

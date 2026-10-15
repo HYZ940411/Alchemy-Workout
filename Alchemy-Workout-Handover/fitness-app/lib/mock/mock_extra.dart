@@ -370,45 +370,25 @@ List<Conversation> buildConversations() => [
 // --- 商城 ---
 List<Product> buildProducts() => [
       Product(
-        id: 'g1', name: '健金術 訓練 T', kind: ProductKind.physical, emoji: '👕',
-        images: const ['im_tee'],
-        specs: [
-          ProductSpec('S', 900, 12),
-          ProductSpec('M', 900, 4),
-          ProductSpec('L', 900, 0),
-          ProductSpec('XL', 950, 7),
-        ],
-      ),
-      Product(
-        id: 'g2', name: '助力帶', kind: ProductKind.physical, emoji: '🧤',
-        images: const ['im_strap'],
-        specs: [ProductSpec('單一尺寸', 600, 25)],
-      ),
-      Product(
-        id: 'g3', name: '搖搖杯', kind: ProductKind.physical, emoji: '🥤',
-        images: const ['im_shaker'],
-        specs: [ProductSpec('700ml', 350, 40)],
-      ),
-      Product(
-        id: 'v1', name: 'AI 點數 ×10', kind: ProductKind.virtual, emoji: '✨',
+        id: 'v1', name: 'AI 點數 ×10', emoji: '✨',
         images: const ['im_badge'],
         specs: [ProductSpec('10 點', 1500, 999)],
         aiCredits: 10,
       ),
       Product(
-        id: 'v2', name: '單次 AI 調整使用權', kind: ProductKind.virtual, emoji: '⚡',
+        id: 'v2', name: '單次 AI 調整使用權', emoji: '⚡',
         images: const ['im_chart'],
         specs: [ProductSpec('1 次', 150, 999)],
         aiCredits: 1,
         note: '150 金幣 ＝ 30 元',
       ),
       Product(
-        id: 'v3', name: '補簽券 ×3', kind: ProductKind.virtual, emoji: '🎫',
+        id: 'v3', name: '補簽券 ×3', emoji: '🎫',
         images: const ['im_ticket'],
         specs: [ProductSpec('3 張', 400, 999)],
       ),
       Product(
-        id: 'v4', name: '進階訓練計畫解鎖', kind: ProductKind.virtual, emoji: '🔓',
+        id: 'v4', name: '進階訓練計畫解鎖', emoji: '🔓',
         // 價格取自平台參數，不寫死 —— 課表選擇頁用的是同一個參數，
         // 各寫各的就會出現「同一件東西，從商城買比從課表頁買貴」。
         specs: [ProductSpec('單一計畫', kPlanUnlockCoins, 999)],
@@ -417,48 +397,20 @@ List<Product> buildProducts() => [
 
 List<Order> buildOrders() => [
       Order(
-        id: 'O-20260824-001', productName: '健金術 訓練 T', spec: 'M', qty: 1,
-        kind: ProductKind.physical, placedAt: _ago(2),
-        coinPaid: 900, cashPaid: 0, state: OrderState.shipped,
-        trackingNo: 'TW882410037',
-        shipping: const ShippingInfo(
-          name: '王小明',
-          phone: '0912345678',
-          zip: '110',
-          address: '台北市信義區松高路 1 號 5 樓',
-        ),
-      ),
-      Order(
         id: 'O-20260826-004', productName: 'AI 點數 ×10', spec: '10 點', qty: 1,
-        kind: ProductKind.virtual, placedAt: _ago(0, h: 3),
+        placedAt: _ago(0, h: 3),
         coinPaid: 640, cashPaid: 172, state: OrderState.pendingPayment,
       ),
-      // 待付款的實體訂單：庫存已預扣，保留中 —— 供檢視倒數、取消與付款。
       Order(
-        id: 'O-20260902-013', productName: '搖搖杯', spec: '700ml', qty: 1,
-        kind: ProductKind.physical, placedAt: _ago(0, h: 0),
-        coinPaid: 350, cashPaid: 0, state: OrderState.pendingPayment,
-        holdUntil: DateTime.now().add(const Duration(minutes: 11)),
-        shipping: const ShippingInfo(
-          name: '王小明',
-          phone: '0912345678',
-          zip: '110',
-          address: '台北市信義區松高路 1 號 5 樓',
-        ),
+        id: 'O-20260819-002', productName: '補簽券 ×3', spec: '3 張', qty: 1,
+        placedAt: _ago(7),
+        coinPaid: 400, cashPaid: 0, state: OrderState.delivered,
       ),
       Order(
-        id: 'O-20260819-002', productName: '助力帶', spec: '單一尺寸', qty: 2,
-        kind: ProductKind.physical, placedAt: _ago(7),
-        // 實體訂單的終止狀態是**已出貨**，不是已發放（那是虛擬的）。
-        // 出貨時一併記錄物流單號，系統其後不再追蹤物流狀態。
-        coinPaid: 1200, cashPaid: 0, state: OrderState.shipped,
-        trackingNo: 'TW881903552',
-      ),
-      Order(
-        id: 'O-20260815-009', productName: '搖搖杯', spec: '700ml', qty: 1,
-        kind: ProductKind.physical, placedAt: _ago(11),
+        id: 'O-20260815-009', productName: 'AI 點數 ×10', spec: '10 點', qty: 1,
+        placedAt: _ago(11),
         coinPaid: 0, cashPaid: 0, state: OrderState.failed,
-        failReason: FailReason.soldOut,
+        failReason: FailReason.insufficientBalance,
       ),
     ];
 
@@ -706,15 +658,6 @@ List<AppNotification> buildNotifications() {
       body: '連續訓練 10 天',
       at: today(7, 0),
       kind: NotifyKind.inApp,
-    ),
-    AppNotification(
-      id: 'n5',
-      sourceEvent: '商品已出貨',
-      title: '你的訂單已出貨',
-      body: '健金術 訓練 T　·　物流單號 TW882410037',
-      at: _ago(30),
-      kind: NotifyKind.inApp,
-      read: true,
     ),
     AppNotification(
       id: 'n6',

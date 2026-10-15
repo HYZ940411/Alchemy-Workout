@@ -47,8 +47,12 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         ],
       ),
       body: ListView(
-        padding:
-            const EdgeInsets.fromLTRB(S.base, S.base, S.base, S.scrollBottom),
+        padding: const EdgeInsets.fromLTRB(
+          S.base,
+          S.base,
+          S.base,
+          S.scrollBottom,
+        ),
         children: [
           for (final p in s.adminProducts)
             Padding(
@@ -70,9 +74,11 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                                   border: Border.all(color: C.lineDivider),
                                 ),
                                 alignment: Alignment.center,
-                                child: const Icon(Icons.image_outlined,
-                                    size: Sz.iconDense,
-                                    color: C.textSecondary),
+                                child: const Icon(
+                                  Icons.image_outlined,
+                                  size: Sz.iconDense,
+                                  color: C.textSecondary,
+                                ),
                               )
                             : AppImageView(id: p.images.first, size: 48),
                         const SizedBox(width: S.md),
@@ -83,8 +89,8 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                               Text(p.name, style: T.h3()),
                               const SizedBox(height: 2),
                               Text(
-                                '${p.id}　·　${p.physical ? '實體' : '虛擬'}'
-                                '${p.subtype == null ? '' : '（${virtualSubtypeNames[p.subtype]}）'}',
+                                '${p.id}'
+                                '${p.subtype == null ? '' : '　·　${virtualSubtypeNames[p.subtype]}'}',
                                 style: T.caption(),
                               ),
                             ],
@@ -115,43 +121,19 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                                 !p.stockApplies
                                     ? '不適用'
                                     : spec.stock == 0
-                                        ? '無庫存'
-                                        : '庫存 ${spec.stock}',
+                                    ? '無庫存'
+                                    : '庫存 ${spec.stock}',
                                 textAlign: TextAlign.end,
                                 style: T.body(
-                                    color: p.stockApplies && spec.stock == 0
-                                        ? C.statusError
-                                        : C.textSecondary),
+                                  color: p.stockApplies && spec.stock == 0
+                                      ? C.statusError
+                                      : C.textSecondary,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                    if (p.unshippedOrders > 0) ...[
-                      const SizedBox(height: S.sm),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(S.md),
-                        decoration: BoxDecoration(
-                          color: C.statusWarning.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(R.child),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.inventory_2_outlined,
-                                size: Sz.iconDense, color: C.textSecondary),
-                            const SizedBox(width: S.sm),
-                            Expanded(
-                              child: Text(
-                                '尚有 ${p.unshippedOrders} 筆未出貨訂單，'
-                                '下架後仍須履行。',
-                                style: T.caption(),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: S.md),
                     if (!p.infoComplete) ...[
                       const SizedBox(height: S.sm),
@@ -164,8 +146,11 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.error_outline,
-                                size: Sz.iconDense, color: C.statusError),
+                            const Icon(
+                              Icons.error_outline,
+                              size: Sz.iconDense,
+                              color: C.statusError,
+                            ),
                             const SizedBox(width: S.sm),
                             Expanded(
                               child: Text(
@@ -183,8 +168,11 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                         label: '設定商品資訊',
                         kind: BtnKind.secondary,
                         onPressed: () async {
-                          await Navigator.of(context).push(MaterialPageRoute(
-                              builder: (_) => ProductEditScreen(product: p)));
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ProductEditScreen(product: p),
+                            ),
+                          );
                           if (context.mounted) setState(() {});
                         },
                       ),
@@ -197,8 +185,8 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                         // 讓管理員按下去才被擋，不如一開始就看得出來。
                         onPressed:
                             (p.listing == ListingState.delisted && !p.canList)
-                                ? null
-                                : () => _toggle(context, s, p),
+                            ? null
+                            : () => _toggle(context, s, p),
                       ),
                     ),
                   ],
@@ -212,7 +200,6 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
 
   Future<void> _add(BuildContext context, AppState s) async {
     final name = TextEditingController();
-    var physical = true;
     VirtualSubtype? subtype = VirtualSubtype.consumable;
     final ok = await showAppDialog(
       context,
@@ -236,67 +223,45 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
               ),
             ),
             const SizedBox(height: S.base),
-            Text('類型（新增後不再變更）', style: T.caption()),
+            Text('子類型（新增後不再變更）', style: T.caption()),
             const SizedBox(height: S.sm),
             Wrap(
               spacing: S.sm,
               children: [
-                for (final (label, isPhysical) in [('實體', true), ('虛擬', false)])
+                for (final v in VirtualSubtype.values)
                   GestureDetector(
-                    onTap: () => setInner(() => physical = isPhysical),
+                    onTap: () => setInner(() => subtype = v),
                     child: TagBadge(
-                      label,
-                      borderColor: physical == isPhysical
+                      virtualSubtypeNames[v]!,
+                      borderColor: subtype == v
                           ? C.actionOutline
                           : C.lineDivider,
-                      fill: physical == isPhysical ? C.actionOutline : null,
+                      fill: subtype == v ? C.actionOutline : null,
                     ),
                   ),
               ],
             ),
-            if (!physical) ...[
-              const SizedBox(height: S.base),
-              Text('虛擬商品子類型', style: T.caption()),
-              const SizedBox(height: S.sm),
-              Wrap(
-                spacing: S.sm,
-                children: [
-                  for (final v in VirtualSubtype.values)
-                    GestureDetector(
-                      onTap: () => setInner(() => subtype = v),
-                      child: TagBadge(
-                        virtualSubtypeNames[v]!,
-                        borderColor:
-                            subtype == v ? C.actionOutline : C.lineDivider,
-                        fill: subtype == v ? C.actionOutline : null,
-                      ),
-                    ),
-                ],
-              ),
-            ],
           ],
         ),
       ),
     );
     if (ok != true || !context.mounted) return;
-    final failure = s.addProduct(
-      name: name.text,
-      physical: physical,
-      subtype: physical ? null : subtype,
-    );
+    final failure = s.addProduct(name: name.text, subtype: subtype);
     if (failure != null) {
       showToast(context, failure);
       return;
     }
     setState(() {});
     // 新商品一律自已下架起算，直接帶進編輯器補齊資訊。
-    await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => ProductEditScreen(product: s.adminProducts.last)));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProductEditScreen(product: s.adminProducts.last),
+      ),
+    );
     if (context.mounted) setState(() {});
   }
 
-  Future<void> _toggle(
-      BuildContext context, AppState s, AdminProduct p) async {
+  Future<void> _toggle(BuildContext context, AppState s, AdminProduct p) async {
     if (p.listing == ListingState.delisted) {
       final failure = s.listProduct(p);
       showToast(context, failure ?? '已上架');
@@ -307,9 +272,9 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     final ok = await showAppDialog(
       context,
       title: '確認下架',
-      message: '${p.name} 下架後不再販售。'
-          '${pending > 0 ? '$pending 筆待付款訂單將自動取消並釋放庫存；' : ''}'
-          '${p.unshippedOrders > 0 ? '${p.unshippedOrders} 筆已付款未出貨的訂單仍須履行。' : ''}',
+      message:
+          '${p.name} 下架後不再販售。'
+          '${pending > 0 ? '$pending 筆待付款訂單將自動取消並釋放庫存；' : ''}',
       confirmLabel: '下架',
       // 破壞性動作仍用次要樣式（§4.5 R-23），安全由本彈窗承擔。
       destructive: true,

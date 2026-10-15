@@ -1,66 +1,57 @@
-// 實體與虛擬是兩條狀態機，終止狀態不同。
+// 商城只有虛擬商品（2026-10-15 使用者裁決移除實體商品）。
 //
-// 實體：待付款 → 已付款 → 已出貨（終止）。
-// 虛擬：待付款 → 已付款 → 已發放（終止）。
+// 訂單狀態只剩虛擬的那條：待付款 → 已付款 → 已發放（終止）；
+// 另有已取消、已失敗兩個終止狀態。「已出貨」「已退款」屬實體商品，已移除。
 //
-// 假資料裡有一筆實體訂單標成「已發放」——畫面上寫著貨已經給你了，
-// 系統裡卻沒有物流單號，客服查不到東西寄了沒。
+// 這支測試的任務是**擋住實體商品被不小心加回來**：狀態值域、假資料、
+// 後台商品清單三處都不該再出現實體商品的痕跡。
 
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/state/app_state.dart';
 
+const _removedNames = ['健金術 訓練 T', '助力帶', '搖搖杯', '限量毛巾（春季）'];
+
 void main() {
   group('狀態值域', () {
-    test('已出貨只給實體，已發放只給虛擬', () {
-      expect(orderStateAllowed(ProductKind.physical, OrderState.shipped), isTrue);
-      expect(
-          orderStateAllowed(ProductKind.virtual, OrderState.shipped), isFalse);
-      expect(
-          orderStateAllowed(ProductKind.virtual, OrderState.delivered), isTrue);
-      expect(orderStateAllowed(ProductKind.physical, OrderState.delivered),
-          isFalse);
-    });
-
-    test('出貨前的退款只適用實體', () {
-      expect(
-          orderStateAllowed(ProductKind.physical, OrderState.refunded), isTrue);
-      expect(orderStateAllowed(ProductKind.virtual, OrderState.refunded),
-          isFalse,
-          reason: '虛擬商品已定案不自動退款');
-    });
-
-    test('待付款、已付款、已取消、已失敗兩邊共用', () {
-      for (final st in [
+    test('只有虛擬商品那條狀態機的五個值', () {
+      expect(OrderState.values, [
         OrderState.pendingPayment,
         OrderState.paid,
+        OrderState.delivered,
         OrderState.cancelled,
         OrderState.failed,
-      ]) {
-        for (final k in ProductKind.values) {
-          expect(orderStateAllowed(k, st), isTrue, reason: '$k / $st');
-        }
+      ]);
+    });
+
+    test('每個狀態都有顯示名稱', () {
+      for (final st in OrderState.values) {
+        expect(orderStateNames[st], isNotNull, reason: '$st');
       }
+    });
+
+    test('失敗原因只剩餘額不足、商品售完（消耗品庫存）、其他', () {
+      expect(FailReason.values,
+          [FailReason.insufficientBalance, FailReason.soldOut, FailReason.other]);
     });
   });
 
   group('實際資料', () {
-    test('每一筆訂單的狀態都落在該類商品的值域內', () {
+    test('商城、訂單、後台商品清單都沒有實體商品', () {
       final s = AppState();
-      for (final o in s.orders) {
-        expect(orderStateAllowed(o.kind, o.state), isTrue,
-            reason: '${o.productName}（${o.kind.name}）'
-                '不該是「${orderStateNames[o.state]}」');
+      for (final n in _removedNames) {
+        expect(s.products.map((p) => p.name), isNot(contains(n)));
+        expect(s.orders.map((o) => o.productName), isNot(contains(n)));
+        expect(s.adminProducts.map((p) => p.name), isNot(contains(n)));
       }
     });
 
-    test('已出貨的實體訂單一定有物流單號', () {
+    test('每一筆訂單都落在五個狀態內，且有顯示名稱', () {
       final s = AppState();
-      for (final o in s.orders.where((o) => o.state == OrderState.shipped)) {
-        expect(o.trackingNo, isNotNull,
-            reason: '${o.productName} 已出貨卻查不到物流單號');
-        expect(o.trackingNo, isNotEmpty);
+      expect(s.orders, isNotEmpty, reason: '前提：示範資料有訂單');
+      for (final o in s.orders) {
+        expect(orderStateNames[o.state], isNotNull);
       }
     });
 
@@ -71,7 +62,6 @@ void main() {
         productName: 'AI 點數 ×10',
         spec: '10 點',
         qty: 1,
-        kind: ProductKind.virtual,
         placedAt: s.now,
         coinPaid: 1500,
         cashPaid: 0,
@@ -80,18 +70,6 @@ void main() {
       s.orders.insert(0, o);
       s.payOrder(o);
       expect(o.state, OrderState.delivered);
-      expect(orderStateAllowed(o.kind, o.state), isTrue);
-    });
-
-    test('走完實體出貨，終止狀態是已出貨', () {
-      final s = AppState();
-      final o = s.adminOrders.firstWhere((o) => o.state == '已付款');
-      s.shipOrder(o, trackingNo: 'TW123');
-      final mine = s.orders.where((u) => u.id == o.id);
-      for (final u in mine) {
-        expect(u.state, OrderState.shipped);
-        expect(orderStateAllowed(u.kind, u.state), isTrue);
-      }
     });
   });
 }

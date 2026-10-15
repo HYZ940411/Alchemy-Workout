@@ -1411,6 +1411,74 @@ firebase deploy --only hosting
    在動作名稱裡也找得到（「俯臥屈腿 · 啞鈴」），用文字定位一次命中十幾個
    —— 第一版測試就是這樣紅的。
 
+3R. **2026-10-15 商店只留虛擬商品：實體商品移除（階段 1＋2，領域／狀態／畫面一次完成）**
+
+   使用者裁決（任務說明第 1 條）：商店只移除實體商品，虛擬商品留著（至少 AI 點數、會員、
+   進階訓練）；實體牽動的庫存預扣、出貨資訊、訂單、15 分鐘預扣、後台商品與訂單頁一併收乾淨；
+   事件風暴文件不改。
+
+   ### 階段合併的原因
+
+   原本提議三階段（領域＋狀態＋假資料 → 畫面 → 收尾）。實際做的時候發現
+   **第一階段不可能獨立編譯**：拿掉 `Order.shipping`／`ProductKind` 之後，所有畫面與後台立刻紅，
+   所以階段 1 與 2 合在一起做、一起 commit。階段 3（收尾）另列，見下方「還沒做」。
+
+   ### 移除了什麼
+
+   | 層 | 移除 |
+   |---|---|
+   | 領域 `commerce.dart` | `ProductKind`、`ShippingInfo`、`kStockHold`、`Order.kind／shipping／holdUntil／trackingNo`、`OrderState.shipped／refunded`、`orderStateAllowed()` |
+   | 狀態 `app_state.dart` | `lastShipping／setShipping`、`confirmPurchase` 的收貨資訊與實體檢查、`_enqueueForFulfilment`、`releaseExpiredHolds`、`unreadShipped／markOrderSeen`、`adminOrders`、`shipOrder／refundOrder` |
+   | 後台模型 `mock_admin.dart` | `AdminProduct.physical／unshippedOrders`、整個 `AdminOrder` 與出貨佇列 |
+   | 假資料 | 3 件實體商品、4 筆實體訂單、1 則「訂單已出貨」通知、3 件後台實體商品 |
+   | 畫面 | 刪 `shipping_screen.dart`、`admin_orders_screen.dart`；商城拿掉「實體／虛擬」分頁；結帳／商品詳情／訂單詳情／訂單列表去掉收貨資訊、預扣倒數、物流單號、出貨紅點；後台首頁拿掉「訂單佇列」；新增商品不再選類型 |
+
+   ### 刻意保留（與規格一致）
+
+   消耗品類虛擬商品**仍有庫存**（`ProductSpec.stock`、`FailReason.soldOut`、後台「無庫存不得上架」）。
+   〈虛擬商品購買流程〉明寫「權限解鎖類不適用庫存」，反過來就是消耗品適用；
+   把庫存整個拔掉會違反規格。要拔掉得由使用者另外決定。
+
+   ### 順手調整
+
+   - `delistProduct`（下架）原本靠後台的假訂單佇列找待付款訂單；佇列沒了，改直接找使用者端
+     的待付款訂單，取消、回補庫存與金幣，標系統取消。
+   - 規格名稱不得重複的檢查成為死碼（虛擬商品只有一個規格），一併移除。
+   - 後台假資料補了 `v2`、`v3`（原本只有 v1、v4 兩件虛擬商品，另有三件實體），
+     與前台的四件虛擬商品對齊；`v5` 取代原本已下架的實體商品「限量毛巾」。
+
+   ### 與規格的差距（使用者已知悉）
+
+   事件風暴仍有〈實體商品購買流程〉與〈管理員商品上架流程〉裡出貨／退款的描述，
+   `adminScopeCommandCount` 的 34 個 Command 也仍把出貨、退款算在內。依指示沒有改文件。
+
+   ### 怎麼驗
+
+   - 測試：刪 `admin_order_currency_test`（整支守的是已不存在的出貨佇列）；
+     改寫 `purchase_flow`／`order_state`／`order_fulfilment`／`product_admin`／`shop_grid`／
+     `tier3`／`admin_scope`／`admin`／`flow_sweep`／`demo_clock`／`cloud_gaps`／`plan_unlock`／
+     `instructor_review`／`admin_identity`。`order_state_test` 改成守「實體商品不會被加回來」
+     （狀態值域只有五個、商城／訂單／後台商品清單都不含舊的實體商品名）。
+   - 七次突變全部轉紅（加回實體商品、加回已出貨狀態、加回訂單佇列入口、下架不退金幣、
+     購買不扣庫存、付款不發放；另有一次是編譯錯誤）。
+   - 全量 **2,708 passed**（從 2,728 降是因為刪掉了實體流程的測試），analyze 乾淨。
+
+   ### 還沒驗什麼
+
+   - **沒有真人在畫面上看過。** 商城、商品詳情、結帳、訂單頁、後台商品頁都只靠測試與編譯。
+   - 後台「新增商品」彈窗拿掉類型選擇後的版面沒看過。
+   - 這次**尚未建置、尚未部署**。
+
+   ### 還沒做（階段 3 與其後）
+
+   - 後台參數 `holdMinutes`（庫存預扣保留時間）還在 `platform_config.dart`，
+     改了不會有任何效果。
+   - 「出貨」仍列為三類電子郵件通知之一（設定頁、註冊流程、`EmailNotice` 說明文字），
+     帳號刪除頁還寫「已付款未出貨的實體訂單收貨資訊暫時保留」—— 這些是**隱私聲明文字**，
+     動之前要問使用者。
+   - `Firestore-Schema設計.md` 的 `kind: physical|virtual` 與 `orders` 描述過期。
+   - `fitness-app/README.md`。
+
 3Q. **2026-10-15 測試用開關：解除師徒關係後立刻可重新申請（開發者模式）**
 
    使用者要求：測師徒時，先把「解除後 3 天無法申請」取消，才能順利測。

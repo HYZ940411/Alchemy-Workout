@@ -74,10 +74,10 @@ void main() {
     });
   });
 
-  testWidgets('後台四個入口都開得起來', (t) async {
+  testWidgets('後台三個入口都開得起來', (t) async {
     await _boot(t);
     await _openAdmin(t);
-    for (final e in ['待審佇列', '訂單佇列', '商品清單', '評分彙總']) {
+    for (final e in ['待審佇列', '商品清單', '評分彙總']) {
       await t.tap(find.text(e).last);
       await t.pumpAndSettle();
       expect(t.takeException(), isNull, reason: '$e 開啟時發生例外');
@@ -154,12 +154,11 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('商品下架：有未出貨訂單時須二次確認', (t) async {
+  testWidgets('商品下架須二次確認', (t) async {
     await _boot(t);
     await _openAdmin(t);
     await t.tap(find.text('商品清單').last);
     await t.pumpAndSettle();
-    expect(find.textContaining('尚有 3 筆未出貨訂單'), findsOneWidget);
     final off = find.widgetWithText(AppButton, '下架').first;
     await t.ensureVisible(off);
     await t.pumpAndSettle();
@@ -168,19 +167,9 @@ void main() {
     expect(find.text('確認下架'), findsOneWidget);
   });
 
-  testWidgets('訂單佇列：出貨後移出待出貨', (t) async {
+  testWidgets('後台沒有訂單佇列入口（實體商品已移除）', (t) async {
     await _boot(t);
     await _openAdmin(t);
-    await t.tap(find.text('訂單佇列').last);
-    await t.pumpAndSettle();
-    expect(find.text('待出貨 2'), findsOneWidget);
-    final ship = find.widgetWithText(AppButton, '出貨').first;
-    await t.ensureVisible(ship);
-    await t.pumpAndSettle();
-    await t.tap(ship);
-    await t.pumpAndSettle();
-    await t.tap(find.widgetWithText(AppButton, '出貨').last);
-    await t.pumpAndSettle();
-    expect(find.text('待出貨 1'), findsOneWidget);
+    expect(find.text('訂單佇列'), findsNothing);
   });
 }

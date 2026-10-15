@@ -40,7 +40,7 @@ class ShopHubScreen extends StatelessWidget {
         ListGroup(rows: [
           ListRow(
             title: '商城',
-            subtitle: '實體商品與虛擬商品',
+            subtitle: 'AI 點數、補簽券、進階訓練解鎖',
             chevron: true,
             onTap: () => go(const ShopScreen()),
           ),

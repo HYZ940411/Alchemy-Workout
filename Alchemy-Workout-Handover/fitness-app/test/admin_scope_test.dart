@@ -103,7 +103,7 @@ void main() {
     test('新增商品 / 設定商品資訊', () {
       final s = asAdmin();
       final n = s.adminProducts.length;
-      expect(s.addProduct(name: '新品', physical: true, subtype: null),
+      expect(s.addProduct(name: '新品', subtype: VirtualSubtype.consumable),
           isNotNull, reason: '回傳權限不足的理由');
       expect(s.adminProducts.length, n);
     });
@@ -117,27 +117,12 @@ void main() {
       expect(p.listing, listing);
     });
 
-    test('出貨', () {
-      final s = asAdmin();
-      final o = s.adminOrders.firstWhere((o) => o.state == '已付款');
-      s.shipOrder(o);
-      expect(o.state, '已付款');
-      expect(o.trackingNo, isNull);
-    });
-
-    test('退款', () {
-      final s = asAdmin();
-      final o = s.adminOrders.firstWhere((o) => o.state == '待退款');
-      s.refundOrder(o);
-      expect(o.state, '待退款');
-    });
-
-    test('有權限就出得了貨', () {
+    test('有權限就新增得了商品', () {
       final s = asAdmin(scopes: {AdminScope.productManage});
-      final o = s.adminOrders.firstWhere((o) => o.state == '已付款');
-      s.shipOrder(o, trackingNo: 'TW123');
-      expect(o.state, '已出貨');
-      expect(o.trackingNo, 'TW123');
+      final n = s.adminProducts.length;
+      expect(
+          s.addProduct(name: '新品', subtype: VirtualSubtype.consumable), isNull);
+      expect(s.adminProducts.length, n + 1);
     });
   });
 
@@ -163,11 +148,12 @@ void main() {
       expect(c.state, CaseState.pending);
     });
 
-    test('只有內容審核者出不了貨、也改不了平台參數', () {
+    test('只有內容審核者動不了商品、也改不了平台參數', () {
       final s = asAdmin(scopes: {AdminScope.contentReview});
-      final o = s.adminOrders.firstWhere((o) => o.state == '已付款');
-      s.shipOrder(o);
-      expect(o.state, '已付款');
+      final n = s.adminProducts.length;
+      expect(s.addProduct(name: '新品', subtype: VirtualSubtype.consumable),
+          isNotNull);
+      expect(s.adminProducts.length, n);
       expect(s.applySettings('reward', {'checkInCoin': 99}), isNotNull);
     });
   });

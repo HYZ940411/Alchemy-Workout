@@ -142,7 +142,6 @@ void main() {
         productName: '進階計畫',
         spec: '永久解鎖',
         qty: 1,
-        kind: ProductKind.virtual,
         placedAt: s.now,
         coinPaid: 600,
         cashPaid: 0,
@@ -214,15 +213,6 @@ void main() {
       expect(s.emailOutbox.first.subject, contains('帳號刪除'));
     });
 
-    test('出貨寄一封，且帶物流單號', () {
-      final s = AppState();
-      s.setEmail('a@b.co');
-      final o = s.adminOrders.firstWhere((o) => o.state == '已付款');
-      s.shipOrder(o, trackingNo: 'TW999');
-      final mail = s.emailOutbox.first;
-      expect(mail.subject, contains('出貨'));
-      expect(mail.body, contains('TW999'));
-    });
   });
 
   group('〈訓練紀錄流程〉使用者已取消該組', () {

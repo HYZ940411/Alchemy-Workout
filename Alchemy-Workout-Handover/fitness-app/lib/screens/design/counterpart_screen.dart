@@ -418,23 +418,6 @@ class _CounterpartScreenState extends State<CounterpartScreen> {
       ));
     }
 
-    // 我的實體訂單 —— 出貨要商品管理權限，審核組沒有，找商務組。
-    final shipper = s.admins
-        .where((a) => a.can(AdminScope.productManage) && a.id != s.admin.id)
-        .firstOrNull;
-    if (shipper != null) {
-      for (final o in s.adminOrders.where((o) =>
-          o.state == '已付款' &&
-          s.orders.any((u) => u.id == o.id))) {
-        rows.add(ListRow(
-          title: '${shipper.name} 出貨「${o.product}」',
-          subtitle: '記物流單號，我的訂單頁會標紅點',
-          onTap: () => _do('已出貨', () {
-            s.runAsAdmin(shipper, () => s.shipOrder(o));
-          }),
-        ));
-      }
-    }
     for (final o in s.orders.where((o) => o.awaitingDelivery)) {
       rows.add(ListRow(
         title: '「${o.productName}」發放成功',

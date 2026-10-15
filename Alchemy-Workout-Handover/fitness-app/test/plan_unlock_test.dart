@@ -122,15 +122,13 @@ void main() {
       expect(s.coins, 0, reason: '金幣餘額扣除後不得為負值');
     });
 
-    test('權限解鎖類不適用庫存，交易成立即發放，無預扣到期時點', () {
+    test('權限解鎖類不適用庫存，交易成立即發放', () {
       final s = AppState();
       final p = _advanced(s);
       s.coins = 10000;
       s.purchasePlan(p);
       final o = s.orders.first;
-      expect(o.kind, ProductKind.virtual);
       expect(o.state, OrderState.delivered);
-      expect(o.holdUntil, isNull);
     });
   });
 

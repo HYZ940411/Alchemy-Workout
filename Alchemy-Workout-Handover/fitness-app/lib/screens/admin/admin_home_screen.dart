@@ -4,7 +4,6 @@ import '../../design/tokens.dart';
 import '../../domain/admin.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
-import 'admin_orders_screen.dart';
 import 'admin_products_screen.dart';
 import 'admin_ratings_screen.dart';
 import 'platform_settings_screen.dart';
@@ -24,7 +23,6 @@ class AdminHomeScreen extends StatelessWidget {
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 
     final disabled = s.admin.status == AdminStatus.disabled;
-    final toShip = s.adminOrders.where((o) => o.state == '已付款').length;
 
     return Scaffold(
       backgroundColor: C.bgPage,
@@ -156,13 +154,6 @@ class AdminHomeScreen extends StatelessWidget {
                   : null,
               chevron: true,
               onTap: () => go(const ReviewQueueScreen()),
-            ),
-            ListRow(
-              title: '訂單佇列',
-              subtitle: '待出貨、待退款、已出貨',
-              trailing: toShip > 0 ? CountBadge(toShip) : null,
-              chevron: true,
-              onTap: () => go(const AdminOrdersScreen()),
             ),
             ListRow(
               title: '商品清單',

@@ -13,6 +13,7 @@ Future<void> _openShop(
   WidgetTester t, {
   Size size = kBase,
   double textScale = 1.0,
+  int? productCount,
 }) async {
   t.view.physicalSize = size;
   t.view.devicePixelRatio = 3.0;
@@ -25,6 +26,11 @@ Future<void> _openShop(
     ),
   );
   await t.pumpAndSettle();
+  // 想測奇數張時，把商品削到指定數量（商城打開之前改，打開時就是這個數量）。
+  if (productCount != null) {
+    final s = AppScope.of(t.element(find.byType(Scaffold).first));
+    s.products.removeRange(productCount, s.products.length);
+  }
   await t.tap(find.text('商店').last);
   await t.pumpAndSettle();
   // 商店分頁是入口頁，商城在它底下一層。
@@ -64,8 +70,6 @@ void main() {
     // 看不出差別。虛擬商品第一列的兩個品名長度差很多（375 寬時一個換行、
     // 一個不換行），自然高度差 20px。
     await _openShop(t, size: kNarrow);
-    await t.tap(find.text('虛擬商品'));
-    await t.pumpAndSettle();
 
     final r = _cardRects(t);
     final firstRow = r.where((x) => (x.top - r.first.top).abs() < 0.5).toList();
@@ -75,9 +79,8 @@ void main() {
   });
 
   testWidgets('奇數張時最後一張不撐成滿版', (t) async {
-    await _openShop(t);
+    await _openShop(t, productCount: 3);
     final s = AppScope.of(t.element(find.byType(AppCard).first));
-    // 實體商品為 3 件（奇數）。
     final r = _cardRects(t);
     expect(r.length.isOdd, isTrue, reason: '本測試要的是奇數張');
     expect(r.last.width, closeTo(r.first.width, 0.5),
@@ -99,13 +102,13 @@ void main() {
     expect(t.takeException(), isNull);
   });
 
-  testWidgets('切到虛擬商品分頁也是兩欄', (t) async {
+  testWidgets('商城沒有實體／虛擬分頁，商品全部在同一片格狀裡', (t) async {
     await _openShop(t);
-    await t.tap(find.text('虛擬商品'));
-    await t.pumpAndSettle();
+    expect(find.text('實體商品'), findsNothing);
+    expect(find.text('虛擬商品'), findsNothing);
+    expect(find.byType(TabBar), findsNothing);
     final r = _cardRects(t);
-    expect(r.length, greaterThanOrEqualTo(2));
-    expect(r[0].top, closeTo(r[1].top, 0.5));
+    expect(r.length, 4);
     expect(t.takeException(), isNull);
   });
 

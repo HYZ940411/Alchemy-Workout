@@ -10,10 +10,7 @@ import '../../widgets/common.dart';
 /// 支撐的 Command：取消訂單（僅待付款可用）。
 /// 支付明細金幣與法幣分列；已失敗者呈現失敗原因。
 ///
-/// 兩項刻意不放：
-/// 一、**物流追蹤** —— 實體訂單的終止狀態為已出貨，出貨後的物流留在系統邊界之外，
-///     提供追蹤等同承諾一個模型中不存在的能力；
-/// 二、**退款進度** —— 模型中只有終止狀態「已退款」，無任何中間進度狀態。
+/// 虛擬商品沒有物流與退款（發放失敗不自動退款，見〈虛擬商品購買流程〉）。
 class OrderDetailScreen extends StatefulWidget {
   final Order order;
   const OrderDetailScreen({super.key, required this.order});
@@ -26,23 +23,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   Order get o => widget.order;
 
   @override
-  void initState() {
-    super.initState();
-    // 進入本頁時先結算逾期的預扣 —— 使用者看到的一定是已結算過的狀態。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      AppScope.of(context).releaseExpiredHolds();
-      AppScope.of(context).markOrderSeen(o);
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     // 訂單可能已被整筆替換（失敗原因為 final 欄位），故依 ID 取回當前狀態。
     final cur = s.orders.firstWhere((x) => x.id == o.id, orElse: () => o);
-    final hold = cur.holdUntil;
-    final remain = hold?.difference(s.now);
 
     return Scaffold(
       backgroundColor: C.bgPage,
@@ -88,33 +72,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             ),
           ),
 
-          // 待付款且有預扣者，呈現保留到期時點。
-          if (cur.state == OrderState.pendingPayment && remain != null) ...[
-            const SizedBox(height: S.md),
-            AppCard(
-              borderColor: C.accentDeep,
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.timer_outlined,
-                    size: Sz.iconDense,
-                    color: C.accentDeep,
-                  ),
-                  const SizedBox(width: S.md),
-                  Expanded(
-                    child: Text(
-                      remain.isNegative
-                          ? '預扣已逾時，庫存已釋放。'
-                          : '庫存已為你保留，剩 ${remain.inMinutes} 分鐘。'
-                                '逾時未付款將自動取消並釋放庫存。',
-                      style: T.caption(color: C.accentDeep),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
           if (cur.state == OrderState.cancelled && cur.cancelledBySystem) ...[
             const SizedBox(height: S.md),
             AppCard(
@@ -128,7 +85,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   const SizedBox(width: S.md),
                   Expanded(
                     child: Text(
-                      '本筆由系統取消（預扣逾時或商品下架），'
+                      '本筆由系統取消（商品下架），'
                       '非你自行取消。已扣的金幣與庫存皆已回補。',
                       style: T.caption(),
                     ),
@@ -175,46 +132,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             ),
           ),
 
-          if (cur.shipping != null) ...[
-            const SectionTitle('收貨資訊'),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    cur.shipping!.name,
-                    style: T.body(weight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: S.xs),
-                  Text(cur.shipping!.phone, style: T.caption()),
-                  const SizedBox(height: S.xs),
-                  Text(
-                    '${cur.shipping!.zip} ${cur.shipping!.address}',
-                    style: T.caption(),
-                  ),
-                  if (cur.shipping!.note.isNotEmpty) ...[
-                    const SizedBox(height: S.xs),
-                    Text('備註：${cur.shipping!.note}', style: T.caption()),
-                  ],
-                ],
-              ),
-            ),
-          ],
-
-          if (cur.trackingNo != null) ...[
-            const SectionTitle('出貨'),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _Line(label: '物流單號', value: cur.trackingNo!),
-                  const SizedBox(height: S.md),
-                  Text('已出貨為本流程終點，系統不追蹤後續物流狀態。', style: T.caption()),
-                ],
-              ),
-            ),
-          ],
-
           const SizedBox(height: S.lg),
           // 取消的可用條件須明示，否則使用者將反覆尋找取消入口。
           Text(
@@ -260,10 +177,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         // 支付由第三方金流執行，本系統被動接收回呼。
                         final ok = await showAppDialog(
                           context,
-                          title: '第三方金流',
-                          message:
-                              '實體商品不走 App Store 應用內購買。'
-                              '此處模擬金流回呼結果。',
+                          title: '付款',
+                          message: '此處模擬付款回呼結果。',
                           confirmLabel: '支付成功',
                           cancelLabel: '支付失敗',
                         );
@@ -289,11 +204,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   static Color _stateColor(OrderState s) => switch (s) {
     OrderState.pendingPayment => C.accentDeep,
-    OrderState.paid ||
-    OrderState.shipped ||
-    OrderState.delivered => C.statusSuccess,
+    OrderState.paid || OrderState.delivered => C.statusSuccess,
     OrderState.failed => C.statusError,
-    OrderState.cancelled || OrderState.refunded => C.lineDivider,
+    OrderState.cancelled => C.lineDivider,
   };
 }
 

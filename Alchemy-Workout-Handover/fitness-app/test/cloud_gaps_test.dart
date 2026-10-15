@@ -61,7 +61,7 @@ void main() {
       final i = s.products.indexWhere((x) => x.id == 'v1');
       final old = s.products[i];
       s.products[i] = Product(
-        id: old.id, name: old.name, kind: old.kind, emoji: old.emoji,
+        id: old.id, name: old.name, emoji: old.emoji,
         specs: old.specs, aiCredits: 1,
       );
 
@@ -70,10 +70,11 @@ void main() {
       expect(s.aiPermanent, before + 10, reason: '已成立的訂單照原本的發');
     });
 
-    test('實體商品不發點數', () {
+    test('補簽券與計畫解鎖不發 AI 點數', () {
       final s = AppState()..coins = 99999;
-      final p = s.products.firstWhere((x) => x.kind == ProductKind.physical);
-      expect(p.aiCredits, 0);
+      for (final id in ['v3', 'v4']) {
+        expect(s.products.firstWhere((x) => x.id == id).aiCredits, 0);
+      }
     });
 
     test('發放進異動明細，查得到是哪一筆買的', () {

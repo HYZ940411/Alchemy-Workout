@@ -2,10 +2,6 @@ import 'platform_config.dart';
 
 // --- 商品與訂單 ---
 
-/// 庫存預扣的保留時間。平台級可調參數，由管理員於後台維護。
-Duration get kStockHold =>
-    Duration(minutes: platformConfig.i('commerce', 'holdMinutes'));
-
 /// 金幣對法幣比率（1 元 ＝ N 金幣）。
 int get kCoinsPerNtd => platformConfig.i('commerce', 'coinsPerNtd');
 
@@ -18,23 +14,23 @@ int get kPlanUnlockCoins => platformConfig.i('commerce', 'planUnlockCoins');
 int cashForShortfall(int shortCoins) =>
     shortCoins <= 0 ? 0 : (shortCoins / kCoinsPerNtd).ceil();
 
-enum ProductKind { physical, virtual }
-
 class ProductSpec {
-  final String name; // 實體即尺寸
+  final String name;
   final int coinPrice;
 
-  /// 可售庫存。確認購買時**預扣**，非支付成功後才扣減 ——
-  /// 實體商品超賣的後果是須向真實顧客道歉退款。
+  /// 可售庫存（消耗品類虛擬商品）。確認購買時扣減，取消或失敗時回補。
+  /// 權限解鎖類商品不適用庫存（〈虛擬商品購買流程〉）。
   int stock;
   ProductSpec(this.name, this.coinPrice, this.stock);
   bool get inStock => stock > 0;
 }
 
+/// 商城商品。**只有虛擬商品**：2026-10-15 使用者裁決移除實體商品
+/// （收貨資訊、出貨、庫存預扣逾時都隨之移除；消耗品類虛擬商品仍有庫存，
+/// 見〈虛擬商品購買流程〉）。
 class Product {
   final String id;
   final String name;
-  final ProductKind kind;
   final String emoji;
 
   /// 圖片集合。清單與詳情頁取第一張。
@@ -42,7 +38,7 @@ class Product {
   final List<ProductSpec> specs;
   final String? note;
 
-  /// 這件虛擬商品發放幾點**永久** AI 點數。實體商品為 0。
+  /// 這件商品發放幾點**永久** AI 點數。不發點數的（補簽券、計畫解鎖）為 0。
   ///
   /// **發放的是數額，不是名稱。** 靠商品名稱去猜要發什麼，改個名字
   /// 就發不出來了 —— 比照獎勵信箱只存數額不存顯示文字的既有設計。
@@ -50,7 +46,6 @@ class Product {
   Product({
     required this.id,
     required this.name,
-    required this.kind,
     required this.emoji,
     required this.specs,
     this.note,
@@ -59,75 +54,18 @@ class Product {
   }) : images = images ?? const [];
 }
 
-/// 收貨資訊（使用者 Aggregate 的欄位，購買時預帶上次填寫的內容）。
+/// 訂單狀態。虛擬商品的終止狀態是「已發放」（道具入庫）。
 ///
-/// 地址為單一自由文字欄，不拆縣市／鄉鎮區／街道 —— 物流已在系統邊界外，
-/// 本系統無拆解用途。不含電子郵件：那是使用者 Aggregate 的選填欄位，不重複收集。
-class ShippingInfo {
-  final String name;
-  final String phone;
-  final String zip;
-  final String address;
-  final String note; // 唯一的選填欄位
-  const ShippingInfo({
-    required this.name,
-    required this.phone,
-    required this.zip,
-    required this.address,
-    this.note = '',
-  });
-
-  /// 五個欄位裡只有備註選填。手機另須符合格式。
-  static String? validate({
-    required String name,
-    required String phone,
-    required String zip,
-    required String address,
-  }) {
-    if (name.trim().isEmpty) return '收件人姓名不得為空。';
-    if (phone.trim().isEmpty) return '手機號碼不得為空。';
-    if (!RegExp(r'^09\d{8}$').hasMatch(phone.trim().replaceAll('-', ''))) {
-      return '手機號碼格式不正確（應為 09 開頭的 10 位數字）。';
-    }
-    if (zip.trim().isEmpty) return '郵遞區號不得為空。';
-    if (address.trim().isEmpty) return '地址不得為空。';
-    return null;
-  }
-
-  String get oneLine => '$zip $address　$name　$phone';
-}
-
-/// 訂單狀態（實體與虛擬各自的值域）
-enum OrderState {
-  pendingPayment, paid, shipped, delivered, cancelled, failed, refunded
-}
+/// 原本另有實體商品的「已出貨」「已退款」，隨實體商品一起移除。
+enum OrderState { pendingPayment, paid, delivered, cancelled, failed }
 
 const orderStateNames = <OrderState, String>{
   OrderState.pendingPayment: '待付款',
   OrderState.paid: '已付款',
-  OrderState.shipped: '已出貨',
   OrderState.delivered: '已發放',
   OrderState.cancelled: '已取消',
   OrderState.failed: '已失敗',
-  OrderState.refunded: '已退款',
 };
-
-/// 該狀態對這一類商品成不成立。
-///
-/// 兩條狀態機**終止狀態不同**：實體是「已出貨」（物流追蹤之後留在邊界外），
-/// 虛擬是「已發放」（道具入庫）。互換就是把兩條流程混在一起 ——
-/// 一筆實體訂單標成「已發放」，使用者看到的是貨已經給你了，
-/// 但系統裡沒有物流單號，客服也查不到東西寄了沒。
-bool orderStateAllowed(ProductKind kind, OrderState state) => switch (state) {
-      // 實體的終止狀態
-      OrderState.shipped => kind == ProductKind.physical,
-      // 虛擬的終止狀態
-      OrderState.delivered => kind == ProductKind.virtual,
-      // 出貨前的退款只適用實體；虛擬已定案不自動退款。
-      OrderState.refunded => kind == ProductKind.physical,
-      // 其餘為兩者共用
-      _ => true,
-    };
 
 enum FailReason { insufficientBalance, soldOut, other }
 
@@ -142,7 +80,6 @@ class Order {
   final String productName;
   final String spec;
   final int qty;
-  final ProductKind kind;
   final DateTime placedAt;
   /// 支付明細：金幣扣除數與法幣支付額分列，併用者兩者皆有值。
   final int coinPaid;
@@ -150,22 +87,13 @@ class Order {
   OrderState state;
   final FailReason? failReason;
 
-  /// 實體訂單的收貨資訊。虛擬訂單為空值。
-  final ShippingInfo? shipping;
-
-  /// 預扣庫存的保留到期時點。僅待付款的實體訂單有值。
-  final DateTime? holdUntil;
-
   /// 本筆訂單應發放的永久 AI 點數（已乘上數量）。
   ///
   /// **在確認購買當下凍結**，不在發放時回頭查商品 —— 商品的發放量
   /// 事後被管理員改動，不該回溯影響已成立的訂單。
   final int aiCredits;
 
-  /// 物流單號。出貨時記錄，系統不再追蹤後續物流狀態。
-  String? trackingNo;
-
-  /// 取消是否由系統發起（商品下架或預扣逾時）——
+  /// 取消是否由系統發起（商品下架）——
   /// 我的訂單頁須與使用者自行取消區別。
   bool cancelledBySystem;
 
@@ -186,15 +114,11 @@ class Order {
     required this.productName,
     required this.spec,
     required this.qty,
-    required this.kind,
     required this.placedAt,
     required this.coinPaid,
     required this.cashPaid,
     required this.state,
     this.failReason,
-    this.shipping,
-    this.holdUntil,
-    this.trackingNo,
     this.cancelledBySystem = false,
     this.deliveryRetries = 0,
     this.deliveryManual = false,
@@ -203,8 +127,7 @@ class Order {
   });
 
   /// 發放尚未完成：已付款、尚未發放。
-  bool get awaitingDelivery =>
-      kind == ProductKind.virtual && state == OrderState.paid;
+  bool get awaitingDelivery => state == OrderState.paid;
 
   /// 取消入口僅狀態為待付款時可用。
   bool get cancellable => state == OrderState.pendingPayment;
