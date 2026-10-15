@@ -10805,6 +10805,10 @@ class AppState extends ChangeNotifier {
       equipmentTier: p.equipmentTier,
       unlockCoins: unlockCoins,
       memberUnlockable: p.memberUnlockable,
+      // 不帶這兩個的話，管理員改一次階級或價格，這份課表的「適合的經驗／目標」
+      // 就在本次連線裡變成空集合 —— 推薦與篩選都對不上，重新載入才恢復。
+      suitableExperience: p.suitableExperience,
+      suitableGoals: p.suitableGoals,
     );
     // **規格也要改。** `applyPlatformData` 會用 `planSpecById` 重建整份
     // `platformPlans`（見該函式），只改上面那一份的話，下一次載入雲端資料

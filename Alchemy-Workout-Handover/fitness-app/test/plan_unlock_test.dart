@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fitness_app/domain/clock.dart';
 import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/domain/platform_config.dart';
@@ -149,6 +150,104 @@ void main() {
       final g = platformConfig.group('commerce');
       expect(g.invariant!({...g.values, 'planUnlockCoins': 0}), isNotNull);
       expect(g.invariant!(g.values), isNull);
+    });
+  });
+
+  group('重新整理後仍成立（存檔來回一趟）', () {
+    AppState reload(AppState s) {
+      final back = AppState();
+      expect(back.applySnapshot(s.toSnapshot()), isTrue);
+      return back;
+    }
+
+    test('金幣購買：重新整理後仍解鎖，金幣只扣一次', () {
+      final s = AppState();
+      final p = _advanced(s);
+      s.coins = 1000;
+      s.purchasePlan(p);
+      final coinsAfter = s.coins;
+      expect(coinsAfter, 1000 - p.unlockCoins!);
+
+      final back = reload(s);
+      expect(back.planUnlocked(_advanced(back)), isTrue);
+      expect(back.coins, coinsAfter, reason: '重新整理不能多扣也不能退回');
+      expect(back.purchasedPlanIds, contains(p.id));
+    });
+
+    test('會員：重新整理後仍有效；到期後鎖回', () {
+      final s = AppState();
+      final p = _advanced(s);
+      s.subscribe(yearly: false);
+      expect(s.planUnlocked(p), isTrue);
+
+      final back = reload(s);
+      expect(back.isMember, isTrue);
+      expect(back.planUnlocked(_advanced(back)), isTrue);
+
+      addTearDown(resetAppClock);
+      back.advanceDemoClock(const Duration(days: 32));
+      expect(back.isMember, isFalse);
+      expect(back.planUnlocked(_advanced(back)), isFalse,
+          reason: '僅靠會員解鎖者到期鎖回');
+
+      final again = reload(back);
+      expect(again.planUnlocked(_advanced(again)), isFalse,
+          reason: '鎖回的狀態重新整理後不能又被打開');
+    });
+
+    test('自己買過的：會員到期、重新整理之後都不被鎖', () {
+      final s = AppState();
+      final p = _advanced(s);
+      s.coins = 10000;
+      s.subscribe(yearly: false);
+      s.purchasePlan(p);
+
+      final back = reload(s);
+      addTearDown(resetAppClock);
+      back.advanceDemoClock(const Duration(days: 32));
+      expect(back.isMember, isFalse);
+      expect(back.planUnlocked(_advanced(back)), isTrue);
+
+      final again = reload(back);
+      expect(again.planUnlocked(_advanced(again)), isTrue);
+    });
+  });
+
+  group('後台改課表的階級與價格（setPlanConfig）', () {
+    test('前台跟著變：所需階級與解鎖價格都用新的', () {
+      final s = AppState();
+      s.adminMode = true;
+      final p = _advanced(s);
+      expect(s.setPlanConfig(p, requiredRank: 70, unlockCoins: 250), isNull);
+      final q = s.platformPlans.firstWhere((x) => x.id == p.id);
+      expect(q.requiredRank, 70);
+      expect(q.unlockCoins, 250);
+
+      s.coins = 1000;
+      expect(s.purchasePlan(q), isNull);
+      expect(s.coins, 1000 - 250, reason: '用新價格扣');
+    });
+
+    test('改階級或價格不能洗掉這份課表的其他欄位', () {
+      final s = AppState();
+      s.adminMode = true;
+      final p = _advanced(s);
+      expect(p.suitableExperience, isNotEmpty, reason: '前提：這份課表有填適合的經驗');
+      s.setPlanConfig(p, requiredRank: 70, unlockCoins: 250);
+      final q = s.platformPlans.firstWhere((x) => x.id == p.id);
+      expect(q.suitableExperience, p.suitableExperience);
+      expect(q.suitableGoals, p.suitableGoals);
+      expect(q.equipmentTier, p.equipmentTier);
+      expect(q.memberUnlockable, p.memberUnlockable);
+    });
+
+    test('規格也同步改，下次載入雲端資料不會被洗掉', () {
+      final s = AppState();
+      s.adminMode = true;
+      final p = _advanced(s);
+      s.setPlanConfig(p, requiredRank: 70, unlockCoins: 250);
+      expect(s.planSpecById[p.id]!.requiredRank, 70);
+      expect(s.planSpecById[p.id]!.unlockCoins, 250);
     });
   });
 }
