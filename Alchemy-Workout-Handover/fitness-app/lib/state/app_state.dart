@@ -111,6 +111,9 @@ class SettlementResult {
   });
 }
 
+/// 一次雲端寫入的結果。[why] 只在失敗時有值，是給人讀的原因。
+typedef WriteResult = ({bool ok, String? why});
+
 class AppState extends ChangeNotifier {
   // --- 使用者 Aggregate（假資料）---
   String displayName = '你';
@@ -1224,7 +1227,7 @@ class AppState extends ChangeNotifier {
     final me = personKeyOf(displayName, myUid);
     t.contributions[me] = (t.contributions[me] ?? 0) + n;
     // 送上雲。**累加不是覆寫** —— 見 `TeamSource.addScore`。
-    _pushTeam((src, uid) => src.addScore(t.id, uid, n));
+    _pushTeam('團隊個人積分', (src, uid) => src.addScore(t.id, uid, n));
   }
 
   bool _allTasksBonusGiven = false;
@@ -2939,16 +2942,17 @@ class AppState extends ChangeNotifier {
 
   /// 把 [toggleFollow] 的結果送上雲。
   ///
-  /// **即發即忘，而且吞掉錯誤**：關注是樂觀更新，記憶體與畫面已經改了。
-  /// 這裡失敗就讓它失敗 —— 下次登入 [applyFollows] 會以雲端為準重新對齊。
-  /// 為了一次網路失敗把畫面倒回去，比晚一點才一致更難解釋。
+  /// **即發即忘，但失敗要看得見**：關注是樂觀更新，記憶體與畫面已經改了，
+  /// 失敗時不把畫面倒回去（比晚一點才一致更難解釋；下次登入 [applyFollows]
+  /// 會以雲端為準重新對齊），但原因記在 [cloudWriteReport]。
   void _pushFollow(String key, {required bool nowFollowing}) {
     final src = followSource;
     if (src == null) return;
     // 暱稱鍵代表對方不在公開檔案裡（示範用的假使用者就是這種），
     // 雲端沒有這個人可以指 —— 只在本地生效。
     if (_isNameKey(key)) return;
-    (nowFollowing ? src.follow(key) : src.unfollow(key)).catchError((_) {});
+    _write(nowFollowing ? '追蹤' : '取消追蹤',
+        nowFollowing ? src.follow(key) : src.unfollow(key));
   }
 
   /// 把名單上的 [from] 換成 [to]，三份資料一起換。
@@ -3041,11 +3045,16 @@ class AppState extends ChangeNotifier {
   ///
   /// 與關注同一套理由：畫面已經改了，這裡失敗就讓它失敗 ——
   /// 下次載入會以雲端為準。社群互動不是金流。
-  void _pushSocial(Future<void> Function(PostSource src, String uid) job) {
+  ///
+  /// [what] 是這筆寫入在 [cloudWriteReport] 裡的名字，**每個呼叫端各取一個**
+  /// —— 共用名字的話，後面一筆成功會把前面一筆的失敗蓋掉。
+  /// 有來源卻沒有 uid 是「沒送出」，要記；沒有來源（示範、測試）才是安靜地不做。
+  Future<WriteResult> _pushSocial(
+      String what, Future<void> Function(PostSource src, String uid) job) {
     final src = postSource;
+    if (src == null) return _noCloud(what);
     final uid = myUid;
-    if (src == null || uid == null) return;
-    job(src, uid).catchError((_) {});
+    return _write(what, uid == null ? null : job(src, uid));
   }
 
   /// 與 [_pushSocial] 同一件事，但**等它做完並回報成功與否**。
@@ -3220,7 +3229,7 @@ class AppState extends ChangeNotifier {
 
   /// 包一次即發即忘的寫入。[job] 為空值表示**這次根本沒送出**
   /// （來源或關係 id 是空的），那也要留下痕跡。
-  void _write(String what, Future<void>? job, {String? into}) {
+  Future<WriteResult> _write(String what, Future<void>? job, {String? into}) {
     // **寫到哪裡去，要跟寫成功一樣看得見。**
     //
     // 2026-09-30：教官指派任務報「成功」，學徒在正確的關係底下卻讀到
@@ -3230,20 +3239,43 @@ class AppState extends ChangeNotifier {
     if (job == null) {
       cloudWriteReport[what] = '沒送出 —— 來源或關係 id 是空的';
       notifyListeners();
-      return;
+      return _lastWrite[what] =
+          Future.value((ok: false, why: '來源或關係 id 是空的，所以沒有送出'));
     }
     cloudWriteReport[what] = '送出中…';
-    job.then((_) {
-      final t = now;
-      cloudWriteReport[what] = '成功　'
-          '${t.hour.toString().padLeft(2, '0')}:'
-          '${t.minute.toString().padLeft(2, '0')}';
-      notifyListeners();
-    }).catchError((Object e) {
-      cloudWriteReport[what] = '失敗：${describeError(e)}';
-      notifyListeners();
-    });
+    return _lastWrite[what] = _settle(what, job);
   }
+
+  Future<WriteResult> _settle(String what, Future<void> job) async {
+    try {
+      await job;
+    } catch (e) {
+      final why = describeError(e);
+      cloudWriteReport[what] = '失敗：$why';
+      notifyListeners();
+      return (ok: false, why: why);
+    }
+    final t = now;
+    cloudWriteReport[what] = '成功　'
+        '${t.hour.toString().padLeft(2, '0')}:'
+        '${t.minute.toString().padLeft(2, '0')}';
+    notifyListeners();
+    return (ok: true, why: null);
+  }
+
+  /// 每一種寫入**最近一次**的結果。畫面要說「已送出」之前先問這裡 ——
+  /// 指令本身是樂觀的（記憶體先改），送不送得出去要等雲端回來才知道。
+  final Map<String, Future<WriteResult>> _lastWrite = {};
+
+  /// 這種寫入最近一次的結果。沒接雲端（示範、測試）或沒做過，視為成功 ——
+  /// 「沒有雲端可寫」不是失敗。
+  Future<WriteResult> lastWrite(String what) =>
+      _lastWrite[what] ?? Future.value((ok: true, why: null));
+
+  /// 沒接雲端的來源：不是失敗，但要把上一次的結果清掉，
+  /// 免得畫面讀到別次留下的失敗。
+  Future<WriteResult> _noCloud(String what) =>
+      _lastWrite[what] = Future.value((ok: true, why: null));
 
   /// 兩次重讀之間的最短間隔。
   ///
@@ -3554,7 +3586,7 @@ class AppState extends ChangeNotifier {
       pendingReview: v == FilterVerdict.flagged,
     );
     posts.insert(0, post);
-    _pushSocial((src, uid) => src.publish(post, authorUid: uid));
+    _pushSocial('發文', (src, uid) => src.publish(post, authorUid: uid));
     if (v == FilterVerdict.flagged) {
       // 疑似違規者照常送出，並**自動開立檢舉案件** ——
       // 只標記不開案的話，那則內容永遠不會有人看。
@@ -3671,7 +3703,7 @@ class AppState extends ChangeNotifier {
       if (!isMyPost(p)) _grantInteraction('Like', requestId: p.id);
     }
     final liked = p.likedByMe;
-    _pushSocial((src, _) => src.setLike(p.id, liked: liked));
+    _pushSocial('按讚', (src, _) => src.setLike(p.id, liked: liked));
     _syncAchievements();
     notifyListeners();
   }
@@ -3684,7 +3716,7 @@ class AppState extends ChangeNotifier {
     // 於是離線建立的留言讀回來之前都認不出是誰的。
     final c = Comment(displayName, text.trim(), now, authorUid: myUid);
     p.comments.add(c);
-    _pushSocial((src, uid) => src.addComment(p.id, c, authorUid: uid));
+    _pushSocial('留言', (src, uid) => src.addComment(p.id, c, authorUid: uid));
     final exp = isMyPost(p) ? 0 : _grantInteraction('Comment');
     _syncAchievements();
     notifyListeners();
@@ -3711,7 +3743,7 @@ class AppState extends ChangeNotifier {
       pendingReview: screenContent(text) == FilterVerdict.flagged,
     );
     posts.insert(0, post);
-    _pushSocial((src, uid) => src.publish(post, authorUid: uid));
+    _pushSocial('分享成果貼文', (src, uid) => src.publish(post, authorUid: uid));
     _bumpTasks('使用者已發布貼文', 1);
     final exp = _grantInteraction('Share');
     _syncAchievements();
@@ -3757,7 +3789,7 @@ class AppState extends ChangeNotifier {
     //
     // 編輯沿用即發即忘：失敗了內容還在，使用者可以再改一次。
     // **刪除不能這樣**（見 [deletePost]）。
-    _pushSocial((src, _) => src.updatePostText(p.id, p));
+    _pushSocial('編輯貼文', (src, _) => src.updatePostText(p.id, p));
     return true;
   }
 
@@ -3796,7 +3828,7 @@ class AppState extends ChangeNotifier {
     c.edits.add((c.text, now));
     c.text = text.trim();
     notifyListeners();
-    _pushSocial((src, _) => src.updateCommentText(_postIdOf(c), c));
+    _pushSocial('編輯留言', (src, _) => src.updateCommentText(_postIdOf(c), c));
     return true;
   }
 
@@ -3873,11 +3905,13 @@ class AppState extends ChangeNotifier {
   TeamSource? teamSource;
 
   /// 即發即忘地把一次團隊異動送上雲。與其他社群寫入同一套。
-  void _pushTeam(Future<void> Function(TeamSource src, String uid) job) {
+  /// [what] 的用法同 [_pushSocial]。
+  Future<WriteResult> _pushTeam(
+      String what, Future<void> Function(TeamSource src, String uid) job) {
     final src = teamSource;
+    if (src == null) return _noCloud(what);
     final uid = myUid;
-    if (src == null || uid == null) return;
-    job(src, uid).catchError((_) {});
+    return _write(what, uid == null ? null : job(src, uid));
   }
 
   /// 這位成員的 uid。示範用的假隊友不在公開檔案裡，回傳空值。
@@ -3973,7 +4007,7 @@ class AppState extends ChangeNotifier {
     if (who == null) {
       _cannotIdentify('踢除成員', m.name);
     } else {
-      _pushTeam((src, _) => src.removeMember(t.id, who));
+      _pushTeam('踢出隊員', (src, _) => src.removeMember(t.id, who));
     }
     notifyListeners();
   }
@@ -3998,7 +4032,7 @@ class AppState extends ChangeNotifier {
     if (who == null) {
       _cannotIdentify('核准申請', r.name);
     } else {
-      _pushTeam((src, _) async {
+      _pushTeam('核准入隊', (src, _) async {
         await src.putMember(t.id, who, _asCloudMember(m));
         await src.dropRequest(t.id, who);
       });
@@ -4016,7 +4050,7 @@ class AppState extends ChangeNotifier {
     if (who == null) {
       _cannotIdentify('拒絕申請', r.name);
     } else {
-      _pushTeam((src, _) => src.dropRequest(t.id, who));
+      _pushTeam('拒絕申請', (src, _) => src.dropRequest(t.id, who));
     }
     notifyListeners();
   }
@@ -4030,7 +4064,7 @@ class AppState extends ChangeNotifier {
     if (who == null) {
       _cannotIdentify('取消邀請', r.name);
     } else {
-      _pushTeam((src, _) => src.dropRequest(t.id, who));
+      _pushTeam('取消邀請', (src, _) => src.dropRequest(t.id, who));
     }
     notifyListeners();
   }
@@ -4054,7 +4088,7 @@ class AppState extends ChangeNotifier {
     if (oldUid == null || newUid == null) {
       _cannotIdentify('轉讓隊長', oldUid == null ? old.name : to.name);
     } else {
-      _pushTeam((src, _) async {
+      _pushTeam('轉讓隊長', (src, _) async {
         await src.putMember(t.id, oldUid, _asCloudMember(t.members[i]));
         await src.putMember(t.id, newUid, _asCloudMember(t.members[j]));
       });
@@ -4110,7 +4144,7 @@ class AppState extends ChangeNotifier {
     t.invites.add(PendingRequest(name, rank, expiresAt));
     final who = _memberUid(name);
     if (who != null) {
-      _pushTeam((src, _) => src.sendRequest(TeamRequest(
+      _pushTeam('邀請入隊', (src, _) => src.sendRequest(TeamRequest(
             teamId: t.id,
             teamName: t.name,
             uid: who,
@@ -4157,7 +4191,7 @@ class AppState extends ChangeNotifier {
     final t = myTeam;
     if (t != null) {
       t.timedCredited.add(personKeyOf(displayName, myUid));
-      _pushTeam((src, uid) => src.creditTimed(t.id, uid, _timedDayKey()));
+      _pushTeam('限時任務計分', (src, uid) => src.creditTimed(t.id, uid, _timedDayKey()));
     }
     notifyListeners();
   }
@@ -4231,10 +4265,10 @@ class AppState extends ChangeNotifier {
   bool applyToTeam(PublicTeam t) {
     if (joinBlockedReason(t) != null) return false;
     final expiresAt = now.add(const Duration(hours: 168));
-    sentApplications
-        .add(PendingRequest(t.name, rank, expiresAt, teamId: t.id));
+    final sent = PendingRequest(t.name, rank, expiresAt, teamId: t.id);
+    sentApplications.add(sent);
     // 申請是我自己送出的，所以帶的是我的 uid（雲端規則也只允許這樣）。
-    _pushTeam((src, uid) => src.sendRequest(TeamRequest(
+    _pushTeam('申請加入團隊', (src, uid) => src.sendRequest(TeamRequest(
           teamId: t.id,
           teamName: t.name,
           uid: uid,
@@ -4242,7 +4276,11 @@ class AppState extends ChangeNotifier {
           rank: rank,
           isInvite: false,
           expiresAt: expiresAt,
-        )));
+        ))).then((r) {
+      // 沒送達就不能一直顯示「已送出申請，等隊長回應」—— 那是假的，
+      // 而且按鈕會因此一直被擋住，使用者想重送也送不了。
+      if (!r.ok && sentApplications.remove(sent)) notifyListeners();
+    });
     _pushPending('使用者已申請加入團隊', '加入申請已送出',
         '「${t.name}」的隊長有 7 天可以回應，逾期未回應即失效。');
     notifyListeners();
@@ -4264,7 +4302,7 @@ class AppState extends ChangeNotifier {
     if (id == null) {
       _cannotIdentify('撤回申請', teamName);
     } else {
-      _pushTeam((src, uid) => src.dropRequest(id, uid));
+      _pushTeam('撤回申請', (src, uid) => src.dropRequest(id, uid));
     }
     notifyListeners();
   }
@@ -4451,7 +4489,7 @@ class AppState extends ChangeNotifier {
     if (t == null || me == null) return;
     final me2 = t.members.where((m) => m.uid == me).firstOrNull;
     if (me2 == null) return;
-    _pushTeam((src, _) => src.putMember(t.id, me, _asCloudMember(me2)));
+    _pushTeam('加入團隊', (src, _) => src.putMember(t.id, me, _asCloudMember(me2)));
   }
 
   /// 把雲端那筆待回應請求清掉。
@@ -4472,13 +4510,14 @@ class AppState extends ChangeNotifier {
                 .firstOrNull;
         final me = myUid;
         if (id == null || me == null) return;
-        _pushTeam((src, _) => src.dropRequest(id, me));
+        _pushTeam('清除團隊請求', (src, _) => src.dropRequest(id, me));
       case InboundKind.mentorInvite:
       case InboundKind.apprenticeApply:
         // `MentorSource.dropRequest` 在此之前**一個呼叫端都沒有**。
         // `data_source_wiring_test` 沒抓到它，因為 `TeamSource` 也有一支
         // 同名方法而那支有人呼叫 —— 那正是該檔案開頭寫明的撞名漏抓。
-        mentorSource?.dropRequest(r.id).catchError((_) {});
+        final msrc = mentorSource;
+        if (msrc != null) _write('清除師徒請求', msrc.dropRequest(r.id));
     }
   }
 
@@ -4494,7 +4533,12 @@ class AppState extends ChangeNotifier {
     // 對方的 uid 現在跟著請求一起來（`InboundRequest.fromUid`）。
     // 在此之前只有暱稱，要反查 —— 而反查只認得已載入的那幾位。
     final peer = r.fromUid ?? uidOf(r.from);
-    if (src == null || me == null || peer == null) return;
+    if (src == null) return;
+    if (me == null || peer == null) {
+      // 有來源卻認不出對方：關係建不起來，要說出「沒送出」。
+      _write('建立師徒關係', null);
+      return;
+    }
 
     final mentorUid = r.kind == InboundKind.mentorInvite ? peer : me;
     final apprenticeUid = r.kind == InboundKind.mentorInvite ? me : peer;
@@ -4502,8 +4546,9 @@ class AppState extends ChangeNotifier {
     final apprenticeName =
         r.kind == InboundKind.mentorInvite ? displayName : r.from;
 
-    src
-        .bond(CloudBond(
+    _write(
+        '建立師徒關係',
+        src.bond(CloudBond(
           // 關係 ID 由雙方 uid 組成 —— 與 `_apprenticeBondId` 同一套規則，
           // 兩邊各自算出來的必須是同一個字串。
           id: '${mentorUid}_$apprenticeUid',
@@ -4513,9 +4558,7 @@ class AppState extends ChangeNotifier {
           apprenticeName: apprenticeName,
           state: MentorBondState.active,
           bondedAt: now,
-        ))
-        // 即發即忘，與其餘社群寫入同一套 —— 失敗了下次登入以雲端為準。
-        .catchError((_) {});
+        )));
   }
 
   /// 使用者已拒絕邀請 / 對方已拒絕申請。
@@ -4831,7 +4874,7 @@ class AppState extends ChangeNotifier {
     // 建立者沒有 teamJoinedAt —— 無懲罰退出窗口是給誤入團隊的人。
     teamJoinedAt = null;
     final created = myTeam!;
-    _pushTeam((src, uid) => src.create(CloudTeam(
+    _pushTeam('建立團隊', (src, uid) => src.create(CloudTeam(
           id: created.id,
           name: created.name,
           isPublic: created.isPublic,
@@ -4849,7 +4892,7 @@ class AppState extends ChangeNotifier {
   void setTeamVisibility(bool isPublic) {
     final t = myTeam;
     if (t == null || !iAmLeader || t.isPublic == isPublic) return;
-    _pushTeam((src, _) => src.setVisibility(t.id, isPublic));
+    _pushTeam('團隊可見性', (src, _) => src.setVisibility(t.id, isPublic));
     myTeam = Team(
       id: t.id,
       name: t.name,
@@ -4897,9 +4940,9 @@ class AppState extends ChangeNotifier {
       // 最後一人離開＝解散（軟刪除）；否則只是把自己移出成員。
       final id = t.id;
       if (outcome.disbanded) {
-        _pushTeam((src, _) => src.disband(id));
+        _pushTeam('解散團隊', (src, _) => src.disband(id));
       } else {
-        _pushTeam((src, uid) => src.removeMember(id, uid));
+        _pushTeam('退出團隊', (src, uid) => src.removeMember(id, uid));
       }
     }
     myTeam = null;
@@ -5701,24 +5744,34 @@ class AppState extends ChangeNotifier {
     if (communityBlocked) return false;
     if (mentorApplyBlockedReason(i) != null) return false;
     final expiresAt = now.add(const Duration(hours: 168));
-    mentorApplications.add(PendingRequest(i.name, i.rank, expiresAt));
-    final target = uidOf(i.name);
+    final sentMentor = PendingRequest(i.name, i.rank, expiresAt);
+    mentorApplications.add(sentMentor);
+    final target = i.uid ?? uidOf(i.name);
     final me = myUid;
     final src = mentorSource;
-    if (target != null && me != null && src != null) {
-      src
-          .sendRequest(MentorRequest(
-            id: newId('mr'),
-            fromUid: me,
-            toUid: target,
-            fromName: displayName,
-            fromRank: rank,
-            // 我是學徒方 —— 這是拜師申請，不是教官的邀請。
-            fromMentor: false,
-            at: now,
-            expiresAt: expiresAt,
-          ))
-          .catchError((_) {});
+    if (src == null) {
+      _noCloud('拜師申請');
+    } else {
+      // 認不出對方（不在已載入的公開檔案裡）就是「沒送出」，
+      // 而不是安靜地略過 —— 畫面隨後會說「已送出申請」。
+      // 沒送達的話，本機那筆也要拿掉（理由同 [applyToTeam]）。
+      _write(
+          '拜師申請',
+          target == null || me == null
+              ? null
+              : src.sendRequest(MentorRequest(
+                  id: newId('mr'),
+                  fromUid: me,
+                  toUid: target,
+                  fromName: displayName,
+                  fromRank: rank,
+                  // 我是學徒方 —— 這是拜師申請，不是教官的邀請。
+                  fromMentor: false,
+                  at: now,
+                  expiresAt: expiresAt,
+                ))).then((r) {
+        if (!r.ok && mentorApplications.remove(sentMentor)) notifyListeners();
+      });
     }
     _pushPending('使用者已申請師徒關係', '拜師申請已送出',
         '${i.name} 有 7 天可以回應，逾期未回應即失效。');
@@ -5806,8 +5859,10 @@ class AppState extends ChangeNotifier {
 
     final src = mentorSource;
     final bond = mentorBondIdFor(q.apprenticeUid);
-    if (src != null && bond != null) {
-      src.answer(bond, q.id, body, now).catchError((_) {});
+    if (src == null) {
+      _noCloud('回答提問');
+    } else {
+      _write('回答提問', bond == null ? null : src.answer(bond, q.id, body, now));
     }
     notifyListeners();
     return true;
@@ -6706,7 +6761,10 @@ class AppState extends ChangeNotifier {
     if (c.deletedByMe) return;
     c.deletedByMe = true;
     final id = _cloudConvId(c);
-    if (id != null) chatSource?.deleteForMe(id).catchError((_) {});
+    final csrc = chatSource;
+    if (csrc != null) {
+      _write('刪除對話', id == null ? null : csrc.deleteForMe(id));
+    }
     notifyListeners();
   }
 
@@ -6851,7 +6909,7 @@ class AppState extends ChangeNotifier {
       // 只改記憶體的話，下次登入從雲端讀回來又會是未讀。
       if (chatSource != null) _cannotIdentify('標記已讀', c.peer);
     } else {
-      chatSource!.markRead(id).catchError((_) {});
+      _write('標記已讀', chatSource!.markRead(id));
     }
     // **其餘欄位要原封不動搬過來。** 原本只帶 fromMe/text/at，
     // 於是 category 掉回預設的 normal —— 一打開陌生訊息，那段對話
@@ -9549,7 +9607,7 @@ class AppState extends ChangeNotifier {
             hit++;
           }
         }
-        _pushSocial((src, _) => src.markPostDeleted(id));
+        _pushSocial('下架貼文', (src, _) => src.markPostDeleted(id));
       case ReportTarget.comment:
         String? postId;
         for (final p in posts) {
@@ -9565,7 +9623,7 @@ class AppState extends ChangeNotifier {
         // 找不到父層代表那則貼文不在本機這批裡 —— 只好留著本機的標記，
         // 下次重讀佇列還會看到這一案。
         if (postId case final pid?) {
-          _pushSocial((src, _) => src.markCommentDeleted(pid, id));
+          _pushSocial('下架留言', (src, _) => src.markCommentDeleted(pid, id));
         }
       case ReportTarget.message:
         // 檢舉入口在對話層級，鍵為對話 ID；下架的是**被檢舉的那一則**，

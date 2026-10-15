@@ -165,10 +165,17 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                 label: '申請加入',
                 onPressed: blocked != null
                     ? null
-                    : () {
+                    : () async {
                         s.applyToTeam(t);
-                        showToast(context, '已送出申請，7 天內未回應即失效');
                         setState(() {});
+                        // 指令是樂觀的；說「已送出」之前先等雲端回話。
+                        final r = await s.lastWrite('申請加入團隊');
+                        if (!context.mounted) return;
+                        showToast(
+                            context,
+                            r.ok
+                                ? '已送出申請，7 天內未回應即失效'
+                                : '申請沒有送達：${r.why}');
                       },
               ),
           ],

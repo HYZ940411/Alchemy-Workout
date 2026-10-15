@@ -346,7 +346,7 @@ class _AnswerCardState extends State<_AnswerCard> {
               const SizedBox(height: S.md),
               AppButton(
                 label: '回答',
-                onPressed: () {
+                onPressed: () async {
                   // **回答的內容由狀態層寫入並送上雲端。**
                   // 在此之前是畫面直接改 `question.answer`，而
                   // `answerQuestion()` 只是個計數器 —— 學徒永遠看不到回答。
@@ -355,7 +355,10 @@ class _AnswerCardState extends State<_AnswerCard> {
                     return;
                   }
                   setState(() {});
-                  showToast(context, '已回答');
+                  final r = await widget.state.lastWrite('回答提問');
+                  if (!context.mounted) return;
+                  showToast(context,
+                      r.ok ? '已回答' : '回答沒有送達學徒：${r.why}');
                 },
               ),
             ],

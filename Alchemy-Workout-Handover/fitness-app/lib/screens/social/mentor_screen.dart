@@ -400,9 +400,15 @@ class _InstructorCard extends StatelessWidget {
                     label: blocked != null ? '不可申請' : '申請師徒關係',
                     onPressed: blocked != null
                         ? null
-                        : () {
+                        : () async {
                             s.applyMentor(instructor);
-                            showToast(context, '已送出申請，7 天內未回應即逾期');
+                            final r = await s.lastWrite('拜師申請');
+                            if (!context.mounted) return;
+                            showToast(
+                                context,
+                                r.ok
+                                    ? '已送出申請，7 天內未回應即逾期'
+                                    : '申請沒有送達：${r.why}');
                           },
                     kind: BtnKind.primary,
                   );
