@@ -20,6 +20,8 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
+    // 真實帳號（有接後端）看到的是說明頁，不是一份能按的假名單。
+    if (!s.demo) return _ReadOnlyRoster(state: s);
     final allowed = s.canConfigure;
 
     return Scaffold(
@@ -251,4 +253,74 @@ class _ScopeChips extends StatelessWidget {
             ),
         ],
       );
+}
+
+/// 真實帳號的管理員帳號頁：只說明、只列「我自己」。
+///
+/// 管理員身分來自 Firebase 帳號上的 `admin` 宣告（安全規則也只認它），
+/// 權限組來自宣告裡的 `adminScopes`。設定宣告只有伺服器端的管理工具做得到，
+/// 所以這裡沒有「新增」「停用」「調整權限組」的按鈕 —— 在這裡按了也不會讓任何人
+/// 真的變成或不再是管理員，只會讓畫面看起來像管得到。
+class _ReadOnlyRoster extends StatelessWidget {
+  final AppState state;
+  const _ReadOnlyRoster({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = state;
+    final isAdmin = s.adminClaim;
+    return Scaffold(
+      backgroundColor: C.bgPage,
+      appBar: AppBar(title: const Text('管理員帳號')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(
+          S.base,
+          S.base,
+          S.base,
+          S.scrollBottom,
+        ),
+        children: [
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('管理員身分由 Firebase 帳號宣告決定',
+                    style: T.body(weight: FontWeight.w600)),
+                const SizedBox(height: S.sm),
+                Text(
+                  '新增管理員、停用管理員、調整權限組，要由專案擁有者用伺服器端的管理工具設定帳號宣告。'
+                  'App 內不提供這些操作 —— 在這裡按了也不會讓任何人真的變成或不再是管理員。',
+                  style: T.caption(),
+                ),
+              ],
+            ),
+          ),
+          const SectionTitle('你目前的身分'),
+          AppCard(
+            child: isAdmin
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(s.admin.name, style: T.body(weight: FontWeight.w600)),
+                      const SizedBox(height: S.xs),
+                      Text(
+                        '狀態：${s.admin.status == AdminStatus.active ? '生效中' : '已停用'}',
+                        style: T.caption(),
+                      ),
+                      const SizedBox(height: S.xs),
+                      Text(
+                        '權限組：${[
+                          for (final sc in AdminScope.values)
+                            if (s.admin.scopes.contains(sc)) adminScopeNames[sc]!
+                        ].join('、')}',
+                        style: T.caption(),
+                      ),
+                    ],
+                  )
+                : Text('這個帳號沒有管理員宣告。', style: T.body()),
+          ),
+        ],
+      ),
+    );
+  }
 }

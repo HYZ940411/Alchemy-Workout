@@ -11478,7 +11478,16 @@ class AppState extends ChangeNotifier {
   }
 
   /// 新增管理員。權限組至少 1 項。
+  /// 真實帳號的管理員名單是唯讀的：管理員身分來自 Firebase 帳號上的 `admin` 宣告，
+  /// 而設定宣告只有伺服器端的管理工具做得到。在 App 裡改一份名單不會讓任何人真的
+  /// 變成或不再是管理員，只會讓畫面看起來像管得到（使用者 2026-10-15 裁決 A）。
+  /// 只有示範身分（沒接後端）還能玩這份假名單。
+  String? get _rosterReadOnly => demo
+      ? null
+      : '管理員身分由 Firebase 帳號宣告決定，需由專案擁有者用管理工具設定，App 內不提供。';
+
   String? addAdmin(String name, Set<AdminScope> scopes) {
+    if (_rosterReadOnly case final why?) return why;
     if (!canConfigure) return '權限不足：本 Command 需要「平台設定」權限組。';
     if (name.trim().isEmpty) return '管理員名稱不得為空。';
     if (scopes.isEmpty) return '權限組至少 1 項。';
@@ -11493,6 +11502,7 @@ class AppState extends ChangeNotifier {
   /// 停用管理員。已停用者不得執行任何管理員 Command。
   /// 不實體刪除 —— 其既往的判定紀錄仍須可稽核。
   String? disableAdmin(Admin a) {
+    if (_rosterReadOnly case final why?) return why;
     if (!canConfigure) return '權限不足：本 Command 需要「平台設定」權限組。';
     if (a.status == AdminStatus.disabled) return null;
     // 不得停用自己：停用當下即失去平台設定權限，將無人能把自己救回來。
@@ -11512,6 +11522,7 @@ class AppState extends ChangeNotifier {
   }
 
   String? enableAdmin(Admin a) {
+    if (_rosterReadOnly case final why?) return why;
     if (!canConfigure) return '權限不足：本 Command 需要「平台設定」權限組。';
     if (a.status == AdminStatus.active) return null;
     _replaceAdmin(a, status: AdminStatus.active);
@@ -11522,6 +11533,7 @@ class AppState extends ChangeNotifier {
 
   /// 調整管理員權限組。
   String? setAdminScopesOf(Admin a, Set<AdminScope> scopes) {
+    if (_rosterReadOnly case final why?) return why;
     if (!canConfigure) return '權限不足：本 Command 需要「平台設定」權限組。';
     if (scopes.isEmpty) return '權限組至少 1 項。';
     if (a.scopes.length == scopes.length && a.scopes.containsAll(scopes)) {
