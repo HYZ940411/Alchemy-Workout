@@ -9090,7 +9090,7 @@ class AppState extends ChangeNotifier {
     // 規則只讓當事人動這兩個欄位（`affectedKeys`）。
     if (punishmentSource case final src?) {
       if (myUid case final uid?) {
-        src.markAppealed(uid, AppealState.pending).catchError((Object _) {});
+        _write('申訴標記', src.markAppealed(uid, AppealState.pending));
       }
     }
     // 申訴為獨立 Aggregate，且進管理員的待審佇列。
@@ -9373,9 +9373,14 @@ class AppState extends ChangeNotifier {
     try {
       final cloud = await src.increment(uid, name: c.accused);
       _setViolations(uid, cloud, name: c.accused);
+      cloudWriteReport['記一次違規'] = '成功';
       notifyListeners();
       return cloud;
-    } catch (_) {
+    } catch (e) {
+      // 累計違規次數決定處罰級距，記不上去不能無聲 —— 本機推算的數字照用，
+      // 但要讓管理員（與開發者模式）看得到雲端那份沒更新。
+      cloudWriteReport['記一次違規'] = '失敗：${describeError(e)}';
+      notifyListeners();
       return local;
     }
   }
@@ -9394,6 +9399,11 @@ class AppState extends ChangeNotifier {
   /// 審視中**不自動退回待審視** —— 未下判定即離開者，案件留在審視中。
   /// 每個案件對應到雲端的哪幾份文件。**一個標的可能有好幾位檢舉者。**
   final Map<String, List<String>> _reportDocIds = {};
+
+  /// 測試用：直接指定某一案對應的雲端文件 id（正式流程由 [applyCloudReports] 填）。
+  @visibleForTesting
+  void debugSetReportDocIds(String targetKey, List<String> ids) =>
+      _reportDocIds[targetKey] = ids;
 
   /// 把雲端的檢舉佇列讀進來。**只有管理員叫得動。**
   ///
@@ -9461,14 +9471,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 裁決寫回雲端。即發即忘 —— 本機已經改了，寫失敗下次重讀會以雲端為準。
+  /// 裁決寫回雲端。本機已經改了；寫失敗要看得見（管理員不然會以為判完了，
+  /// 而雲端那一案仍是待審，重新載入又冒出來）。
   void _pushVerdict(ReportCase c, {required bool upheld}) {
     final src = reportSource;
+    if (src == null) return;
     final ids = _reportDocIds[c.targetKey];
-    if (src == null || ids == null || ids.isEmpty) return;
-    src
-        .judge(ids, upheld: upheld, handlerName: admin.name)
-        .catchError((Object _) {});
+    _write('檢舉裁決',
+        ids == null || ids.isEmpty
+            ? null
+            : src.judge(ids, upheld: upheld, handlerName: admin.name));
   }
 
   void reviewReport(ReportCase c) {
@@ -9613,8 +9625,12 @@ class AppState extends ChangeNotifier {
     // 理由同記點：寫到暱稱底下的話，撞名就罰到別人頭上。
     final src = punishmentSource;
     final uid = c.accusedUid;
-    if (src != null && uid != null) {
-      src.issue(uid, p, name: c.accused).catchError((Object _) {});
+    if (src != null) {
+      // 沒有 uid（舊案件）就是「沒送出」，要記 —— 不然管理員看到的是
+      // 判成立了，而對方那邊什麼都沒發生。
+      _write('開立處罰', uid == null ? null : src.issue(uid, p, name: c.accused));
+    } else {
+      _noCloud('開立處罰'); // 清掉上一案留下的結果，免得畫面讀到別案的失敗
     }
 
     // 以下三件事只在**罰到自己**時才成立 —— 別人的信箱、別人的教官
@@ -9672,9 +9688,15 @@ class AppState extends ChangeNotifier {
     // **後果要傳到當事人。** 撤銷處罰與退回違規次數都是改別人的文件，
     // 而那兩份都是管理員可寫、當事人唯讀 —— 在此之前這整段只在
     // `c.appellant == displayName` 時跑，也就是只撤銷得了自己的處罰。
-    if (c.appellantUid case final uid?) {
-      punishmentSource?.revoke(uid).catchError((Object _) {});
-      violationSource?.decrement(uid).catchError((Object _) => 0);
+    final appellantUid = c.appellantUid;
+    final pSrc = punishmentSource;
+    if (pSrc != null) {
+      _write('撤銷處罰', appellantUid == null ? null : pSrc.revoke(appellantUid));
+    }
+    final vSrc = violationSource;
+    if (vSrc != null) {
+      _write('退回違規次數',
+          appellantUid == null ? null : vSrc.decrement(appellantUid));
     }
 
     if (c.appellant == displayName) {
@@ -9738,13 +9760,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 申訴裁決寫回雲端。即發即忘 —— 本機已經改了，寫失敗下次重讀以雲端為準。
+  /// 申訴裁決寫回雲端。本機已經改了；寫失敗要看得見。
   void _pushAppealVerdict(AppealCase c, {required bool upheld}) {
     final src = appealSource;
-    if (src == null || c.appellantUid == null) return;
-    src
-        .judge(c.id, upheld: upheld, handlerName: admin.name)
-        .catchError((Object _) {});
+    if (src == null) return;
+    _write('申訴裁決',
+        c.appellantUid == null
+            ? null
+            : src.judge(c.id, upheld: upheld, handlerName: admin.name));
   }
 
   /// 申訴的判定入口，供既有畫面沿用。
@@ -12154,9 +12177,15 @@ class AppState extends ChangeNotifier {
       // 與訂閱當下的處理完全一致 —— 達標即觸發一次，只有一份。
       if (autoOptimize) tryAutoOptimize();
     }
+    final visibilityChanged = (ability != null && ability != abilityPublic) ||
+        (overall != null && overall != overallGradePublic);
     if (ability != null) abilityPublic = ability;
     if (overall != null) overallGradePublic = overall;
     if (metric != null) metricUnits = metric;
+    // **可見度一改，別人讀到的公開檔案就要跟著換。** 在此之前只改本機旗標，
+    // 雲端那份要等下次升階或下次登入才會重寫 —— 使用者關掉能力值對外可見，
+    // 別人卻還看得到，而且他自己完全不知道。
+    if (visibilityChanged) publishMyProfile();
     notifyListeners();
   }
 

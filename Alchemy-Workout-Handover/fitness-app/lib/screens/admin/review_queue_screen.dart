@@ -307,7 +307,13 @@ class _ReportCard extends StatelessWidget {
                     // 判成立之後貼文兩邊都還在、對方也沒有收到處罰，
                     // 而畫面照樣說「已處罰」。
                     final out = state.upholdReport(c);
-                    showToast(context, '${tier.label}　·　${out.summary}');
+                    // 處罰有沒有真的送到對方那裡，要等雲端回話才知道。
+                    final sent = await state.lastWrite('開立處罰');
+                    if (!context.mounted) return;
+                    showToast(
+                        context,
+                        '${tier.label}　·　${out.summary}'
+                        '${sent.ok ? '' : '\n處罰沒有送達對方：${sent.why}'}');
                   },
                 ),
               ),

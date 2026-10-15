@@ -331,11 +331,12 @@ void main() {
     });
   });
 
-  test('app_state.dart 不再有吞錯的 catchError((_) {})', () {
+  test('app_state.dart 不再有吞錯的 catchError((_) {})／catchError((Object _) {})', () {
     final src = File('lib/state/app_state.dart').readAsLinesSync();
     final bad = <int>[
       for (var i = 0; i < src.length; i++)
-        if (src[i].contains('catchError((_) {})') &&
+        if ((src[i].contains('catchError((_) {})') ||
+                src[i].contains('catchError((Object _) {})')) &&
             !src[i].trimLeft().startsWith('//'))
           i + 1
     ];
