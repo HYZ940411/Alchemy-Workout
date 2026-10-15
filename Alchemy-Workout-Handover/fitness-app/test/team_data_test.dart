@@ -91,7 +91,7 @@ void main() {
       expect(fromB!.members.keys, containsAll(['a', 'b']));
     });
 
-    test('滿員後再加人不會生效', () async {
+    test('滿員後再加人不會生效，而且要說出口', () async {
       // 人數上限是不變條件，不是建議值。
       await as('a').create(team(members: {
         'a': member('一', role: TeamRole.leader),
@@ -100,9 +100,14 @@ void main() {
         'd': member('四'),
         'e': member('五'),
       }));
-      await as('a').putMember('t1', 'f', member('六'));
+      // 原本靜靜 return，呼叫端記成「成功」；現在要丟出原因（交易外面丟）。
+      await expectLater(
+          as('a').putMember('t1', 'f', member('六')),
+          throwsA(isA<StateError>()
+              .having((e) => e.message, 'message', contains('隊伍已滿'))));
 
-      expect((await as('a').myTeam())!.members, hasLength(5));
+      expect((await as('a').myTeam())!.members, hasLength(5),
+          reason: '人數上限仍是不變條件：名冊沒有被動到');
     });
 
     test('已在隊上的人改角色不受上限限制', () async {

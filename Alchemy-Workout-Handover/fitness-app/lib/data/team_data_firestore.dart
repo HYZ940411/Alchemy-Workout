@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../domain/community.dart';
 import 'team_data.dart';
 import 'cloud_watch.dart';
+import 'guarded_transaction.dart';
 
 /// Firestore 上的團隊（[BE-11] 批次 4）。
 ///
@@ -215,10 +216,15 @@ class FirestoreTeams implements TeamSource {
     // 用 transaction 而不是直接 update：人數上限與「加進去」必須是同一件事。
     // 分開做的話兩個人同時被核准，會擠出第六名成員 ——
     // 而〈團隊 Aggregate〉的人數上限是不變條件，不是建議值。
-    await _db.runTransaction((tx) async {
+    //
+    // **沒加成要說出口。** 隊伍不見了、已解散、人滿了，原本都是靜靜 `return`，
+    // 呼叫端記成「成功」而名冊一個字沒動。判斷不成立時回傳原因，
+    // 由 [guardedTransaction] 在交易外面丟（見該檔說明）。
+    await guardedTransaction(_db, '加入團隊', (tx) async {
       final snap = await tx.get(ref);
       final data = snap.data();
-      if (data == null || data['disbanded'] == true) return;
+      if (data == null) return '找不到這支隊伍（$teamId）';
+      if (data['disbanded'] == true) return '這支隊伍已解散';
 
       final members = Map<String, dynamic>.from(
           (data['members'] as Map?) ?? const {});
@@ -226,7 +232,9 @@ class FirestoreTeams implements TeamSource {
           data['capacity'] is num ? (data['capacity'] as num).round() : kTeamCapacity;
 
       // 已在隊上的人是「更新」（例如升為隊長），不受上限限制。
-      if (!members.containsKey(memberUid) && members.length >= capacity) return;
+      if (!members.containsKey(memberUid) && members.length >= capacity) {
+        return '隊伍已滿（$capacity 人）';
+      }
 
       members[memberUid] = _memberJson(m);
       final peak = data['peakSize'] is num ? (data['peakSize'] as num).round() : 0;
@@ -241,20 +249,23 @@ class FirestoreTeams implements TeamSource {
         // 本週期曾達到過的最高人數，單調遞增 —— 排行榜分組依它判定。
         'peakSize': members.length > peak ? members.length : peak,
       });
+      return null;
     });
   }
 
   @override
   Future<void> removeMember(String teamId, String memberUid) async {
     final ref = _col.doc(teamId);
-    await _db.runTransaction((tx) async {
+    await guardedTransaction(_db, '離開團隊', (tx) async {
       final snap = await tx.get(ref);
       final data = snap.data();
-      if (data == null) return;
+      if (data == null) return '找不到這支隊伍（$teamId）';
 
       final members = Map<String, dynamic>.from(
           (data['members'] as Map?) ?? const {});
-      if (members.remove(memberUid) == null) return;
+      // 本來就不在名冊上：想要的結果（不在隊上）已經成立，不是失敗。
+      // 這是唯一刻意保持安靜的守衛 —— 重複離隊、或兩台裝置同時按，都該是冪等的。
+      if (members.remove(memberUid) == null) return null;
 
       tx.update(ref, {
         // 同上：**點記法指名刪除這一個鍵**。把移除後的整份 Map 寫回去的話，
@@ -275,6 +286,7 @@ class FirestoreTeams implements TeamSource {
         // （自己退、被踢、轉讓後退）的共同出口。
         if (members.isEmpty) 'disbanded': true,
       });
+      return null;
     });
   }
 
@@ -383,9 +395,9 @@ class FirestoreTeams implements TeamSource {
   @override
   Future<void> creditTimed(String teamId, String memberUid, String day) async {
     final ref = _col.doc(teamId);
-    await _db.runTransaction((tx) async {
+    await guardedTransaction(_db, '限時任務計分', (tx) async {
       final snap = await tx.get(ref);
-      if (!snap.exists) return;
+      if (!snap.exists) return '找不到這支隊伍（$teamId）';
       final cloudDay = snap.data()?['timedDay'];
       if (cloudDay == day) {
         tx.update(ref, {
@@ -398,6 +410,7 @@ class FirestoreTeams implements TeamSource {
           'timedDay': day,
         });
       }
+      return null;
     });
   }
 

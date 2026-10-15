@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'guarded_transaction.dart';
 import 'violation_data.dart';
 
 /// Firestore 上的累計違規次數。
@@ -28,7 +29,10 @@ class FirestoreViolations implements ViolationSource {
 
   @override
   Future<int> decrement(String uid) async {
-    return _db.runTransaction<int>((tx) async {
+    // 算出來的值用 closure 帶出交易，不靠 `runTransaction` 的回傳值
+    // （理由見 [guardedTransaction]）。
+    var result = 0;
+    await guardedTransaction(_db, '撤銷違規', (tx) async {
       final snap = await tx.get(_doc(uid));
       final now = (snap.data()?['count'] as num?)?.toInt() ?? 0;
       // **不會低於 0。** 退一次而不是歸零 —— 他之前可能還有別的違規。
@@ -38,15 +42,18 @@ class FirestoreViolations implements ViolationSource {
         {'count': next, 'updatedAt': FieldValue.serverTimestamp()},
         SetOptions(merge: true),
       );
-      return next;
+      result = next;
+      return null;
     });
+    return result;
   }
 
   @override
   Future<int> increment(String uid, {required String name}) async {
     // **交易，不是先讀再寫。** 兩位管理員同時裁決同一個人的兩個案件時，
     // 先讀再寫會讓其中一次消失 —— 而這個數字決定處罰級距。
-    return _db.runTransaction<int>((tx) async {
+    var result = 0;
+    await guardedTransaction(_db, '記一次違規', (tx) async {
       final snap = await tx.get(_doc(uid));
       final next = ((snap.data()?['count'] as num?)?.toInt() ?? 0) + 1;
       tx.set(
@@ -58,7 +65,9 @@ class FirestoreViolations implements ViolationSource {
         },
         SetOptions(merge: true),
       );
-      return next;
+      result = next;
+      return null;
     });
+    return result;
   }
 }
