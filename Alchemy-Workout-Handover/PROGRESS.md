@@ -1411,6 +1411,24 @@ firebase deploy --only hosting
    在動作名稱裡也找得到（「俯臥屈腿 · 啞鈴」），用文字定位一次命中十幾個
    —— 第一版測試就是這樣紅的。
 
+3I. **2026-10-15 交接防呆：commit 前提醒 hook ＋ CLAUDE.md 完成條件**
+
+   交接給做事不一定嚴謹的組員。要擋的是「AI 被操作者帶偏」的瞬間，
+   而不是靠 AI 自己記得重讀提示詞。
+
+   | 做了什麼 | 在哪 | 成本 |
+   |---|---|---|
+   | 濃縮的「完成條件與停手條件」 | `CLAUDE.md` 末段（每個 session 自動載入，壓縮後也會重新載入） | 每 session 一次，約 300 字 |
+   | `git commit` 前印五條自問 | `.claude/settings.json`＋`.claude/hooks/commit-reminder.py`（PreToolUse） | 每次 commit 約 100 字 |
+
+   **實測過 hook 真的會被 Claude Code 呼叫**：在乾淨的測試 repo 跑真的 headless
+   session，commit 時提醒確實出現。腳本另測七種指令（真 commit、換行後 commit、
+   `-C` 指定目錄應出聲；文字提到、heredoc 提到、`git status`、`git log` 應靜默）。
+   第一版用 `"git commit" in cmd`，寫進檔案的文字也會誤觸發，改成正規表示式。
+
+   **限制**：hook 設定放在 repo 根目錄 `.claude/`，從根目錄啟動 Claude Code 才會載入；
+   若從 `Alchemy-Workout-Handover/` 子目錄啟動，要確認它有沒有出聲。
+
 3H. **2026-10-04 AI 調整要更有彈性 —— 已實作**
 
    使用者實測：訓練中對 AI 說「請幫我根據這個課表目標增加動作（增加整體強度）」，
