@@ -80,7 +80,7 @@ class PlatformSettingsScreen extends StatelessWidget {
             rows: [
               ListRow(
                 title: '設定訓練計畫',
-                subtitle: '所需階級、金幣解鎖價格　·　${s.platformPlans.length} 份',
+                subtitle: '所需階級、是否開放金幣購買　·　${s.platformPlans.length} 份',
                 chevron: true,
                 onTap: () => go(const PlatformPlansScreen()),
               ),
