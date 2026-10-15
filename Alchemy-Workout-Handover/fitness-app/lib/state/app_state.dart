@@ -11914,7 +11914,7 @@ class AppState extends ChangeNotifier {
   bool get _skipMentorCooldown => developerMode && devSkipMentorCooldown;
   /// 電子郵件。**選填** —— 第三方登入者於授權時帶入，手機註冊者可自願填寫。
   ///
-  /// 僅供三類通知使用：出貨、處罰與申訴結果、帳號刪除排程。
+  /// 僅供兩類通知使用：處罰與申訴結果、帳號刪除排程。
   /// 未填者由推播與 App 內通知承擔，不因此少收到任何權益相關的訊息。
   String? email;
 
@@ -11934,10 +11934,10 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// 已填電子郵件者，三類通知另以電子郵件發送。
+  /// 已填電子郵件者，兩類通知另以電子郵件發送。
   bool get emailNotifiable => email != null;
 
-  /// 已寄出的電子郵件。**只有三類**：出貨、處罰與申訴結果、帳號刪除排程。
+  /// 已寄出的電子郵件。**只有兩類**：處罰與申訴結果、帳號刪除排程。
   ///
   /// 寄送本身在系統邊界外，此處記錄「寄了什麼給誰」——
   /// 沒有這份紀錄，「另以電子郵件通知」這條 Postcondition 無從驗收。

@@ -480,14 +480,8 @@ class PlatformConfig {
     id: 'commerce',
     command: '設定商品資訊',
     event: '管理員已設定商品資訊',
-    note: '預扣保留時間調整不影響已成立的訂單 —— 每筆訂單於確認購買當下即鎖定自己的到期時點。',
+    note: '金幣對法幣比率在訂單成立當下鎖定，事後調整不影響已成立的訂單。',
     params: [
-      SettingParam(
-          key: 'holdMinutes',
-          label: '庫存預扣保留時間',
-          value: 15,
-          unit: '分鐘',
-          hint: '確認購買時預扣庫存，逾時未付款自動釋放。'),
       SettingParam(
           key: 'coinsPerNtd',
           label: '金幣對法幣比率',
@@ -516,7 +510,6 @@ class PlatformConfig {
               '不補差額亦不退款。'),
     ],
     invariant: (v) {
-      if (v['holdMinutes']! <= 0) return '預扣保留時間須大於 0。';
       if (v['coinsPerNtd']! <= 0) return '金幣對法幣比率須大於 0。';
       if (v['planUnlockCoins']! <= 0) return '進階訓練計畫解鎖價格須大於 0。';
       if (v['customPlanBase']! < 1) return '自訂訓練名額初始值須至少為 1。';

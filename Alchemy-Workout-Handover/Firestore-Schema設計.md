@@ -44,7 +44,7 @@ users/{uid}                                   核心使用者文件（身分/身
 ├─ novice_task (單例) / return_tasks/{assignedAt}   新手任務／回歸任務紀錄
 ├─ mailbox/{mailId}                             獎勵信箱
 ├─ reward_grants/{grantId}                      獎勵發放紀錄（一經寫入不變）
-├─ orders/{orderId}                             訂單（實體/虛擬）
+├─ orders/{orderId}                             訂單（虛擬商品）
 ├─ membership（單例，**不存在＝從未訂閱過**，見 §2.13、§8-3）
 ├─ instructor (單例，僅 isInstructor=true 時存在)   教官聲望/專長/測驗結果
 ├─ ai_conversations/{conversationId}            AI 調整對話（永久保存）
@@ -274,17 +274,21 @@ mentor_bonds/{mentorId}_{apprenticeId}/questions/{questionId}
 
 ```
 products/{productId}
-{ "name": "string", "kind": "physical|virtual", "images": ["url"],
+{ "name": "string", "images": ["url"], "aiCredits": 10,
   "specs": [ { "name": "string", "coinPrice": 300, "stock": 10 } ] }
 
 users/{uid}/orders/{orderId}
-{ "productId": "string", "productName": "string", "spec": "string", "qty": 1, "kind": "physical|virtual",
-  "placedAt": "Timestamp", "coinPaid": 300, "cashPaid": 0,
-  "state": "pendingPayment|paid|shipped|delivered|cancelled|failed|refunded",
-  "shipping": null, "holdUntil": "Timestamp|null", "trackingNo": null }
+{ "productId": "string", "productName": "string", "spec": "string", "qty": 1,
+  "placedAt": "Timestamp", "coinPaid": 300, "cashPaid": 0, "aiCredits": 10,
+  "state": "pendingPayment|paid|delivered|cancelled|failed" }
 ```
 
-商品規格內嵌陣列。訂單放在使用者私有樹下，後台掃描「所有逾時未付款訂單」用 **Collection Group Query**（`collectionGroup('orders').where('state','==','pendingPayment').where('holdUntil','<=',now)`），需要額外的 collection-group 索引，留給 `BE-04`。
+商品規格內嵌陣列。訂單放在使用者私有樹下。
+
+> **2026-10-15 訂正**：商店只剩虛擬商品（使用者裁決移除實體商品）。原本的 `kind: physical|virtual`、
+> `shipping`、`holdUntil`、`trackingNo`、`shipped`／`refunded` 狀態，以及「後台掃描逾時未付款訂單」的
+> collection-group 查詢都不再需要。消耗品類虛擬商品仍有 `stock`（權限解鎖類不適用）。
+> 目前商品與訂單**只存在假資料裡**，這一節描述的是上雲時的目標形狀，尚未落地。
 
 ### 2.13 會員權益（**無 `none` 儲存值**）
 

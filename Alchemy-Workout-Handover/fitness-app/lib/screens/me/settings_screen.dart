@@ -218,8 +218,8 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => showToast(
                       context, '性別決定 DOTS 係數，改動會讓既有能力值失去基準。如需更正請聯繫客服。'),
                 ),
-                // 選填。填了才收得到出貨、處罰與申訴結果、帳號刪除排程
-                // 三類電子郵件通知；不填一樣由推播與 App 內通知承擔。
+                // 選填。填了才收得到處罰與申訴結果、帳號刪除排程
+                // 兩類電子郵件通知；不填一樣由推播與 App 內通知承擔。
                 _Row(
                   label: '電子郵件',
                   value: s.email ?? '未填寫（選填）',
@@ -1230,7 +1230,7 @@ Future<void> _editEmail(BuildContext context, AppState s) async {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '填了才收得到出貨、處罰與申訴結果、帳號刪除排程三類信件。'
+              '填了才收得到處罰與申訴結果、帳號刪除排程兩類信件。'
               '不填一樣會收到推播與 App 內通知，不會少掉任何權益。',
               style: T.caption(),
             ),

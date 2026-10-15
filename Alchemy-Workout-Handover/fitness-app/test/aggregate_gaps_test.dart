@@ -100,7 +100,7 @@ void main() {
       expect(s.emailNotifiable, isFalse);
     });
 
-    test('填入後，三類通知的分支才走得到', () {
+    test('填入後，兩類通知的分支才走得到', () {
       final s = AppState();
       expect(s.setEmail('a@b.com'), isNull);
       expect(s.email, 'a@b.com');
