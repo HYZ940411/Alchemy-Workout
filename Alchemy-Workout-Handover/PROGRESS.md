@@ -1436,6 +1436,16 @@ firebase deploy --only hosting
 
    結論：規格那句在**手機上可能達成（未測）**，**Web 上沒有達成**。
 
+   ### 2026-10-15 使用者同意補三件事，但指示「先把要完成的任務先完成」—— 排在其他缺功能之後，尚未動工
+
+   1. Web 打開 Firestore 持久快取：`Settings(persistenceEnabled: true, webPersistentTabManager:
+      WebPersistentMultipleTabManager())`（cloud_firestore 6.9 支援多分頁，**不必**限制單分頁）。
+   2. 離線提示：`saveNow()` 開始計時，超過 3 秒還沒寫完就顯示「離線中或網路不穩 · 資料尚未同步」
+      （在 `MaterialApp.builder` 用 Stack 疊在頂端，不改 widget 樹結構、不擋點擊）。
+   3. 登出不卡住：`saveNow(wait: 3s)`；寫不完就問「還有資料沒同步，仍要登出嗎」；
+      登出後（且已同步）Web 端 `terminate()`＋`clearPersistence()` 再重新載入，免得共用電腦留下上一位的快取。
+   測法：Chrome DevTools → Network → Offline（或直接關 Wi-Fi），斷網前要先登入並載入完成。
+
 3X. **2026-10-15 缺功能補上（一）：商品上雲**
 
    使用者在第 8 項盤點後說「缺的功能繼續做」（任務原本規定缺功能只記錄、不做，這次是明確授權），
