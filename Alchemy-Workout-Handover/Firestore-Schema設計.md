@@ -562,3 +562,19 @@ exam_notes/{id}         只有管理員讀寫
 
 拆成兩份是為了讓考生讀得到題目與選擇題正解（手機上批改），卻讀不到評分細則與追問範例。
 已知代價：有心人能查到選擇題正解；簡答題全數人工審核且必須通過。
+
+---
+
+## 公開課表審核（2026-10-15 補）
+
+```
+public_plans/{planId}
+{ "ownerUid": "string", "ownerName": "string",
+  "state": "pending|approved|rejected|withdrawn",
+  "plan": { …存檔裡自訂訓練的 JSON… },
+  "appliedAt": "Timestamp", "rejectReason": "string|null",
+  "handlerName": "string|null", "judgedAt": "Timestamp" }
+```
+
+讀：通過的登入者都讀得到；其餘只有擁有者與管理員。建立一律是 `pending`；擁有者只能把它寫成
+`pending`（重新送審）或 `withdrawn`（下架），裁決只有管理員。不硬刪。

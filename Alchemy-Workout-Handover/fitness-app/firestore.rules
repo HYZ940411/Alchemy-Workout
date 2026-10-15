@@ -529,6 +529,30 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // --- 公開課表審核（2026-10-15）---
+    //
+    // 使用者送審 → 管理員裁決 → 通過的對全站登入者可讀。
+    //   · 讀：通過的人人讀得到；待審／退回／下架的只有擁有者與管理員
+    //   · 建立／修改：擁有者只能寫成「待審」（重新送審）或「已下架」，
+    //     **不能自己寫成通過或退回** —— 不然他自己就能把課表公開
+    //   · 裁決：只有管理員
+    //   · 不硬刪：它是審核的紀錄
+    match /public_plans/{planId} {
+      allow read: if request.auth != null
+                  && (resource.data.state == 'approved'
+                      || resource.data.ownerUid == request.auth.uid
+                      || isAdmin());
+      allow create: if request.auth != null
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.state == 'pending';
+      allow update: if isAdmin()
+                    || (request.auth != null
+                        && resource.data.ownerUid == request.auth.uid
+                        && request.resource.data.ownerUid == resource.data.ownerUid
+                        && request.resource.data.state in ['pending', 'withdrawn']);
+      allow delete: if false;
+    }
+
     // --- 其餘一律拒絕 ---
     //
     // 尚未上雲的跨使用者關聯資料（檢舉／申訴…見 [BE-13]）與其他集合

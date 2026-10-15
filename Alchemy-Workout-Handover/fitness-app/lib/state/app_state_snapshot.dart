@@ -75,7 +75,8 @@ extension AppStateSnapshot on AppState {
   /// 存檔裡的一份自訂訓練讀回來。動作用 id 對回動作庫（平台＋自建）；
   /// **找不到動作的那一筆跳過**，其餘照常讀 —— 一個動作被下架不該讓整份課表消失。
   /// 整份讀不出來（缺 id／名稱）就回空值。
-  CustomPlan? _customPlanFromJson(Map<String, dynamic> j) {
+  CustomPlan? _customPlanFromJson(Map<String, dynamic> j,
+      {String author = '你', bool isMine = true}) {
     final id = j['id'];
     final name = j['name'];
     if (id is! String || name is! String) return null;
@@ -109,6 +110,8 @@ extension AppStateSnapshot on AppState {
     return CustomPlan(
       id: id,
       name: name,
+      author: author,
+      isMine: isMine,
       exercises: exs,
       myUses: j['myUses'] is num ? (j['myUses'] as num).round() : 0,
       state: _enumByName(CustomPlanState.values, j['state']) ??

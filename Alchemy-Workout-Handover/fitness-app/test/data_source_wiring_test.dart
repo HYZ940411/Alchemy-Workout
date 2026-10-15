@@ -84,6 +84,8 @@ const _ambiguous = <String, String>{
   'MentorSource.questions': '2026-09-24 接上：`loadMentorSideOf()`',
   'MentorSource.tasks': '2026-09-24 接上：`loadMentorSideOf()`',
   'MentorSource.bond': '`_pushBond()`，接受拜師／收徒時建立關係',
+  // 2026-10-15 公開課表審核。`myPlans` 撞的是畫面上 `AppState.myPlans`（我的自訂訓練）這個欄位名。
+  'PublicPlanSource.myPlans': '`AppState.loadMyPublicPlans()`，由 `AuthGate` 對每位登入者呼叫',
   'TeamSource.myTeam': '`refreshInbound()` 與 `AuthGate._syncProfile` 的「我的團隊」',
 
   // ── 2026-09-25 把正則的巢狀泛型漏洞修掉之後，這 14 支才第一次

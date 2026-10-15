@@ -17,6 +17,8 @@ import '../data/mentor_data.dart';
 import '../data/instructor_case_data.dart';
 import '../data/report_data.dart';
 import '../data/appeal_data.dart';
+import '../data/public_plan_data.dart';
+import '../domain/custom_plan.dart';
 import '../data/punishment_data.dart';
 import '../data/quality_score_data.dart';
 import '../data/violation_data.dart';
@@ -88,6 +90,7 @@ class AuthGate extends StatefulWidget {
   final ViolationSource Function()? violationsFor;
   final PunishmentSource Function()? punishmentsFor;
   final AppealSource Function()? appealsFor;
+  final PublicPlanSource Function(String uid)? publicPlansFor;
 
   const AuthGate({
     super.key,
@@ -111,6 +114,7 @@ class AuthGate extends StatefulWidget {
     this.violationsFor,
     this.punishmentsFor,
     this.appealsFor,
+    this.publicPlansFor,
   });
 
   @override
@@ -353,6 +357,7 @@ class _AuthGateState extends State<AuthGate> {
     widget.state.violationSource = widget.violationsFor?.call();
     widget.state.punishmentSource = widget.punishmentsFor?.call();
     widget.state.appealSource = widget.appealsFor?.call();
+    widget.state.publicPlanSource = widget.publicPlansFor?.call(uid);
     widget.state.followSource = widget.followsFor?.call(uid);
     widget.state.ratingSource = widget.ratingsFor?.call(uid);
 
@@ -530,6 +535,19 @@ class _AuthGateState extends State<AuthGate> {
       return widget.state.isInstructor ? '已是教官' : '無或待審';
     });
 
+    // 公開課表審核。每個人都要跑：我送審的課表的裁決（申請人靠它讀回結果），
+    // 以及全站已公開的課表（「已公開」就是這個意思）。各自成敗。
+    if (widget.state.publicPlanSource != null) {
+      await step('我的公開課表', () async {
+        await widget.state.loadMyPublicPlans();
+        return '${widget.state.customPlans.where((p) => p.isMine && p.state == CustomPlanState.pendingPublic).length} 份審核中';
+      });
+      await step('全站公開課表', () async {
+        await widget.state.loadPublicPlans();
+        return '${widget.state.customPlans.where((p) => !p.isMine && p.state == CustomPlanState.public).length} 份';
+      });
+    }
+
     // 檢舉佇列。**只有管理員讀得動** —— 一般帳號連查都會被規則拒絕，
     // 所以這一塊自己判斷、自己成敗，不要讓它的失敗影響別人。
     if (widget.state.isPlatformAdmin) {
@@ -548,6 +566,11 @@ class _AuthGateState extends State<AuthGate> {
       await step('教官申請', () async {
         await widget.state.loadInstructorQueue();
         return '${widget.state.instructorCases.length} 案';
+      });
+      // 公開課表（待審）。同樣自己成敗。
+      await step('待審公開課表', () async {
+        await widget.state.loadPublicPlanQueue();
+        return '${widget.state.pendingPublicPlans.length} 份';
       });
     }
 

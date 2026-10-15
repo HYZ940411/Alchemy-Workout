@@ -10,6 +10,7 @@ import '../domain/clock.dart';
 // 轉出以維持既有呼叫端不變 —— 19 處在本檔、5 個測試檔。
 export '../domain/clock.dart' show businessDate;
 import '../data/http_error.dart';
+import '../data/public_plan_data.dart';
 import '../data/ai_suggestion.dart';
 import '../data/instructor_case_data.dart';
 import '../data/report_data.dart';
@@ -10424,12 +10425,40 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 公開課表審核的雲端來源。空值＝不同步（示範、測試）。
+  PublicPlanSource? publicPlanSource;
+
+  /// 把我的一份課表送審（或修改已公開的課表後重新送審）上雲。
+  ///
+  /// 在此之前審核只發生在記憶體裡：其他使用者送審的課表管理員收不到，
+  /// 申請人也永遠等不到結果。
+  void _submitPublicPlan(CustomPlan p) {
+    final src = publicPlanSource;
+    if (src == null) {
+      _noCloud('公開課表送審');
+      return;
+    }
+    final uid = myUid;
+    _write(
+        '公開課表送審',
+        uid == null
+            ? null
+            : src.submitPlan(CloudPublicPlan(
+                id: p.id,
+                ownerUid: uid,
+                ownerName: displayName,
+                plan: _customPlanToJson(p),
+                appliedAt: p.appliedAt ?? now,
+              )));
+  }
+
   /// 使用者已申請公開訓練。已發布 → 已申請公開，審核時限自此起算。
   void applyPublic(CustomPlan p) {
     if (p.state != CustomPlanState.published) return;
     p.state = CustomPlanState.pendingPublic;
     p.appliedAt = now;
     p.rejectReason = null;
+    _submitPublicPlan(p);
     notifyListeners();
   }
 
@@ -10439,7 +10468,21 @@ class AppState extends ChangeNotifier {
     if (p.state != CustomPlanState.pendingPublic) return;
     p.state = CustomPlanState.public;
     p.appliedAt = null;
+    _pushPlanVerdict(p, approved: true);
     notifyListeners();
+  }
+
+  /// 裁決寫回雲端。只有「別人送審的」才需要 —— 我自己的課表不會自己審自己。
+  void _pushPlanVerdict(CustomPlan p, {required bool approved, String? reason}) {
+    if (p.isMine) return;
+    final src = publicPlanSource;
+    if (src == null) {
+      _noCloud('公開課表裁決');
+      return;
+    }
+    _write('公開課表裁決',
+        src.judgePlan(p.id,
+            approved: approved, reason: reason, handlerName: admin.name));
   }
 
   /// 公開訓練審核未通過。已申請公開 → **退回已發布**（自己仍可使用）。
@@ -10450,6 +10493,7 @@ class AppState extends ChangeNotifier {
     p.state = CustomPlanState.rejected;
     p.rejectReason = reason;
     p.appliedAt = null;
+    _pushPlanVerdict(p, approved: false, reason: reason);
     notifyListeners();
   }
 
@@ -10465,7 +10509,19 @@ class AppState extends ChangeNotifier {
   void takeDownPlan(CustomPlan p) {
     if (p.state != CustomPlanState.public) return;
     p.state = CustomPlanState.saved;
+    _withdrawPublicPlan(p);
     notifyListeners();
+  }
+
+  /// 我的公開課表下架（或連同刪除）：雲端那份改成已下架，其他人就看不到了。
+  void _withdrawPublicPlan(CustomPlan p) {
+    if (!p.isMine) return;
+    final src = publicPlanSource;
+    if (src == null) {
+      _noCloud('公開課表下架');
+      return;
+    }
+    _write('公開課表下架', src.withdrawPlan(p.id));
   }
 
   /// 使用者已修改自訂訓練。已公開者的修改觸發**重新審核**；
@@ -10477,6 +10533,7 @@ class AppState extends ChangeNotifier {
     if (p.state == CustomPlanState.public) {
       p.state = CustomPlanState.pendingPublic;
       p.appliedAt = now;
+      _submitPublicPlan(p); // 修改已公開的課表要重新審核
     }
     notifyListeners();
   }
@@ -10509,7 +10566,102 @@ class AppState extends ChangeNotifier {
 
   /// 刪除為釋放名額的唯一手段；已刪除為終止狀態，不再出現。
   void deletePlan(CustomPlan p) {
+    // 送審中或已公開的課表刪掉之後，雲端那份也要下架 ——
+    // 不然別人還讀得到一份作者已經刪掉的課表。
+    if (p.state == CustomPlanState.public ||
+        p.state == CustomPlanState.pendingPublic) {
+      _withdrawPublicPlan(p);
+    }
     customPlans.remove(p);
+    notifyListeners();
+  }
+
+  // --- 公開課表：讀回雲端 ---
+
+  /// 讀回**我送審的課表**的裁決。每個人登入時都要跑 —— 裁決只寫在雲端那份文件上，
+  /// 少了這一步，管理員按了通過，申請人重新整理後看到的還是「審核中」。
+  Future<void> loadMyPublicPlans() async {
+    final src = publicPlanSource;
+    if (src == null) return;
+    try {
+      final mine = await src.myPlans();
+      var changed = false;
+      for (final c in mine) {
+        final i = customPlans.indexWhere((p) => p.id == c.id && p.isMine);
+        if (i < 0) continue;
+        final p = customPlans[i];
+        if (p.state != CustomPlanState.pendingPublic) continue;
+        if (c.state == PublicPlanReview.approved) {
+          p.state = CustomPlanState.public;
+          p.appliedAt = null;
+          changed = true;
+        } else if (c.state == PublicPlanReview.rejected) {
+          p.state = CustomPlanState.rejected;
+          p.rejectReason = c.rejectReason;
+          p.appliedAt = null;
+          changed = true;
+        }
+      }
+      if (changed) notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀，不把審核中的課表改回別的狀態。
+    }
+  }
+
+  /// 讀回**全站已公開**的課表（別人的）。取代上一次讀到的那批，不碰我自己的。
+  Future<void> loadPublicPlans() async {
+    final src = publicPlanSource;
+    if (src == null) return;
+    try {
+      final cloud = await src.approvedPlans(limit: 100);
+      _replaceOthersPlans(
+        CustomPlanState.public,
+        [
+          for (final c in cloud)
+            if (c.ownerUid != myUid) c,
+        ],
+      );
+    } catch (_) {
+      // 讀不到就維持現狀。
+    }
+  }
+
+  /// 讀回**待審的公開課表**。只有管理員叫得動。
+  Future<void> loadPublicPlanQueue() async {
+    final src = publicPlanSource;
+    if (src == null || !isPlatformAdmin || !canReview) return;
+    try {
+      final cloud = await src.pendingPlans(limit: 100);
+      _replaceOthersPlans(
+        CustomPlanState.pendingPublic,
+        [
+          for (final c in cloud)
+            if (c.ownerUid != myUid) c,
+        ],
+      );
+    } catch (_) {
+      // 讀不到就維持現狀。**不清空** —— 空佇列與讀取失敗長得一模一樣。
+    }
+  }
+
+  /// 把雲端讀到的「別人的課表」換進來：同一個狀態的舊批次整批取代，其餘不動。
+  void _replaceOthersPlans(CustomPlanState state, List<CloudPublicPlan> cloud) {
+    final ids = {for (final c in cloud) c.id};
+    customPlans.removeWhere(
+        (p) => !p.isMine && p.state == state && !ids.contains(p.id));
+    for (final c in cloud) {
+      final built = _customPlanFromJson(c.plan,
+          author: c.ownerName, isMine: false);
+      if (built == null) continue;
+      built.state = state;
+      built.appliedAt = state == CustomPlanState.pendingPublic ? c.appliedAt : null;
+      final i = customPlans.indexWhere((p) => !p.isMine && p.id == c.id);
+      if (i >= 0) {
+        customPlans[i] = built;
+      } else {
+        customPlans.add(built);
+      }
+    }
     notifyListeners();
   }
 
@@ -11799,6 +11951,7 @@ class AppState extends ChangeNotifier {
     _mentorSource = null;
     _mentorLoaded = false;
     appealSource = null;
+    publicPlanSource = null;
     reportSource = null;
     instructorCaseSource = null;
     violationSource = null;
