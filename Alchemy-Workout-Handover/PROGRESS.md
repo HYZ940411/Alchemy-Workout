@@ -1495,7 +1495,8 @@ firebase deploy --only hosting
    （service account 金鑰不可開啟，除錯不用 Admin SDK 掃雲端，改用開發者模式報告）。
 
    **第一批（本 session）的人工檢查**：M1 ✅A、M2 ✅A；M3 B（已知、影響小、不處理）；
-   M4／M5／M7 跳過；M6 待測。
+   M4／M5／M7 跳過；M6 ✅A（2026-10-15，建置 `64cb2e9`）。
+   3P（HYZ／123 解除後卡住）的真人驗證尚未回報。
 
 3N. **2026-10-15 toast 攔截點擊（12c）：記錄後略過，沒動程式**
 
