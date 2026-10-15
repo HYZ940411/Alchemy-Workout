@@ -4449,6 +4449,8 @@ class AppState extends ChangeNotifier {
         mentorApplications.clear();
         myInstructor = i;
       case InboundKind.apprenticeApply:
+        // 同一位學徒之前被我解除過、現在重新拜師：他不該同時還掛在「已解除」那一欄。
+        releasedApprentices.removeWhere((x) => x.apprenticeUid == r.fromUid);
         apprentices.add(Apprentice(
           name: r.from,
           uid: r.fromUid,
@@ -5344,6 +5346,12 @@ class AppState extends ChangeNotifier {
       final name = nameByUid[b.mentorUid] ?? b.mentorName;
       if (name.isEmpty) continue;
 
+      // **解除超過冷卻期的關係已經結束了。** 雲端那筆文件不會被刪（排行榜與
+      // 評分歷史要用），所以每次載入都讀得到它；沒有這一行，它每次都被重新讀成
+      // 「我的教官」，學徒就永遠申請不了別人（2026-10-15 HYZ 與 123）。
+      // 冷卻期內的照舊留著，才有得恢復。
+      if (b.state != MentorBondState.active && !b.recoverableAt(now)) continue;
+
       myInstructor = instructors.where((i) => i.name == name).firstOrNull ??
           Instructor(
             name: name,
@@ -5368,6 +5376,8 @@ class AppState extends ChangeNotifier {
     }
     // **空清單也算載到了。** 「雲端確實沒有關係」是一個答案，
     // 與「還沒問到」不同 —— 這支只在讀取成功之後才被呼叫。
+    // 先前載入時是冷卻期內、現在已經過了的，在這裡收尾。
+    finalizeMentorRelease();
     _mentorLoaded = true;
     notifyListeners();
   }
@@ -5722,7 +5732,7 @@ class AppState extends ChangeNotifier {
       i.apprentices + (myInstructor?.name == i.name ? 1 : 0);
 
   String? mentorApplyBlockedReason(Instructor i) {
-    if (myInstructor != null) {
+    if (myInstructor != null && !_mentorReleaseEnded) {
       return '一位學徒同時只能有一位教官，要先解除與 ${myInstructor!.name} 的師徒關係。';
     }
     // 先講「你已經送出了」再講「滿了」。
@@ -5743,6 +5753,7 @@ class AppState extends ChangeNotifier {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return false;
     if (mentorApplyBlockedReason(i) != null) return false;
+    finalizeMentorRelease(); // 舊的那段已經結束（守衛放行就是這個意思）
     final expiresAt = now.add(const Duration(hours: 168));
     final sentMentor = PendingRequest(i.name, i.rank, expiresAt);
     mentorApplications.add(sentMentor);
@@ -6185,6 +6196,11 @@ class AppState extends ChangeNotifier {
 
   bool get mentorReleased => mentorReleasedAt != null && myInstructor != null;
 
+  /// 解除之後冷卻期已經過完 —— 這段關係結束了，不再佔著「我的教官」。
+  /// 不靠排程：時間一到這個判斷自己就成立，收尾（清欄位）可以晚一點。
+  bool get _mentorReleaseEnded =>
+      mentorReleased && mentorCooldownLeft == Duration.zero;
+
   /// 我當學徒那一段，恢復不了的原因。**空值＝可以恢復。**
   ///
   /// 與教官側的 [restoreBlockedReasonOf] 同一組判準，只是主體不同。
@@ -6355,7 +6371,9 @@ class AppState extends ChangeNotifier {
 
   /// 冷卻期滿仍未恢復 —— 關係就此結束，教官欄位清空。
   void finalizeMentorRelease() {
-    if (!mentorReleased || canRestoreMentor) return;
+    // 只看冷卻期有沒有過。原本用 `canRestoreMentor`，而它在對方被我封鎖時
+    // 也是否 —— 冷卻期內就被提早收尾了。
+    if (!_mentorReleaseEnded) return;
     myInstructor = null;
     mentorReleasedAt = null;
     mentorReleaseReason = null;
