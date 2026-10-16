@@ -21,6 +21,28 @@ class _Boom implements PublicPlanSource {
       Future<void>.error(StateError('permission-denied'));
 }
 
+/// 讀取一律失敗的來源。**要逐個方法寫**：`noSuchMethod` 回的 `Future<void>`
+/// 不是 `Future<List<…>>`，型別轉換先炸，測到的就不是「丟出去」了。
+class _BoomRead implements PublicPlanSource {
+  Future<T> _fail<T>() => Future<T>.error(StateError('permission-denied'));
+  @override
+  Future<List<CloudPublicPlan>> myPlans() => _fail();
+  @override
+  Future<List<CloudPublicPlan>> approvedPlans({int limit = 100}) => _fail();
+  @override
+  Future<List<CloudPublicPlan>> pendingPlans({int limit = 100}) => _fail();
+  @override
+  Future<void> submitPlan(CloudPublicPlan p) => _fail();
+  @override
+  Future<void> judgePlan(String id,
+          {required bool approved,
+          String? reason,
+          required String handlerName}) =>
+      _fail();
+  @override
+  Future<void> withdrawPlan(String id) => _fail();
+}
+
 void main() {
   late FakeFirebaseFirestore db;
 
@@ -256,6 +278,28 @@ void main() {
     await settle();
 
     expect(owner.cloudWriteReport['公開課表送審'], startsWith('失敗'));
+  });
+
+  test('讀不到要丟出去（讓同步報告寫「失敗」），不能假裝讀到 0 份；現有的課表不動', () async {
+    // 原本三個讀取函式都吞掉錯誤：規則擋掉了，同步報告照寫「0 份」，
+    // 與「真的沒有人公開」長得一模一樣（2026-10-16 實測：通過的課表別人看不到，查不出為什麼）。
+    final viewer = AppState(demo: false)
+      ..myUid = 'uV'
+      ..publicPlanSource = _BoomRead();
+    viewer.customPlans.add(CustomPlan(
+        id: 'keep', name: '已讀到的', author: '別人', isMine: false,
+        exercises: const [], myUses: 0, state: CustomPlanState.public));
+
+    await expectLater(viewer.loadPublicPlans(), throwsA(isA<StateError>()));
+    await expectLater(viewer.loadMyPublicPlans(), throwsA(isA<StateError>()));
+    expect(viewer.customPlans.map((p) => p.id), contains('keep'),
+        reason: '讀不到不該把已經讀到的清掉');
+
+    final admin = AppState(demo: false)
+      ..myUid = 'uA'
+      ..publicPlanSource = _BoomRead()
+      ..applyAdminClaim(true);
+    await expectLater(admin.loadPublicPlanQueue(), throwsA(isA<StateError>()));
   });
 
   test('安全規則：通過的人人可讀；擁有者只能寫成待審或下架；裁決只有管理員；不硬刪', () {

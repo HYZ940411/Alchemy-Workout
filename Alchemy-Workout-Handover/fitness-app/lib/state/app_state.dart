@@ -10703,68 +10703,65 @@ class AppState extends ChangeNotifier {
 
   /// 讀回**我送審的課表**的裁決。每個人登入時都要跑 —— 裁決只寫在雲端那份文件上，
   /// 少了這一步，管理員按了通過，申請人重新整理後看到的還是「審核中」。
+  ///
+  /// **讀不到就丟出去，由呼叫端（登入同步）記進同步報告。** 原本這裡吞掉錯誤，
+  /// 同步報告於是照寫「0 份」—— 規則擋掉與真的沒有長得一模一樣，查不出來
+  /// （2026-10-16 使用者實測：通過的課表別的帳號看不到，報告上看不出為什麼）。
+  /// 丟出去也不會動到現有狀態：審核中的課表不會被改成別的樣子。
   Future<void> loadMyPublicPlans() async {
     final src = publicPlanSource;
     if (src == null) return;
-    try {
-      final mine = await src.myPlans();
-      var changed = false;
-      for (final c in mine) {
-        final i = customPlans.indexWhere((p) => p.id == c.id && p.isMine);
-        if (i < 0) continue;
-        final p = customPlans[i];
-        if (p.state != CustomPlanState.pendingPublic) continue;
-        if (c.state == PublicPlanReview.approved) {
-          p.state = CustomPlanState.public;
-          p.appliedAt = null;
-          changed = true;
-        } else if (c.state == PublicPlanReview.rejected) {
-          p.state = CustomPlanState.rejected;
-          p.rejectReason = c.rejectReason;
-          p.appliedAt = null;
-          changed = true;
-        }
+    final mine = await src.myPlans();
+    var changed = false;
+    for (final c in mine) {
+      final i = customPlans.indexWhere((p) => p.id == c.id && p.isMine);
+      if (i < 0) continue;
+      final p = customPlans[i];
+      if (p.state != CustomPlanState.pendingPublic) continue;
+      if (c.state == PublicPlanReview.approved) {
+        p.state = CustomPlanState.public;
+        p.appliedAt = null;
+        changed = true;
+      } else if (c.state == PublicPlanReview.rejected) {
+        p.state = CustomPlanState.rejected;
+        p.rejectReason = c.rejectReason;
+        p.appliedAt = null;
+        changed = true;
       }
-      if (changed) notifyListeners();
-    } catch (_) {
-      // 讀不到就維持現狀，不把審核中的課表改回別的狀態。
     }
+    if (changed) notifyListeners();
   }
 
   /// 讀回**全站已公開**的課表（別人的）。取代上一次讀到的那批，不碰我自己的。
+  ///
+  /// 讀不到就丟出去（理由見 [loadMyPublicPlans]），現有狀態不動。
   Future<void> loadPublicPlans() async {
     final src = publicPlanSource;
     if (src == null) return;
-    try {
-      final cloud = await src.approvedPlans(limit: 100);
-      _replaceOthersPlans(
-        CustomPlanState.public,
-        [
-          for (final c in cloud)
-            if (c.ownerUid != myUid) c,
-        ],
-      );
-    } catch (_) {
-      // 讀不到就維持現狀。
-    }
+    final cloud = await src.approvedPlans(limit: 100);
+    _replaceOthersPlans(
+      CustomPlanState.public,
+      [
+        for (final c in cloud)
+          if (c.ownerUid != myUid) c,
+      ],
+    );
   }
 
   /// 讀回**待審的公開課表**。只有管理員叫得動。
   Future<void> loadPublicPlanQueue() async {
     final src = publicPlanSource;
     if (src == null || !isPlatformAdmin || !canReview) return;
-    try {
-      final cloud = await src.pendingPlans(limit: 100);
-      _replaceOthersPlans(
-        CustomPlanState.pendingPublic,
-        [
-          for (final c in cloud)
-            if (c.ownerUid != myUid) c,
-        ],
-      );
-    } catch (_) {
-      // 讀不到就維持現狀。**不清空** —— 空佇列與讀取失敗長得一模一樣。
-    }
+    // 讀不到就丟出去（理由見 [loadMyPublicPlans]）。現有佇列**不清空** ——
+    // 空佇列與讀取失敗長得一模一樣，丟出去才分得出來。
+    final cloud = await src.pendingPlans(limit: 100);
+    _replaceOthersPlans(
+      CustomPlanState.pendingPublic,
+      [
+        for (final c in cloud)
+          if (c.ownerUid != myUid) c,
+      ],
+    );
   }
 
   /// 把雲端讀到的「別人的課表」換進來：同一個狀態的舊批次整批取代，其餘不動。
