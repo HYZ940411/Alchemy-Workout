@@ -44,6 +44,7 @@ import '../domain/commerce.dart';
 import '../domain/custom_plan.dart';
 import '../domain/carry_forward.dart';
 import '../domain/community.dart';
+import '../domain/workout_card.dart';
 import '../domain/inbound.dart';
 import '../domain/platform_plan.dart';
 import '../data/store.dart';
@@ -93,6 +94,9 @@ class SettlementResult {
   final int rankBefore;
   final int rankAfter;
   final List<Achievement> newlyUnlocked;
+
+  /// 這場有做的動作與完成組數（沒完成任何一組的不列）。分享成果卡用。
+  final List<({String name, int sets})> exerciseSummary;
   const SettlementResult({
     required this.plan,
     required this.kind,
@@ -109,6 +113,7 @@ class SettlementResult {
     required this.rankBefore,
     required this.rankAfter,
     required this.newlyUnlocked,
+    this.exerciseSummary = const [],
   });
 }
 
@@ -2076,6 +2081,14 @@ class AppState extends ChangeNotifier {
       rankBefore: rankBefore,
       rankAfter: rank,
       newlyUnlocked: newly,
+      exerciseSummary: [
+        for (var i = 0; i < s.records.length; i++)
+          if (s.records[i].any((r) => r.state == SetState.done))
+            (
+              name: s.exercises[i].exercise.name,
+              sets: s.records[i].where((r) => r.state == SetState.done).length,
+            ),
+      ],
     );
 
     // AI 自動優化的每 3 次計數。三種終止方式皆計入；
@@ -3809,10 +3822,45 @@ class AppState extends ChangeNotifier {
   /// 發文者已分享訓練成果 → 貼文已發布 → 分享獎勵已發放。
   ///
   /// 分享出去的貼文同樣先過內容過濾（本規則同樣適用於分享至站內的貼文）。
+  /// 把結算結果做成要公開的成果卡。
+  ///
+  /// **隱私在這裡決定，不是畫面上才藏。** 卡片會存進雲端、所有人都讀得到：
+  /// 不公開能力值的人（教官身分例外，見 [PublicProfile.of]），六維成長的數字
+  /// 與「能力值 N」這一類成就都不能附上。階級本來就是公開的，可以附。
+  @visibleForTesting
+  WorkoutCard workoutCardOf(SettlementResult r) {
+    final showAbility = abilityPublic || isInstructor;
+    return WorkoutCard(
+      planName: r.plan.name,
+      volumeKg: r.volume,
+      doneSets: r.doneSets,
+      plannedSets: r.plannedSets,
+      durationMinutes: r.duration.inMinutes,
+      streakDays: r.streakDays,
+      exercises: [
+        for (final e in r.exerciseSummary.take(8))
+          WorkoutCardExercise(e.name, e.sets),
+      ],
+      rankFrom: r.rankAfter > r.rankBefore ? r.rankBefore : null,
+      rankTo: r.rankAfter > r.rankBefore ? r.rankAfter : null,
+      abilityGains: showAbility
+          ? {
+              for (final e in r.gains.entries)
+                if (e.value > 0) e.key: e.value,
+            }
+          : const {},
+      achievements: [
+        for (final a in r.newlyUnlocked)
+          if (showAbility || a.category != '能力值') a.name,
+      ].take(3).toList(),
+    );
+  }
+
   ({Post post, int exp})? shareWorkout(SettlementResult r, String text) {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return null;
     if (screenContent(text) == FilterVerdict.blocked) return null;
+    final card = workoutCardOf(r);
     final post = Post(
       id: newId('share-'),
       author: displayName,
@@ -3821,8 +3869,8 @@ class AppState extends ChangeNotifier {
       text: text.trim().isEmpty ? '今天練完了。' : text.trim(),
       at: now,
       // 分享類貼文附帶訓練成果 —— 動態牆會把它畫成成果卡。
-      attachedWorkout: '${r.plan.name}　·　'
-          '${r.volume.round()} kg　·　${r.doneSets} 組',
+      attachedWorkout: card.summaryLine,
+      workoutCard: card,
       pendingReview: screenContent(text) == FilterVerdict.flagged,
     );
     posts.insert(0, post);

@@ -265,7 +265,9 @@ Future<void> _share(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '會附上「${r.plan.name} · ${r.volume.round()} kg · ${r.doneSets} 組」。'
+          '會附上一張成果卡：「${r.plan.name}」、總重量、完成度、訓練時間、'
+          '連續訓練天數、練了哪些動作；有升階或解鎖成就也會一起附上。'
+          '${(s.abilityPublic || s.isInstructor) ? '' : '你設定了不公開能力值，卡片不會附能力值成長。'}'
           '今日分享獎勵已發 ${s.interactionsToday('Share')} / '
           '${platformConfig.i('reward', 'capShare')} 次 ——'
           '超過上限照樣分享得出去，只是不再發經驗值。',

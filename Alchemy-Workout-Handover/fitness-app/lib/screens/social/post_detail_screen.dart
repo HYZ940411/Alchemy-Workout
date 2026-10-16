@@ -9,6 +9,7 @@ import '../../widgets/common.dart';
 import 'post_menu.dart';
 import '../me/profile_screen.dart';
 import 'social_lock.dart';
+import 'workout_card_view.dart';
 
 /// 貼文詳情頁（〈發文與互動流程〉）
 ///
@@ -126,27 +127,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                       ],
-                      if (p.attachedWorkout != null) ...[
+                      if (p.attachedWorkout != null || p.workoutCard != null) ...[
                         const SizedBox(height: S.base),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(S.md),
-                          decoration: BoxDecoration(
-                            color: C.bgPage,
-                            borderRadius: BorderRadius.circular(R.child),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.fitness_center,
-                                  size: Sz.iconDense, color: C.textSecondary),
-                              const SizedBox(width: S.sm),
-                              Expanded(
-                                child: Text(p.attachedWorkout!,
-                                    style: T.caption()),
-                              ),
-                            ],
-                          ),
-                        ),
+                        PostWorkoutAttachment(post: p),
                       ],
                       if (p.pendingReview) ...[
                         const SizedBox(height: S.md),

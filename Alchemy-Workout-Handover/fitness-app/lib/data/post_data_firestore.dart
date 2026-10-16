@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../domain/community.dart';
+import '../domain/workout_card.dart';
 import 'post_data.dart';
 
 /// Firestore 上的貼文（[BE-11] 批次 3）。
@@ -41,6 +42,7 @@ class FirestorePosts implements PostSource {
       'images': p.images,
       'at': Timestamp.fromDate(p.at),
       if (p.attachedWorkout != null) 'attachedWorkout': p.attachedWorkout,
+      if (p.workoutCard != null) 'workoutCard': p.workoutCard!.toJson(),
       'visibility': p.visibility.name,
       'pendingReview': p.pendingReview,
       'deleted': false,
@@ -191,6 +193,7 @@ class FirestorePosts implements PostSource {
       ],
       attachedWorkout:
           j['attachedWorkout'] is String ? j['attachedWorkout'] as String : null,
+      workoutCard: WorkoutCard.fromJson(j['workoutCard']),
       visibility: PostVisibility.values.firstWhere(
         (v) => v.name == j['visibility'],
         orElse: () => PostVisibility.public,

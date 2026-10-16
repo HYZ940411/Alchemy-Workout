@@ -10,6 +10,7 @@ import '../me/profile_screen.dart';
 import 'post_detail_screen.dart';
 import 'post_menu.dart';
 import 'social_lock.dart';
+import 'workout_card_view.dart';
 
 /// 一張貼文卡 —— 動態牆與個人檔案頁**共用同一張**。
 ///
@@ -155,34 +156,9 @@ class PostCard extends StatelessWidget {
                   ),
                 ),
               ],
-              if (post.attachedWorkout != null) ...[
+              if (post.attachedWorkout != null || post.workoutCard != null) ...[
                 const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceAlt,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.fitness_center,
-                        size: 15,
-                        color: AppColors.accent,
-                      ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          post.attachedWorkout!,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: AppColors.textDim,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                PostWorkoutAttachment(post: post),
               ],
               const Divider(height: 22, color: AppColors.line),
               Row(

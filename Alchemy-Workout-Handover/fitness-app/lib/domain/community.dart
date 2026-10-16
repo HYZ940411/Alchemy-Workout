@@ -1,6 +1,7 @@
 import 'ability.dart';
 import 'ai_adjust.dart';
 import 'social.dart';
+import 'workout_card.dart';
 
 // --- 社群動態牆 ---
 
@@ -92,8 +93,12 @@ class Post {
   /// 圖片集合。貼文支援文字與圖片，不支援影片。
   final List<String> images;
   final DateTime at;
-  /// 附帶的訓練成果（分享類貼文）
+  /// 附帶的訓練成果（分享類貼文）的**一行摘要**。舊貼文只有這個；
+  /// 新貼文另有結構化的 [workoutCard]，畫面優先畫它。
   final String? attachedWorkout;
+
+  /// 附帶的訓練成果卡（結構化）。沒有就退回 [attachedWorkout] 那一行。
+  final WorkoutCard? workoutCard;
   /// 發文者於發布時指定可見範圍：公開 / 僅關注者 / 私人。
   final PostVisibility visibility;
   /// 過濾判定為「疑似違規」者照常發布，並自動送審。
@@ -117,6 +122,7 @@ class Post {
     this.authorUid,
     this.authorReputation,
     this.attachedWorkout,
+    this.workoutCard,
     this.visibility = PostVisibility.public,
     this.pendingReview = false,
     this.likes = 0,
