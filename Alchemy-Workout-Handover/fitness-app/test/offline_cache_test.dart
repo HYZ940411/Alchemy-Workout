@@ -88,6 +88,19 @@ void main() {
       );
     });
 
+    test('診斷用開關：網址帶 ?nosettings=1 才完全不碰設定，其他一律照常設定', () {
+      expect(touchFirestoreSettings(Uri.parse('https://x.web.app/')), isTrue);
+      expect(
+        touchFirestoreSettings(Uri.parse('https://x.web.app/?nopersist=1')),
+        isTrue,
+        reason: 'nopersist 只是關持久，還是會呼叫 settings =',
+      );
+      expect(
+        touchFirestoreSettings(Uri.parse('https://x.web.app/?nosettings=1')),
+        isFalse,
+      );
+    });
+
     test('關掉時明確設成不持久（不是不設定）', () {
       final db = _RecordingDb();
       configureFirestorePersistence(db, enabled: false);

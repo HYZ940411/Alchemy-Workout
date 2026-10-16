@@ -92,8 +92,10 @@ Future<void> main() async {
   ));
   await Firebase.initializeApp(options: _firebaseOptions());
   // 離線緩存：Web 預設不持久，斷網期間的寫入重新整理就沒了。要在第一次用 Firestore 之前設定。
-  configureFirestorePersistence(FirebaseFirestore.instance,
-      enabled: persistenceWanted());
+  if (touchFirestoreSettings()) {
+    configureFirestorePersistence(FirebaseFirestore.instance,
+        enabled: persistenceWanted());
+  }
   // 轉址登入回來時，先把結果收掉再開 App —— 否則 AuthGate 會先看到
   // 「未登入」而畫出登入頁，使用者剛授權完卻又被要求登入一次。
   final auth = AuthService();

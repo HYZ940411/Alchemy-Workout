@@ -29,6 +29,12 @@ void configureFirestorePersistence(FirebaseFirestore db,
 bool persistenceWanted([Uri? url]) =>
     (url ?? Uri.base).queryParameters['nopersist'] != '1';
 
+/// 要不要碰 Firestore 的設定。**診斷用**：網址帶 `?nosettings=1` 就完全不呼叫 `settings =`，
+/// 回到加持久快取**之前**的初始化方式。`?nopersist=1` 雖然關掉持久，卻還是呼叫了 `settings =`
+/// （Web 上會改用 `initializeFirestore` 重新初始化），分不出兇手是持久快取還是這一步本身。
+bool touchFirestoreSettings([Uri? url]) =>
+    (url ?? Uri.base).queryParameters['nosettings'] != '1';
+
 /// 登出之後：清掉這個瀏覽器上的 Firestore 本機快取並重新載入頁面。
 ///
 /// 為什麼要清：持久快取是**綁瀏覽器、不綁帳號**的。共用電腦上，上一位的存檔、貼文、私訊

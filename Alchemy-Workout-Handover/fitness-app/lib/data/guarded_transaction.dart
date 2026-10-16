@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'http_error.dart';
+
 /// 跑一筆交易，**判斷留在交易裡，例外丟在交易外面**。
 ///
 /// ## 為什麼不直接 `runTransaction`
@@ -26,10 +28,25 @@ Future<void> guardedTransaction(
   Future<String?> Function(Transaction tx) body,
 ) async {
   String? refused;
-  await db.runTransaction<void>((tx) async {
-    // 交易可能重跑；每一輪都重新決定，以最後一輪為準。
-    refused = await body(tx);
-  });
+  // 失敗發生在哪一段：交易根本沒開始、body 裡（讀或寫）、還是 body 做完等提交時。
+  // 2026-10-17 所有交易都失敗，錯誤只有一個沒有內容的物件，連是哪一段壞的都看不出來。
+  var phase = '交易還沒開始（還沒進到 body）';
+  try {
+    await db.runTransaction<void>((tx) async {
+      // 交易可能重跑；每一輪都重新決定，以最後一輪為準。
+      phase = '正在跑 body（讀取或寫入暫存）';
+      refused = await body(tx);
+      phase = 'body 已做完，等伺服器提交';
+    });
+  } catch (e) {
+    throw StateError('$what：交易失敗（階段：$phase；錯誤類型：${e.runtimeType}）'
+        '${_detail(e)}');
+  }
   final why = refused;
   if (why != null) throw StateError('$what：$why');
+}
+
+String _detail(Object e) {
+  final d = describeError(e);
+  return d.isEmpty ? '' : '　$d';
 }

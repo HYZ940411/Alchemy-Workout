@@ -1458,6 +1458,12 @@ firebase deploy --only hosting
      **嫌疑剩持久快取**（網頁版交易與持久快取／多分頁管理的組合）。
    - **對照開關（診斷用）：** `configureFirestorePersistence(db, enabled:)`；網址帶 `?nopersist=1` 就關掉持久快取，
      同一版可以對照開／關。`test/offline_cache_test.dart` 增為 15 條；全量 **2,940 passed**。
+   - **對照結果（2026-10-17）：** 網址 `?nopersist=1`（關持久快取）**核准入隊仍失敗** → 持久快取本身不是兇手。
+     但 `?nopersist=1` 仍會呼叫 `settings =`（Web 上改用 `initializeFirestore` 重新初始化），所以還沒排除「呼叫那一步本身」。
+   - **第二輪診斷（已寫、待部署）：** ① `?nosettings=1`：完全不呼叫 `settings =`，回到加持久快取之前的初始化；
+     ② `guardedTransaction` 失敗時標出**階段**（還沒進 body／正在跑 body／body 做完等提交）與錯誤類型，
+     不再只有一個空物件。`test/guarded_transaction_test.dart` 增 4 條、`offline_cache_test.dart` 增 1 條，突變轉紅；
+     全量 **2,945 passed**。
    - **（舊）下一步：** 部署後請 123 對那筆（雲端上還在的）申請再按一次同意，讀「雲端寫入 → 核准入隊」那一行，
      才能知道真正的錯誤。可能的方向（未證實）：`guardedTransaction`（2026-10-15 我改的）在 Web 上的某個細節、
      交易裡的欄位形狀、或 `dropRequest`。
