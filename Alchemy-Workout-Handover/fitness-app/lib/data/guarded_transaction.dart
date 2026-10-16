@@ -34,13 +34,15 @@ Future<void> guardedTransaction(
   try {
     await db.runTransaction<void>((tx) async {
       // 交易可能重跑；每一輪都重新決定，以最後一輪為準。
-      phase = '正在跑 body（讀取或寫入暫存）';
-      refused = await body(tx);
+      phase = '正在跑 body（還沒碰到 tx）';
+      refused = await body(_TrackedTransaction(tx, (p) => phase = p));
       phase = 'body 已做完，等伺服器提交';
     });
   } catch (e) {
-    throw StateError('$what：交易失敗（階段：$phase；錯誤類型：${e.runtimeType}）'
-        '${_detail(e)}');
+    throw StateError(
+      '$what：交易失敗（階段：$phase；錯誤類型：${e.runtimeType}）'
+      '${_detail(e)}',
+    );
   }
   final why = refused;
   if (why != null) throw StateError('$what：$why');
@@ -49,4 +51,56 @@ Future<void> guardedTransaction(
 String _detail(Object e) {
   final d = describeError(e);
   return d.isEmpty ? '' : '　$d';
+}
+
+/// 把 [Transaction] 包一層，**只記錄現在做到哪**，行為完全照轉。
+///
+/// body 裡的失敗原本只能說「正在跑 body」，分不出是讀文件、轉換讀到的資料、還是寫入
+/// （2026-10-17：所有交易都在 body 裡失敗，錯誤是一個空物件）。
+class _TrackedTransaction implements Transaction {
+  final Transaction _tx;
+  final void Function(String) _mark;
+  _TrackedTransaction(this._tx, this._mark);
+
+  @override
+  Future<DocumentSnapshot<T>> get<T extends Object?>(
+    DocumentReference<T> documentReference,
+  ) async {
+    _mark('tx.get 讀取 ${documentReference.path}');
+    final snap = await _tx.get(documentReference);
+    _mark('tx.get 已讀回 ${documentReference.path}，之後是轉換資料與判斷');
+    return snap;
+  }
+
+  @override
+  Transaction update(
+    DocumentReference documentReference,
+    Map<Object, Object?> data,
+  ) {
+    final what = '${documentReference.path}（欄位：${data.keys.join('、')}）';
+    _mark('tx.update 正在寫入 $what');
+    _tx.update(documentReference, data);
+    _mark('tx.update 已交給交易，還沒提交：$what');
+    return this;
+  }
+
+  @override
+  Transaction set<T>(
+    DocumentReference<T> documentReference,
+    T data, [
+    SetOptions? options,
+  ]) {
+    _mark('tx.set 寫入 ${documentReference.path}');
+    _tx.set(documentReference, data, options);
+    _mark('tx.set 已交給交易（還沒提交）');
+    return this;
+  }
+
+  @override
+  Transaction delete(DocumentReference documentReference) {
+    _mark('tx.delete 刪除 ${documentReference.path}');
+    _tx.delete(documentReference);
+    _mark('tx.delete 已交給交易（還沒提交）');
+    return this;
+  }
 }

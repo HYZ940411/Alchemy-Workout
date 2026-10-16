@@ -1464,6 +1464,14 @@ firebase deploy --only hosting
      ② `guardedTransaction` 失敗時標出**階段**（還沒進 body／正在跑 body／body 做完等提交）與錯誤類型，
      不再只有一個空物件。`test/guarded_transaction_test.dart` 增 4 條、`offline_cache_test.dart` 增 1 條，突變轉紅；
      全量 **2,945 passed**。
+   - **對照結果二（2026-10-17）：** `?nosettings=1`（完全不碰設定）**仍失敗** → 持久快取與 `settings =` 都排除；
+     規則（退回實驗）也排除。**新診斷回報：** `階段：正在跑 body（讀取或寫入暫存）；錯誤類型：JSObject；物件 類型=Object`
+     → 失敗在交易的 body 裡，丟出來的是一個沒有任何欄位的 JS 空物件。兩個交易（核准入隊、限時任務計分）共通點是
+     **都先 `tx.get` 讀同一種文件（團隊文件）**。
+   - **第三輪診斷（已寫、待部署）：** `guardedTransaction` 把交易包一層只記錄進度（行為照轉）：
+     失敗時階段會是「tx.get 讀取 teams/…」「tx.get 已讀回…之後是轉換資料與判斷」「tx.update 正在寫入…（欄位：…）」
+     「tx.update 已交給交易，還沒提交」之一。`guarded_transaction_test.dart` 共 19 條（新增 5 條），突變轉紅；
+     全量 **2,947 passed**。
    - **（舊）下一步：** 部署後請 123 對那筆（雲端上還在的）申請再按一次同意，讀「雲端寫入 → 核准入隊」那一行，
      才能知道真正的錯誤。可能的方向（未證實）：`guardedTransaction`（2026-10-15 我改的）在 Web 上的某個細節、
      交易裡的欄位形狀、或 `dropRequest`。

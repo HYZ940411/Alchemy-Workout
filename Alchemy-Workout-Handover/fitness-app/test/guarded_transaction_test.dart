@@ -115,16 +115,35 @@ void main() {
       );
     });
 
-    test('body 裡丟 → 階段寫「正在跑 body」', () async {
+    test('body 裡還沒碰 tx 就丟 → 階段寫「還沒碰到 tx」', () async {
       await expectLater(
         guardedTransaction(db, '做某事', (tx) async => throw 'body 壞了'),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('正在跑 body'),
-          ),
-        ),
+        throwsA(isA<StateError>().having(
+            (e) => e.message, 'message', contains('還沒碰到 tx'))),
+      );
+    });
+
+    test('讀完文件之後丟 → 階段寫「tx.get 已讀回」並帶文件路徑', () async {
+      await db.collection('x').doc('y').set({'v': 1});
+      await expectLater(
+        guardedTransaction(db, '做某事', (tx) async {
+          await tx.get(db.collection('x').doc('y'));
+          throw 'body 壞了';
+        }),
+        throwsA(isA<StateError>().having((e) => e.message, 'message',
+            allOf(contains('tx.get 已讀回 x/y'), contains('轉換資料與判斷')))),
+      );
+    });
+
+    test('寫入時丟 → 階段寫「tx.update 寫入」並帶路徑與欄位名', () async {
+      await db.collection('x').doc('y').set({'v': 1});
+      await expectLater(
+        guardedTransaction(db, '做某事', (tx) async {
+          tx.update(db.collection('x').doc('y'), {'members.u1': 1, 'peak': 2});
+          throw 'body 壞了';
+        }),
+        throwsA(isA<StateError>().having((e) => e.message, 'message',
+            allOf(contains('tx.update'), contains('x/y'), contains('members.u1')))),
       );
     });
 
