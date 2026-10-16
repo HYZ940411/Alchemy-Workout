@@ -10,6 +10,18 @@ const exerciseTypeNames = <ExerciseType, String>{
   ExerciseType.cardio: '有氧',
 };
 
+/// 徒手動作的體重係數（暫行規則）。
+///
+/// 規格：**徒手動作代入重量 ＝ 實際體重 × 該動作的體重係數 ＋ 外加負重**
+/// （伏地挺身 0.6、引體向上 1.0）。規格只給了這兩個例子，其餘 135 個徒手動作的係數
+/// 沒有人給過；之前程式一律當 1.0，伏地挺身等於整個體重都在推，單組分數比 60 kg 槓鈴臥推還高
+/// （2026-10-16 使用者回報「練個徒手動作加分超多」）。
+///
+/// 使用者裁決 B（2026-10-16）：先用簡單規則止血 —— 引體向上類 1.0，其餘徒手動作 0.6。
+/// **這是暫行值，不是逐動作校準過的**；逐動作的係數表待內容團隊給（見 PROGRESS `[QA-04]`）。
+const double kBodyweightFactorPullUp = 1.0;
+const double kBodyweightFactorDefault = 0.6;
+
 /// 動作庫的一筆動作。相對強度係數將不同動作拉到同一尺度。
 class Exercise {
   final String id;
@@ -40,6 +52,14 @@ class Exercise {
   /// 預設組間休息秒數 —— 動作層級屬性，不逐組設定。
   /// 平台動作庫由管理員於後台設定，自建動作由建立者設定；未設定者退回全站預設。
   final int? defaultRestSeconds;
+
+  /// 體重係數：算能力值時，徒手動作拿 `體重 × 這個係數` 當作推的重量（再加外加負重）。
+  /// 非徒手動作不用體重，固定 1.0 只是不讓它被誤用。暫行規則見 [kBodyweightFactorDefault]。
+  double get bodyweightFactor => !isBodyweight
+      ? 1.0
+      : (name.contains('引體向上')
+          ? kBodyweightFactorPullUp
+          : kBodyweightFactorDefault);
 
   /// 這個動作會出現在哪些肌群分頁。未指定訓練部位者退回所屬肌群。
   Set<Dim> get tabs => parts.isNotEmpty ? parts : (dim == null ? const {} : {dim!});

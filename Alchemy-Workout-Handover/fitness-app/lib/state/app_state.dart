@@ -1907,7 +1907,10 @@ class AppState extends ChangeNotifier {
       final pe = s.exercises[i];
       for (final r in s.records[i]) {
         if (r.state != SetState.done) continue;
-        final w = pe.exercise.isBodyweight ? bodyweightKg + r.weight : r.weight;
+        // 徒手動作：體重 × 體重係數 ＋ 外加負重（規格；暫行係數見 [Exercise.bodyweightFactor]）。
+        final w = pe.exercise.isBodyweight
+            ? bodyweightKg * pe.exercise.bodyweightFactor + r.weight
+            : r.weight;
         final score = measuredScore(
           weightKg: w,
           reps: r.reps,
