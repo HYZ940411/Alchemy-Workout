@@ -89,6 +89,27 @@ class _CustomPlanEditScreenState extends State<CustomPlanEditScreen> {
 
   bool get _canSave => _name.text.trim().isNotEmpty && _items.isNotEmpty;
 
+  /// 正在修改的是一份**已公開**的課表。
+  bool get _editingPublic => widget.initial?.state == CustomPlanState.public;
+
+  /// 儲存。**已公開的課表修改前要先確認** —— 一修改（連改名都算）就會重新送審，
+  /// 審核期間別人看不到它。以前沒有任何警告：使用者把已公開的課表改了名字，
+  /// 它就從全站消失了，而他不知道（2026-10-17 使用者測 Z5 時踩到）。
+  Future<void> _save() async {
+    if (_editingPublic) {
+      final ok = await showAppDialog(
+        context,
+        title: '修改後需要重新審核',
+        message: '這份課表已經公開。修改後會重新送審，審核期間其他人暫時看不到它，'
+            '通過後才會再公開。要繼續嗎？',
+        confirmLabel: '繼續修改',
+        cancelLabel: '先不要',
+      );
+      if (ok != true || !mounted) return;
+    }
+    Navigator.of(context).pop((name: _name.text.trim(), exercises: _toPlan()));
+  }
+
   /// 草稿轉為課表內容。有氧的目標時長借用 [PlannedSet.targetReps] 承載，
   /// 與課表選擇頁、訓練頁的既有慣例一致，不另立一種表示法。
   List<PlanExercise> _toPlan() => [
@@ -160,22 +181,18 @@ class _CustomPlanEditScreenState extends State<CustomPlanEditScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '儲存後為「已儲存」狀態，尚未啟用 —— '
-                  '要選來訓練，還須到自訂訓練頁按「發布」。',
+                  _editingPublic
+                      ? '這份課表已公開。修改並儲存後會重新送審，'
+                          '審核期間其他人暫時看不到它。'
+                      : '儲存後為「已儲存」狀態，尚未啟用 —— '
+                          '要選來訓練，還須到自訂訓練頁按「發布」。',
                   style: T.caption(),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: S.sm),
                 AppButton(
                   label: '儲存',
-                  onPressed: _canSave
-                      ? () => Navigator.of(context).pop(
-                            (
-                              name: _name.text.trim(),
-                              exercises: _toPlan()
-                            ),
-                          )
-                      : null,
+                  onPressed: _canSave ? _save : null,
                 ),
               ],
             ),
