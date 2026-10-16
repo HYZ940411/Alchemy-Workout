@@ -596,6 +596,8 @@ extension AppStateSnapshot on AppState {
             ? {
                 'day': _timedDayKey(),
                 'key': personKeyOf(displayName, myUid),
+                // 記在哪支隊伍的帳上；沒有隊伍是空字串。舊存檔沒有這個欄位。
+                'teamId': _timedDoneTeamId ?? '',
               }
             : null,
         'timedClaimedOn': timedRewardClaimed ? _timedDayKey() : null,
@@ -1109,6 +1111,7 @@ extension AppStateSnapshot on AppState {
         timedDone['day'] == _timedDayKey() &&
         timedDone['key'] is String) {
       timedTask.completedBy.add(timedDone['key'] as String);
+      _timedDoneTeamId = timedDone['teamId'] as String?;
     }
     timedRewardClaimed = pick<String>('timedClaimedOn') == _timedDayKey();
 

@@ -454,6 +454,10 @@ class _TimedTaskCard extends StatelessWidget {
             const SizedBox(height: S.md),
             Text('本日獎勵已領取。', style: T.caption()),
           ],
+          if (state.timedTaskError case final why?) ...[
+            const SizedBox(height: S.md),
+            Text(why, style: T.caption(color: C.statusError)),
+          ],
           if (!expired &&
               !t.doneBy(state.displayName, uid: state.myUid)) ...[
             const SizedBox(height: S.md),

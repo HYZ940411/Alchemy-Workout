@@ -4175,7 +4175,19 @@ class AppState extends ChangeNotifier {
     // **雲端說我今天完成過，本機就要知道。** 在此之前「我完成了」只活在記憶體裡，
     // 重新整理後按鈕又出現，可以再按一次、再領一次獎勵（2026-10-16 使用者回報）。
     final me = personKeyOf(displayName, myUid);
-    if (myTeam!.timedCredited.contains(me)) timedTask.completedBy.add(me);
+    if (myTeam!.timedCredited.contains(me)) {
+      timedTask.completedBy.add(me);
+      _timedDoneTeamId = t.id;
+    } else if (timedTask.completedBy.contains(me) &&
+        (_timedDoneTeamId == null || _timedDoneTeamId == t.id)) {
+      // **本機說我完成了，這支隊伍的雲端卻沒有我。** 兩種來源：完成時雲端寫入失敗
+      // （2026-10-17 交易壞掉那段時間留下的），或舊存檔。完成記在別支隊伍的
+      // （`_timedDoneTeamId` 是別隊的 id）、或完成時根本沒有隊伍的（空字串）不在此列 ——
+      // 那兩種的分數本來就不屬於這支隊伍，不能讓人再做一次刷。
+      // 撤銷之後按鈕回來，使用者可以再按一次。
+      timedTask.completedBy.remove(me);
+      _timedDoneTeamId = null;
+    }
     // **雲端說我已經在隊上，本機那筆「已送出的申請」就該消失。**
     // 一次只能屬於一個團隊，申請被核准後它已經沒有意義了 ——
     // 留著的話畫面會同時顯示「已加入」和「等隊長回應」。
@@ -4390,14 +4402,42 @@ class AppState extends ChangeNotifier {
   /// 不採自行回報 —— 可自行按鈕加分的排行榜不成立。
   void completeTimedTask() {
     if (timedTaskExpired || timedTask.doneBy(displayName, uid: myUid)) return;
-    timedTask.completedBy.add(personKeyOf(displayName, myUid));
+    final me = personKeyOf(displayName, myUid);
+    timedTask.completedBy.add(me);
+    timedTaskError = null;
     // 完成的當下記在當時所屬的隊帳上。中途加入者僅能貢獻加入後產生的分數，
     // 轉隊也不帶走舊團隊已貢獻的分數 —— 與團隊日常分數同一條規則。
     final t = myTeam;
+    _timedDoneTeamId = t?.id ?? '';
     if (t != null) {
-      _creditTimedLocally(t, personKeyOf(displayName, myUid));
-      _pushTeam('限時任務計分', (src, uid) => src.creditTimed(t.id, uid, _timedDayKey()));
+      final delta = _creditTimedLocally(t, me);
+      final attempted = teamSource != null;
+      _pushTeam('限時任務計分',
+              (src, uid) => src.creditTimed(t.id, uid, _timedDayKey()))
+          .then((r) {
+        // **雲端沒記上就要讓使用者能再按一次。** 以前本機先記成「已完成」就算了，
+        // 雲端失敗時按鈕消失、分數沒加，重新整理後也救不回來
+        // （2026-10-17 交易讀取壞掉時，使用者「沒辦法按完成」）。
+        if (attempted && !r.ok) _undoTimedCompletion(t, me, delta, r.why);
+      });
     }
+    notifyListeners();
+  }
+
+  /// 使用者看得到的限時任務錯誤（雲端沒記上時）。有值時卡片上要講。
+  String? timedTaskError;
+
+  /// 我這次完成記在哪一支隊伍的帳上：隊伍 id；完成當下沒有隊伍是空字串；
+  /// `null` 是舊存檔（還沒記這件事）。
+  String? _timedDoneTeamId;
+
+  void _undoTimedCompletion(Team t, String me, int delta, String? why) {
+    timedTask.completedBy.remove(me);
+    t.timedCredited.remove(me);
+    t.timedScore -= delta;
+    _timedDoneTeamId = null;
+    timedTaskError = '這次完成沒有記到雲端，請再按一次'
+        '${why == null || why.isEmpty ? '' : '（$why）'}';
     notifyListeners();
   }
 
@@ -4406,12 +4446,16 @@ class AppState extends ChangeNotifier {
   /// 同一個人只記一次 —— 記過了就不再加分。
   ///
   /// 雲端那邊的交易（`creditTimed`）算同一條規則；雲端的值回來時會取代這裡的。
-  void _creditTimedLocally(Team t, String key) {
-    if (!t.timedCredited.add(key)) return;
-    if (inRegroupWindow(now)) return;
+  ///
+  /// 回傳這次加了幾分（沒加就是 0），讓雲端沒記上時可以原樣撤銷。
+  int _creditTimedLocally(Team t, String key) {
+    if (!t.timedCredited.add(key)) return 0;
+    if (inRegroupWindow(now)) return 0;
     final allDone = t.members.isNotEmpty &&
         t.members.every((m) => t.timedCredited.contains(personKey(m.name, m.uid)));
-    t.timedScore += kTimedTaskPerMember + (allDone ? kTimedTaskAllBonus : 0);
+    final delta = kTimedTaskPerMember + (allDone ? kTimedTaskAllBonus : 0);
+    t.timedScore += delta;
+    return delta;
   }
   late List<PublicTeam> publicTeams = demo ? buildPublicTeams() : [];
 
@@ -12255,6 +12299,8 @@ class AppState extends ChangeNotifier {
     // 今日限時任務的完成與領取也是上一個人的。
     timedTask.completedBy.clear();
     timedRewardClaimed = false;
+    _timedDoneTeamId = null;
+    timedTaskError = null;
     session = null;
     workoutBegun = false;
     addedLoadOpen.clear();

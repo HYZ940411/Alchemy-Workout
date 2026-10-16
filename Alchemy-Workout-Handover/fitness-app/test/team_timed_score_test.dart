@@ -36,7 +36,11 @@ AppState _state() {
   final t = s.myTeam!;
   final i = t.members.indexWhere((m) => m.name == s.displayName);
   t.members[i] = TeamMember(
-      t.members[i].name, t.members[i].rank, t.members[i].role, uid: 'u-me');
+    t.members[i].name,
+    t.members[i].rank,
+    t.members[i].role,
+    uid: 'u-me',
+  );
   return s;
 }
 
@@ -50,6 +54,21 @@ String _day(AppState s) {
 Map<String, dynamic> _viaJson(AppState s) =>
     jsonDecode(jsonEncode(s.toSnapshot())) as Map<String, dynamic>;
 
+/// 雲端寫入可以指定失敗的隊伍來源（只有限時任務計分會被呼叫到）。
+class _FailingTeams implements TeamSource {
+  bool fail = true;
+  int credited = 0;
+
+  @override
+  Future<void> creditTimed(String teamId, String uid, String day) async {
+    if (fail) throw StateError('權限不足');
+    credited++;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   setUp(resetAppClock);
   tearDown(resetAppClock);
@@ -59,8 +78,11 @@ void main() {
       final s = _state();
       final before = s.myTeam!.timedScore;
       s.completeTimedTask();
-      expect(s.myTeam!.timedScore, before + kTimedTaskPerMember,
-          reason: '在此之前這個欄位永遠是原樣，排行榜的限時分數不會動');
+      expect(
+        s.myTeam!.timedScore,
+        before + kTimedTaskPerMember,
+        reason: '在此之前這個欄位永遠是原樣，排行榜的限時分數不會動',
+      );
     });
 
     test('隊友完成也加；全員完成的那一刻再加 50', () {
@@ -69,7 +91,9 @@ void main() {
       final before = t.timedScore;
       s.completeTimedTask();
       final others = t.members
-          .where((m) => !AppState.sameUser(m.name, m.uid, s.displayName, 'u-me'))
+          .where(
+            (m) => !AppState.sameUser(m.name, m.uid, s.displayName, 'u-me'),
+          )
           .toList();
       for (final m in others.take(others.length - 1)) {
         expect(s.teammateCompletesTimedTask(m.name, uid: m.uid), isTrue);
@@ -77,9 +101,11 @@ void main() {
       final beforeLast = t.timedScore;
       expect(beforeLast, before + kTimedTaskPerMember * (t.members.length - 1));
       s.teammateCompletesTimedTask(others.last.name, uid: others.last.uid);
-      expect(t.timedScore,
-          beforeLast + kTimedTaskPerMember + kTimedTaskAllBonus,
-          reason: '最後一位完成 → 全員完成，加成');
+      expect(
+        t.timedScore,
+        beforeLast + kTimedTaskPerMember + kTimedTaskAllBonus,
+        reason: '最後一位完成 → 全員完成，加成',
+      );
     });
 
     test('同一個人按兩次只加一次', () {
@@ -101,8 +127,11 @@ void main() {
       final t = s.myTeam!;
       final i = t.members.indexWhere((m) => m.name == s.displayName);
       t.members[i] = TeamMember(
-          t.members[i].name, t.members[i].rank, t.members[i].role,
-          uid: 'u-me');
+        t.members[i].name,
+        t.members[i].rank,
+        t.members[i].role,
+        uid: 'u-me',
+      );
       final before = t.timedScore;
       s.completeTimedTask();
       expect(t.timedScore, before);
@@ -128,21 +157,23 @@ void main() {
     FirestoreTeams as(String uid) => FirestoreTeams(uid: uid, firestore: db);
     setUp(() => db = FakeFirebaseFirestore());
 
-    Future<void> makeTeam() => as('a').create(CloudTeam(
-          id: 't1',
-          name: '測試隊',
-          members: {
-            for (final u in ['a', 'b', 'c'])
-              u: CloudMember(
-                  name: u.toUpperCase(),
-                  rank: 1,
-                  role: u == 'a' ? TeamRole.leader : TeamRole.member,
-                  joinedAt: DateTime(2026)),
-          },
-        ));
+    Future<void> makeTeam() => as('a').create(
+      CloudTeam(
+        id: 't1',
+        name: '測試隊',
+        members: {
+          for (final u in ['a', 'b', 'c'])
+            u: CloudMember(
+              name: u.toUpperCase(),
+              rank: 1,
+              role: u == 'a' ? TeamRole.leader : TeamRole.member,
+              joinedAt: DateTime(2026),
+            ),
+        },
+      ),
+    );
 
-    Future<int> score() async =>
-        (await as('a').myTeam())!.timedScore;
+    Future<int> score() async => (await as('a').myTeam())!.timedScore;
 
     test('每位成員加 10，全員完成再加 50', () async {
       await makeTeam();
@@ -189,31 +220,34 @@ void main() {
   });
 
   group('讀回雲端：分數與「我今天完成了」', () {
-    CloudTeam cloud(AppState s,
-            {int score = 80,
-            String? period,
-            String? day,
-            Set<String> credited = const {'u-me'}}) =>
-        CloudTeam(
-          id: 't1',
-          name: '雲端隊',
-          members: {
-            'u-me': CloudMember(
-                name: s.displayName,
-                rank: 1,
-                role: TeamRole.leader,
-                joinedAt: DateTime(2026)),
-            'u-2': CloudMember(
-                name: '隊友',
-                rank: 1,
-                role: TeamRole.member,
-                joinedAt: DateTime(2026)),
-          },
-          timedScore: score,
-          timedPeriod: period ?? _day(s).substring(0, 7),
-          timedDay: day ?? _day(s),
-          timedCredited: credited,
-        );
+    CloudTeam cloud(
+      AppState s, {
+      int score = 80,
+      String? period,
+      String? day,
+      Set<String> credited = const {'u-me'},
+    }) => CloudTeam(
+      id: 't1',
+      name: '雲端隊',
+      members: {
+        'u-me': CloudMember(
+          name: s.displayName,
+          rank: 1,
+          role: TeamRole.leader,
+          joinedAt: DateTime(2026),
+        ),
+        'u-2': CloudMember(
+          name: '隊友',
+          rank: 1,
+          role: TeamRole.member,
+          joinedAt: DateTime(2026),
+        ),
+      },
+      timedScore: score,
+      timedPeriod: period ?? _day(s).substring(0, 7),
+      timedDay: day ?? _day(s),
+      timedCredited: credited,
+    );
 
     test('本月的分數帶進來', () {
       final s = _state();
@@ -229,8 +263,11 @@ void main() {
 
     test('雲端說我今天完成過 → 本機知道，按鈕不再出現、不能再按', () {
       final s = _state();
-      expect(s.timedTask.doneBy(s.displayName, uid: 'u-me'), isFalse,
-          reason: '前提：重新整理後一開始是空的');
+      expect(
+        s.timedTask.doneBy(s.displayName, uid: 'u-me'),
+        isFalse,
+        reason: '前提：重新整理後一開始是空的',
+      );
       s.applyCloudTeam(cloud(s));
       expect(s.timedTask.doneBy(s.displayName, uid: 'u-me'), isTrue);
       final score = s.myTeam!.timedScore;
@@ -249,19 +286,20 @@ void main() {
     // 使用者截圖：團隊詳情頁（別人的隊）日常分數、限時分數都是 0 ——
     // 雲端有分數，但轉成清單項目時沒帶。
     CloudTeam other({String? period, int timed = 80}) => CloudTeam(
-          id: 't9',
-          name: '別人的隊',
-          members: {
-            'x': CloudMember(
-                name: '甲',
-                rank: 3,
-                role: TeamRole.leader,
-                joinedAt: DateTime(2026)),
-          },
-          contributions: const {'x': 30, 'y': 12},
-          timedScore: timed,
-          timedPeriod: period ?? _day(_state()).substring(0, 7),
-        );
+      id: 't9',
+      name: '別人的隊',
+      members: {
+        'x': CloudMember(
+          name: '甲',
+          rank: 3,
+          role: TeamRole.leader,
+          joinedAt: DateTime(2026),
+        ),
+      },
+      contributions: const {'x': 30, 'y': 12},
+      timedScore: timed,
+      timedPeriod: period ?? _day(_state()).substring(0, 7),
+    );
 
     test('日常分數是各成員貢獻的加總，限時分數是本月的', () {
       final s = _state();
@@ -281,17 +319,20 @@ void main() {
 
     test('自己的隊不在「別人的隊」裡', () {
       final s = _state();
-      s.applyCloudTeam(CloudTeam(
-        id: 't9',
-        name: '我的隊',
-        members: {
-          'u-me': CloudMember(
+      s.applyCloudTeam(
+        CloudTeam(
+          id: 't9',
+          name: '我的隊',
+          members: {
+            'u-me': CloudMember(
               name: s.displayName,
               rank: 1,
               role: TeamRole.leader,
-              joinedAt: DateTime(2026)),
-        },
-      ));
+              joinedAt: DateTime(2026),
+            ),
+          },
+        ),
+      );
       s.applyPublicTeams([other()]);
       expect(s.publicTeams, isEmpty);
     });
@@ -303,14 +344,155 @@ void main() {
       t.view.devicePixelRatio = 3.0;
       addTearDown(t.view.resetPhysicalSize);
       addTearDown(t.view.resetDevicePixelRatio);
-      await t.pumpWidget(AppScope(
-        state: s,
-        child: MaterialApp(
-            home: TeamDetailScreen(team: s.publicTeams.single)),
-      ));
+      await t.pumpWidget(
+        AppScope(
+          state: s,
+          child: MaterialApp(
+            home: TeamDetailScreen(team: s.publicTeams.single),
+          ),
+        ),
+      );
       await t.pumpAndSettle();
       expect(find.text('42'), findsOneWidget, reason: '日常分數');
       expect(find.text('80'), findsOneWidget, reason: '限時分數');
+    });
+  });
+
+  group('雲端沒記上要能再按一次（2026-10-17 「沒辦法按完成」）', () {
+    // 交易壞掉那段時間：本機先記成「已完成」，雲端寫入失敗，按鈕消失、分數沒加，
+    // 重新整理後也救不回來。
+    CloudTeam cloudWith(
+      AppState s, {
+      String id = 't1',
+      Set<String> credited = const {},
+    }) => CloudTeam(
+      id: id,
+      name: '雲端隊',
+      members: {
+        'u-me': CloudMember(
+          name: s.displayName,
+          rank: 1,
+          role: TeamRole.leader,
+          joinedAt: DateTime(2026),
+        ),
+        'u-2': CloudMember(
+          name: '隊友',
+          rank: 1,
+          role: TeamRole.member,
+          joinedAt: DateTime(2026),
+        ),
+      },
+      timedDay: _day(s),
+      timedCredited: credited,
+    );
+
+    test('雲端寫入失敗 → 撤銷本機的完成與分數，並說出原因；再按一次可以成功', () async {
+      final s = _state();
+      final src = _FailingTeams();
+      s.teamSource = src;
+      final team = s.myTeam!;
+      final before = team.timedScore;
+
+      s.completeTimedTask();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        s.timedTask.doneBy(s.displayName, uid: 'u-me'),
+        isFalse,
+        reason: '雲端沒記上，按鈕要回來',
+      );
+      expect(team.timedScore, before, reason: '本機先加的分數要一併撤銷');
+      expect(s.timedTaskError, contains('請再按一次'));
+
+      src.fail = false;
+      s.completeTimedTask();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(s.timedTask.doneBy(s.displayName, uid: 'u-me'), isTrue);
+      expect(s.timedTaskError, isNull);
+      expect(src.credited, 1);
+    });
+
+    test('沒接雲端（示範／測試）不會被撤銷', () async {
+      final s = _state();
+      s.completeTimedTask();
+      await Future<void>.delayed(Duration.zero);
+      expect(s.timedTask.doneBy(s.displayName, uid: 'u-me'), isTrue);
+      expect(s.timedTaskError, isNull);
+    });
+
+    AppState reloadWith(
+      Map<String, dynamic> Function(Map<String, dynamic>) f,
+      AppState from,
+    ) {
+      final snap = f(_viaJson(from));
+      final back = AppState()..myUid = 'u-me';
+      expect(back.applySnapshot(snap), isTrue);
+      return back;
+    }
+
+    test('卡住的舊狀態（舊存檔沒有 teamId，雲端這支隊沒有我）→ 載入後自癒，按鈕回來', () {
+      final s = _state();
+      s.completeTimedTask();
+      final back = reloadWith((j) {
+        (j['timedDone'] as Map).remove('teamId');
+        return j;
+      }, s);
+      expect(
+        back.timedTask.doneBy(back.displayName, uid: 'u-me'),
+        isTrue,
+        reason: '前提：存檔說已完成',
+      );
+      back.applyCloudTeam(cloudWith(back));
+      expect(
+        back.timedTask.doneBy(back.displayName, uid: 'u-me'),
+        isFalse,
+        reason: '雲端沒有我，本機的「已完成」撤銷，才按得了',
+      );
+    });
+
+    test('這支隊伍的雲端有我 → 維持已完成', () {
+      final s = _state();
+      s.completeTimedTask();
+      final back = reloadWith((j) => j, s);
+      back.applyCloudTeam(cloudWith(back, credited: {'u-me'}));
+      expect(back.timedTask.doneBy(back.displayName, uid: 'u-me'), isTrue);
+    });
+
+    test('完成記在別支隊伍的帳上 → 不自癒（不能換隊再刷一次）', () {
+      final s = _state();
+      s.completeTimedTask();
+      final back = reloadWith((j) {
+        (j['timedDone'] as Map)['teamId'] = '別支隊伍';
+        return j;
+      }, s);
+      back.applyCloudTeam(cloudWith(back, id: 't1'));
+      expect(back.timedTask.doneBy(back.displayName, uid: 'u-me'), isTrue);
+    });
+
+    test('完成當下沒有隊伍 → 不自癒（之後加入隊伍也不能再做一次）', () {
+      final s = _state();
+      s.completeTimedTask();
+      final back = reloadWith((j) {
+        (j['timedDone'] as Map)['teamId'] = '';
+        return j;
+      }, s);
+      back.applyCloudTeam(cloudWith(back));
+      expect(back.timedTask.doneBy(back.displayName, uid: 'u-me'), isTrue);
+    });
+
+    test('存檔記著完成當時的隊伍 id', () {
+      final s = _state();
+      s.completeTimedTask();
+      expect((_viaJson(s)['timedDone'] as Map)['teamId'], s.myTeam!.id);
+    });
+
+    test('換帳號：撤銷用的紀錄不留給下一個人', () {
+      final s = _state();
+      s.completeTimedTask();
+      s.endSession();
+      expect(s.timedTaskError, isNull);
     });
   });
 
@@ -325,8 +507,11 @@ void main() {
       final s = _state();
       s.completeTimedTask();
       final back = reload(s);
-      expect(back.timedTask.doneBy(back.displayName, uid: 'u-me'), isTrue,
-          reason: '在此之前重新整理就忘了，「開始限時任務」又出現');
+      expect(
+        back.timedTask.doneBy(back.displayName, uid: 'u-me'),
+        isTrue,
+        reason: '在此之前重新整理就忘了，「開始限時任務」又出現',
+      );
     });
 
     test('領過獎勵後重新整理：不能再領一次（刷點數）', () {
