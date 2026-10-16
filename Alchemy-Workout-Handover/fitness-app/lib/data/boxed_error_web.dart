@@ -33,6 +33,12 @@ String? jsErrorText(Object e) {
     }
     if (parts.isNotEmpty) return parts.join('　');
 
+    // code／name／message 都沒有：把這個物件**整個倒出來**看有什麼。
+    // 2026-10-17 隊長核准入隊，寫入報告只有「失敗：[object Object]」，
+    // 前面那三個欄位一個都讀不到，連是什麼東西都看不出來。
+    final dump = _dumpObject(target);
+    if (dump != null) return '物件 $dump';
+
     // 什麼都讀不到時回空值，讓 [describeError] 去走 Dart 那一側 ——
     // **不要回那句樣板話，也不要回 `[object Object]`**，
     // 那兩種都等於沒說。使用者 2026-09-30 第五輪拿到的就是後者。
@@ -43,6 +49,35 @@ String? jsErrorText(Object e) {
   } catch (_) {
     return null;
   }
+}
+
+/// 把一個 JS 物件的內容倒成一句字：建構子名稱 ＋ JSON ＋ 全部自有屬性名。
+/// 全部讀不到才回空值。整段包在 try 裡，倒不出來不能讓診斷本身炸掉。
+String? _dumpObject(JSObject o) {
+  final parts = <String>[];
+  try {
+    final ctor = o['constructor'];
+    if (ctor != null) {
+      final name = (ctor as JSObject)['name'];
+      if (name != null) parts.add('類型=$name');
+    }
+  } catch (_) {}
+  try {
+    final json = globalContext['JSON'] as JSObject;
+    final s = json.callMethod<JSAny?>('stringify'.toJS, o);
+    final str = s?.toString();
+    if (str != null && str.isNotEmpty && str != 'undefined' && str != '{}') {
+      parts.add('JSON=$str');
+    }
+  } catch (_) {}
+  try {
+    final objectCtor = globalContext['Object'] as JSObject;
+    final names =
+        objectCtor.callMethod<JSArray<JSString>>('getOwnPropertyNames'.toJS, o);
+    final list = [for (final n in names.toDart) n.toDart];
+    if (list.isNotEmpty) parts.add('欄位=${list.join(',')}');
+  } catch (_) {}
+  return parts.isEmpty ? null : parts.join('　');
 }
 
 /// `is JSObject` 在 JS 互通型別上不保證跨平台一致，官方要求用 `isA`。

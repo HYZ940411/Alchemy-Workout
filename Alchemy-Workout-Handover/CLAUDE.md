@@ -70,8 +70,8 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 ```bash
 flutter analyze                          # 應該完全乾淨
 flutter test --timeout 90s               # 2,938 passed
-flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart
-                                         # 17 passed，需要 Chrome
+flutter test --platform chrome test/web_smoke_test.dart test/store_web_test.dart test/boxed_error_dump_web_test.dart
+                                         # 20 passed，需要 Chrome
 flutter build macos --release
 ./tools/build_web.sh                     # Web 建置，不要用 flutter build web
 ```
