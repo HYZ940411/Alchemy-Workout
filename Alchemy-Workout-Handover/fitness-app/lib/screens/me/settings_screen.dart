@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../build_stamp.dart';
 import '../../data/auth.dart';
 import '../../data/firestore_setup.dart';
+import '../../data/guarded_transaction.dart' show fallbackCount, lastFallbackNote;
 import '../../domain/registration.dart';
 import '../../mock/mock_data.dart';
 import '../../mock/mock_equipment.dart';
@@ -769,6 +770,15 @@ class SettingsScreen extends StatelessWidget {
                               ? C.statusError
                               : AppColors.textFaint,
                         ),
+                      ),
+                    // 交易的讀取壞掉、改走「一般讀取＋批次寫入」的次數。
+                    // 這條路沒有交易的併發保證，不能悄悄地用。
+                    if (fallbackCount > 0)
+                      Text(
+                        '交易讀取壞了，改用一般讀取＋批次寫入　$fallbackCount 次'
+                        '${lastFallbackNote == null ? '' : '\n$lastFallbackNote'}',
+                        style: const TextStyle(
+                            fontSize: 11.5, color: AppColors.textFaint),
                       ),
                   ],
                 ),

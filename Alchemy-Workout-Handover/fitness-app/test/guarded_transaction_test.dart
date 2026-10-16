@@ -166,26 +166,73 @@ void main() {
       );
     });
 
-    test('交易自己的讀取失敗 → 附上「一般讀取」對照結果', () async {
+    test('交易自己的讀取壞掉 → 改用一般讀取＋批次寫入，同一個 body 照樣完成', () async {
       final bad = _GetFailsDb();
-      await bad.collection('teams').doc('t1').set({'v': 1});
+      await bad.collection('teams').doc('t1').set({'n': 1});
+      final before = fallbackCount;
+      await guardedTransaction(bad, '加入團隊', (tx) async {
+        final snap = await tx.get(bad.collection('teams').doc('t1'));
+        tx.update(bad.collection('teams').doc('t1'), {
+          'n': (snap.data()!['n'] as int) + 1,
+        });
+        return null;
+      });
+      expect(
+        (await bad.collection('teams').doc('t1').get()).data(),
+        {'n': 2},
+        reason: '以前這裡直接失敗，隊長按同意看似成功、雲端什麼都沒變',
+      );
+      expect(fallbackCount, before + 1);
+      expect(lastFallbackNote, contains('已改用一般讀取'));
+    });
+
+    test('退路裡守衛不成立 → 照樣是原本那句拒絕，而且什麼都不寫', () async {
+      final bad = _GetFailsDb();
+      await bad.collection('teams').doc('t1').set({'n': 1});
       await expectLater(
         guardedTransaction(bad, '加入團隊', (tx) async {
           await tx.get(bad.collection('teams').doc('t1'));
+          tx.update(bad.collection('teams').doc('t1'), {'n': 99});
+          return '隊伍已滿（5 人）';
+        }),
+        refusal('加入團隊：隊伍已滿（5 人）'),
+      );
+      expect(
+        (await bad.collection('teams').doc('t1').get()).data(),
+        {'n': 1},
+        reason: '守衛說不行，就不能把寫入送出去',
+      );
+    });
+
+    test('退路也失敗 → 兩段的原因都說出來', () async {
+      final bad = _GetFailsDb();
+      await expectLater(
+        guardedTransaction(bad, '加入團隊', (tx) async {
+          await tx.get(bad.collection('teams').doc('不存在'));
+          tx.update(bad.collection('teams').doc('不存在'), {'n': 1});
           return null;
         }),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
             'message',
-            allOf(
-              contains('tx.get 讀取 teams/t1'),
-              contains('對照'),
-              contains('一般讀取・伺服器：成功'),
-            ),
+            allOf(contains('交易失敗'), contains('改用一般讀取也失敗')),
           ),
         ),
       );
+    });
+
+    test('不是讀取壞掉的失敗不走退路（提交、寫入失敗照舊直接說出口）', () async {
+      final before = fallbackCount;
+      await expectLater(
+        guardedTransaction(
+          _ThrowingDb(throwBeforeBody: false),
+          '做某事',
+          (tx) async => null,
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(fallbackCount, before);
     });
 
     test('寫入時丟 → 階段寫「tx.update 寫入」並帶路徑與欄位名', () async {

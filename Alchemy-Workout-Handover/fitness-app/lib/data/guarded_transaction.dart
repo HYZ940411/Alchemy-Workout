@@ -22,6 +22,11 @@ import 'http_error.dart';
 /// 要改的只有「失敗怎麼說出口」。
 ///
 /// 要帶出交易裡算的值，用 closure 變數，不要靠 `runTransaction` 的回傳值。
+/// 交易的讀取壞掉、改走「一般讀取＋批次寫入」的次數與最近一次的說明。
+/// 設定頁的開發者模式看得到 —— 這條路沒有交易的併發保證，不能悄悄地用。
+int fallbackCount = 0;
+String? lastFallbackNote;
+
 Future<void> guardedTransaction(
   FirebaseFirestore db,
   String what,
@@ -45,39 +50,36 @@ Future<void> guardedTransaction(
       phase = 'body 已做完，等伺服器提交';
     });
   } catch (e) {
-    // 失敗在交易自己的讀取：再用「一般讀取」讀同一份文件，看是不是只有交易的讀取壞了。
-    // 交易的讀取走一條獨立的單次請求；一般讀取走長連線。兩者結果不同，
-    // 就知道問題在那條單次請求的路上，而不是文件、規則或我們的程式。
-    final probe = (readingPath != null && phase.startsWith('tx.get 讀取'))
-        ? '　［對照：${await _probe(db, readingPath!)}］'
-        : '';
+    // 交易自己的讀取壞了（2026-10-17：網頁上 `tx.get` 丟出一個沒有內容的物件，
+    // 而一般讀取同一份文件是好的）：改用「一般讀取 ＋ 一次批次寫入」把同一個 body 跑一遍。
+    // 判斷邏輯一字不改，只是少了「讀到提交之間沒人動過」的保證 ——
+    // 這只在交易的讀取壞掉時才走，平常照舊用交易。
+    if (readingPath != null && phase.startsWith('tx.get 讀取')) {
+      final first = '階段：$phase；錯誤類型：${e.runtimeType}${_detail(e)}';
+      try {
+        final batchTx = _BatchTransaction(db);
+        final why = await body(batchTx);
+        if (why == null) await batchTx.commit();
+        fallbackCount++;
+        lastFallbackNote = '$what：交易的讀取壞了（$first），已改用一般讀取＋批次寫入完成';
+        if (why != null) throw StateError('$what：$why');
+        return;
+      } on StateError {
+        rethrow; // 守衛不成立的正常拒絕，照原樣說出口
+      } catch (e2) {
+        throw StateError(
+          '$what：交易失敗（$first）；改用一般讀取也失敗'
+          '（${e2.runtimeType}）${_detail(e2)}',
+        );
+      }
+    }
     throw StateError(
       '$what：交易失敗（階段：$phase；錯誤類型：${e.runtimeType}）'
-      '${_detail(e)}$probe',
+      '${_detail(e)}',
     );
   }
   final why = refused;
   if (why != null) throw StateError('$what：$why');
-}
-
-/// 用一般讀取讀同一份文件，各限 8 秒，回報成敗。診斷用，只在交易自己的讀取失敗時才跑。
-Future<String> _probe(FirebaseFirestore db, String path) async {
-  final out = <String>[];
-  Future<void> one(String label, Future<void> Function() f) async {
-    try {
-      await f().timeout(const Duration(seconds: 8));
-      out.add('$label：成功');
-    } catch (e) {
-      out.add('$label：失敗（${e.runtimeType}）${describeError(e)}');
-    }
-  }
-
-  await one(
-    '一般讀取・伺服器',
-    () => db.doc(path).get(const GetOptions(source: Source.server)),
-  );
-  await one('一般讀取・預設', () => db.doc(path).get());
-  return out.join('；');
 }
 
 String _detail(Object e) {
@@ -136,6 +138,45 @@ class _TrackedTransaction implements Transaction {
     _mark('tx.delete 刪除 ${documentReference.path}');
     _tx.delete(documentReference);
     _mark('tx.delete 已交給交易（還沒提交）');
+    return this;
+  }
+}
+
+/// 「一般讀取＋批次寫入」版的 [Transaction]：讀直接問伺服器，寫先收集、最後一次送出。
+/// 只在交易自己的讀取壞掉時當退路用（見 [guardedTransaction]）。
+class _BatchTransaction implements Transaction {
+  final WriteBatch _batch;
+  _BatchTransaction(FirebaseFirestore db) : _batch = db.batch();
+
+  Future<void> commit() => _batch.commit();
+
+  @override
+  Future<DocumentSnapshot<T>> get<T extends Object?>(
+    DocumentReference<T> documentReference,
+  ) => documentReference.get(const GetOptions(source: Source.server));
+
+  @override
+  Transaction update(
+    DocumentReference documentReference,
+    Map<Object, Object?> data,
+  ) {
+    _batch.update(documentReference, data);
+    return this;
+  }
+
+  @override
+  Transaction set<T>(
+    DocumentReference<T> documentReference,
+    T data, [
+    SetOptions? options,
+  ]) {
+    _batch.set(documentReference, data, options);
+    return this;
+  }
+
+  @override
+  Transaction delete(DocumentReference documentReference) {
+    _batch.delete(documentReference);
     return this;
   }
 }
