@@ -31,21 +31,53 @@ Future<void> guardedTransaction(
   // 失敗發生在哪一段：交易根本沒開始、body 裡（讀或寫）、還是 body 做完等提交時。
   // 2026-10-17 所有交易都失敗，錯誤只有一個沒有內容的物件，連是哪一段壞的都看不出來。
   var phase = '交易還沒開始（還沒進到 body）';
+  String? readingPath;
   try {
     await db.runTransaction<void>((tx) async {
       // 交易可能重跑；每一輪都重新決定，以最後一輪為準。
       phase = '正在跑 body（還沒碰到 tx）';
-      refused = await body(_TrackedTransaction(tx, (p) => phase = p));
+      refused = await body(
+        _TrackedTransaction(tx, (p, {String? reading}) {
+          phase = p;
+          if (reading != null) readingPath = reading;
+        }),
+      );
       phase = 'body 已做完，等伺服器提交';
     });
   } catch (e) {
+    // 失敗在交易自己的讀取：再用「一般讀取」讀同一份文件，看是不是只有交易的讀取壞了。
+    // 交易的讀取走一條獨立的單次請求；一般讀取走長連線。兩者結果不同，
+    // 就知道問題在那條單次請求的路上，而不是文件、規則或我們的程式。
+    final probe = (readingPath != null && phase.startsWith('tx.get 讀取'))
+        ? '　［對照：${await _probe(db, readingPath!)}］'
+        : '';
     throw StateError(
       '$what：交易失敗（階段：$phase；錯誤類型：${e.runtimeType}）'
-      '${_detail(e)}',
+      '${_detail(e)}$probe',
     );
   }
   final why = refused;
   if (why != null) throw StateError('$what：$why');
+}
+
+/// 用一般讀取讀同一份文件，各限 8 秒，回報成敗。診斷用，只在交易自己的讀取失敗時才跑。
+Future<String> _probe(FirebaseFirestore db, String path) async {
+  final out = <String>[];
+  Future<void> one(String label, Future<void> Function() f) async {
+    try {
+      await f().timeout(const Duration(seconds: 8));
+      out.add('$label：成功');
+    } catch (e) {
+      out.add('$label：失敗（${e.runtimeType}）${describeError(e)}');
+    }
+  }
+
+  await one(
+    '一般讀取・伺服器',
+    () => db.doc(path).get(const GetOptions(source: Source.server)),
+  );
+  await one('一般讀取・預設', () => db.doc(path).get());
+  return out.join('；');
 }
 
 String _detail(Object e) {
@@ -59,14 +91,17 @@ String _detail(Object e) {
 /// （2026-10-17：所有交易都在 body 裡失敗，錯誤是一個空物件）。
 class _TrackedTransaction implements Transaction {
   final Transaction _tx;
-  final void Function(String) _mark;
+  final void Function(String, {String? reading}) _mark;
   _TrackedTransaction(this._tx, this._mark);
 
   @override
   Future<DocumentSnapshot<T>> get<T extends Object?>(
     DocumentReference<T> documentReference,
   ) async {
-    _mark('tx.get 讀取 ${documentReference.path}');
+    _mark(
+      'tx.get 讀取 ${documentReference.path}',
+      reading: documentReference.path,
+    );
     final snap = await _tx.get(documentReference);
     _mark('tx.get 已讀回 ${documentReference.path}，之後是轉換資料與判斷');
     return snap;

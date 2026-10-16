@@ -6,7 +6,8 @@
 
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart' show TransactionHandler;
+import 'package:cloud_firestore/cloud_firestore.dart'
+    show DocumentReference, DocumentSnapshot, Transaction, TransactionHandler;
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -35,6 +36,26 @@ class _ThrowingDb extends FakeFirebaseFirestore {
     );
     throw Object();
   }
+}
+
+/// 交易自己的讀取一定失敗（丟一個沒有內容的物件），一般讀取仍然可用。
+class _GetFailsDb extends FakeFirebaseFirestore {
+  @override
+  Future<T> runTransaction<T>(
+    TransactionHandler<T> transactionHandler, {
+    Duration timeout = const Duration(seconds: 30),
+    int maxAttempts = 5,
+  }) => transactionHandler(_FailingTx() as Transaction);
+}
+
+class _FailingTx implements Transaction {
+  @override
+  Future<DocumentSnapshot<T>> get<T extends Object?>(
+    DocumentReference<T> documentReference,
+  ) => Future<DocumentSnapshot<T>>.error(Object());
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
@@ -118,8 +139,13 @@ void main() {
     test('body 裡還沒碰 tx 就丟 → 階段寫「還沒碰到 tx」', () async {
       await expectLater(
         guardedTransaction(db, '做某事', (tx) async => throw 'body 壞了'),
-        throwsA(isA<StateError>().having(
-            (e) => e.message, 'message', contains('還沒碰到 tx'))),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('還沒碰到 tx'),
+          ),
+        ),
       );
     });
 
@@ -130,8 +156,35 @@ void main() {
           await tx.get(db.collection('x').doc('y'));
           throw 'body 壞了';
         }),
-        throwsA(isA<StateError>().having((e) => e.message, 'message',
-            allOf(contains('tx.get 已讀回 x/y'), contains('轉換資料與判斷')))),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('tx.get 已讀回 x/y'), contains('轉換資料與判斷')),
+          ),
+        ),
+      );
+    });
+
+    test('交易自己的讀取失敗 → 附上「一般讀取」對照結果', () async {
+      final bad = _GetFailsDb();
+      await bad.collection('teams').doc('t1').set({'v': 1});
+      await expectLater(
+        guardedTransaction(bad, '加入團隊', (tx) async {
+          await tx.get(bad.collection('teams').doc('t1'));
+          return null;
+        }),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('tx.get 讀取 teams/t1'),
+              contains('對照'),
+              contains('一般讀取・伺服器：成功'),
+            ),
+          ),
+        ),
       );
     });
 
@@ -142,8 +195,17 @@ void main() {
           tx.update(db.collection('x').doc('y'), {'members.u1': 1, 'peak': 2});
           throw 'body 壞了';
         }),
-        throwsA(isA<StateError>().having((e) => e.message, 'message',
-            allOf(contains('tx.update'), contains('x/y'), contains('members.u1')))),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('tx.update'),
+              contains('x/y'),
+              contains('members.u1'),
+            ),
+          ),
+        ),
       );
     });
 
