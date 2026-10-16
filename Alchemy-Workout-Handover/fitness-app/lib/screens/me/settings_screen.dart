@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import '../../build_stamp.dart';
 import '../../data/auth.dart';
 import '../../data/firestore_setup.dart';
-import '../../data/guarded_transaction.dart' show fallbackCount, lastFallbackNote;
+import '../../data/guarded_transaction.dart'
+    show fallbackCount, lastFallbackNote, probeTransactionRead;
 import '../../domain/registration.dart';
 import '../../mock/mock_data.dart';
 import '../../mock/mock_equipment.dart';
@@ -359,6 +360,46 @@ class SettingsScreen extends StatelessWidget {
             // 建置戳記。使用者回報「某功能沒生效」時，第一個要排除的是
             // 「他在舊版上測」—— 在此之前沒有任何辦法分辨那兩件事，
             // 而它們的下一步完全相反。
+            // 診斷：網頁版交易的讀取（tx.get）從 2026-10-17 起丟出空物件。
+            // 只讀一份文件、不寫任何東西，可以隨時重做；配合網址參數（?longpoll=force 等）比對。
+            const SectionLabel('交易讀取測試', trailing: '開發者模式'),
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '只用交易讀一份文件，不寫任何東西。成功代表交易的讀取正常。',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.textFaint),
+                  ),
+                  const SizedBox(height: 8),
+                  AppButton(
+                    label: '測試交易讀取',
+                    kind: BtnKind.secondary,
+                    onPressed: () async {
+                      final path = s.myTeam != null
+                          ? 'teams/${s.myTeam!.id}'
+                          : (s.myUid != null ? 'public_profiles/${s.myUid}' : null);
+                      s.setTransactionProbeResult(path == null
+                          ? '沒有可讀的文件（還沒登入）'
+                          : await probeTransactionRead(
+                              FirebaseFirestore.instance, path));
+                    },
+                  ),
+                  if (s.transactionProbeResult != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      s.transactionProbeResult!,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: s.transactionProbeResult!.startsWith('成功')
+                            ? AppColors.textFaint
+                            : C.statusError,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
             const SectionLabel('版本', trailing: '開發者模式'),
             Panel(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

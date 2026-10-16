@@ -4424,6 +4424,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 設定頁開發者模式「交易讀取測試」最近一次的結果。診斷用。
+  String? transactionProbeResult;
+
+  void setTransactionProbeResult(String r) {
+    transactionProbeResult = r;
+    notifyListeners();
+  }
+
   /// 使用者看得到的限時任務錯誤（雲端沒記上時）。有值時卡片上要講。
   String? timedTaskError;
 

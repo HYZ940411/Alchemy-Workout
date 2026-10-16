@@ -80,6 +80,10 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    // scrollUntilVisible 只保證它在樹裡，不保證在螢幕內；設定頁加了一塊診斷面板之後，
+    // 這顆鍵剛好落在 600 高的測試畫面外，點下去落空。先確保它真的在畫面內再點。
+    await t.ensureVisible(find.text('重設互動計數'));
+    await t.pumpAndSettle();
     await t.tap(find.text('重設互動計數'));
     await t.pumpAndSettle();
     expect(find.textContaining('已經解鎖的成就不會被收回'), findsOneWidget);

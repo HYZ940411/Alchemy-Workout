@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'local_cache_reset_stub.dart'
-    if (dart.library.js_interop) 'local_cache_reset_web.dart' as impl;
+    if (dart.library.js_interop) 'local_cache_reset_web.dart'
+    as impl;
 
 /// 打開 Firestore 的本機持久快取。**必須在第一次用 Firestore 之前呼叫。**
 ///
@@ -15,15 +16,36 @@ import 'local_cache_reset_stub.dart'
 /// [enabled] 為假時明確關掉。**只給診斷用**：2026-10-17 打開持久快取之後，所有用交易的功能
 /// （核准入隊、限時任務計分）都失敗，要能在同一版上對照「開／關」。
 /// 網址加 `?nopersist=1` 就是關（見 [persistenceWanted]）。
-void configureFirestorePersistence(FirebaseFirestore db,
-    {bool enabled = true}) {
-  db.settings = enabled
-      ? const Settings(
-          persistenceEnabled: true,
-          webPersistentTabManager: WebPersistentMultipleTabManager(),
-        )
-      : const Settings(persistenceEnabled: false);
+void configureFirestorePersistence(
+  FirebaseFirestore db, {
+  bool enabled = true,
+  LongPolling longPolling = LongPolling.off,
+}) {
+  db.settings = Settings(
+    persistenceEnabled: enabled,
+    webPersistentTabManager: enabled
+        ? const WebPersistentMultipleTabManager()
+        : null,
+    // 診斷用：某些代理、防毒、瀏覽器會把串流回應一直緩衝住，交易的讀取就壞掉。
+    // 長輪詢每個回應送完就關，繞過那種緩衝（代價是效能略差）。
+    webExperimentalForceLongPolling: longPolling == LongPolling.force
+        ? true
+        : null,
+    webExperimentalAutoDetectLongPolling: longPolling == LongPolling.auto
+        ? true
+        : null,
+  );
 }
+
+/// 網址 `?longpoll=force` 或 `?longpoll=auto`。診斷用；預設不動。
+enum LongPolling { off, force, auto }
+
+LongPolling longPollingWanted([Uri? url]) =>
+    switch ((url ?? Uri.base).queryParameters['longpoll']) {
+      'force' => LongPolling.force,
+      'auto' => LongPolling.auto,
+      _ => LongPolling.off,
+    };
 
 /// 這次載入要不要打開持久快取。預設要；網址帶 `?nopersist=1` 就不要。
 bool persistenceWanted([Uri? url]) =>

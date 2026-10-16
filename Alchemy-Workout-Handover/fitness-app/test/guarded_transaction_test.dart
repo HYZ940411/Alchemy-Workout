@@ -235,6 +235,20 @@ void main() {
       expect(fallbackCount, before);
     });
 
+    test('診斷用的交易讀取測試：讀得到就回成功，什麼都不寫', () async {
+      await db.collection('teams').doc('t1').set({'v': 1});
+      final r = await probeTransactionRead(db, 'teams/t1');
+      expect(r, startsWith('成功'));
+      expect((await db.collection('teams').doc('t1').get()).data(), {'v': 1});
+    });
+
+    test('診斷用的交易讀取測試：交易的讀取壞掉就回失敗並帶階段', () async {
+      final bad = _GetFailsDb();
+      final r = await probeTransactionRead(bad, 'teams/t1');
+      expect(r, startsWith('失敗'));
+      expect(r, contains('tx.get 讀取 teams/t1'));
+    });
+
     test('寫入時丟 → 階段寫「tx.update 寫入」並帶路徑與欄位名', () async {
       await db.collection('x').doc('y').set({'v': 1});
       await expectLater(

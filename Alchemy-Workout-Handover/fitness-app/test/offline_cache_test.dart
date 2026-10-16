@@ -101,6 +101,33 @@ void main() {
       );
     });
 
+    test('長輪詢診斷開關：?longpoll=force／auto 才開，其他一律不動', () {
+      expect(longPollingWanted(Uri.parse('https://x.web.app/')), LongPolling.off);
+      expect(longPollingWanted(Uri.parse('https://x.web.app/?longpoll=force')),
+          LongPolling.force);
+      expect(longPollingWanted(Uri.parse('https://x.web.app/?longpoll=auto')),
+          LongPolling.auto);
+      expect(longPollingWanted(Uri.parse('https://x.web.app/?longpoll=亂寫')),
+          LongPolling.off);
+    });
+
+    test('長輪詢開關真的送進 Firestore 設定，預設不碰', () {
+      final off = _RecordingDb();
+      configureFirestorePersistence(off);
+      expect(off.got!.webExperimentalForceLongPolling, isNull);
+      expect(off.got!.webExperimentalAutoDetectLongPolling, isNull);
+
+      final force = _RecordingDb();
+      configureFirestorePersistence(force, longPolling: LongPolling.force);
+      expect(force.got!.webExperimentalForceLongPolling, isTrue);
+      expect(force.got!.persistenceEnabled, isTrue, reason: '兩個開關互不影響');
+
+      final auto = _RecordingDb();
+      configureFirestorePersistence(auto, longPolling: LongPolling.auto);
+      expect(auto.got!.webExperimentalAutoDetectLongPolling, isTrue);
+      expect(auto.got!.webExperimentalForceLongPolling, isNull);
+    });
+
     test('關掉時明確設成不持久（不是不設定）', () {
       final db = _RecordingDb();
       configureFirestorePersistence(db, enabled: false);

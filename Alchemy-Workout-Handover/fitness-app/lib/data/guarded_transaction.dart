@@ -180,3 +180,22 @@ class _BatchTransaction implements Transaction {
     return this;
   }
 }
+
+/// **診斷用**：只用交易讀一份文件（不寫任何東西），回報成敗與階段。
+///
+/// 網頁版交易的讀取（`tx.get`）在 2026-10-17 起丟出空物件，而一般讀取正常；
+/// 而正式流程現在有退路，會蓋掉這個失敗，所以需要一個**可以隨時重做、不依賴任何資料狀態**
+/// 的測法，用來比對網址參數（長輪詢等）有沒有讓交易的讀取恢復正常。
+Future<String> probeTransactionRead(FirebaseFirestore db, String path) async {
+  var phase = '交易還沒開始';
+  try {
+    await db.runTransaction<void>((tx) async {
+      phase = 'tx.get 讀取 $path';
+      await tx.get(db.doc(path));
+      phase = '已讀回，等提交';
+    });
+    return '成功：交易的讀取正常（$path）';
+  } catch (e) {
+    return '失敗（階段：$phase；錯誤類型：${e.runtimeType}）${_detail(e)}';
+  }
+}
