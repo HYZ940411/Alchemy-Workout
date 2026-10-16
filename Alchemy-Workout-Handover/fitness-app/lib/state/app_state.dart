@@ -619,6 +619,27 @@ class AppState extends ChangeNotifier {
 
   // --- 訓練進行中 ---
   WorkoutSession? session;
+
+  /// 使用者**按下「開始訓練」了**。
+  ///
+  /// [session] 在選課表時就產生（AI 訓練前調整改的是它），所以光有 session
+  /// 不代表人正在練。只有這個旗標為真的訓練才會進存檔、重新整理後自動跳回去 ——
+  /// 否則只是點進課表詳情頁看一眼，重新整理後就被丟進一場沒開始的訓練。
+  bool workoutBegun = false;
+
+  /// 存檔裡讀回一場進行中的訓練，畫面還沒帶使用者回去。
+  /// 首頁讀走它（[takeWorkoutResume]）並跳到訓練頁 —— 只跳一次。
+  bool _workoutResumePending = false;
+
+  /// 該不該把使用者帶回進行中的訓練？回真的同時把待辦清掉。
+  ///
+  /// 不能直接看 `session != null && workoutBegun`：按下「開始訓練」自己就會
+  /// 讓兩個條件成立，而那條路徑已經在跳訓練頁了，再跳一次會疊兩層。
+  bool takeWorkoutResume() {
+    if (!_workoutResumePending) return false;
+    _workoutResumePending = false;
+    return session != null && workoutBegun;
+  }
   DateTime? restEndsAt;
 
   /// 本次休息的總秒數 —— 圓環進度需要它才算得出剩餘比例。
@@ -1577,11 +1598,22 @@ class AppState extends ChangeNotifier {
       now,
       targets: [for (final pe in plan.exercises) _snapshotTargets(pe)],
     );
+    workoutBegun = false;
     restEndsAt = null;
     lastSetCompletedAt = null;
     _lastIntervalWasFast = false;
     blockedUntil = null;
     sessionEquipmentUnlocked = false;
+    notifyListeners();
+  }
+
+  /// 按下「開始訓練」：產生（或沿用）本次訓練快照，並標記為進行中。
+  ///
+  /// **這一標記讓訓練進存檔。** 在此之前整場訓練只活在記憶體裡，
+  /// 練到一半重新整理網頁，那場訓練就不見了（2026-10-16 使用者回報）。
+  void beginWorkout(WorkoutPlan plan) {
+    startWorkout(plan);
+    workoutBegun = true;
     notifyListeners();
   }
 
@@ -2069,6 +2101,7 @@ class AppState extends ChangeNotifier {
 
     lastSettlement = result;
     session = null;
+    workoutBegun = false;
     restEndsAt = null;
     // 解鎖僅對本次訓練有效，訓練結束即失效。
     sessionEquipmentUnlocked = false;
@@ -2078,6 +2111,7 @@ class AppState extends ChangeNotifier {
 
   void abandonWorkout() {
     session = null;
+    workoutBegun = false;
     restEndsAt = null;
     sessionEquipmentUnlocked = false;
     notifyListeners();
@@ -12021,6 +12055,13 @@ class AppState extends ChangeNotifier {
     publicPlanCases = [];
 
     // 其餘。
+    // 進行中的訓練是上一個人的：不清的話，下一個登入的人會被帶進別人的訓練。
+    session = null;
+    workoutBegun = false;
+    _workoutResumePending = false;
+    restEndsAt = null;
+    lastSetCompletedAt = null;
+    sessionEquipmentUnlocked = false;
     lastSettlement = null;
     for (final k in aiConversations.keys) {
       aiConversations[k] = <AiTurn>[];

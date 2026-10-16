@@ -255,7 +255,7 @@ class PlanDetailScreen extends StatelessWidget {
               // 空白課表恆為已解鎖，且必須呈現 —— 自由訓練以它為入口。
               label: plan.exercises.isEmpty ? '開始自由訓練' : '開始訓練',
               onPressed: () {
-                s.startWorkout(plan);
+                s.beginWorkout(plan);
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(builder: (_) => const WorkoutScreen()),
                 );

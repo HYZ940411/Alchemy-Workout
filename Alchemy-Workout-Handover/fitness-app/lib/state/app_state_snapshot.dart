@@ -64,6 +64,189 @@ Map<String, dynamic> _customPlanToJson(CustomPlan p) => {
     };
 
 extension AppStateSnapshot on AppState {
+  /// 用 id 對回動作庫（平台＋內建＋自建）。找不到回空值。
+  Exercise? _findExercise(Object? exId) {
+    if (exId is! String) return null;
+    for (final e in [...platformExercises, ...kAllExercises, ...myExercises]) {
+      if (e.id == exId) return e;
+    }
+    return null;
+  }
+
+  /// 進行中的訓練 → 存檔。沒開始（只是選了課表）就是空值。
+  ///
+  /// 存的是**本次訓練快照**（含 AI 調整過的動作與逐組目標），不是來源課表：
+  /// 快照與來源課表本來就脫鉤。課表本身只留 id、名稱等識別資料。
+  Map<String, dynamic>? _activeWorkoutToJson() {
+    final s = session;
+    if (s == null || !workoutBegun) return null;
+    Map<String, dynamic> rec(SetRecord r) =>
+        {'w': r.weight, 'r': r.reps, 'st': r.state.name};
+    return {
+      'plan': {
+        'id': s.plan.id,
+        'name': s.plan.name,
+        'source': s.plan.source.name,
+        'requiredRank': s.plan.requiredRank,
+        'equipmentTier': s.plan.equipmentTier,
+      },
+      'startedAt': _iso(s.startedAt),
+      'exerciseIndex': s.exerciseIndex,
+      'setIndex': s.setIndex,
+      'exercises': [
+        for (final e in s.exercises)
+          {
+            'exerciseId': e.exercise.id,
+            'planned': _plannedToJson(e.planned),
+            if (e.replacedFrom != null) 'replacedFromId': e.replacedFrom!.id,
+            if (e.replacedPlanned != null)
+              'replacedPlanned': _plannedToJson(e.replacedPlanned!),
+            if (e.restSeconds != null) 'restSeconds': e.restSeconds,
+            'unit': e.unit.name,
+          },
+      ],
+      // Firestore 不收陣列裡再放陣列：每個動作一個物件，組放在裡面。
+      'records': [
+        for (final sets in s.records) {'sets': [for (final r in sets) rec(r)]},
+      ],
+      'cancelled': [
+        for (final c in s.cancelled)
+          {
+            'exerciseIndex': c.exerciseIndex,
+            'setIndex': c.setIndex,
+            'at': _iso(c.at),
+            ...rec(c.record),
+          },
+      ],
+      'restEndsAt': _iso(restEndsAt),
+      'restTotalSeconds': restTotalSeconds,
+      'lastSetCompletedAt': _iso(lastSetCompletedAt),
+      'equipmentUnlocked': sessionEquipmentUnlocked,
+    };
+  }
+
+  /// 存檔 → 進行中的訓練。**任何一處對不上就整場放棄**（回到沒有進行中的訓練），
+  /// 不拼湊半場：動作被下架、組數對不上，硬湊會讓進度條與紀錄互相矛盾。
+  void _restoreActiveWorkout(Object? raw) {
+    session = null;
+    workoutBegun = false;
+    _workoutResumePending = false;
+    restEndsAt = null;
+    lastSetCompletedAt = null;
+    sessionEquipmentUnlocked = false;
+    if (raw is! Map) return;
+    try {
+      final planJ = raw['plan'];
+      final exJ = raw['exercises'];
+      final recJ = raw['records'];
+      final startedAt = _date(raw['startedAt']);
+      if (planJ is! Map || exJ is! List || recJ is! List || startedAt == null) {
+        return;
+      }
+      final planId = planJ['id'];
+      final planName = planJ['name'];
+      if (planId is! String || planName is! String) return;
+
+      final exercises = <PlanExercise>[];
+      for (final e in exJ) {
+        if (e is! Map) return;
+        final ex = _findExercise(e['exerciseId']);
+        final planned = _plannedFromJson(e['planned']);
+        if (ex == null || planned == null) return;
+        exercises.add(PlanExercise(
+          exercise: ex,
+          planned: planned,
+          replacedFrom: _findExercise(e['replacedFromId']),
+          replacedPlanned: _plannedFromJson(e['replacedPlanned']),
+          restSeconds:
+              e['restSeconds'] is num ? (e['restSeconds'] as num).round() : null,
+          unit: _enumByName(PlanUnit.values, e['unit']) ?? PlanUnit.reps,
+        ));
+      }
+
+      SetRecord? recOf(Object? m) {
+        if (m is! Map || m['w'] is! num || m['r'] is! num) return null;
+        return SetRecord(
+          weight: (m['w'] as num).toDouble(),
+          reps: (m['r'] as num).round(),
+          state: _enumByName(SetState.values, m['st']) ?? SetState.pending,
+        );
+      }
+
+      if (recJ.length != exercises.length) return;
+      final records = <List<SetRecord>>[];
+      for (var i = 0; i < recJ.length; i++) {
+        final sets = recJ[i] is Map ? (recJ[i] as Map)['sets'] : null;
+        if (sets is! List || sets.length != exercises[i].planned.length) return;
+        final list = <SetRecord>[];
+        for (final m in sets) {
+          final r = recOf(m);
+          if (r == null) return;
+          list.add(r);
+        }
+        records.add(list);
+      }
+
+      final plan = WorkoutPlan(
+        id: planId,
+        name: planName,
+        source: _enumByName(PlanSource.values, planJ['source']) ??
+            PlanSource.official,
+        requiredRank:
+            planJ['requiredRank'] is num ? (planJ['requiredRank'] as num).round() : null,
+        equipmentTier: planJ['equipmentTier'] as String? ?? '徒手',
+        exercises: exercises,
+      );
+      final restored = WorkoutSession(
+        plan: plan,
+        startedAt: startedAt,
+        exercises: exercises,
+        records: records,
+      );
+      final ei = raw['exerciseIndex'];
+      final si = raw['setIndex'];
+      if (ei is! num || si is! num) return;
+      restored.exerciseIndex = ei.round();
+      restored.setIndex = si.round();
+      if (exercises.isNotEmpty) {
+        if (restored.exerciseIndex < 0 ||
+            restored.exerciseIndex >= exercises.length ||
+            restored.setIndex < 0 ||
+            restored.setIndex > exercises[restored.exerciseIndex].planned.length) {
+          return;
+        }
+      }
+      final cancelled = raw['cancelled'];
+      if (cancelled is List) {
+        for (final c in cancelled) {
+          final r = recOf(c);
+          final at = c is Map ? _date(c['at']) : null;
+          if (c is! Map || r == null || at == null) continue;
+          restored.cancelled.add(CancelledSet(
+            exerciseIndex: (c['exerciseIndex'] as num?)?.round() ?? 0,
+            setIndex: (c['setIndex'] as num?)?.round() ?? 0,
+            record: r,
+            at: at,
+          ));
+        }
+      }
+      session = restored;
+      workoutBegun = true;
+      _workoutResumePending = true;
+      restEndsAt = _date(raw['restEndsAt']);
+      restTotalSeconds = raw['restTotalSeconds'] is num
+          ? (raw['restTotalSeconds'] as num).round()
+          : restTotalSeconds;
+      lastSetCompletedAt = _date(raw['lastSetCompletedAt']);
+      sessionEquipmentUnlocked = raw['equipmentUnlocked'] == true;
+    } catch (_) {
+      // 存檔壞了不該讓整份狀態讀不進來 —— 放棄這一場就好。
+      session = null;
+      workoutBegun = false;
+      _workoutResumePending = false;
+    }
+  }
+
   // ===========================================================================
   // 匯出
   // ===========================================================================
@@ -80,13 +263,7 @@ extension AppStateSnapshot on AppState {
     final id = j['id'];
     final name = j['name'];
     if (id is! String || name is! String) return null;
-    Exercise? find(Object? exId) {
-      if (exId is! String) return null;
-      for (final e in [...platformExercises, ...kAllExercises, ...myExercises]) {
-        if (e.id == exId) return e;
-      }
-      return null;
-    }
+    final find = _findExercise;
 
     final exs = <PlanExercise>[];
     final raw = j['exercises'];
@@ -409,6 +586,12 @@ extension AppStateSnapshot on AppState {
           for (final p in customPlans)
             if (p.isMine) _customPlanToJson(p),
         ],
+
+        // --- 進行中的訓練 ---
+        //
+        // 只存「按下開始訓練」的那一場。**在此之前整場沒存**：練到一半
+        // 重新整理，訓練就不見了（2026-10-16 使用者回報）。
+        'activeWorkout': _activeWorkoutToJson(),
 
         // --- 教官 ---
         'isInstructor': isInstructor,
@@ -905,6 +1088,10 @@ extension AppStateSnapshot on AppState {
             ),
       ];
     }
+
+    // 進行中的訓練。放在自訂訓練之後 —— 動作可能是自建的，要先還原動作庫。
+    // 存檔裡沒有就是沒有（含上一個人留在記憶體裡的），不沿用現有的。
+    _restoreActiveWorkout(j['activeWorkout']);
 
     final savedPlans = pick<List>('customPlans');
     if (savedPlans != null) {

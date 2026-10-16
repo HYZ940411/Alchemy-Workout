@@ -9,6 +9,7 @@ import 'home_screen.dart';
 import 'social/notifications_screen.dart';
 import 'me/more_screen.dart';
 import 'plan_select_screen.dart';
+import 'workout_screen.dart';
 import 'shop/shop_hub_screen.dart';
 import 'social/social_shell.dart';
 
@@ -21,6 +22,35 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int index = 0;
+  AppState? _state;
+
+  /// 重新整理網頁前正在練的那一場：讀回存檔後自動跳回訓練頁。
+  ///
+  /// 進場時存檔可能還沒讀完（沒接帳號的路徑是非同步讀），所以除了進場檢查一次，
+  /// 還要聽狀態變化 —— 存檔一套用完，下一次通知就會帶使用者回去。
+  void _resumeWorkout() {
+    final s = _state;
+    if (s == null || !mounted || !s.takeWorkoutResume()) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const WorkoutScreen()),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _state = AppScope.of(context)..addListener(_resumeWorkout);
+      _resumeWorkout();
+    });
+  }
+
+  @override
+  void dispose() {
+    _state?.removeListener(_resumeWorkout);
+    super.dispose();
+  }
 
   static const _titles = ['首頁', '社群', '訓練', '商店', '我的'];
 
