@@ -194,8 +194,24 @@ service cloud.firestore {
                || (!sameDay && after == [request.auth.uid].toSet());
       }
 
+      // 團隊限時分數（月累計）：只能往上，而且**一次最多加 60**
+      // （一位成員完成 +10，全員完成的那一刻再 +50，單次最多 60）。
+      // 換月時由「本月第一個得分的人」把分數與 timedPeriod 一起換掉，重設後也不能超過 60。
+      //
+      // **這不是完整防線** —— 分數本身仍由裝置算出來，隊員仍然可以反覆各加 60；
+      // 真正的把關要等 `[BE-07]` 把評分搬到伺服器。這裡擋的是「一次把它改成幾萬」。
+      function timedScoreOk() {
+        let before = resource.data.get('timedScore', 0);
+        let after = request.resource.data.get('timedScore', 0);
+        let samePeriod = request.resource.data.get('timedPeriod', '')
+                         == resource.data.get('timedPeriod', '');
+        return after == before
+               || (samePeriod && after > before && after - before <= 60)
+               || (!samePeriod && after >= 0 && after <= 60);
+      }
+
       allow update: if request.auth != null
-                    && contribOk() && timedOk()
+                    && contribOk() && timedOk() && timedScoreOk()
                     && (
                       // 隊員可以改隊伍（加人、踢人、改可見性、解散）
                       request.auth.uid in resource.data.memberUids
