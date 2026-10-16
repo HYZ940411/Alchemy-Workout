@@ -206,6 +206,8 @@ class FirestoreTeams implements TeamSource {
       'contributions': <String, int>{},
       'timedCredited': <String>[],
       'timedDay': '',
+      'timedScore': 0,
+      'timedPeriod': '',
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
@@ -373,6 +375,9 @@ class FirestoreTeams implements TeamSource {
           if (v is String) v,
       },
       timedDay: j['timedDay'] is String ? j['timedDay'] as String : '',
+      timedScore:
+          j['timedScore'] is num ? (j['timedScore'] as num).round() : 0,
+      timedPeriod: j['timedPeriod'] is String ? j['timedPeriod'] as String : '',
     );
   }
 
@@ -398,18 +403,48 @@ class FirestoreTeams implements TeamSource {
     await guardedTransaction(_db, '限時任務計分', (tx) async {
       final snap = await tx.get(ref);
       if (!snap.exists) return '找不到這支隊伍（$teamId）';
-      final cloudDay = snap.data()?['timedDay'];
+      final data = snap.data() ?? const <String, dynamic>{};
+      final cloudDay = data['timedDay'];
+      final before = cloudDay == day
+          ? {
+              for (final v in (data['timedCredited'] as List? ?? const []))
+                if (v is String) v,
+            }
+          : <String>{};
+      final already = before.contains(memberUid);
+      final updates = <String, dynamic>{};
       if (cloudDay == day) {
-        tx.update(ref, {
-          'timedCredited': FieldValue.arrayUnion([memberUid]),
-        });
+        updates['timedCredited'] = FieldValue.arrayUnion([memberUid]);
       } else {
         // 新的一天：整份換掉，不是疊上去。
-        tx.update(ref, {
-          'timedCredited': [memberUid],
-          'timedDay': day,
-        });
+        updates['timedCredited'] = [memberUid];
+        updates['timedDay'] = day;
       }
+
+      // **月累計的團隊限時分數在這裡加** —— 以前完成限時任務只動上面那份今日名單，
+      // 排行榜用的分數永遠是 0（2026-10-16 使用者回報）。
+      //
+      // 只有「這個人今天第一次被記」才加：按兩次、重新整理後再按，都不會多拿。
+      // 重新分隊期（每月前兩天）兩個團隊分數皆不累加。
+      // 全員完成的 +50 看這一刻隊上有誰，所以必須在同一個交易裡算。
+      if (!already && !inRegroupWindow(DateTime.parse(day))) {
+        final members = {
+          for (final v in (data['memberUids'] as List? ?? const []))
+            if (v is String) v,
+        };
+        final after = {...before, memberUid};
+        final allDone = members.isNotEmpty && members.every(after.contains);
+        final delta = kTimedTaskPerMember + (allDone ? kTimedTaskAllBonus : 0);
+        final period = day.substring(0, 7);
+        if (data['timedPeriod'] == period) {
+          updates['timedScore'] = FieldValue.increment(delta);
+        } else {
+          // 新的一個月：不是疊在上個月上面。
+          updates['timedScore'] = delta;
+          updates['timedPeriod'] = period;
+        }
+      }
+      tx.update(ref, updates);
       return null;
     });
   }

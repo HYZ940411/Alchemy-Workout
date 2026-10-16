@@ -2382,6 +2382,7 @@ class AppState extends ChangeNotifier {
         myTeam?.contributions.clear();
       case Board.teamTimed:
         myTeam?.timedCredited.clear();
+        myTeam?.timedScore = 0;
     }
     return row;
   }
@@ -4101,7 +4102,15 @@ class AppState extends ChangeNotifier {
       // （見 `CloudTeam.timedDay`），在那之前這裡先當它是空的。
       timedCredited:
           t.timedDay == _timedDayKey() ? {...t.timedCredited} : <String>{},
+      // 月累計團隊限時分數：雲端記的是哪個月的就只算那個月的。
+      timedScore: t.timedPeriod == _timedDayKey().substring(0, 7)
+          ? t.timedScore
+          : 0,
     );
+    // **雲端說我今天完成過，本機就要知道。** 在此之前「我完成了」只活在記憶體裡，
+    // 重新整理後按鈕又出現，可以再按一次、再領一次獎勵（2026-10-16 使用者回報）。
+    final me = personKeyOf(displayName, myUid);
+    if (myTeam!.timedCredited.contains(me)) timedTask.completedBy.add(me);
     // **雲端說我已經在隊上，本機那筆「已送出的申請」就該消失。**
     // 一次只能屬於一個團隊，申請被核准後它已經沒有意義了 ——
     // 留著的話畫面會同時顯示「已加入」和「等隊長回應」。
@@ -4321,10 +4330,23 @@ class AppState extends ChangeNotifier {
     // 轉隊也不帶走舊團隊已貢獻的分數 —— 與團隊日常分數同一條規則。
     final t = myTeam;
     if (t != null) {
-      t.timedCredited.add(personKeyOf(displayName, myUid));
+      _creditTimedLocally(t, personKeyOf(displayName, myUid));
       _pushTeam('限時任務計分', (src, uid) => src.creditTimed(t.id, uid, _timedDayKey()));
     }
     notifyListeners();
+  }
+
+  /// 把一位成員記到本隊今天的限時帳上，並加月累計的團隊限時分數：
+  /// 每人 10 分，全員完成的那一刻再加 50；重新分隊期不累加。
+  /// 同一個人只記一次 —— 記過了就不再加分。
+  ///
+  /// 雲端那邊的交易（`creditTimed`）算同一條規則；雲端的值回來時會取代這裡的。
+  void _creditTimedLocally(Team t, String key) {
+    if (!t.timedCredited.add(key)) return;
+    if (inRegroupWindow(now)) return;
+    final allDone = t.members.isNotEmpty &&
+        t.members.every((m) => t.timedCredited.contains(personKey(m.name, m.uid)));
+    t.timedScore += kTimedTaskPerMember + (allDone ? kTimedTaskAllBonus : 0);
   }
   late List<PublicTeam> publicTeams = demo ? buildPublicTeams() : [];
 
@@ -4913,7 +4935,7 @@ class AppState extends ChangeNotifier {
         t.members.where((m) => sameUser(m.name, m.uid, name, uid)).firstOrNull;
     if (m == null) return false;
     if (!timedTask.completedBy.add(personKeyOf(m.name, m.uid))) return false;
-    t.timedCredited.add(personKeyOf(m.name, m.uid));
+    _creditTimedLocally(t, personKeyOf(m.name, m.uid));
     notifyListeners();
     return true;
   }
@@ -12157,6 +12179,9 @@ class AppState extends ChangeNotifier {
 
     // 其餘。
     // 進行中的訓練是上一個人的：不清的話，下一個登入的人會被帶進別人的訓練。
+    // 今日限時任務的完成與領取也是上一個人的。
+    timedTask.completedBy.clear();
+    timedRewardClaimed = false;
     session = null;
     workoutBegun = false;
     addedLoadOpen.clear();

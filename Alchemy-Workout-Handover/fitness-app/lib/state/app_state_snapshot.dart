@@ -587,6 +587,19 @@ extension AppStateSnapshot on AppState {
             if (p.isMine) _customPlanToJson(p),
         ],
 
+        // --- 今日限時任務：我完成了沒、獎勵領了沒 ---
+        //
+        // **在此之前兩個都只活在記憶體裡**：重新整理後「開始限時任務」又出現，
+        // 可以再按一次、再領一次獎勵 —— 刷點數（2026-10-16 使用者回報）。
+        // 存的是**哪一天**：新的一天自然失效，不用靠誰去清。
+        'timedDone': timedTask.doneBy(displayName, uid: myUid)
+            ? {
+                'day': _timedDayKey(),
+                'key': personKeyOf(displayName, myUid),
+              }
+            : null,
+        'timedClaimedOn': timedRewardClaimed ? _timedDayKey() : null,
+
         // --- 進行中的訓練 ---
         //
         // 只存「按下開始訓練」的那一場。**在此之前整場沒存**：練到一半
@@ -1088,6 +1101,16 @@ extension AppStateSnapshot on AppState {
             ),
       ];
     }
+
+    // 今日限時任務。只認**今天**的 —— 存檔裡是昨天的就是失效了。
+    // 存的是當時用的鍵（uid），不在這裡重算：載入時 `myUid` 可能還沒設上。
+    final timedDone = pick<Map>('timedDone');
+    if (timedDone != null &&
+        timedDone['day'] == _timedDayKey() &&
+        timedDone['key'] is String) {
+      timedTask.completedBy.add(timedDone['key'] as String);
+    }
+    timedRewardClaimed = pick<String>('timedClaimedOn') == _timedDayKey();
 
     // 進行中的訓練。放在自訂訓練之後 —— 動作可能是自建的，要先還原動作庫。
     // 存檔裡沒有就是沒有（含上一個人留在記憶體裡的），不沿用現有的。

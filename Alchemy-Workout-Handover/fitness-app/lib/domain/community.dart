@@ -218,7 +218,12 @@ class Team {
   int get dailyScore =>
       contributions.values.fold<int>(0, (a, b) => a + b);
 
-  final int timedScore;
+  /// 月累計**團隊限時分數**。每有一位成員完成今日限時任務加 10 分，
+  /// 全員完成的那一刻再加 50 分；重新分隊期不累加。
+  ///
+  /// **這個欄位以前從來沒有人寫過**：完成限時任務只動了今日完成名單
+  /// （[timedCredited]），排行榜上的團隊限時分數永遠是 0（2026-10-16 使用者回報）。
+  int timedScore;
   final int dailyRankPos;
   final int timedRankPos;
   final int lockedGroupSize; // 3 / 4 / 5 人組

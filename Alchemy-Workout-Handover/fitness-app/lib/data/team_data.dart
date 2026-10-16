@@ -40,6 +40,11 @@ class CloudTeam {
   /// 就把名單換成只有自己。空字串代表還沒有人完成過。
   final String timedDay;
 
+  /// 月累計團隊限時分數，與 [timedPeriod]（`yyyy-MM`）成對：月份不同就當 0。
+  /// 換月要歸零，而那件事同樣沒有伺服器可以做，由「本月第一個得分的人」順手做。
+  final int timedScore;
+  final String timedPeriod;
+
   const CloudTeam({
     required this.id,
     required this.name,
@@ -51,6 +56,8 @@ class CloudTeam {
     this.contributions = const {},
     this.timedCredited = const {},
     this.timedDay = '',
+    this.timedScore = 0,
+    this.timedPeriod = '',
   });
 
   bool get isFull => members.length >= capacity;
