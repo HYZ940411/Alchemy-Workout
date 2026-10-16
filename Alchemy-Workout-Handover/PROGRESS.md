@@ -1516,6 +1516,18 @@ firebase deploy --only hosting
      那顆鍵落在 600 高的測試畫面外，`scrollUntilVisible` 只保證在樹裡不保證在畫面內，點擊落空；補了 `ensureVisible`。
    - **做錯的一步：** 我對整個 `lib/data` 與設定頁跑了 `dart format`，造成 38 個檔案的格式變動；
      發現後把只有格式變動的檔案寫回 HEAD 版本，只保留我要的修改（沒有 commit 進去）。**以後只格式化自己改的檔案。**
+   - **對照結果五（2026-10-17，使用者回報）：** 三種網址（正常、`?longpoll=force`、`?longpoll=auto`）的「測試交易讀取」**全部失敗**
+     → 傳輸方式的假設推翻。**無痕視窗也失敗**（沒有擴充功能、沒有 VPN）→ 與使用者的瀏覽器狀態無關。
+   - **在真瀏覽器重現（做出了可重複的測法，結果是「重現不了」）：** 用 Firestore＋Auth 模擬器（JDK 21 在 session 暫存目錄）、
+     `flutter test --platform chrome`、手動註冊網頁外掛（`FirebaseCoreWeb／FirebaseFirestoreWeb／FirebaseAuthWeb.registerWith(webPluginRegistrar)`，
+     否則測試裡 `Firebase.initializeApp` 會因為沒有外掛而一直卡住）、套用**現行安全規則**與登入。結果：
+     `probeTransactionRead` **成功**，`putMember`＋`dropRequest`（隊長核准入隊）**成功、沒有走退路**，memberUids 正確。
+     載入的 JS SDK 是 12.18.0（`firebase_core_web 3.11.0` 會載 `firebase-firestore-pipelines.js` 那包），一樣正常。
+     **所以：程式、外掛、SDK、規則在模擬器裡都是好的，只有正式環境的交易讀取壞。**
+     推論（未證實）：問題在正式專案的雲端那一端（例如 Firestore API 對 `BatchGetDocuments` 的回應、配額、資料庫設定），
+     不是我們的程式。可由專案擁有者到 Google Cloud Console →「API 和服務」→ Cloud Firestore API →「指標」，
+     篩 `BatchGetDocuments`，看回應碼（429／403／其他）。**我不能用 Admin SDK 去查**（既有限制）。
+   - **結論：** 退路維持，QA-07 保持開著；不再靠猜程式碼。測試用的暫存檔已刪、未 commit。
    - **（舊）下一步：** 部署後請 123 對那筆（雲端上還在的）申請再按一次同意，讀「雲端寫入 → 核准入隊」那一行，
      才能知道真正的錯誤。可能的方向（未證實）：`guardedTransaction`（2026-10-15 我改的）在 Web 上的某個細節、
      交易裡的欄位形狀、或 `dropRequest`。
