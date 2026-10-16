@@ -75,6 +75,26 @@ void main() {
       );
     });
 
+    test('診斷用開關：網址帶 ?nopersist=1 才關，其他一律開', () {
+      expect(persistenceWanted(Uri.parse('https://x.web.app/')), isTrue);
+      expect(persistenceWanted(Uri.parse('https://x.web.app/?a=1')), isTrue);
+      expect(
+        persistenceWanted(Uri.parse('https://x.web.app/?nopersist=1')),
+        isFalse,
+      );
+      expect(
+        persistenceWanted(Uri.parse('https://x.web.app/?nopersist=0')),
+        isTrue,
+      );
+    });
+
+    test('關掉時明確設成不持久（不是不設定）', () {
+      final db = _RecordingDb();
+      configureFirestorePersistence(db, enabled: false);
+      expect(db.got, isNotNull);
+      expect(db.got!.persistenceEnabled, isFalse);
+    });
+
     test('main 在 Firebase 初始化之後、用到 Firestore 之前呼叫它', () {
       final src = File('lib/main.dart').readAsStringSync();
       final init = src.indexOf('Firebase.initializeApp(');
@@ -161,7 +181,7 @@ void main() {
               body: Align(
                 alignment: Alignment.topCenter,
                 child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
+                  behavior: HitTestBehavior.opaque,
                   onTap: () => tapped = true,
                   child: const SizedBox(width: 200, height: 40),
                 ),
