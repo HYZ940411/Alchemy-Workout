@@ -3828,7 +3828,6 @@ class AppState extends ChangeNotifier {
   /// **隱私在這裡決定，不是畫面上才藏。** 卡片會存進雲端、所有人都讀得到：
   /// 不公開能力值的人（教官身分例外，見 [PublicProfile.of]），六維成長的數字
   /// 與「能力值 N」這一類成就都不能附上。階級本來就是公開的，可以附。
-  @visibleForTesting
   WorkoutCard workoutCardOf(SettlementResult r) {
     final showAbility = abilityPublic || isInstructor;
     return WorkoutCard(

@@ -10,6 +10,7 @@ import 'train/rate_experience_screen.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'social/social_lock.dart';
+import 'social/workout_card_view.dart';
 
 /// Read Model：訓練結算頁
 /// 版面分為固定核心與條件式亮點兩層。
@@ -261,12 +262,14 @@ Future<void> _share(
     title: '分享這次訓練',
     size: DialogSize.medium,
     confirmLabel: '發布',
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+        // 先讓人看到要發出去的那張卡，再決定發不發。
+        WorkoutCardView(card: s.workoutCardOf(r)),
+        const SizedBox(height: S.md),
         Text(
-          '會附上一張成果卡：「${r.plan.name}」、總重量、完成度、訓練時間、'
-          '連續訓練天數、練了哪些動作；有升階或解鎖成就也會一起附上。'
           '${(s.abilityPublic || s.isInstructor) ? '' : '你設定了不公開能力值，卡片不會附能力值成長。'}'
           '今日分享獎勵已發 ${s.interactionsToday('Share')} / '
           '${platformConfig.i('reward', 'capShare')} 次 ——'
@@ -287,6 +290,7 @@ Future<void> _share(
           ),
         ),
       ],
+      ),
     ),
   );
   if (ok != true || !context.mounted) return;

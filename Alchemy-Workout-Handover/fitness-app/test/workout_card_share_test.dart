@@ -16,6 +16,7 @@ import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/domain/rewards.dart';
 import 'package:fitness_app/domain/workout_card.dart';
+import 'package:fitness_app/screens/settlement_screen.dart';
 import 'package:fitness_app/screens/social/post_card.dart';
 import 'package:fitness_app/screens/social/post_detail_screen.dart';
 import 'package:fitness_app/screens/social/workout_card_view.dart';
@@ -287,8 +288,13 @@ void main() {
       expect(find.byKey(const ValueKey('workout-card')), findsOneWidget);
       expect(find.text('推日：胸肩三頭'), findsOneWidget);
       expect(find.textContaining('9 / 12 組（75%）'), findsOneWidget);
-      expect(find.textContaining('訓練 48 分鐘'), findsOneWidget);
-      expect(find.textContaining('連續訓練 6 天'), findsOneWidget);
+      // 三個數字磚：標籤＋數值＋單位。
+      expect(find.text('總重量'), findsOneWidget);
+      expect(find.text('4322'), findsOneWidget);
+      expect(find.text('訓練時間'), findsOneWidget);
+      expect(find.text('48'), findsOneWidget);
+      expect(find.text('連續訓練'), findsOneWidget);
+      expect(find.text('6'), findsOneWidget);
       expect(find.textContaining('槓鈴臥推 × 4'), findsOneWidget);
       expect(find.textContaining('47 → 51 階'), findsOneWidget);
       expect(find.textContaining('胸 +12'), findsOneWidget);
@@ -318,6 +324,68 @@ void main() {
       await t.pump();
       expect(find.byKey(const ValueKey('workout-card')), findsOneWidget);
       expect(find.textContaining('9 / 12 組（75%）'), findsOneWidget);
+    });
+
+    testWidgets('窄螢幕上數字很長也不爆版', (t) async {
+      t.view.physicalSize = const Size(320 * 3, 2400 * 3);
+      t.view.devicePixelRatio = 3.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      const big = WorkoutCard(
+        planName: '一個名字很長很長很長很長很長很長很長的課表',
+        volumeKg: 123456,
+        doneSets: 120,
+        plannedSets: 120,
+        durationMinutes: 1234,
+        streakDays: 365,
+        exercises: [
+          WorkoutCardExercise('一個名字很長很長的動作 · 啞鈴', 12),
+          WorkoutCardExercise('另一個名字很長很長的動作 · 槓鈴', 12),
+        ],
+        rankFrom: 100,
+        rankTo: 101,
+        abilityGains: {Dim.chest: 123, Dim.back: 123, Dim.legs: 123},
+        achievements: ['成就名稱很長很長很長很長', '另一個很長很長的成就名稱'],
+      );
+      // 版面爆掉時 Flutter 會丟 RenderFlex overflow，測試就會紅。
+      await t.pumpWidget(const MaterialApp(
+        home: Scaffold(body: SingleChildScrollView(child: WorkoutCardView(card: big))),
+      ));
+      await t.pump();
+      expect(find.byKey(const ValueKey('workout-card')), findsOneWidget);
+      // 數字縮小之後仍在磚裡面：單位「kg」的右緣不能超過它所在那格的右緣。
+      final box = find
+          .ancestor(of: find.text('kg'), matching: find.byType(FittedBox))
+          .first;
+      expect(t.getTopRight(find.text('kg')).dx,
+          lessThanOrEqualTo(t.getTopRight(box).dx + 0.5),
+          reason: '不縮小的話數字會被截掉，畫面上只剩半個數字');
+    });
+
+    testWidgets('分享對話框先預覽要發出去的那張卡', (t) async {
+      t.view.physicalSize = const Size(393 * 3, 2400 * 3);
+      t.view.devicePixelRatio = 3.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      final s = AppState();
+      final plan = s.platformPlans.firstWhere(
+          (p) => p.source == PlanSource.official && p.exercises.length >= 2);
+      s.beginWorkout(plan);
+      s.completeCurrentSet();
+      s.finishWorkout(EndKind.endedEarly);
+      await t.pumpWidget(AppScope(
+        state: s,
+        child: const MaterialApp(home: SettlementScreen()),
+      ));
+      await t.pumpAndSettle();
+      await t.scrollUntilVisible(find.text('分享成果'), 300,
+          scrollable: find.byType(Scrollable).first);
+      await t.tap(find.text('分享成果'));
+      await t.pumpAndSettle();
+      expect(find.text('分享這次訓練'), findsOneWidget);
+      expect(find.byKey(const ValueKey('workout-card')), findsOneWidget,
+          reason: '發出去之前要先看得到那張卡');
+      expect(find.textContaining(plan.name), findsWidgets);
     });
 
     testWidgets('舊貼文只畫一行摘要', (t) async {
