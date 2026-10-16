@@ -631,6 +631,32 @@ class AppState extends ChangeNotifier {
   /// 首頁讀走它（[takeWorkoutResume]）並跳到訓練頁 —— 只跳一次。
   bool _workoutResumePending = false;
 
+  /// 本場訓練裡打開了「外加負重」的徒手動作（動作 id）。不進存檔：
+  /// 重新整理後重量是 0 的徒手動作會回到鎖定，重量大於 0 的本來就不鎖。
+  final Set<String> addedLoadOpen = {};
+
+  /// 這個動作的重量欄該不該鎖著。**只有重量為 0 的徒手動作預設鎖定**：
+  /// 徒手動作的重量是外加負重，預設就是 0；已經有負重的（課表指定或使用者自己加的）
+  /// 一律不鎖，不然會把使用者記的負重卡死。
+  bool addedLoadLocked(Exercise e, double weight) =>
+      e.isBodyweight && weight == 0 && !addedLoadOpen.contains(e.id);
+
+  /// 打開或關閉「外加負重」。關閉時目前這一組的重量回到 0。
+  void setAddedLoad(Exercise e, bool on) {
+    if (!e.isBodyweight) return;
+    if (on) {
+      addedLoadOpen.add(e.id);
+    } else {
+      addedLoadOpen.remove(e.id);
+      final r = currentRecord;
+      final s = session;
+      if (r != null && s != null && s.exercises[s.exerciseIndex].exercise.id == e.id) {
+        r.weight = 0;
+      }
+    }
+    notifyListeners();
+  }
+
   /// 該不該把使用者帶回進行中的訓練？回真的同時把待辦清掉。
   ///
   /// 不能直接看 `session != null && workoutBegun`：按下「開始訓練」自己就會
@@ -1599,6 +1625,7 @@ class AppState extends ChangeNotifier {
       targets: [for (final pe in plan.exercises) _snapshotTargets(pe)],
     );
     workoutBegun = false;
+    addedLoadOpen.clear();
     restEndsAt = null;
     lastSetCompletedAt = null;
     _lastIntervalWasFast = false;
@@ -1666,6 +1693,9 @@ class AppState extends ChangeNotifier {
   void editCurrentSet({double? weight, int? reps}) {
     final r = currentRecord;
     if (r == null) return;
+    // 鎖定中的徒手動作不收重量 —— 畫面上按鈕不給按只是第一道，這裡是第二道。
+    final ex = session!.exercises[session!.exerciseIndex].exercise;
+    if (weight != null && addedLoadLocked(ex, r.weight)) weight = null;
     if (weight != null) {
       final w = math.max(0.0, weight);
       // 收斂到 0.5 的格子上：+/- 0.5 之外，直接輸入的值也走同一條。
@@ -2111,6 +2141,7 @@ class AppState extends ChangeNotifier {
     lastSettlement = result;
     session = null;
     workoutBegun = false;
+    addedLoadOpen.clear();
     restEndsAt = null;
     // 解鎖僅對本次訓練有效，訓練結束即失效。
     sessionEquipmentUnlocked = false;
@@ -2121,6 +2152,7 @@ class AppState extends ChangeNotifier {
   void abandonWorkout() {
     session = null;
     workoutBegun = false;
+    addedLoadOpen.clear();
     restEndsAt = null;
     sessionEquipmentUnlocked = false;
     notifyListeners();
@@ -12067,6 +12099,7 @@ class AppState extends ChangeNotifier {
     // 進行中的訓練是上一個人的：不清的話，下一個登入的人會被帶進別人的訓練。
     session = null;
     workoutBegun = false;
+    addedLoadOpen.clear();
     _workoutResumePending = false;
     restEndsAt = null;
     lastSetCompletedAt = null;

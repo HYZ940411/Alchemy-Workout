@@ -4,6 +4,7 @@ import '../../domain/custom_plan.dart';
 import '../../domain/models.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
+import '../../widgets/added_load_switch.dart';
 import '../../widgets/common.dart';
 import 'create_exercise_screen.dart';
 import 'exercise_picker.dart';
@@ -14,7 +15,15 @@ class DraftSet {
   double weight;
   int reps;
   int seconds;
-  DraftSet({this.weight = 20, this.reps = 10, this.seconds = 300});
+
+  /// 徒手動作打開了「外加負重」。重量為 0 的徒手動作預設鎖著不給調。
+  bool loadOpen;
+  DraftSet({
+    this.weight = 20,
+    this.reps = 10,
+    this.seconds = 300,
+    this.loadOpen = false,
+  });
 }
 
 /// 第二層：該動作的組數。組數對有氧同樣適用，通常為 1，間歇會做多組。
@@ -248,6 +257,7 @@ class _ExerciseEditor extends StatelessWidget {
                 index: i + 1,
                 set: set,
                 isCardio: item.isCardio,
+                bodyweight: item.exercise.isBodyweight,
                 onChanged: onChanged,
               ),
             ],
@@ -265,6 +275,7 @@ class _ExerciseEditor extends StatelessWidget {
                         weight: last.weight,
                         reps: last.reps,
                         seconds: last.seconds,
+                        loadOpen: last.loadOpen,
                       ));
                       onChanged();
                     },
@@ -295,11 +306,13 @@ class _SetEditor extends StatelessWidget {
   final int index;
   final DraftSet set;
   final bool isCardio;
+  final bool bodyweight;
   final VoidCallback onChanged;
   const _SetEditor({
     required this.index,
     required this.set,
     required this.isCardio,
+    required this.bodyweight,
     required this.onChanged,
   });
 
@@ -339,21 +352,39 @@ class _SetEditor extends StatelessWidget {
                     : null,
               )
             else ...[
-              _Field(
-                label: '目標重量',
-                // float 精度 0.5 公斤，≥ 0；值為 0 代表徒手（自身體重）動作。
-                value: set.weight == 0 ? '徒手' : '${_kg(set.weight)} kg',
-                onMinus: set.weight - 0.5 >= 0
-                    ? () {
-                        set.weight -= 0.5;
-                        onChanged();
-                      }
-                    : null,
-                onPlus: () {
-                  set.weight += 0.5;
-                  onChanged();
-                },
-              ),
+              // 重量為 0 的徒手動作：重量是外加負重，預設鎖著，開了開關才能調。
+              if (bodyweight && set.weight == 0 && !set.loadOpen)
+                const _Field(
+                  label: '目標重量',
+                  value: '徒手',
+                  onMinus: null,
+                  onPlus: null,
+                )
+              else
+                _Field(
+                  label: '目標重量',
+                  // float 精度 0.5 公斤，≥ 0；值為 0 代表徒手（自身體重）動作。
+                  value: set.weight == 0 ? '徒手' : '${_kg(set.weight)} kg',
+                  onMinus: set.weight - 0.5 >= 0
+                      ? () {
+                          set.weight -= 0.5;
+                          onChanged();
+                        }
+                      : null,
+                  onPlus: () {
+                    set.weight += 0.5;
+                    onChanged();
+                  },
+                ),
+              if (bodyweight)
+                AddedLoadSwitch(
+                  on: set.loadOpen || set.weight > 0,
+                  onChanged: (v) {
+                    set.loadOpen = v;
+                    if (!v) set.weight = 0;
+                    onChanged();
+                  },
+                ),
               const SizedBox(height: S.sm),
               _Field(
                 label: '目標次數',

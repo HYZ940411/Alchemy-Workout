@@ -6,6 +6,7 @@ import '../domain/models.dart';
 import '../domain/rewards.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../widgets/added_load_switch.dart';
 import '../widgets/common.dart';
 import '../domain/community.dart';
 import 'ai/ai_adjust_screen.dart';
@@ -324,6 +325,7 @@ class _AddSetsForm extends StatefulWidget {
 class _AddSetsFormState extends State<_AddSetsForm> {
   int _sets = 3;
   double _weight = 20;
+  bool _loadOpen = false;
   int _reps = 10;
   int _seconds = 600;
 
@@ -360,13 +362,31 @@ class _AddSetsFormState extends State<_AddSetsForm> {
                   : null,
             )
           else ...[
-            _Row2(
-              label: '目標重量',
-              value: _weight == 0 ? '徒手' : '${_kgText(_weight)} kg',
-              onMinus:
-                  _weight >= 0.5 ? () => setState(() => _weight -= 0.5) : null,
-              onPlus: () => setState(() => _weight += 0.5),
-            ),
+            // 重量為 0 的徒手動作：重量是外加負重，預設鎖著，開了開關才能調。
+            if (widget.exercise.isBodyweight && !_loadOpen && _weight == 0)
+              const _Row2(
+                label: '目標重量',
+                value: '徒手',
+                onMinus: null,
+                onPlus: null,
+              )
+            else
+              _Row2(
+                label: '目標重量',
+                value: _weight == 0 ? '徒手' : '${_kgText(_weight)} kg',
+                onMinus: _weight >= 0.5
+                    ? () => setState(() => _weight -= 0.5)
+                    : null,
+                onPlus: () => setState(() => _weight += 0.5),
+              ),
+            if (widget.exercise.isBodyweight)
+              AddedLoadSwitch(
+                on: _loadOpen || _weight > 0,
+                onChanged: (v) => setState(() {
+                  _loadOpen = v;
+                  if (!v) _weight = 0;
+                }),
+              ),
             _Row2(
               label: '目標次數',
               value: '$_reps 下',
@@ -729,6 +749,9 @@ class _SetEditor extends StatelessWidget {
       );
     }
 
+    final cur = state.session!;
+    final ex = cur.exercises[cur.exerciseIndex].exercise;
+    final locked = state.addedLoadLocked(ex, r.weight);
     return Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -739,6 +762,27 @@ class _SetEditor extends StatelessWidget {
               Expanded(
                 child: Column(
                   children: [
+                    if (locked)
+                      // 重量為 0 的徒手動作：重量是外加負重，預設鎖著。
+                      Container(
+                        constraints: const BoxConstraints(minHeight: Sz.tapTarget),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(R.control),
+                          border: Border.all(color: C.lineDivider),
+                        ),
+                        child: Center(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.lock_outline,
+                                  size: Sz.iconDense, color: C.textSecondary),
+                              const SizedBox(width: S.sm),
+                              Text('徒手', style: T.numberS()),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
                     _StepperRow(
                       value: kgText(r.weight),
                       unit: 'kg',
@@ -758,6 +802,11 @@ class _SetEditor extends StatelessWidget {
                       ),
                       active: true,
                     ),
+                    if (ex.isBodyweight)
+                      AddedLoadSwitch(
+                        on: !locked,
+                        onChanged: (v) => state.setAddedLoad(ex, v),
+                      ),
                     const SizedBox(height: S.sm),
                     _StepperRow(
                       value: '${r.reps}',
