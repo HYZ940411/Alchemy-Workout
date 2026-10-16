@@ -874,10 +874,37 @@ class AppState extends ChangeNotifier {
   String? saveError;
   int consecutiveSaveFailures = 0;
 
+  /// 存檔送出後超過這麼久還沒完成，就當作離線或網路不穩。
+  static const Duration kSyncStallAfter = Duration(seconds: 3);
+
+  /// 資料是不是**還沒送到雲端**（離線或網路不穩）。畫面頂端的提示靠它。
+  ///
+  /// Firestore 離線時 `store.save()` 不會失敗也不會回來，要等連上網才完成 ——
+  /// 所以「超過 3 秒還沒完成」就是我們能得到的最好的離線訊號。
+  /// 只在真的存檔才會亮，**不是**偵測網路本身。
+  bool syncStalled = false;
+
+  int _savesInFlight = 0;
+  Timer? _stallTimer;
+
+  /// 只通知畫面，**不排存檔**。一般的 [notifyListeners] 每次都會排一次存檔，
+  /// 提示亮滅若也排存檔，離線時會自己一直產生新的存檔。
+  void _notifyUiOnly() => super.notifyListeners();
+
   Future<void> saveNow() async {
     final store = _store;
     if (store == null || !_hydrated) return;
     _saveTimer?.cancel();
+    _savesInFlight++;
+    if (_savesInFlight == 1) {
+      _stallTimer?.cancel();
+      _stallTimer = Timer(kSyncStallAfter, () {
+        if (_savesInFlight > 0 && !syncStalled) {
+          syncStalled = true;
+          _notifyUiOnly();
+        }
+      });
+    }
     try {
       await store.save(toSnapshot());
       saveCount++;
@@ -890,7 +917,43 @@ class AppState extends ChangeNotifier {
       consecutiveSaveFailures++;
       saveError = '$e';
       debugPrint('存檔失敗（連續 $consecutiveSaveFailures 次）：$e');
+    } finally {
+      _savesInFlight--;
+      if (_savesInFlight == 0) {
+        _stallTimer?.cancel();
+        if (syncStalled) {
+          syncStalled = false;
+          _notifyUiOnly();
+        }
+      }
     }
+  }
+
+  /// 登出前把資料送完：最多等 [wait]，回傳有沒有在時限內送完。
+  ///
+  /// 離線時 [saveNow] 永遠不會回來 —— 原本設定頁登出直接 `await saveNow()`，
+  /// 離線按登出就卡死。這裡到時間就放棄等待（寫入仍留在佇列裡）。
+  Future<bool> saveNowWithin(Duration wait) async {
+    try {
+      await saveNow().timeout(wait);
+      return true;
+    } on TimeoutException {
+      return false;
+    }
+  }
+
+  /// 登出之前的收尾。回傳：
+  /// - `true`：資料已經全部送到雲端，可以登出；
+  /// - `false`：**還有資料沒送出**，使用者看過警告並選擇仍要登出；
+  /// - `null`：資料沒送完，而使用者選擇先不登出。
+  ///
+  /// [askToForce] 只在資料沒送完時才會被問。
+  Future<bool?> flushForSignOut({
+    Duration wait = const Duration(seconds: 3),
+    required Future<bool> Function() askToForce,
+  }) async {
+    if (await saveNowWithin(wait)) return true;
+    return await askToForce() ? false : null;
   }
 
   /// 清除存檔並回到假資料的初始狀態。設定頁的「重設示範資料」用。

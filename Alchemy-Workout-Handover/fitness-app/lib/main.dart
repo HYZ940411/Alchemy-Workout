@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show FirebaseFirestore;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -6,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'data/ai_suggestion.dart';
 import 'data/ai_suggestion_http.dart';
 import 'data/auth.dart';
+import 'data/firestore_setup.dart';
+import 'widgets/sync_status_banner.dart';
 import 'data/platform_data.dart';
 import 'data/platform_data_firestore.dart';
 import 'data/follow_data.dart';
@@ -88,6 +91,8 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.dark,
   ));
   await Firebase.initializeApp(options: _firebaseOptions());
+  // 離線緩存：Web 預設不持久，斷網期間的寫入重新整理就沒了。要在第一次用 Firestore 之前設定。
+  configureFirestorePersistence(FirebaseFirestore.instance);
   // 轉址登入回來時，先把結果收掉再開 App —— 否則 AuthGate 會先看到
   // 「未登入」而畫出登入頁，使用者剛授權完卻又被要求登入一次。
   final auth = AuthService();
@@ -261,6 +266,13 @@ class _FitnessAppState extends State<FitnessApp> with WidgetsBindingObserver {
         title: '健金術 Alchemy Workout',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),
+        // 離線提示疊在整個 App 最上面，不改 widget 樹結構、不擋點擊。
+        builder: (context, child) => Stack(
+          children: [
+            ?child,
+            const SyncStatusBanner(),
+          ],
+        ),
         home: auth == null
             // 沒接帳號：讀完存檔才進主畫面。載入中與讀取失敗各有自己的畫面。
             ? const BootGate(child: FirstRunGate())

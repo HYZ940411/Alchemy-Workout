@@ -1,8 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show FirebaseFirestore;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import '../../build_stamp.dart';
 import '../../data/auth.dart';
+import '../../data/firestore_setup.dart';
 import '../../domain/registration.dart';
 import '../../mock/mock_data.dart';
 import '../../mock/mock_equipment.dart';
@@ -42,9 +44,27 @@ class SettingsScreen extends StatelessWidget {
     final navigator = Navigator.of(context);
     final state = AppScope.of(context);
 
-    await state.saveNow();
+    // 離線時 saveNow 永遠不會回來，原本在這裡直接 await 會卡死。
+    // 最多等 3 秒；沒送完就先問，不替使用者決定把資料丟掉。
+    final synced = await state.flushForSignOut(
+      askToForce: () async =>
+          await showAppDialog(
+            context,
+            title: '還有資料沒同步',
+            message: '目前連不上網路，最後一些變動還沒送到雲端。'
+                '現在登出，這些變動可能會遺失。要仍然登出嗎？',
+            confirmLabel: '仍要登出',
+            cancelLabel: '先不要',
+          ) ==
+          true,
+    );
+    if (synced == null) return;
+
     await AuthService().signOut();
     navigator.popUntil((route) => route.isFirst);
+    // 資料都送完了才清本機快取（共用電腦不留下上一位的資料）；
+    // 沒送完的話清掉等於把那些還沒送出的變動一起丟掉。
+    if (synced) await wipeLocalCacheAndReload(FirebaseFirestore.instance);
   }
 
   @override
