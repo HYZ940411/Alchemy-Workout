@@ -10,6 +10,7 @@
 import 'dart:convert';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/data/team_data.dart';
@@ -17,6 +18,7 @@ import 'package:fitness_app/data/team_data_firestore.dart';
 import 'package:fitness_app/domain/clock.dart';
 import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/leaderboard.dart';
+import 'package:fitness_app/screens/social/team_detail_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 /// 不在重新分隊期（每月前兩天兩個團隊分數皆不累加）的展示時鐘。
@@ -240,6 +242,75 @@ void main() {
       final s = _state();
       s.applyCloudTeam(cloud(s, day: '2000-01-01'));
       expect(s.timedTask.doneBy(s.displayName, uid: 'u-me'), isFalse);
+    });
+  });
+
+  group('別人的隊伍也看得到分數', () {
+    // 使用者截圖：團隊詳情頁（別人的隊）日常分數、限時分數都是 0 ——
+    // 雲端有分數，但轉成清單項目時沒帶。
+    CloudTeam other({String? period, int timed = 80}) => CloudTeam(
+          id: 't9',
+          name: '別人的隊',
+          members: {
+            'x': CloudMember(
+                name: '甲',
+                rank: 3,
+                role: TeamRole.leader,
+                joinedAt: DateTime(2026)),
+          },
+          contributions: const {'x': 30, 'y': 12},
+          timedScore: timed,
+          timedPeriod: period ?? _day(_state()).substring(0, 7),
+        );
+
+    test('日常分數是各成員貢獻的加總，限時分數是本月的', () {
+      final s = _state();
+      s.applyPublicTeams([other()]);
+      final t = s.publicTeams.single;
+      expect(t.dailyScore, 42);
+      expect(t.timedScore, 80);
+    });
+
+    test('限時分數是上個月的 → 當 0（日常不受影響）', () {
+      final s = _state();
+      s.applyPublicTeams([other(period: '2000-01')]);
+      final t = s.publicTeams.single;
+      expect(t.timedScore, 0);
+      expect(t.dailyScore, 42);
+    });
+
+    test('自己的隊不在「別人的隊」裡', () {
+      final s = _state();
+      s.applyCloudTeam(CloudTeam(
+        id: 't9',
+        name: '我的隊',
+        members: {
+          'u-me': CloudMember(
+              name: s.displayName,
+              rank: 1,
+              role: TeamRole.leader,
+              joinedAt: DateTime(2026)),
+        },
+      ));
+      s.applyPublicTeams([other()]);
+      expect(s.publicTeams, isEmpty);
+    });
+
+    testWidgets('團隊詳情頁畫出別人的兩個分數', (t) async {
+      final s = _state();
+      s.applyPublicTeams([other()]);
+      t.view.physicalSize = const Size(393 * 3, 2400 * 3);
+      t.view.devicePixelRatio = 3.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      await t.pumpWidget(AppScope(
+        state: s,
+        child: MaterialApp(
+            home: TeamDetailScreen(team: s.publicTeams.single)),
+      ));
+      await t.pumpAndSettle();
+      expect(find.text('42'), findsOneWidget, reason: '日常分數');
+      expect(find.text('80'), findsOneWidget, reason: '限時分數');
     });
   });
 

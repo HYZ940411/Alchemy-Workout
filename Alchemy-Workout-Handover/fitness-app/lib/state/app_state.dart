@@ -7713,8 +7713,14 @@ class AppState extends ChangeNotifier {
   ///
   /// **排除自己已經在的那一隊** —— 它顯示在「我的團隊」，
   /// 再出現在「可加入的公開團隊」裡只會讓人以為自己沒加入。
+  ///
+  /// **別人的隊伍也要帶分數。** 在此之前這裡只轉了名稱、人數與成員，
+  /// 兩個分數都沒帶，團隊詳情頁與排行榜上別人的隊永遠是 0 / 0
+  /// （2026-10-16 使用者回報「分數沒有同步」）。日常分數是各成員貢獻的加總，
+  /// 限時分數只算雲端記的那個月的。
   void applyPublicTeams(List<CloudTeam> cloud) {
     final mine = myTeam?.id;
+    final thisMonth = _timedDayKey().substring(0, 7);
     publicTeams
       ..clear()
       ..addAll([
@@ -7727,6 +7733,8 @@ class AppState extends ChangeNotifier {
               id: t.id,
               isPublic: t.isPublic,
               peakSize: t.peakSize,
+              dailyScore: t.contributions.values.fold<int>(0, (a, b) => a + b),
+              timedScore: t.timedPeriod == thisMonth ? t.timedScore : 0,
               members: [
                 for (final e in t.members.entries)
                   TeamMember(e.value.name, e.value.rank, e.value.role,
