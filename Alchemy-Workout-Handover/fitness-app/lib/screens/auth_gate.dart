@@ -18,7 +18,6 @@ import '../data/instructor_case_data.dart';
 import '../data/report_data.dart';
 import '../data/appeal_data.dart';
 import '../data/public_plan_data.dart';
-import '../domain/custom_plan.dart';
 import '../data/punishment_data.dart';
 import '../data/quality_score_data.dart';
 import '../data/violation_data.dart';
@@ -538,14 +537,8 @@ class _AuthGateState extends State<AuthGate> {
     // 公開課表審核。每個人都要跑：我送審的課表的裁決（申請人靠它讀回結果），
     // 以及全站已公開的課表（「已公開」就是這個意思）。各自成敗。
     if (widget.state.publicPlanSource != null) {
-      await step('我的公開課表', () async {
-        await widget.state.loadMyPublicPlans();
-        return '${widget.state.customPlans.where((p) => p.isMine && p.state == CustomPlanState.pendingPublic).length} 份審核中';
-      });
-      await step('全站公開課表', () async {
-        await widget.state.loadPublicPlans();
-        return '${widget.state.customPlans.where((p) => !p.isMine && p.state == CustomPlanState.public).length} 份';
-      });
+      await step('我的公開課表', () => widget.state.loadMyPublicPlans());
+      await step('全站公開課表', () => widget.state.loadPublicPlans());
     }
 
     // 檢舉佇列。**只有管理員讀得動** —— 一般帳號連查都會被規則拒絕，

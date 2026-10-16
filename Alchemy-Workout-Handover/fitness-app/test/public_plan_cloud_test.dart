@@ -280,6 +280,37 @@ void main() {
     expect(owner.cloudWriteReport['公開課表送審'], startsWith('失敗'));
   });
 
+  test('同步報告講得出雲端實際讀到什麼（三個數字對不上就是問題所在）', () async {
+    final owner = user('uO', '小明');
+    submitted(owner);
+    await settle();
+    final admin = adminUser();
+    await admin.loadPublicPlanQueue();
+    admin.approvePublicPlan(admin.pendingPublicPlans.single);
+    await settle();
+
+    // 申請人自己看：雲端那份是「已通過」。
+    final mine = await owner.loadMyPublicPlans();
+    expect(mine, contains('我送審過 1 份'));
+    expect(mine, contains('已通過 1'));
+    expect(mine, contains('審核中 0'));
+
+    // 別人看：讀到 1 份，是別人的，畫面上 1 份。
+    final viewer = user('uV', '路人');
+    expect(await viewer.loadPublicPlans(),
+        '雲端讀到已通過 1 份，其中別人的 1 份，畫面上 1 份');
+
+    // 作者自己讀全站：那一份是自己的，不算「別人的」。
+    expect(await owner.loadPublicPlans(),
+        '雲端讀到已通過 1 份，其中別人的 0 份，畫面上 0 份');
+  });
+
+  test('沒有任何人公開：報告寫 0，而不是失敗', () async {
+    final viewer = user('uV', '路人');
+    expect(await viewer.loadPublicPlans(),
+        '雲端讀到已通過 0 份，其中別人的 0 份，畫面上 0 份');
+  });
+
   test('讀不到要丟出去（讓同步報告寫「失敗」），不能假裝讀到 0 份；現有的課表不動', () async {
     // 原本三個讀取函式都吞掉錯誤：規則擋掉了，同步報告照寫「0 份」，
     // 與「真的沒有人公開」長得一模一樣（2026-10-16 實測：通過的課表別人看不到，查不出為什麼）。

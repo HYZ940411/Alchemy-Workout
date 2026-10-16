@@ -10708,10 +10708,14 @@ class AppState extends ChangeNotifier {
   /// 同步報告於是照寫「0 份」—— 規則擋掉與真的沒有長得一模一樣，查不出來
   /// （2026-10-16 使用者實測：通過的課表別的帳號看不到，報告上看不出為什麼）。
   /// 丟出去也不會動到現有狀態：審核中的課表不會被改成別的樣子。
-  Future<void> loadMyPublicPlans() async {
+  ///
+  /// 回傳一句「雲端實際讀到什麼」，給登入同步報告用 —— 只報「N 份審核中」的話，
+  /// 雲端上那份到底是什麼狀態看不出來。
+  Future<String> loadMyPublicPlans() async {
     final src = publicPlanSource;
-    if (src == null) return;
+    if (src == null) return '沒有接雲端';
     final mine = await src.myPlans();
+    int count(PublicPlanReview s) => mine.where((c) => c.state == s).length;
     var changed = false;
     for (final c in mine) {
       final i = customPlans.indexWhere((p) => p.id == c.id && p.isMine);
@@ -10730,22 +10734,33 @@ class AppState extends ChangeNotifier {
       }
     }
     if (changed) notifyListeners();
+    return '雲端上我送審過 ${mine.length} 份'
+        '（審核中 ${count(PublicPlanReview.pending)}、'
+        '已通過 ${count(PublicPlanReview.approved)}、'
+        '已退回 ${count(PublicPlanReview.rejected)}、'
+        '已下架 ${count(PublicPlanReview.withdrawn)}）';
   }
 
   /// 讀回**全站已公開**的課表（別人的）。取代上一次讀到的那批，不碰我自己的。
   ///
   /// 讀不到就丟出去（理由見 [loadMyPublicPlans]），現有狀態不動。
-  Future<void> loadPublicPlans() async {
+  ///
+  /// 回傳一句「雲端實際讀到什麼」：讀到幾份已通過的、其中幾份是自己的、
+  /// 最後畫面上有幾份。三個數字對不上的地方就是問題在哪。
+  Future<String> loadPublicPlans() async {
     final src = publicPlanSource;
-    if (src == null) return;
+    if (src == null) return '沒有接雲端';
     final cloud = await src.approvedPlans(limit: 100);
-    _replaceOthersPlans(
-      CustomPlanState.public,
-      [
-        for (final c in cloud)
-          if (c.ownerUid != myUid) c,
-      ],
-    );
+    final others = [
+      for (final c in cloud)
+        if (c.ownerUid != myUid) c,
+    ];
+    _replaceOthersPlans(CustomPlanState.public, others);
+    final shown = customPlans
+        .where((p) => !p.isMine && p.state == CustomPlanState.public)
+        .length;
+    return '雲端讀到已通過 ${cloud.length} 份，其中別人的 ${others.length} 份，'
+        '畫面上 $shown 份';
   }
 
   /// 讀回**待審的公開課表**。只有管理員叫得動。
