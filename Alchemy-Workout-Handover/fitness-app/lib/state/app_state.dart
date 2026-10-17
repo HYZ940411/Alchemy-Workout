@@ -6185,6 +6185,12 @@ class AppState extends ChangeNotifier {
 
   String? mentorApplyBlockedReason(Instructor i) {
     if (myInstructor != null && !_mentorReleaseEnded) {
+      // **已經解除的，不能再叫人「先解除」。** 冷卻期內擋人的是冷卻，
+      // 使用者要知道的是還要等多久（使用者 2026-10-17 回報畫面卡在解除頁）。
+      if (mentorReleased) {
+        return '解除後 3 天內不能與別人建立師徒關係，'
+            '冷卻中，還要等 ${_hm(mentorCooldownLeft)}。';
+      }
       return '一位學徒同時只能有一位教官，要先解除與 ${myInstructor!.name} 的師徒關係。';
     }
     // 先講「你已經送出了」再講「滿了」。
@@ -12793,6 +12799,10 @@ class AppState extends ChangeNotifier {
 
   void toggleDevSkipMentorCooldown() {
     devSkipMentorCooldown = !devSkipMentorCooldown;
+    // **打開的當下就要重新判斷。** 原本只翻旗標：已經解除、畫面卡著的人按了沒反應，
+    // 而重新整理又會把旗標清掉（旗標不進存檔）—— 兩邊互相卡死（2026-10-17）。
+    // 收尾只看冷卻是否已結束，關掉開關時 `_skipMentorCooldown` 為否，不會動到東西。
+    finalizeMentorRelease();
     notifyListeners();
   }
 
