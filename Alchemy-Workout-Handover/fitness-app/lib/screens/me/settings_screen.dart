@@ -362,6 +362,43 @@ class SettingsScreen extends StatelessWidget {
             // 而它們的下一步完全相反。
             // 診斷：網頁版交易的讀取（tx.get）從 2026-10-17 起丟出空物件。
             // 只讀一份文件、不寫任何東西，可以隨時重做；配合網址參數（?longpoll=force 等）比對。
+            // 管理員：重置所有人今天的限時任務（Demo 或事故後用）。
+            // 完成紀錄分散在每個人的存檔與各隊文件裡，沒有集中的地方可以逐一清，
+            // 所以是換一個「重置代數」—— 所有人下次載入時，今天的限時任務就當作還沒做。
+            if (s.isPlatformAdmin) ...[
+              const SectionLabel('重置限時任務', trailing: '管理員・開發者模式'),
+              Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '把所有人今天的限時任務、已領的獎勵都當作還沒做。'
+                      '對方要重新整理頁面才會看到；已經領過的獎勵可以再領一次。',
+                      style: TextStyle(fontSize: 11.5, color: AppColors.textFaint),
+                    ),
+                    const SizedBox(height: 8),
+                    AppButton(
+                      label: '重置所有人今天的限時任務',
+                      kind: BtnKind.secondary,
+                      onPressed: () async {
+                        final ok = await showAppDialog(
+                          context,
+                          title: '重置所有人今天的限時任務？',
+                          message: '所有人今天的完成紀錄與已領的獎勵都會當作還沒做，'
+                              '獎勵可以再領一次。對方要重新整理頁面才會生效。',
+                          confirmLabel: '重置',
+                          cancelLabel: '取消',
+                        );
+                        if (ok != true || !context.mounted) return;
+                        final err = await s.resetTimedTaskForAll();
+                        if (!context.mounted) return;
+                        showToast(context, err ?? '已重置，請大家重新整理頁面');
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SectionLabel('交易讀取測試', trailing: '開發者模式'),
             Panel(
               child: Column(

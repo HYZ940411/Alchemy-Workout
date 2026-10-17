@@ -427,7 +427,9 @@ class FirestoreTeams implements TeamSource {
       // 只有「這個人今天第一次被記」才加：按兩次、重新整理後再按，都不會多拿。
       // 重新分隊期（每月前兩天）兩個團隊分數皆不累加。
       // 全員完成的 +50 看這一刻隊上有誰，所以必須在同一個交易裡算。
-      if (!already && !inRegroupWindow(DateTime.parse(day))) {
+      // `day` 可能帶重置代數（`2026-10-17#1760000000`），日期與月份只看 # 之前。
+      final dateOnly = day.split('#').first;
+      if (!already && !inRegroupWindow(DateTime.parse(dateOnly))) {
         final members = {
           for (final v in (data['memberUids'] as List? ?? const []))
             if (v is String) v,
@@ -435,7 +437,7 @@ class FirestoreTeams implements TeamSource {
         final after = {...before, memberUid};
         final allDone = members.isNotEmpty && members.every(after.contains);
         final delta = kTimedTaskPerMember + (allDone ? kTimedTaskAllBonus : 0);
-        final period = day.substring(0, 7);
+        final period = dateOnly.substring(0, 7);
         if (data['timedPeriod'] == period) {
           updates['timedScore'] = FieldValue.increment(delta);
         } else {

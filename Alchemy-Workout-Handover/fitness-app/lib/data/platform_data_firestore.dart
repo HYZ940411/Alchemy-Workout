@@ -7,11 +7,6 @@ import 'http_error.dart';
 import 'platform_cache.dart';
 import 'platform_data.dart';
 
-/// 能保證「雲端有版本標記」的來源。登入的管理員會呼叫它補上第一份版本。
-/// 獨立成一個介面，是為了不動 [PlatformDataSource]（測試裡有很多它的替身）。
-abstract interface class PlatformRevisioned {
-  Future<void> ensureRev();
-}
 
 /// Firestore 版的平台資料來源（[BE-12]）。
 ///
@@ -70,14 +65,31 @@ class FirestorePlatformData implements PlatformDataSource, PlatformRevisioned {
 
   String _newRev() => DateTime.now().microsecondsSinceEpoch.toString();
 
-  /// 讀版本。**沒有、讀不到、格式不對一律回空值**（呼叫端當作「不知道版本」，整份重讀）。
-  Future<String?> _readRev() async {
+  /// 讀版本與重置代數（同一份文件，**一次讀取**）。**沒有、讀不到、格式不對一律回空值**
+  /// （版本空值＝呼叫端當作「不知道版本」，整份重讀；代數空值＝不動目前的代數）。
+  Future<({String? rev, int? epoch})> _readMeta() async {
     try {
-      final r = (await _meta.get()).data()?['rev'];
-      return r is String && r.isNotEmpty ? r : null;
+      final d = (await _meta.get()).data();
+      final r = d?['rev'];
+      final e = d?['timedEpoch'];
+      return (
+        rev: r is String && r.isNotEmpty ? r : null,
+        epoch: e is num ? e.round() : 0,
+      );
     } catch (_) {
-      return null;
+      return (rev: null, epoch: null);
     }
+  }
+
+  Future<String?> _readRev() async => (await _readMeta()).rev;
+
+  /// 換一個重置代數。用現在的秒數：不必先讀再加，而且永遠比上一次大。
+  /// 只改 `timedEpoch`（merge），**不動 `rev`** —— 平台資料沒變，不該讓所有人重讀快取。
+  @override
+  Future<int> resetTimedTask() async {
+    final e = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    await _meta.set({'timedEpoch': e}, SetOptions(merge: true));
+    return e;
   }
 
   /// 後台改了會進快取的集合，就換一個新版本，其他裝置下次載入才會重讀。
@@ -88,7 +100,9 @@ class FirestorePlatformData implements PlatformDataSource, PlatformRevisioned {
     if (!_versioned.contains(collection)) return;
     if (collection == 'platform_config' && docId == metaDoc) return;
     try {
-      await _meta.set({'rev': _newRev(), 'at': FieldValue.serverTimestamp()});
+      // merge：不能把同一份文件裡的 timedEpoch（限時任務重置代數）蓋掉。
+      await _meta.set({'rev': _newRev(), 'at': FieldValue.serverTimestamp()},
+          SetOptions(merge: true));
     } catch (e) {
       throw StateError('已寫入，但版本標記沒有更新，其他人要等下次更新才看得到'
           '（${describeError(e)}）');
@@ -102,7 +116,8 @@ class FirestorePlatformData implements PlatformDataSource, PlatformRevisioned {
   @override
   Future<void> ensureRev() async {
     if (await _readRev() != null) return;
-    await _meta.set({'rev': _newRev(), 'at': FieldValue.serverTimestamp()});
+    await _meta.set({'rev': _newRev(), 'at': FieldValue.serverTimestamp()},
+        SetOptions(merge: true));
   }
 
   @override
@@ -111,7 +126,8 @@ class FirestorePlatformData implements PlatformDataSource, PlatformRevisioned {
     try {
       // **先讀版本，再讀資料。** 反過來的話，讀完資料到讀版本之間若有人改了，
       // 會把新版本標在舊資料上，下次就永遠不重讀。先讀版本最壞只是多重讀一次。
-      final rev = await _readRev();
+      final meta = await _readMeta();
+      final rev = meta.rev;
       final hit = rev == null ? null : await cache?.read();
       PlatformData core;
       if (hit != null && hit.rev == rev) {
@@ -137,6 +153,7 @@ class FirestorePlatformData implements PlatformDataSource, PlatformRevisioned {
         config: core.config,
         products: core.products,
         examQuestions: exam,
+        timedEpoch: meta.epoch,
       );
     } catch (_) {
       // 連線或權限層級的整體失敗：整份退回後備，不擋使用者進場。

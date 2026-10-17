@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import '../data/ai_suggestion.dart';
 import '../data/auth.dart';
 import '../data/platform_data.dart';
-import '../data/platform_data_firestore.dart' show PlatformRevisioned;
 import '../data/public_profile.dart';
 import '../data/follow_data.dart';
 import '../data/photo_data.dart';

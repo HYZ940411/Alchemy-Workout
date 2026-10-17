@@ -38,6 +38,20 @@ abstract class PlatformDataSource {
   Future<PlatformData> load();
 }
 
+/// 能保證「雲端有版本標記」、也能重置限時任務的來源。
+/// 獨立成一個介面，是為了不動 [PlatformDataSource]（測試裡有很多它的替身）。
+abstract interface class PlatformRevisioned {
+  /// 雲端還沒有平台資料的版本標記就補一份（管理員登入時呼叫）。
+  Future<void> ensureRev();
+
+  /// **重置所有人今天的限時任務**（管理員用，Demo 或事故後）。
+  ///
+  /// 完成紀錄分散在每個人自己的存檔與各隊伍的文件裡，沒有集中的地方可以逐一清；
+  /// 這裡改成**換一個「重置代數」**：所有人載入時讀到新的代數，今天的限時任務就當作還沒做。
+  /// 回傳新的代數。
+  Future<int> resetTimedTask();
+}
+
 /// 六類平台資料的一份快照。
 ///
 /// 課表帶的是 [PlatformPlanSpec]（含詳情頁的長文內容），而非已經攤平成
@@ -61,6 +75,10 @@ class PlatformData {
   /// 空清單＝這次不更動目前的題庫。
   final List<ExamQuestion> examQuestions;
 
+  /// 限時任務的「重置代數」（`platform_config/_meta` 的 `timedEpoch`）。
+  /// 空值＝這次讀不到（沒接雲端、讀失敗），**不動**目前的代數。
+  final int? timedEpoch;
+
   const PlatformData({
     required this.exercises,
     required this.planSpecs,
@@ -69,6 +87,7 @@ class PlatformData {
     required this.config,
     this.products = const [],
     this.examQuestions = const [],
+    this.timedEpoch,
   });
 }
 

@@ -4166,7 +4166,7 @@ class AppState extends ChangeNotifier {
       // 清空這件事沒有伺服器可以做，由第一個完成的人順手做
       // （見 `CloudTeam.timedDay`），在那之前這裡先當它是空的。
       timedCredited:
-          t.timedDay == _timedDayKey() ? {...t.timedCredited} : <String>{},
+          t.timedDay == _timedStamp() ? {...t.timedCredited} : <String>{},
       // 月累計團隊限時分數：雲端記的是哪個月的就只算那個月的。
       timedScore: t.timedPeriod == _timedDayKey().substring(0, 7)
           ? t.timedScore
@@ -4196,6 +4196,42 @@ class AppState extends ChangeNotifier {
   }
 
   /// 限時任務完成名單屬於哪一個業務日（04:00 換日，與全域規範一致）。
+  /// 限時任務的重置代數（`platform_config/_meta.timedEpoch`，見 [PlatformRevisioned.resetTimedTask]）。
+  /// 0＝沒重置過。
+  int timedEpoch = 0;
+
+  /// 「今天這一輪限時任務」的識別：日期，加上重置代數（有重置過才加）。
+  ///
+  /// 每個人存檔裡的完成紀錄、各隊文件的 `timedDay` 都比對它 ——
+  /// 代數一換，**舊的紀錄自己就失效**，不必逐一去清。
+  String _timedStamp() => timedEpoch > 0 ? '${_timedDayKey()}#$timedEpoch' : _timedDayKey();
+
+  /// 套用雲端讀到的重置代數。**換了就把今天的完成與領取一起歸零**
+  /// （本機的完成紀錄、已領旗標、這支隊伍今天的完成名單）。空值＝這次沒讀到，不動。
+  void applyTimedEpoch(int? e) {
+    if (e == null || e == timedEpoch) return;
+    timedEpoch = e;
+    timedTask.completedBy.clear();
+    timedRewardClaimed = false;
+    _timedDoneTeamId = null;
+    timedTaskError = null;
+    myTeam?.timedCredited.clear();
+    notifyListeners();
+  }
+
+  /// 管理員：重置**所有人**今天的限時任務。成功回 null，失敗回一句原因。
+  Future<String?> resetTimedTaskForAll() async {
+    if (!isPlatformAdmin) return '只有管理員可以重置。';
+    final src = platformSource;
+    if (src is! PlatformRevisioned) return '目前沒有接雲端，沒辦法替所有人重置。';
+    try {
+      applyTimedEpoch(await (src as PlatformRevisioned).resetTimedTask());
+      return null;
+    } catch (e) {
+      return '沒有重置成功：${describeError(e)}';
+    }
+  }
+
   String _timedDayKey() {
     final d = businessDate(now);
     return '${d.year.toString().padLeft(4, '0')}-'
@@ -4413,7 +4449,7 @@ class AppState extends ChangeNotifier {
       final delta = _creditTimedLocally(t, me);
       final attempted = teamSource != null;
       _pushTeam('限時任務計分',
-              (src, uid) => src.creditTimed(t.id, uid, _timedDayKey()))
+              (src, uid) => src.creditTimed(t.id, uid, _timedStamp()))
           .then((r) {
         // **雲端沒記上就要讓使用者能再按一次。** 以前本機先記成「已完成」就算了，
         // 雲端失敗時按鈕消失、分數沒加，重新整理後也救不回來
@@ -11516,6 +11552,7 @@ class AppState extends ChangeNotifier {
       _dropPlatform('daily_task_pool', t.id);
 
   void applyPlatformData(PlatformData d) {
+    applyTimedEpoch(d.timedEpoch);
     platformExercises = List.of(d.exercises);
     planSpecById = {for (final s in d.planSpecs) s.id: s};
     platformPlans = [

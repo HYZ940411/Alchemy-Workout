@@ -37,7 +37,7 @@ def main():
     # 上傳了卻不換版本，已經有快取的裝置會一直拿舊的。
     import time
     db.collection('platform_config').document('_meta').set(
-        {'rev': str(time.time_ns() // 1000)})
+        {'rev': str(time.time_ns() // 1000)}, merge=True)  # merge：不蓋掉 timedEpoch
     print('已更新平台資料版本（platform_config/_meta）。')
 
 

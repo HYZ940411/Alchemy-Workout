@@ -594,13 +594,13 @@ extension AppStateSnapshot on AppState {
         // 存的是**哪一天**：新的一天自然失效，不用靠誰去清。
         'timedDone': timedTask.doneBy(displayName, uid: myUid)
             ? {
-                'day': _timedDayKey(),
+                'day': _timedStamp(),
                 'key': personKeyOf(displayName, myUid),
                 // 記在哪支隊伍的帳上；沒有隊伍是空字串。舊存檔沒有這個欄位。
                 'teamId': _timedDoneTeamId ?? '',
               }
             : null,
-        'timedClaimedOn': timedRewardClaimed ? _timedDayKey() : null,
+        'timedClaimedOn': timedRewardClaimed ? _timedStamp() : null,
 
         // --- 進行中的訓練 ---
         //
@@ -1108,12 +1108,12 @@ extension AppStateSnapshot on AppState {
     // 存的是當時用的鍵（uid），不在這裡重算：載入時 `myUid` 可能還沒設上。
     final timedDone = pick<Map>('timedDone');
     if (timedDone != null &&
-        timedDone['day'] == _timedDayKey() &&
+        timedDone['day'] == _timedStamp() &&
         timedDone['key'] is String) {
       timedTask.completedBy.add(timedDone['key'] as String);
       _timedDoneTeamId = timedDone['teamId'] as String?;
     }
-    timedRewardClaimed = pick<String>('timedClaimedOn') == _timedDayKey();
+    timedRewardClaimed = pick<String>('timedClaimedOn') == _timedStamp();
 
     // 進行中的訓練。放在自訂訓練之後 —— 動作可能是自建的，要先還原動作庫。
     // 存檔裡沒有就是沒有（含上一個人留在記憶體裡的），不沿用現有的。
