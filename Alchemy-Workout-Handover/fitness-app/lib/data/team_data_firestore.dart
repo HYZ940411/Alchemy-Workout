@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../domain/community.dart';
+import '../domain/leaderboard.dart';
+import 'settlement_data.dart';
 import 'team_data.dart';
 import 'cloud_watch.dart';
 import 'guarded_transaction.dart';
@@ -29,7 +31,7 @@ import 'guarded_transaction.dart';
 ///
 /// `memberUids` 是同一份資料的查詢用投影 —— Firestore 無法對 Map 的鍵做查詢，
 /// 而「我在哪一隊」每次登入都要問一次。
-class FirestoreTeams implements TeamSource {
+class FirestoreTeams implements TeamSource, TeamSettlementSource {
   final String uid;
   final FirebaseFirestore _db;
 
@@ -477,6 +479,97 @@ class FirestoreTeams implements TeamSource {
       tx.update(ref, updates);
       return null;
     });
+  }
+
+  // ===========================================================================
+  // 月結算（[TeamSettlementSource]）
+  // ===========================================================================
+
+  DocumentReference<Map<String, dynamic>> _settlementDoc(String period) =>
+      _db.collection('team_settlements').doc(period);
+
+  @override
+  Future<DateTime?> settledAt(String period) async {
+    final snap = await _settlementDoc(period).get();
+    if (!snap.exists) return null;
+    final at = snap.data()?['settledAt'];
+    // 剛寫入的 serverTimestamp 在本機快取裡可能還是空的；標記存在就是結算過了。
+    return at is Timestamp ? at.toDate() : DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  @override
+  Future<List<CloudTeam>> allTeams() async {
+    final snap = await _col.get();
+    return [
+      for (final d in snap.docs) ?_teamOf(d.id, d.data()),
+    ];
+  }
+
+  Map<String, dynamic> _boardJson(TeamBoardResult r) => {
+        'group': r.group,
+        'place': r.place,
+        'score': r.score,
+        'coins': r.prize.coins,
+        'exp': r.prize.exp,
+        'aiCredits': r.prize.aiCredits,
+      };
+
+  @override
+  Future<void> publish(String period, List<TeamSettlementResult> results,
+      {required String by}) async {
+    // 標記與全部結果同一批寫入：要嘛都寫進去、要嘛都沒有，不會出現「標記有了結果缺一半」。
+    final batch = _db.batch();
+    batch.set(_settlementDoc(period), {
+      'period': period,
+      'settledBy': by,
+      'settledAt': FieldValue.serverTimestamp(),
+      'teams': results.length,
+    });
+    for (final r in results) {
+      batch.set(_settlementDoc(period).collection('results').doc(r.teamId), {
+        'period': r.period,
+        'teamId': r.teamId,
+        'teamName': r.teamName,
+        'memberUids': r.memberUids,
+        'daily': _boardJson(r.daily),
+        'timed': _boardJson(r.timed),
+      });
+    }
+    await batch.commit();
+  }
+
+  TeamBoardResult? _boardOf(Board board, Object? raw) {
+    if (raw is! Map) return null;
+    int n(String k) => raw[k] is num ? (raw[k] as num).round() : 0;
+    return TeamBoardResult(
+      board: board,
+      group: raw['group'] is String ? raw['group'] as String : '',
+      place: n('place'),
+      score: n('score'),
+      prize: RankPrize(n('coins'), n('exp'), n('aiCredits')),
+    );
+  }
+
+  @override
+  Future<TeamSettlementResult?> resultFor(String period, String teamId) async {
+    final snap =
+        await _settlementDoc(period).collection('results').doc(teamId).get();
+    final j = snap.data();
+    if (j == null) return null;
+    final daily = _boardOf(Board.teamDaily, j['daily']);
+    final timed = _boardOf(Board.teamTimed, j['timed']);
+    if (daily == null || timed == null) return null;
+    return TeamSettlementResult(
+      period: period,
+      teamId: teamId,
+      teamName: j['teamName'] is String ? j['teamName'] as String : '',
+      memberUids: [
+        for (final v in (j['memberUids'] as List? ?? const []))
+          if (v is String) v,
+      ],
+      daily: daily,
+      timed: timed,
+    );
   }
 
   TeamRequest? _requestOf(Map<String, dynamic> j) {

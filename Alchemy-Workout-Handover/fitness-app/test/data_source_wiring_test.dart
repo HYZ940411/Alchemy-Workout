@@ -45,6 +45,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// 那六支被抓到的當初看起來全都像前者。白名單最常見的失敗方式，
 /// 就是變成「測試紅了就加一行」的地方。
 const _allowed = <String, String>{
+  // 2026-10-17 `[QA-05]` 團隊月結算，分成兩半做。管理員那半（`settledAt`／`allTeams`／`publish`）已接上；
+  // 隊員領取那半（`resultFor`）是**同一件事的下一步**，不是漏接 —— 見 PROGRESS.md 3AZ。
+  // **隊員領取接上時刪掉這一行**；刪不掉就代表那一半還沒做完。
+  'TeamSettlementSource.resultFor': '隊員領取月結算獎勵（階段三之二）還沒做',
   // 2026-10-17 QA-08 平台資料本機快取。它只被 `FirestorePlatformData`（lib/data 內）使用，
   // 不經狀態層或畫面層，所以這道「呼叫端在 lib/state、lib/screens」的檢查看不到。
   // 人工確認過：`FirestorePlatformData.load()` 呼叫 `cache?.read()`／`cache?.write()`，
@@ -84,6 +88,9 @@ const _ambiguous = <String, String>{
   'MentorSource.sendRequest': '`applyMentor()` 送出拜師申請',
   'TeamSource.sendRequest': '申請加入公開團隊、隊長邀請成員',
   'PostSource.publish': '`publishPost()` 與 `shareWorkout()`',
+  // 2026-10-17 `[QA-05]`。人工確認：`AppState._settleTeamBoards()` 呼叫 `src.publish(period, results, by: …)`，
+  // 由管理員按「結算上月團隊排行榜」觸發；`team_settlement_cloud_test.dart` 驗過整條路。
+  'TeamSettlementSource.publish': '`AppState._settleTeamBoards()`，管理員按「結算上月團隊排行榜」',
   'PublicProfileSource.publish': '`publishMyProfile()` 與 `AuthGate._syncProfile`',
   // 這兩支撞的是**欄位名**（畫面上的 `s.questions`），不是別的介面。
   'MentorSource.questions': '2026-09-24 接上：`loadMentorSideOf()`',

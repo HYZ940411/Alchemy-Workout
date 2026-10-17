@@ -10,6 +10,7 @@ import '../domain/clock.dart';
 // 轉出以維持既有呼叫端不變 —— 19 處在本檔、5 個測試檔。
 export '../domain/clock.dart' show businessDate;
 import '../data/http_error.dart';
+import '../data/settlement_data.dart';
 import '../data/public_plan_data.dart';
 import '../data/ai_suggestion.dart';
 import '../data/instructor_case_data.dart';
@@ -4311,6 +4312,53 @@ class AppState extends ChangeNotifier {
     timedTaskError = null;
     myTeam?.timedCredited.clear();
     notifyListeners();
+  }
+
+  /// 團隊月結算的雲端讀寫。**跟 [teamSource] 是同一個物件**（`FirestoreTeams` 一併實作），
+  /// 登入時由 `AuthGate` 接上；空值代表沒接雲端（示範、測試）。
+  TeamSettlementSource? settlementSource;
+
+  /// 管理員：結算**上個月**的兩個團隊排行榜（`[QA-05]`，使用者裁決 D）。
+  ///
+  /// 讀全部隊伍上個月的分數 → 算名次與獎勵（[computeTeamSettlement]）→ 一次寫成不可修改的結果。
+  /// 同一個月只能結算一次（雲端的標記只能建立一次）。隊員登入後各自領取。
+  /// 失敗時 [error] 是一句話；成功時 [error] 為空、[teams] 是結算了幾支隊伍。
+  Future<({String? error, int teams})> settleTeamBoardsForAll() async {
+    if (!isPlatformAdmin) return (error: '只有管理員可以結算。', teams: 0);
+    final src = settlementSource;
+    if (src == null) return (error: '目前沒有接雲端，沒辦法結算。', teams: 0);
+    if (_notReallyAdmin case final why?) return (error: why, teams: 0);
+    final period = previousMonthKey(teamMonthKey(now));
+    try {
+      return await _settleTeamBoards(src, period)
+          .timeout(const Duration(seconds: 60));
+    } catch (e) {
+      return (error: '沒有結算成功：${describeError(e)}', teams: 0);
+    }
+  }
+
+  Future<({String? error, int teams})> _settleTeamBoards(
+      TeamSettlementSource src, String period) async {
+    if (await src.settledAt(period) != null) {
+      return (error: '$period 已經結算過了，同一個月只能結算一次。', teams: 0);
+    }
+    final results = computeTeamSettlement(await src.allTeams(), period);
+    if (results.isEmpty) {
+      return (
+        error: '$period 沒有符合資格的隊伍（本月曾達 $kTeamMinSize 人的隊伍才會上榜），'
+            '沒有寫入任何東西，之後還可以再按。',
+        teams: 0
+      );
+    }
+    if (results.length > kMaxSettlementTeams) {
+      return (
+        error: '符合資格的隊伍有 ${results.length} 支，超過一次能寫入的 $kMaxSettlementTeams 支。'
+            '目前不支援分批結算，沒有寫入任何東西。',
+        teams: 0
+      );
+    }
+    await src.publish(period, results, by: myUid ?? '');
+    return (error: null, teams: results.length);
   }
 
   /// 管理員：重置**所有人**今天的限時任務。成功回 null，失敗回一句原因。
@@ -12458,6 +12506,7 @@ class AppState extends ChangeNotifier {
     postSource = null;
     photoSource = null;
     teamSource = null;
+    settlementSource = null;
     chatSource = null;
     _mentorSource = null;
     _mentorLoaded = false;

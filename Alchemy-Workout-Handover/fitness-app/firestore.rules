@@ -281,6 +281,33 @@ service cloud.firestore {
       }
     }
 
+    // --- 團隊排行榜月結算結果（[QA-05]，使用者裁決 D，2026-10-17）---
+    //
+    // 每月初由管理員按一次「結算上月團隊排行榜」：系統用雲端各隊上個月的分數算出名次與獎勵，
+    // 寫成這份結果，隊員登入後各自從這裡領進獎勵信箱。免費方案沒有排程，所以由管理員觸發；
+    // 日後升 Blaze 改成排程，結果的形狀不用變。
+    //
+    // 結構：`team_settlements/{yyyy-MM}` 是「這個月結算過了」的標記，
+    // `team_settlements/{yyyy-MM}/results/{teamId}` 是每支隊伍一份結果（含結算當下的成員 uid 名單）。
+    // **一經寫入不可修改、不可刪除** —— 比照排行榜歷史紀錄的稽核要求；
+    // 也因此標記只能 create 一次，同一個月不會被結算兩次。
+    match /team_settlements/{period} {
+      allow read: if request.auth != null;
+      allow create: if isAdmin() && period.matches('^[0-9]{4}-[0-9]{2}$');
+      allow update, delete: if false;
+
+      match /results/{teamId} {
+        // 只有結算當下在那支隊上的人（名單在文件裡）與管理員讀得到。
+        // 文件不存在時（還沒結算）回「不存在」而不是報錯 —— 隊員每次登入都會問一次。
+        allow read: if request.auth != null
+                    && (resource == null
+                        || isAdmin()
+                        || request.auth.uid in resource.data.memberUids);
+        allow create: if isAdmin();
+        allow update, delete: if false;
+      }
+    }
+
     // **collection group 查詢吃的不是上面那條巢狀規則。**
     //
     // `collectionGroup('requests')`（「誰邀我入隊」）在規則引擎眼中，

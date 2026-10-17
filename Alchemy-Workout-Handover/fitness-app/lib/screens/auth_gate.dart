@@ -12,6 +12,7 @@ import '../data/photo_data.dart';
 import '../data/rating_data.dart';
 import '../data/post_data.dart';
 import '../data/chat_data.dart';
+import '../data/settlement_data.dart';
 import '../data/team_data.dart';
 import '../data/mentor_data.dart';
 import '../data/instructor_case_data.dart';
@@ -349,6 +350,10 @@ class _AuthGateState extends State<AuthGate> {
     widget.state.photoSource = widget.photosFor?.call(uid);
     widget.state.chatSource = widget.chatsFor?.call(uid);
     widget.state.teamSource = widget.teamsFor?.call(uid);
+    // 月結算的讀寫跟團隊是同一個來源（`FirestoreTeams` 一併實作），不另外接線。
+    final teamSrc = widget.state.teamSource;
+    widget.state.settlementSource =
+        teamSrc is TeamSettlementSource ? teamSrc as TeamSettlementSource : null;
     widget.state.mentorSource = widget.mentorFor?.call(uid);
     widget.state.reportSource = widget.reportsFor?.call(uid);
     widget.state.instructorCaseSource =

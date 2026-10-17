@@ -421,6 +421,39 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
+              const SectionLabel('結算團隊排行榜', trailing: '管理員・開發者模式'),
+              Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '每月初按一次：讀所有隊伍上個月的日常與限時分數，算出名次與獎勵，寫成不可修改的結果。'
+                      '隊員下次登入就能把獎勵領進信箱。同一個月只能結算一次；'
+                      '結算後才退隊或換隊的人領不到。',
+                      style: TextStyle(fontSize: 11.5, color: AppColors.textFaint),
+                    ),
+                    const SizedBox(height: 8),
+                    AppButton(
+                      label: '結算上月團隊排行榜',
+                      kind: BtnKind.secondary,
+                      onPressed: () async {
+                        final ok = await showAppDialog(
+                          context,
+                          title: '結算上月團隊排行榜？',
+                          message: '會讀取所有隊伍的分數並寫入結果，寫入後不能修改，'
+                              '同一個月不能再結算。確定現在要結算嗎？',
+                          confirmLabel: '結算',
+                          cancelLabel: '取消',
+                        );
+                        if (ok != true || !context.mounted) return;
+                        final r = await s.settleTeamBoardsForAll();
+                        if (!context.mounted) return;
+                        showToast(context, r.error ?? '已結算 ${r.teams} 支隊伍，隊員登入後可領獎勵');
+                      },
+                    ),
+                  ],
+                ),
+              ),
             ],
             const SectionLabel('交易讀取測試', trailing: '開發者模式'),
             Panel(
