@@ -11695,6 +11695,29 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 開發者模式：把**我自己**今天的每日任務當作還沒做（測試團隊日常分數累積用）。
+  ///
+  /// 團隊裡的人今天都做完之後，沒辦法再驗「完成一項就加 10」。完成紀錄在每個人
+  /// 自己的存檔裡，所以由每個人在自己的裝置上按。
+  ///
+  /// 清掉的東西：任務進度與已領旗標、兩個全部完成的加碼旗標、今天的互動計數，
+  /// 以及按讚的去重名單（不清的話，同一則貼文再按讚不會再計進度）。
+  /// **不動**已經記進個人分數與團隊貢獻的分數 —— 要驗的就是它繼續往上加。
+  /// 簽到與訓練是各自有當日旗標的，下次載入時補進度會把它們補回完成（且不發分，
+  /// 見 `[QA-10]`），所以要測請用按讚、留言、完成組數這類任務。
+  void resetMyDailyTasksForTest() {
+    for (final t in dailyTasks) {
+      t.progress = 0;
+      t.claimed = false;
+    }
+    _allTasksBonusGiven = false;
+    _allTasksCoinGiven = false;
+    _rollInteractionDay();
+    _interactCounts.clear();
+    _rewardedRequests.removeWhere((k) => k.startsWith('Like:'));
+    notifyListeners();
+  }
+
   /// 每日任務進度**不得低於今天已知已發生的次數**。
   ///
   /// 這是一條不變條件，不是重抽時順手做的事 —— 進度會經由三條路徑

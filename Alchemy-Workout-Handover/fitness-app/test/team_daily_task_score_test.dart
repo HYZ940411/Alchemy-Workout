@@ -8,12 +8,15 @@
 // 留言則完全沒有呼叫。名字對不上的任務永遠不會被推進，也就永遠不發 +10。
 // 只有名字剛好一致的（「使用者已簽到」「使用者已完成該組」）才會加分。
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fitness_app/design/components.dart';
 import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/models.dart';
 import 'package:fitness_app/domain/platform_config.dart';
 import 'package:fitness_app/domain/rewards.dart';
+import 'package:fitness_app/screens/me/settings_screen.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 /// 我有一支隊，日常分數 0；今天的每日任務指定成 [events]。
@@ -131,5 +134,97 @@ void main() {
     final mine = s.posts.firstWhere(s.isMyPost);
     s.toggleLike(mine);
     expect(s.dailyTasks.first.progress, 0);
+  });
+
+  group('開發者模式：重置我的每日任務（團隊成員都做完之後要能再測）', () {
+    test('做完再重置：進度與已領歸零，再完成一次團隊日常分數繼續往上加', () {
+      final s = _state([('互動者已留言', 1)]);
+      final p = _othersPosts(s).first;
+      s.addComment(p, '加油');
+      s.claimTask(s.dailyTasks.first);
+      expect(_daily(s), 10);
+      // 再留言一次：任務已完成，不會再加。這就是回報時「測不了」的狀態。
+      s.addComment(p, '再來');
+      expect(_daily(s), 10);
+
+      s.resetMyDailyTasksForTest();
+      expect(s.dailyTasks.first.progress, 0);
+      expect(s.dailyTasks.first.claimed, isFalse);
+      expect(_daily(s), 10, reason: '已經拿到的分數不扣');
+
+      s.addComment(p, '重來');
+      expect(_daily(s), 20, reason: '重置後再完成一次要再加 10');
+    });
+
+    test('重置後同一則貼文再按讚，仍然計進度（按讚去重名單也清掉）', () {
+      final s = _state([('互動者已按讚貼文', 1)]);
+      final p = _othersPosts(s).first;
+      s.toggleLike(p);
+      expect(_daily(s), 10);
+      s.toggleLike(p); // 取消
+      s.resetMyDailyTasksForTest();
+      s.toggleLike(p);
+      expect(_daily(s), 20);
+    });
+
+    test('全部完成的加碼 20 分重置後可以再拿一次', () {
+      final s = _state([('互動者已留言', 1)]);
+      s.dailyTasks.removeLast(); // 去掉墊底，只剩一項：完成即全部完成
+      final p = _othersPosts(s).first;
+      s.addComment(p, '加油');
+      expect(_daily(s), 30, reason: '任務 10 ＋ 全部完成加碼 20');
+      s.resetMyDailyTasksForTest();
+      s.addComment(p, '重來');
+      expect(_daily(s), 60);
+    });
+
+    test('今天的互動計數歸零：留言額度用完之後重置，又能計進任務', () {
+      final s = _state([('互動者已留言', 1)]);
+      final p = _othersPosts(s).first;
+      final cap = platformConfig.i('reward', 'capComment');
+      for (var i = 0; i < cap + 2; i++) {
+        s.addComment(p, '留言 $i');
+      }
+      expect(s.interactionsToday('Comment'), cap, reason: '前提：額度已用完');
+      s.resetMyDailyTasksForTest();
+      expect(s.interactionsToday('Comment'), 0);
+      s.addComment(p, '重來');
+      expect(s.dailyTasks.first.done, isTrue, reason: '額度回來了，這一則要計進任務');
+    });
+
+    group('畫面', () {
+      Future<void> open(WidgetTester t, AppState s) async {
+        await t.pumpWidget(AppScope(
+          state: s,
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+        await t.pumpAndSettle();
+        await t.scrollUntilVisible(
+          find.widgetWithText(AppButton, '重置我的每日任務'),
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+      }
+
+      testWidgets('開發者模式才有這顆鍵，按下去任務歸零', (t) async {
+        final s = _state([('互動者已留言', 1)])..toggleDeveloperMode();
+        s.addComment(_othersPosts(s).first, '加油');
+        expect(s.dailyTasks.first.done, isTrue);
+        await open(t, s);
+        await t.tap(find.widgetWithText(AppButton, '重置我的每日任務'));
+        await t.pump();
+        expect(s.dailyTasks.first.progress, 0);
+      });
+
+      testWidgets('沒開開發者模式就看不到', (t) async {
+        final s = _state([('互動者已留言', 1)]);
+        await t.pumpWidget(AppScope(
+          state: s,
+          child: const MaterialApp(home: SettingsScreen()),
+        ));
+        await t.pumpAndSettle();
+        expect(find.widgetWithText(AppButton, '重置我的每日任務'), findsNothing);
+      });
+    });
   });
 }

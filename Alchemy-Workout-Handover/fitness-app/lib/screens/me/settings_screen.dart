@@ -362,6 +362,29 @@ class SettingsScreen extends StatelessWidget {
             // 而它們的下一步完全相反。
             // 診斷：網頁版交易的讀取（tx.get）從 2026-10-17 起丟出空物件。
             // 只讀一份文件、不寫任何東西，可以隨時重做；配合網址參數（?longpoll=force 等）比對。
+            // 重置我自己今天的每日任務：團隊成員都做完之後，沒辦法再測日常分數累積。
+            const SectionLabel('重置我的每日任務', trailing: '開發者模式'),
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '把我今天的每日任務當作還沒做，可以再完成一次、再加分。已經拿到的分數不會扣。'
+                    '簽到、訓練這兩類重新整理後會直接顯示完成，要測請用按讚、留言、完成組數。',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.textFaint),
+                  ),
+                  const SizedBox(height: 8),
+                  AppButton(
+                    label: '重置我的每日任務',
+                    kind: BtnKind.secondary,
+                    onPressed: () {
+                      s.resetMyDailyTasksForTest();
+                      showToast(context, '已重置我今天的每日任務');
+                    },
+                  ),
+                ],
+              ),
+            ),
             // 管理員：重置所有人今天的限時任務（Demo 或事故後用）。
             // 完成紀錄分散在每個人的存檔與各隊文件裡，沒有集中的地方可以逐一清，
             // 所以是換一個「重置代數」—— 所有人下次載入時，今天的限時任務就當作還沒做。
