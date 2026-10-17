@@ -1,4 +1,3 @@
-import '../../domain/clock.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/ability.dart';
@@ -518,57 +517,32 @@ class _MyMentor extends StatelessWidget {
                 builder: (_) => MentorChatScreen(instructor: ins))),
           ),
         const SectionLabel('本週互動摘要'),
+        // 評分鈕與兩個數字同一列。左邊的「本週已／尚未評分」「距週一重置」與下方的
+        // 規則說明都拿掉了（使用者 2026-10-17）：已評分由按鈕標籤表達。
+        //
+        // **按鈕只寫「評分」，不寫「評分該週互動」。** 後者要 130 寬，三欄並排時
+        // 「任務指派 / 完成」（要 110 寬）在 393 寬的手機上只剩 100 —— 被截成
+        // 「任務指派 / 完…」（實測，使用者 2026-10-17 選 A）。
         Panel(
-          child: Column(
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: StatTile(
-                      label: '提問 / 回覆',
-                      value: '${s.weeklyQuestionCount} / ${s.weeklyAnswerCount}',
-                    ),
-                  ),
-                  Expanded(
-                    child: StatTile(
-                      label: '任務指派 / 完成',
-                      value: '${s.weeklyAssigned} / ${s.weeklyCompleted}',
-                    ),
-                  ),
-                ],
+              Expanded(
+                child: StatTile(
+                  label: '提問 / 回覆',
+                  value: '${s.weeklyQuestionCount} / ${s.weeklyAnswerCount}',
+                ),
               ),
-              const Divider(height: 24, color: AppColors.line),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      s.ratedThisWeek
-                          ? '本週已評分'
-                          : '本週尚未評分　·　距週一重置剩 ${7 - appNow().weekday + 1} 天',
-                      style: const TextStyle(fontSize: 12.5),
-                    ),
-                  ),
-                  AppButton(
-                    label: s.ratedThisWeek ? '已評分' : '評分該週互動',
-                    onPressed: s.ratedThisWeek
-                        ? null
-                        : () => _rateWeek(context, s),
-                    kind: BtnKind.primary,
-                  ),
-                ],
+              Expanded(
+                child: StatTile(
+                  label: '任務指派 / 完成',
+                  value: '${s.weeklyAssigned} / ${s.weeklyCompleted}',
+                ),
               ),
-              const SizedBox(height: 8),
-              // 未評分時聲望無變動，不視為差評。
-              Text(
-                // **這裡說的是「我的教官」，不是我。**
-                // 原本取 `s.instructorReputation`／`s.apprenticeCap` ——
-                // 那是**我自己**當教官時的欄位。學徒不是教官，
-                // 所以它永遠是 0，而標籤寫著「教官聲望」。
-                '每週最多評一次，且該週雙方要有互動才評得了。'
-                '不評不算差評 —— 教官聲望目前 ${ins.reputation}，'
-                '帶徒上限 ${ins.apprenticeCap} 人。',
-                style: const TextStyle(
-                    color: AppColors.textFaint, fontSize: 11, height: 1.5),
+              AppButton(
+                label: s.ratedThisWeek ? '已評分' : '評分',
+                onPressed:
+                    s.ratedThisWeek ? null : () => _rateWeek(context, s),
+                kind: BtnKind.primary,
               ),
             ],
           ),
