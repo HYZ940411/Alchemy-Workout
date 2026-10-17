@@ -55,7 +55,10 @@ def main():
         return
 
     from firestore_upload import get_db, upsert
-    n = upsert(get_db(), 'exercises', docs)
+    from backup_exercises import with_retry
+    db = get_db()
+    # upsert 是整份 set()，重跑只會覆寫同樣的內容，所以整段重試是安全的。
+    n = with_retry(lambda: upsert(db, 'exercises', docs))
     print(f'共 upsert {n} 筆（只有 exercises）。')
 
 

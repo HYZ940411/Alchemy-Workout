@@ -32,6 +32,26 @@ NEW_SEED = BUILD / 'platform_defs.json'
 OLD_SEED = BUILD / 'platform_defs_old.json'
 
 
+def with_retry(fn, tries=6, base=2.0):
+    """雲端回 429（Quota exceeded）時退避重試。
+
+    2026-09-30 的紀錄：Admin SDK 讀取曾一律回 429、幾秒後重試就成功（見 PROGRESS），
+    所以這不一定是每日額度用完。只重試 429，其他錯誤照常丟出。
+    """
+    import time
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001
+            name = type(e).__name__
+            transient = 'ResourceExhausted' in name or '429' in str(e)
+            if not transient or i == tries - 1:
+                raise
+            wait = min(30.0, base * 2 ** i)
+            print(f'  …雲端回 429（{name}），{wait:.0f} 秒後重試（{i + 1}/{tries - 1}）')
+            time.sleep(wait)
+
+
 def load_exercises(path):
     if not path.exists():
         sys.exit(f'找不到 {path}')
@@ -52,7 +72,8 @@ def main():
     old = load_exercises(OLD_SEED)
     new = load_exercises(NEW_SEED)
     db = get_db()
-    cloud = {d.id: d.to_dict() for d in db.collection('exercises').stream()}
+    cloud = with_retry(
+        lambda: {d.id: d.to_dict() for d in db.collection('exercises').stream()})
 
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     backup = BUILD / f'exercises_backup_{stamp}.json'
