@@ -142,11 +142,18 @@ class MentorScreen extends StatelessWidget {
           // 在此之前兩者都畫成拜師清單，等於在同步失敗時對著一位
           // 有教官的人說「你沒有教官」。而那不會報錯：師徒那一塊是
           // 各自 try、吞掉錯誤的，出問題時完全沒有跡象。
-          child: s.myInstructor != null
+          //
+          // **已解除、冷卻中的，不算「有教官」。** 規格只擋冷卻期內「與別人
+          // 建立師徒關係」；看清單、成為教官都不在內。原本只看
+          // `myInstructor != null`，整頁被解除頁佔住，連帶把這些入口都藏了
+          //（使用者 2026-10-17 回報）。解除面板與恢復入口留在清單最上面。
+          child: s.myInstructor != null && !s.mentorReleased
               ? const _MyMentor()
-              : s.mentorKnown
-                  ? const _InstructorList()
-                  : const _MentorUnknown(),
+              : s.myInstructor != null
+                  ? _InstructorList(released: s.myInstructor)
+                  : s.mentorKnown
+                      ? const _InstructorList()
+                      : const _MentorUnknown(),
         ),
       ],
     );
@@ -192,14 +199,34 @@ class _MentorUnknownState extends State<_MentorUnknown> {
 
 /// Read Model：教官清單
 class _InstructorList extends StatelessWidget {
-  const _InstructorList();
+  /// 剛解除、還在冷卻期內的前教官。非空時，清單最上面多一張解除面板。
+  final Instructor? released;
+  const _InstructorList({this.released});
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
+    final prev = released;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 50),
       children: [
+        if (prev != null) ...[
+          _ReleasedPanel(ins: prev),
+          // 解除之後舊的問答與任務還是看得到，只是問不了新的。
+          Padding(
+            padding: const EdgeInsets.only(top: S.sm),
+            child: AppButton(
+              label: '看與 ${prev.name} 的舊紀錄',
+              kind: BtnKind.secondary,
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => Scaffold(
+                        appBar: AppBar(title: Text('與 ${prev.name} 的紀錄')),
+                        body: const _MyMentor(),
+                      ))),
+            ),
+          ),
+          const SizedBox(height: S.base),
+        ],
         // **自己也能當教官** —— 入口原本只在「我的」→ 更多底下，
         // 而會想當教官的人正是在這一頁看別人的教官檔案的人
         //（使用者裁決 2026-09-26）。
@@ -397,7 +424,11 @@ class _InstructorCard extends StatelessWidget {
                     );
                   }
                   return AppButton(
-                    label: blocked != null ? '不可申請' : '申請師徒關係',
+                    label: blocked == null
+                        ? '申請師徒關係'
+                        : s.mentorReleased && s.mentorCooldownLeft > Duration.zero
+                            ? '冷卻中'
+                            : '不可申請',
                     onPressed: blocked != null
                         ? null
                         : () async {
@@ -545,87 +576,7 @@ class _MyMentor extends StatelessWidget {
 
         // 終止路徑：解除為單方面，恢復需雙方同意 —— 兩者刻意不對稱，
         // 避免一方反覆解除又拉回。
-        if (s.mentorReleased) ...[
-          const SectionLabel('師徒關係已解除', trailing: '3 天內可挽回'),
-          Panel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '解除原因：${mentorReleaseReasonNames[s.mentorReleaseReason]}。'
-                  '冷卻期剩 ${s.mentorCooldownLeft.inHours} 小時 —— '
-                  '期間雙方都不能與別人建立師徒關係，未完成的任務已作廢。',
-                  style: const TextStyle(fontSize: 12.5, height: 1.6),
-                ),
-                const SizedBox(height: 12),
-                // **提出的人看不到「同意」那一顆。**
-                // 原本這裡只問「有沒有人提出」，而提議只活在本機 ——
-                // 於是同一個人先按「提出」再按「同意」就恢復了，
-                // 直接違反 `[決策]`「恢復需雙方同意，不採單方面恢復」。
-                if (s.mentorRestoreByMe)
-                  Text(
-                    '已提出恢復，等 ${ins.name} 回應。',
-                    style: const TextStyle(
-                        color: AppColors.textFaint, fontSize: 12.5),
-                  )
-                else if (s.mentorRestoreAwaitingMe)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: AppButton(
-                          label: '拒絕恢復',
-                          kind: BtnKind.secondary,
-                          onPressed: () {
-                            s.rejectRestore();
-                            showToast(context, '已拒絕，3 天內可再次提出');
-
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: AppButton(
-                          label: '同意恢復',
-                          onPressed: () {
-                            // **做不到的時候不可以說做到了。**
-                            // 這一顆是 2026-09-30 深夜我自己寫的，
-                            // 而且重蹈當晚查了一整輪的那個覆轍。
-                            final ok = s.acceptRestore();
-                            showToast(
-                                context,
-                                ok
-                                    ? '師徒關係已恢復'
-                                    : s.myRestoreBlockedReason ?? '現在恢復不了。');
-
-                          },
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  SizedBox(
-                    width: double.infinity,
-                    child: AppButton(
-                      label: '提出恢復師徒關係',
-                      kind: BtnKind.secondary,
-                      onPressed: !s.canRestoreMentor
-                          ? null
-                          : () {
-                              final ok = s.proposeRestore();
-                              showToast(
-                                  context,
-                                  ok
-                                      ? '已提出，等對方同意'
-                                      : s.myRestoreBlockedReason ??
-                                          '提不出來。');
-
-                            },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+        if (s.mentorReleased) _ReleasedPanel(ins: ins),
         if (s.mentorDisclaimerNeeded) ...[
           const SectionLabel('師徒免責聲明', trailing: '僅首次建立關係時出現'),
           Panel(
@@ -672,6 +623,103 @@ class _MyMentor extends StatelessWidget {
           )
         else
           _AskBox(),
+      ],
+    );
+  }
+}
+
+/// 解除面板：解除原因、冷卻期，以及恢復的三種狀態（提出／等待／同意或拒絕）。
+///
+/// 「我的教官」頁與「已解除時的教官清單」頁共用 —— 同一件事不寫兩份。
+class _ReleasedPanel extends StatelessWidget {
+  final Instructor ins;
+  const _ReleasedPanel({required this.ins});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('師徒關係已解除', trailing: '3 天內可挽回'),
+        Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '解除原因：${mentorReleaseReasonNames[s.mentorReleaseReason]}。'
+                '冷卻期剩 ${s.mentorCooldownLeft.inHours} 小時 —— '
+                '期間雙方都不能與別人建立師徒關係，未完成的任務已作廢。',
+                style: const TextStyle(fontSize: 12.5, height: 1.6),
+              ),
+              const SizedBox(height: 12),
+              // **提出的人看不到「同意」那一顆。**
+              // 原本這裡只問「有沒有人提出」，而提議只活在本機 ——
+              // 於是同一個人先按「提出」再按「同意」就恢復了，
+              // 直接違反 `[決策]`「恢復需雙方同意，不採單方面恢復」。
+              if (s.mentorRestoreByMe)
+                Text(
+                  '已提出恢復，等 ${ins.name} 回應。',
+                  style: const TextStyle(
+                      color: AppColors.textFaint, fontSize: 12.5),
+                )
+              else if (s.mentorRestoreAwaitingMe)
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppButton(
+                        label: '拒絕恢復',
+                        kind: BtnKind.secondary,
+                        onPressed: () {
+                          s.rejectRestore();
+                          showToast(context, '已拒絕，3 天內可再次提出');
+
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: AppButton(
+                        label: '同意恢復',
+                        onPressed: () {
+                          // **做不到的時候不可以說做到了。**
+                          // 這一顆是 2026-09-30 深夜我自己寫的，
+                          // 而且重蹈當晚查了一整輪的那個覆轍。
+                          final ok = s.acceptRestore();
+                          showToast(
+                              context,
+                              ok
+                                  ? '師徒關係已恢復'
+                                  : s.myRestoreBlockedReason ?? '現在恢復不了。');
+
+                        },
+                      ),
+                    ),
+                  ],
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    label: '提出恢復師徒關係',
+                    kind: BtnKind.secondary,
+                    onPressed: !s.canRestoreMentor
+                        ? null
+                        : () {
+                            final ok = s.proposeRestore();
+                            showToast(
+                                context,
+                                ok
+                                    ? '已提出，等對方同意'
+                                    : s.myRestoreBlockedReason ??
+                                        '提不出來。');
+
+                          },
+                  ),
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
