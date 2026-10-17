@@ -48,7 +48,7 @@ def main():
     for doc_id in ('bench', 'db_press', 'pullup'):
         d = docs.get(doc_id)
         if d:
-            print(f'  樣本 {doc_id}：{d["name"]}　係數 {d["relativeIntensity"]}　徒手型 {d["isBodyweight"]}')
+            print(f'  樣本 {doc_id}：{d.get("name")}　係數 {d.get("relativeIntensity")}　徒手型 {d.get("isBodyweight")}')
 
     if not apply:
         print('\n這是乾跑，沒有寫任何東西。要真的上傳請加 --apply。')

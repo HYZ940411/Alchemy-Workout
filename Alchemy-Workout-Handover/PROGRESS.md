@@ -1460,7 +1460,7 @@ firebase deploy --only hosting
      釘死舊係數數字 ×2、係數範圍上限 5→12（啞鈴小肌群新手每手 4 kg 需係數 10）、上斜／平板／下斜「係數不同」→「相同」（每類統一）。
      `flutter analyze lib test` 乾淨；全量 **2,981 passed**。
    - **還沒做／還沒驗：**
-     · **雲端還是舊值** —— 要使用者自己跑 `tools/upload_exercises_only.py --apply`（先乾跑、先跑 `check_platform_data.py` 看後台有沒有人改過）；
+     · **雲端還是舊值（網站已於 2026-10-17 部署 `45e5e08`）** —— 要使用者自己跑：先 `tools/backup_exercises.py`（唯讀；備份雲端 exercises ＋ 比對後台有沒有人改過，需要 `build/platform_defs_old.json` 舊種子）、再 `tools/upload_exercises_only.py --apply`、最後 `check_platform_data.py` 確認 exercises 一致 527；
        上傳後用開發者模式確認線上讀到新值（目前開發者模式報告看不到動作庫來源與係數，要加才行）。
      · 既有使用者的點數不重算（平台設定寫明「係數調整不追溯」）；練過的動作帶入上次重量，新權重只影響之後。
      · 啞鈴畫面的「每手」字樣沒加。彈力繩動作的詳情頁會顯示「徒手動作：是」（資料標成徒手型的副作用）。
