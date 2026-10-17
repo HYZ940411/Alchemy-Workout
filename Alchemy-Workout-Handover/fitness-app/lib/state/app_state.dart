@@ -1299,7 +1299,11 @@ class AppState extends ChangeNotifier {
     for (final t in dailyTasks) {
       if (t.sourceEvent == event && !t.done) {
         t.progress = math.min(t.target, t.progress + n);
-        if (t.done) _scoreTaskOnce(t);
+        // **當下做完的這一次一定發分，不看「今天這個 Event 領過沒」。**
+        // 那份名單只用來擋「沒有任何新動作、純粹因為重抽或還原而補成完成」的補發
+        // （[awardDoneTasks]）。這裡是使用者剛剛才做了這件事，完成是真的新的一次 ——
+        // 擋掉的話他會看到任務完成卻沒有 +10（使用者 2026-10-17 回報，團隊日常分數沒動）。
+        if (t.done) _scoreTask(t);
       }
     }
     _giveAllTasksBonusIfDue();
@@ -1332,12 +1336,20 @@ class AppState extends ChangeNotifier {
     _taskScoredEvents.clear();
   }
 
-  /// 這項任務完成了，發 +10 個人分數（同時累加團隊日常分數）。
-  /// 今天這個 Event 已經領過就不再發。
-  void _scoreTaskOnce(DailyTask t) {
+  /// 這項任務完成了，發 +10 個人分數（同時累加團隊日常分數），並記下今天這個 Event 領過了。
+  void _scoreTask(DailyTask t) {
     _rollTaskScoredDay();
-    if (!_taskScoredEvents.add(t.sourceEvent)) return;
+    _taskScoredEvents.add(t.sourceEvent);
     _gainPersonalScore(kDailyTaskScorePerItem);
+  }
+
+  /// 同上，但今天這個 Event 已經領過就不再發 —— 給「沒有新動作」的補發用。
+  /// 回傳這次有沒有真的發分。
+  bool _scoreTaskOnce(DailyTask t) {
+    _rollTaskScoredDay();
+    if (_taskScoredEvents.contains(t.sourceEvent)) return false;
+    _scoreTask(t);
+    return true;
   }
 
   /// 把「已經完成、今天這個 Event 還沒領過分數」的任務補發 +10，再看全部完成加碼。
@@ -1348,10 +1360,7 @@ class AppState extends ChangeNotifier {
     _rollTaskScoredDay();
     var any = false;
     for (final t in dailyTasks) {
-      if (t.done && !_taskScoredEvents.contains(t.sourceEvent)) {
-        _scoreTaskOnce(t);
-        any = true;
-      }
+      if (t.done && _scoreTaskOnce(t)) any = true;
     }
     _giveAllTasksBonusIfDue();
     if (any) notifyListeners();

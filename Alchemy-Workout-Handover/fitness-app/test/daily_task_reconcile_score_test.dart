@@ -91,15 +91,27 @@ void main() {
     expect(_team(s), 10, reason: '但今天這件事已經領過，不能再領');
   });
 
-  test('擋重複領（當下完成這條路）：領過之後重抽，同一件事再做完也不再領', () {
+  test('當下做完的這一次一定發分：即使今天這個 Event 已經在領過名單裡', () {
+    // 使用者 2026-10-17 回報：按讚任務 3/3 了，團隊日常分數沒動，「雲端寫入」也沒有團隊個人積分那一行。
+    // 原因是領過名單裡已經有這個 Event，把剛剛才做的這一次也擋掉了。
+    final s = _state(['使用者已完成該組']);
+    s.awardDoneTasks(); // 先定下「今天」，領過名單才不會被換日邏輯清掉
+    s.taskScoredEvents.add('使用者已完成該組');
+    s.bumpTaskForTest('使用者已完成該組');
+    expect(s.dailyTasks.first.done, isTrue);
+    expect(_team(s), 10, reason: '剛剛才做的，是新的一次完成');
+  });
+
+  test('但沒有新動作的補發仍然擋：領過名單裡有就不再補', () {
     final s = _state(['使用者已完成該組']);
     s.bumpTaskForTest('使用者已完成該組');
     expect(_team(s), 10);
-
-    _setTasks(s, ['使用者已完成該組']); // 日中重抽：全新的任務、進度 0
-    s.bumpTaskForTest('使用者已完成該組');
-    expect(s.dailyTasks.first.done, isTrue);
-    expect(_team(s), 10, reason: '今天這件事已經領過，當下做完也不能再領');
+    _setTasks(s, ['使用者已簽到']);
+    s.checkIn(); // 簽到：當下做完，有簽到任務，發分
+    expect(_team(s), 20);
+    _setTasks(s, ['使用者已簽到']); // 重抽：簽到任務全新、進度 0，事情早就發生過
+    s.reconcileDailyTasks();
+    expect(_team(s), 20, reason: '補進度不發第二次');
   });
 
   test('全部完成加碼也跟著補發', () {
