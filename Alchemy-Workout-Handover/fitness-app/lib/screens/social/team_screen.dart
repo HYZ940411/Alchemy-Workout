@@ -22,6 +22,9 @@ class TeamScreen extends StatelessWidget {
   }
 }
 
+/// 名次的文字。沒有名次（本月從未成局、不入榜）要明說，不是寫「第 0 名」。
+String _placeText(int? place) => place == null ? '未入榜' : '第 $place 名';
+
 class _MyTeam extends StatelessWidget {
   final Team team;
   const _MyTeam({required this.team});
@@ -109,7 +112,7 @@ class _MyTeam extends StatelessWidget {
                 child: StatTile(
                   label: '團隊日常分數',
                   value: '${team.dailyScore}',
-                  unit: '第 ${team.dailyRankPos} 名',
+                  unit: _placeText(s.myTeamPlace(TeamBoard.daily)),
                   valueColor: AppColors.accent,
                 ),
               ),
@@ -117,7 +120,7 @@ class _MyTeam extends StatelessWidget {
                 child: StatTile(
                   label: '團隊限時分數',
                   value: '${team.timedScore}',
-                  unit: '第 ${team.timedRankPos} 名',
+                  unit: _placeText(s.myTeamPlace(TeamBoard.timed)),
                   valueColor: C.accentDeep,
                 ),
               ),

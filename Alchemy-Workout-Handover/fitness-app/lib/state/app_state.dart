@@ -4552,6 +4552,20 @@ class AppState extends ChangeNotifier {
   List<PublicTeam> get boardTeams =>
       [...publicTeams, ?myTeamOnBoard];
 
+  /// 我的隊在某個榜上的名次（同分並列同名次）；沒有隊、或本週期從未成局不入榜時是 null。
+  ///
+  /// 團隊頁原本顯示 `Team.dailyRankPos`，那個欄位從來沒有人算過，真帳號永遠是 0 ——
+  /// 畫面寫「第 0 名」（2026-10-17 使用者回報）。名次一律由排行榜同一份資料現算，
+  /// 與「看團隊排行榜」那一頁不會對不起來。
+  int? myTeamPlace(TeamBoard board) {
+    final mine = myTeamOnBoard;
+    if (mine == null || !mine.rankEligible) return null;
+    final ranked = teamRanking(boardTeams, board, mine.groupSize);
+    final i = ranked.indexWhere((t) => t.id == mine.id);
+    if (i < 0) return null;
+    return placesOf([for (final t in ranked) teamScoreOf(t, board)])[i];
+  }
+
   /// 不能申請加入的理由。回傳 null 代表可以申請 ——
   /// 把 Precondition 做成一句話，畫面才講得出為什麼按鈕是暗的。
   String? joinBlockedReason(PublicTeam t) {
