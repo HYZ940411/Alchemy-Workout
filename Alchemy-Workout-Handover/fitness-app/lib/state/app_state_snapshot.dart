@@ -377,6 +377,8 @@ extension AppStateSnapshot on AppState {
         'maxCompletionToday': _maxCompletionToday,
         'dailyTaskDay': _iso(_dailyTaskDay),
         'allTasksBonusGiven': _allTasksBonusGiven,
+        'taskScoredDay': _iso(_taskScoredDay),
+        'taskScoredEvents': _taskScoredEvents.toList(),
         'interactDay': _iso(_interactDay),
         'interactCounts': {..._interactCounts},
         'aiResetMonth': _iso(_aiResetMonth),
@@ -805,6 +807,19 @@ extension AppStateSnapshot on AppState {
             ),
       ];
       if (dailyTasks.isEmpty) dailyTasks = buildDailyTasks();
+    }
+    // 今天已經發過任務分數的 Event（`[QA-10]`）。
+    // **舊存檔沒有這個欄位**：那時已經完成的任務當作分數已經領過 —— 不然部署後
+    // 每個人會把今天已完成的任務再領一次。代價是舊版漏發的那幾筆不補。
+    _taskScoredDay = _date(j['taskScoredDay']);
+    _taskScoredEvents.clear();
+    if (j.containsKey('taskScoredEvents')) {
+      _taskScoredEvents.addAll(strs('taskScoredEvents'));
+    } else if (_dailyTaskDay == businessDate(now)) {
+      // 只認今天的任務：存檔停在昨天的話，換日重抽出來的新任務不該被昨天的完成擋住。
+      _taskScoredDay = businessDate(now);
+      _taskScoredEvents.addAll(
+          [for (final t in dailyTasks) if (t.done) t.sourceEvent]);
     }
 
     final unlocked = pick<Map>('achievements');

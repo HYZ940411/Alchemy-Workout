@@ -844,7 +844,8 @@ class AppState extends ChangeNotifier {
     expirePunishmentIfDue();
     runStreakCheck();
     // 存檔裡的進度可能與「今天已經發生過的事」對不起來 —— 補齊。
-    reconcileDailyTasks();
+    // 只補進度、先不發分：這時隊伍還沒載入，見 [reconcileDailyTasks]。
+    reconcileDailyTasks(award: false);
     settleDueBoards();
     _syncAchievements();
     notifyListeners();
@@ -1298,16 +1299,62 @@ class AppState extends ChangeNotifier {
     for (final t in dailyTasks) {
       if (t.sourceEvent == event && !t.done) {
         t.progress = math.min(t.target, t.progress + n);
-        if (t.done) _gainPersonalScore(kDailyTaskScorePerItem);
+        if (t.done) _scoreTaskOnce(t);
       }
     }
-    if (dailyTasks.every((t) => t.done)) {
-      // 全部完成加碼 20 分（僅加一次，以 claimed 之外的旗標避免重複）
-      if (!_allTasksBonusGiven) {
-        _allTasksBonusGiven = true;
-        _gainPersonalScore(kDailyTaskAllBonusScore);
+    _giveAllTasksBonusIfDue();
+  }
+
+  /// 全部完成加碼 20 分（僅加一次，以 claimed 之外的旗標避免重複）。
+  void _giveAllTasksBonusIfDue() {
+    if (dailyTasks.isNotEmpty &&
+        dailyTasks.every((t) => t.done) &&
+        !_allTasksBonusGiven) {
+      _allTasksBonusGiven = true;
+      _gainPersonalScore(kDailyTaskAllBonusScore);
+    }
+  }
+
+  /// 今天已經發過任務分數（+10）的判定來源 Event。
+  ///
+  /// **以 Event 為單位，不以任務物件為單位** —— 日中重抽會換掉整批任務物件，
+  /// 以物件記的話，重抽後同一件事又完成一次，就領第二次（`[QA-10]`）。
+  /// 跟著存檔走；換日清空。
+  final Set<String> _taskScoredEvents = {};
+  DateTime? _taskScoredDay;
+
+  Set<String> get taskScoredEvents => _taskScoredEvents;
+
+  void _rollTaskScoredDay() {
+    final today = businessDate(now);
+    if (_taskScoredDay == today) return;
+    _taskScoredDay = today;
+    _taskScoredEvents.clear();
+  }
+
+  /// 這項任務完成了，發 +10 個人分數（同時累加團隊日常分數）。
+  /// 今天這個 Event 已經領過就不再發。
+  void _scoreTaskOnce(DailyTask t) {
+    _rollTaskScoredDay();
+    if (!_taskScoredEvents.add(t.sourceEvent)) return;
+    _gainPersonalScore(kDailyTaskScorePerItem);
+  }
+
+  /// 把「已經完成、今天這個 Event 還沒領過分數」的任務補發 +10，再看全部完成加碼。
+  ///
+  /// 完成不一定發生在當下：任務重抽、自存檔還原時，今天早已發生的事讓任務直接是完成的
+  /// （[reconcileDailyTasks]）。冪等：領過的不會再領，可以放心多叫幾次。
+  void awardDoneTasks() {
+    _rollTaskScoredDay();
+    var any = false;
+    for (final t in dailyTasks) {
+      if (t.done && !_taskScoredEvents.contains(t.sourceEvent)) {
+        _scoreTaskOnce(t);
+        any = true;
       }
     }
+    _giveAllTasksBonusIfDue();
+    if (any) notifyListeners();
   }
 
   /// 「個人排行榜分數已增加」的唯一入口。
@@ -4165,6 +4212,7 @@ class AppState extends ChangeNotifier {
     if (t == null || t.disbanded) {
       myTeam = null;
       teamJoinedAt = null;
+      awardDoneTasks();
       notifyListeners();
       return;
     }
@@ -4212,6 +4260,8 @@ class AppState extends ChangeNotifier {
     // 一次只能屬於一個團隊，申請被核准後它已經沒有意義了 ——
     // 留著的話畫面會同時顯示「已加入」和「等隊長回應」。
     sentApplications.clear();
+    // 隊伍載入了 —— 存檔還原時補上去、還沒發分的完成任務，現在可以連團隊一起算（`[QA-10]`）。
+    awardDoneTasks();
     notifyListeners();
   }
 
@@ -11715,6 +11765,7 @@ class AppState extends ChangeNotifier {
     }
     _allTasksBonusGiven = false;
     _allTasksCoinGiven = false;
+    _taskScoredEvents.clear();
     _rollInteractionDay();
     _interactCounts.clear();
     _rewardedRequests.removeWhere((k) => k.startsWith('Like:'));
@@ -11731,7 +11782,15 @@ class AppState extends ChangeNotifier {
   ///
   /// 只往上補、不往下砍：進度可能來自本來就沒有逐日計數的來源（如組數），
   /// 砍下去會把使用者真的做過的事抹掉。
-  bool reconcileDailyTasks() {
+  ///
+  /// 補上去的完成**要發任務分數**（`[QA-10]`，使用者 2026-10-17 選 A）：
+  /// 使用者看到任務完成卻沒有 +10，會以為壞了。有 Event 層級的「今天已領過」
+  /// 擋著（[_taskScoredEvents]），重抽或重複叫都不會多領。
+  ///
+  /// [award] 為假時只補進度、不發分 —— 存檔剛還原的當下**隊伍還沒載入**，
+  /// 這時發分只進個人、團隊日常分數會永遠少那一筆；改在隊伍載入後
+  /// （[applyCloudTeam]）再補發。
+  bool reconcileDailyTasks({bool award = true}) {
     var changed = false;
     for (final t in dailyTasks) {
       final known = math.min(t.target, _doneTodayFor(t.sourceEvent));
@@ -11740,6 +11799,7 @@ class AppState extends ChangeNotifier {
         changed = true;
       }
     }
+    if (award) awardDoneTasks();
     return changed;
   }
 
