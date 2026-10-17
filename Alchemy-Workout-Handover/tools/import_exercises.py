@@ -106,75 +106,161 @@ PATTERNS = [
 # 關鍵字判不出來時的退路：大肌群優先。命中者一律標為待複核。
 FALLBACK = ['legs', 'back', 'chest', 'shoulders', 'arms', 'core']
 
-# --- 相對強度係數 -----------------------------------------------------------
-# 模型：每個動作的估算 1RM × 相對強度係數 → 該肌群的標準化 1RM。
-# 基準值 27.6 與映射係數 23.6 是由**槓鈴臥推**反解出來的，六維共用同一組，
-# 所以係數必須全部相對於臥推（＝1.0），而不是各肌群各自取 1.0 ——
-# 深蹲若也給 1.0，練到 1.5 倍體重的人腿部會直接觸頂 999。
+# --- 相對強度係數（2026-10-17 使用者逐類裁決；紀錄在「動作權重盤點.md」）------------
 #
-# 取值 ＝ 臥推 1RM ÷ 該動作 1RM（訓練學常識的常見比值）。
-# 模型將本表列為 [待決策 Partial]「由內容團隊於上線前補齊，非上線阻擋」，
-# 故此處為初始草稿，上線後以自家資料校準。
-INTENSITY = [
-    # 胸
-    (r'上斜.*(臥推|握推|胸推)', 1.18),
-    (r'下斜.*(臥推|握推|胸推)', 0.95),
-    (r'(臥推|握推|胸推).*\(窄距\)|窄距.*(臥推|握推)', 1.18),
-    (r'(臥推|握推|胸推).*\(寬距\)|寬距.*(臥推|握推)', 0.95),
-    (r'飛鳥|夾胸|擴胸', 2.00),
-    (r'伏地挺身|推牆', 1.30),
-    (r'臥推|握推|胸推', 1.00),
-    # 背
-    (r'硬舉高拉|直腿硬舉|羅馬尼亞硬舉', 0.77),
-    (r'硬舉', 0.62),
-    (r'聳肩', 0.67),
-    (r'滑輪下拉|高位下拉|上拉', 0.95),
-    (r'引體向上|反向引體', 1.10),
-    (r'划船', 0.95),
-    (r'背伸展|躬身|超人', 1.50),
-    # 腿
-    (r'腿部推蹬|腿推', 0.42),
-    (r'哈克深蹲|槓桿深蹲', 0.55),
-    (r'前蹲|過頭深蹲', 0.87),
-    (r'弓步|弓箭步|跨步|分腿|保加利亞|登階|單腿', 1.25),
-    (r'深蹲|坐站', 0.72),
-    (r'提踵|提腫', 0.55),
-    (r'臀推|臀橋', 0.55),
-    (r'腿部伸展|腿伸展', 1.10),
-    (r'腿部彎舉|腿彎舉|屈腿', 1.40),
-    (r'外展|內收|髖|消防栓', 2.00),
-    # 肩
-    (r'側平舉|前平舉|反向.*飛鳥', 3.60),
-    (r'臉拉|肘關節|外旋|內轉|繞圈', 3.60),
-    (r'直立划船|划舉', 2.20),
-    (r'上舉|肩推|過頭推|阿諾|上挺|火箭推|推舉', 1.35),
-    # 手
-    (r'錘式彎舉|集中彎舉|傳教士彎舉|反向彎舉', 2.60),
-    (r'腕彎舉|前臂', 3.20),
-    (r'彎舉|屈臂', 2.10),
-    (r'三頭肌下壓|下壓', 1.90),
-    (r'仰臥.*三頭|過頭.*三頭|三頭.*伸展', 2.20),
-    (r'撐體|臂屈伸', 1.15),
-    # 核心
-    (r'棒式|側棒式|空心|L-Sit|死蟲|鳥狗|登山者', 1.60),
-    (r'捲腹|仰臥起坐|舉腿|抬腿|抬膝|提膝|摺刀|V字|鐘擺|碰槓|摸腳踝', 2.40),
-    (r'側彎|轉體|抗旋', 2.20),
-    # 全身（奧林匹克舉重與負重行走）
-    (r'抓舉|挺舉|上搏|瞬發|借力|甩壺|甩鈴|土耳其', 0.85),
-    (r'負重行走|農夫走路', 0.60),
-]
-# 關鍵字都不中時，依所屬肌群給一個中間值。落到這裡的會列進報告。
-INTENSITY_FALLBACK = {
-    'chest': 1.30, 'back': 1.10, 'legs': 0.80,
-    'shoulders': 2.00, 'arms': 2.20, 'core': 2.00,
+# 以前這裡是一張關鍵字 → 係數的草稿表（槓鈴臥推 ＝ 1.0，其餘憑訓練學常識）。
+# 同一個關鍵字不分器材給同一個係數，結果是：啞鈴／壺鈴／彈力繩的重量對不上、
+# 徒手動作一組就到頂 999、同一部位的新手分數落差十倍以上。
+#
+# 現在改成「每一類有一個新手標準」：**體重 70 kg 的新手，舒服做完 10 下，落在固定分數**。
+#   · 有重量的動作（槓鈴／啞鈴／機械／繩索／壺鈴）：C 級，約 294 分
+#   · 徒手動作：C 級，約 294 分（同類動作分數相同，想更高靠外加負重）
+#   · 彈力繩：約 150 分（D+ 下緣）
+#   · 13 個沒拿東西的徒手孤立動作（徒手前平舉、手臂繞圈等）：約 50 分（E+）
+# 係數 ＝ 「達到該分數所需的 重量 × 係數」÷ 該類新手標準重量。
+#
+# 次數上限 10 下、基準值 27.6、映射係數 23.6 都沒動（規格決策）；
+# 外加負重照原公式加進去（等效重量 ＝ 體重 × 體重係數 ＋ 外加負重）。
+#
+# 這張表的驗收在 test/weight_baseline_test.dart：它自己獨立分類、用真的 measuredScore 算，
+# 誰調了這裡的數字，都會在那邊看到每一類變成多少分。
+
+#: 達到目標分數所需的「重量 × 係數」（體重 70 kg 男性、10 下，measuredScore 反解到整分）。
+WK_C = 40.0       # 294 分
+WK_BAND = 33.9    # 150 分
+WK_LOW = 29.67    # 50 分
+#: 標準情境的體重。徒手動作的新手標準重量 ＝ 這個體重 × 體重係數。
+STD_BODYWEIGHT = 70.0
+
+
+def bodyweight_factor(name):
+    """鏡像 fitness-app/lib/domain/models.dart 的 Exercise.bodyweightFactor。
+    兩邊不一致，test/weight_baseline_test.dart 的分數會偏掉而變紅。"""
+    return 1.0 if '引體向上' in name else 0.6
+
+
+#: 沒拿東西的徒手孤立動作（使用者裁決：給很少的分，不改標有氧）。
+#: 名稱須與 normalise_name 之後完全一致；main() 結尾會檢查每一個都有對到。
+LOW_GROUP = {
+    '肘臂繞圈', '手臂繞圈', '前平舉', '上舉', '合掌上舉', '站姿反手上提', '臥姿反向飛鳥',
+    '交互拳擊', '二頭肌屈臂', '二頭肌彎舉(抬腿)', '側臥二頭肌彎舉', '跪姿三頭肌伸展', '側平舉',
+}
+#: 器材欄不是「無器材」、但其實是徒手的動作。
+BODYWEIGHT_FORCE = {'椅子坐站'}
+#: 部位歸錯的動作（使用者裁決）：匯入規則把「全身」一律歸腿，另有一個被歸到肩。
+DIM_FIX = {
+    '架上推舉 · 槓鈴': 'shoulders',
+    '火箭推 · 槓鈴': 'shoulders',
+    '火箭推 · 壺鈴': 'shoulders',
+    '繩索髖屈伸': 'legs',
+}
+
+#: 新手標準重量（公斤；啞鈴為每手）。鍵：動作型態 → 器材群。
+NOVICE_WEIGHT = {
+    '複合推': {'槓': 40, '啞': 14, '器': 35, '繩': 20},
+    '飛鳥夾胸': {'啞': 8, '器': 25, '繩': 10},
+    '仰臥上拉': {'槓': 20, '啞': 14},
+    '划船': {'槓': 40, '啞': 16, '器': 35, '繩': 35},
+    '下拉上拉': {'槓': 20, '啞': 14, '器': 40, '繩': 40},
+    '聳肩': {'槓': 50, '啞': 16, '器': 50, '繩': 40},
+    '硬舉': {'槓': 60, '啞': 16, '器': 50},
+    '背伸展躬身': {'槓': 30, '器': 30},
+    '肩後束小肌群': {'啞': 4, '器': 10, '繩': 8},
+    '深蹲': {'槓': 50, '啞': 14, '器': 40, '繩': 30},
+    '腿推': {'器': 100},
+    '弓步單腿': {'槓': 30, '啞': 10, '器': 20, '繩': 15},
+    '臀橋臀推': {'槓': 60, '啞': 16, '器': 60, '繩': 30},
+    '提踵': {'槓': 40, '啞': 12, '器': 40},
+    '腿孤立': {'啞': 5, '器': 30, '繩': 15},
+    '全身爆發': {'槓': 30, '啞': 12},
+    '負重行走': {'槓': 40, '啞': 16},
+    '肩推': {'槓': 30, '啞': 10, '器': 25, '繩': 15},
+    '平舉': {'槓': 15, '啞': 5, '器': 10, '繩': 8},
+    '二頭彎舉': {'槓': 20, '啞': 8, '器': 15, '繩': 15},
+    '三頭肌': {'槓': 20, '啞': 8, '器': 25, '繩': 20},
+    '腕彎舉': {'槓': 15, '啞': 6, '繩': 15},
+    '核心捲腹抬腿': {'啞': 8, '繩': 30},
+    '核心轉體側彎': {'槓': 20, '啞': 8, '器': 30, '繩': 20},
+}
+#: 壺鈴：一般 12 kg，下列動作例外（鍵為動作名稱去掉器材後綴）。
+KETTLEBELL_DEFAULT = 12
+KETTLEBELL_WEIGHT = {
+    '硬舉': 16, '直腿硬舉': 16, '單腳硬舉': 16, '農夫走路': 16,
+    '上舉': 8, '風車': 8, '仰臥起坐': 8,
+    '側平舉': 4,
 }
 
 
-def intensity_for(name, dim):
-    for pat, v in INTENSITY:
-        if re.search(pat, name):
-            return v, False
-    return INTENSITY_FALLBACK.get(dim, 1.0), True
+def equipment_group(eq):
+    """器材集合 → 群代號。彈力繩優先（「引體向上 · 彈力帶」同時掛了機械式器材）。"""
+    for key, g in (('彈力繩', '帶'), ('壺鈴', '壺'), ('槓鈴', '槓'), ('啞鈴', '啞'),
+                   ('繩索（滑輪）', '繩'), ('機械式器材', '器')):
+        if key in eq:
+            return g
+    return '徒'
+
+
+def weighted_pattern(name, dim):
+    """有重量的動作 → 動作型態（NOVICE_WEIGHT 的鍵）。對不到就丟例外，不默默給預設值。"""
+    n = name
+    if re.search(r'抓舉|挺舉|上搏|瞬發|甩壺|甩鈴|土耳其|借力', n):
+        return '全身爆發'
+    if re.search(r'負重行走|農夫走路', n):
+        return '負重行走'
+    if dim == 'back':
+        if re.search(r'划船', n): return '划船'
+        if re.search(r'下拉|上拉|引體|滑輪下壓', n): return '下拉上拉'
+        if re.search(r'聳肩', n): return '聳肩'
+        if re.search(r'硬舉', n): return '硬舉'
+        if re.search(r'背部伸展|躬身|超人', n): return '背伸展躬身'
+        return '肩後束小肌群'
+    if dim == 'chest':
+        if re.search(r'上拉', n): return '仰臥上拉'
+        if re.search(r'飛鳥|夾胸|擴胸', n): return '飛鳥夾胸'
+        return '複合推'
+    if dim == 'shoulders':
+        if re.search(r'反向.*飛鳥|臉拉|外旋|外琁|內轉|後划|划舉|繞圈|上提', n): return '肩後束小肌群'
+        if re.search(r'平舉', n): return '平舉'
+        if re.search(r'划船', n): return '划船'
+        return '肩推'
+    if dim == 'arms':
+        if re.search(r'腕彎舉', n): return '腕彎舉'
+        if re.search(r'集中推舉|三頭|下壓', n): return '三頭肌'
+        return '二頭彎舉'
+    if dim == 'core':
+        if re.search(r'捲腹|仰臥起坐|抬腿|抬膝|提膝|V字|Ｖ字|由下而上伸展', n): return '核心捲腹抬腿'
+        return '核心轉體側彎'
+    if dim == 'legs':
+        if re.search(r'腿部推蹬|腿部推蹲|推蹬|小腿推蹬', n): return '腿推'
+        if re.search(r'提踵|提腫', n): return '提踵'
+        if re.search(r'臀橋|臀推|臀腿|蛙式|提髖', n): return '臀橋臀推'
+        if re.search(r'硬舉', n): return '硬舉'
+        if re.search(r'弓箭步|分腿|登階|保加利亞', n): return '弓步單腿'
+        if re.search(r'深蹲|前蹲|哈克|坐站|蹲', n): return '深蹲'
+        return '腿孤立'
+    raise ValueError(f'無法分類：{name}（{dim}）')
+
+
+def calibrated_intensity(name, dim, eq, bodyweight):
+    """相對強度係數：讓「體重 70 kg 新手做 10 下」剛好落在該類的目標分數。"""
+    if bodyweight:
+        f = bodyweight_factor(name)
+        if name in LOW_GROUP:
+            target = WK_LOW
+        elif '彈力繩' in eq:
+            target = WK_BAND
+        else:
+            target = WK_C
+        return round(target / (STD_BODYWEIGHT * f), 4)
+    g = equipment_group(eq)
+    if g == '壺':
+        w = KETTLEBELL_WEIGHT.get(name.split(' · ')[0], KETTLEBELL_DEFAULT)
+    else:
+        table = NOVICE_WEIGHT[weighted_pattern(name, dim)]
+        if g not in table:
+            raise ValueError(f'沒有新手標準重量：{name}（{dim}，器材群 {g}）')
+        w = table[g]
+    return round(WK_C / w, 4)
 
 
 # --- 既有的 16 個示範動作 --------------------------------------------------
@@ -193,7 +279,7 @@ OVERRIDES = {
     '硬舉 -槓鈴': ('deadlift', 0.62, 180, False),
     '腿部推蹬-器械': ('legpress', 0.42, 120, False),
     '上舉 -槓鈴': ('ohp', 1.35, 120, False),
-    '側平舉': ('lateral', 2.60, 60, False),
+    '側平舉': ('lateral', 2.60, 60, True),
     '集中彎舉。啞鈴': ('curl', 2.10, 60, False),
     '三頭肌下壓-滑輪機': ('pushdown', 1.90, 60, False),
     '棒式': ('plank', 1.60, 60, True),
@@ -210,6 +296,7 @@ def main():
 
     out, report = [], defaultdict(list)
     seen_names = Counter()
+    seen_low = set()
     unmapped_eq, unmapped_part = Counter(), Counter()
 
     for i, r in enumerate(rows):
@@ -292,28 +379,30 @@ def main():
                 report['跨多維，由動作名稱判定'].append(
                     f'{name}　→　{dim}　（原始：{r["重點部位"]}）')
 
+        if name in DIM_FIX:
+            dim = DIM_FIX[name]
+            if dim not in dims:  # 原有的訓練部位（分頁篩選用）保留，只補上改正後的
+                dims = dims + [dim]
+            report['部位歸錯，已改正'].append(f'{name}　→　{dim}')
+
         ov = OVERRIDES.get(name) if suffix == '' else None
         if ov:
             OVERRIDES.pop(name)
-        auto, used_fallback = intensity_for(name, dim)
-        if not ov:
-            if used_fallback:
-                report['相對強度係數：關鍵字未命中，用該維預設值'].append(
-                    f'{name}　→　{auto}')
-        elif abs(ov[1] - auto) > 0.15:
-            report['相對強度係數：既有校準值與草稿差距大（以既有值為準）'].append(
-                f'{name}　既有 {ov[1]}　草稿 {auto}')
+        bodyweight = bool((ov[3] if ov else any(a in BODYWEIGHT_HINT for a in atoms(r['器材'])))
+                          or '彈力繩' in eq or name in BODYWEIGHT_FORCE or name in LOW_GROUP)
+        if name in LOW_GROUP:
+            seen_low.add(name)
+        auto = calibrated_intensity(name, dim, eq, bodyweight)
         out.append({
             'parts': dims,
             'id': ov[0] if ov else f'p{i:03d}{suffix}',
-            'intensity': ov[1] if ov else auto,
+            'intensity': auto,
             'rest': ov[2] if ov else None,
             'name': name,
             'dim': dim,
             'equipment': sorted(eq),
             'accessories': sorted(acc),
-            'bodyweight': (ov[3] if ov
-                           else any(a in BODYWEIGHT_HINT for a in atoms(r['器材']))),
+            'bodyweight': bodyweight,
             'needsReview': needs_review,
             'rawParts': r['重點部位'].strip(),
             'setup': r['準備工作'].strip(),
@@ -325,6 +414,10 @@ def main():
         report['器材映射不到'].append(f'{k}（{v} 筆）')
     for k, v in unmapped_part.items():
         report['部位映射不到'].append(f'{k}（{v} 筆）')
+
+    if seen_low != LOW_GROUP:
+        print(f'錯誤：LOW_GROUP 有動作對不到 CSV：{sorted(LOW_GROUP - seen_low)}')
+        return 1
 
     # **對不到就停下來，不要默默產出。**
     # 校準值查不到時，動作會退回流水號 ID 並遺失休息秒數 ——

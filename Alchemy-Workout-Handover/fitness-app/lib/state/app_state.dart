@@ -7904,6 +7904,9 @@ class AppState extends ChangeNotifier {
   /// 「三頭肌下壓」→ `{三頭, 頭肌, 肌下, 下壓}`。
   /// 與「三頭肌伸展」重疊 2 個，與「二頭肌屈臂」只重疊 1 個。
   /// **器材那一段不算** —— 我們要找的正是「同一個動作換個器材」。
+  /// 動作名稱去掉器材後綴（「板凳臥推 · 槓鈴」→「板凳臥推」）。
+  static String _baseName(String name) => name.split(' · ').first;
+
   static Set<String> _nameBigrams(String name) {
     final base = name.split(' · ').first.replaceAll(RegExp(r'[\s()（）]'), '');
     return {for (var i = 0; i + 1 < base.length; i++) base.substring(i, i + 2)};
@@ -7953,7 +7956,14 @@ class AppState extends ChangeNotifier {
       // 名字越像的越前面 —— 同一個動作換個器材會排到第一。
       final byName = alike(b).compareTo(alike(a));
       if (byName != 0) return byName;
-      // 一樣像，才比相對強度 —— 換動作不該順便換掉訓練強度。
+      // 一樣像時，**同一個動作（只差器材）排在變化版前面**：「板凳臥推 · 滑輪機」
+      // 要贏過「下斜板凳臥推 · 槓鈴」。以前這件事靠相對強度剛好湊出來 ——
+      // 係數不分器材，同一個動作換器材的係數剛好相等；2026-10-17 權重改成「每類新手 10 下
+      // 同分」後，係數代表的是器材的重量尺度，不再有這個巧合，要明寫。
+      final sameA = _baseName(a.name) == _baseName(e.name);
+      final sameB = _baseName(b.name) == _baseName(e.name);
+      if (sameA != sameB) return sameA ? -1 : 1;
+      // 再來才比相對強度 —— 換動作不該順便換掉訓練強度。
       return (a.relativeIntensity - e.relativeIntensity)
           .abs()
           .compareTo((b.relativeIntensity - e.relativeIntensity).abs());

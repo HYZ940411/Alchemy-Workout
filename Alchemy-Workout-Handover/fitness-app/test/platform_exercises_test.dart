@@ -63,12 +63,14 @@ void main() {
 
     test('調過係數的 15 筆示範動作在匯入後仍在，且值沒被覆蓋', () {
       // CSV 沒有相對強度係數與預設組間休息秒數，這兩欄靠 OVERRIDES 保留。
+      // 係數是 2026-10-17 依「每類新手 10 下同分」重算的值（見 weight_baseline_test）：
+      // 40 ÷ 新手標準重量 —— 深蹲 50 kg、硬舉 60 kg、肩推 30 kg；側平舉現在是沒拿東西的徒手版。
       const expected = {
         'bench': (1.00, 150),
-        'squat': (0.72, 180),
-        'deadlift': (0.62, 180),
-        'ohp': (1.35, 120),
-        'lateral': (2.60, 60),
+        'squat': (0.8, 180),
+        'deadlift': (0.6667, 180),
+        'ohp': (1.3333, 120),
+        'lateral': (0.7064, 60),
       };
       expected.forEach((id, v) {
         final e = ex(id);
@@ -83,9 +85,10 @@ void main() {
       final ones = strength.where((e) => e.relativeIntensity == 1.0).length;
       expect(ones / strength.length, lessThan(0.1),
           reason: '係數若大多是 1.0，等於沒有把不同動作拉到同一尺度');
+      // 上限 12：啞鈴的小肌群動作新手每手只拿 4 kg，係數要 10 才補得回「新手 10 下 ＝ C 級」。
       for (final e in strength) {
         expect(e.relativeIntensity, greaterThan(0.3), reason: e.name);
-        expect(e.relativeIntensity, lessThan(5.0), reason: e.name);
+        expect(e.relativeIntensity, lessThan(12.0), reason: e.name);
       }
     });
 
@@ -98,18 +101,20 @@ void main() {
       expect(ex('squat').relativeIntensity, lessThan(1.0));
       expect(ex('legpress').relativeIntensity, lessThan(ex('squat').relativeIntensity));
       // 側平舉、彎舉舉得比臥推輕 → 係數更高
-      expect(ex('lateral').relativeIntensity, greaterThan(2.0));
+      // （示範動作 lateral 現在是沒拿東西的徒手版，改看啞鈴側平舉。）
+      final dbLateral = kExercises.firstWhere((e) => e.name == '側平舉 · 啞鈴');
+      expect(dbLateral.relativeIntensity, greaterThan(2.0));
       expect(ex('curl').relativeIntensity, greaterThan(1.0));
     });
 
-    test('同型態的動作係數一致 —— 上斜比平板重不起來，係數該更高', () {
+    test('同型態的動作係數一致 —— 上斜、平板、下斜是同一類，係數相同（使用者裁決：每類統一）', () {
       final flat = kExercises.firstWhere((e) => e.name == '板凳臥推 · 槓鈴');
       final incline =
           kExercises.firstWhere((e) => e.name == '上斜板凳臥推 · 槓鈴');
       final decline =
           kExercises.firstWhere((e) => e.name == '下斜板凳臥推 · 槓鈴');
-      expect(incline.relativeIntensity, greaterThan(flat.relativeIntensity));
-      expect(decline.relativeIntensity, lessThan(flat.relativeIntensity));
+      expect(incline.relativeIntensity, flat.relativeIntensity);
+      expect(decline.relativeIntensity, flat.relativeIntensity);
     });
 
     test('未調過的匯入動作退回全站預設休息秒數', () {
