@@ -3857,7 +3857,17 @@ class AppState extends ChangeNotifier {
     if (_interactDay == today) return;
     _interactDay = today;
     _interactCounts.clear();
+    _likedPostsToday.clear();
   }
+
+  /// 今天按過讚的**別人的**貼文（貼文 ID）。每日任務「按讚 N 則貼文」的進度看它。
+  ///
+  /// **不借用獎勵的去重名單。** 獎勵那份（[_rewardedRequests]）是終身的 ——
+  /// 同一則貼文一輩子只發一次經驗值，於是以前按過的貼文今天再按，不會計進 [interactionsToday]，
+  /// 任務就卡在 2/3 動不了（使用者 2026-10-17 回報）。任務要的是「今天按了幾則不同的貼文」，
+  /// 一天一則只算一次，按讚→取消→再按不會灌水。跟著存檔、換日清空。
+  final Set<String> _likedPostsToday = {};
+  Set<String> get likedPostsToday => _likedPostsToday;
 
   int interactionsToday(String kind) {
     _rollInteractionDay();
@@ -3916,13 +3926,11 @@ class AppState extends ChangeNotifier {
       _bumpTasks('使用者已按讚', 1);
       // **自己的貼文不計**：對自身貼文的按讚與留言不發放任何獎勵。
       if (!isMyPost(p)) {
-        final before = interactionsToday('Like');
         _grantInteraction('Like', requestId: p.id);
-        // 任務池用的是「互動者已按讚貼文」。只在這一次真的算進當日互動時才推進
-        // —— 與 [_doneTodayFor] 補進度的算法一致，按讚→取消→再按不會灌水。
-        if (interactionsToday('Like') > before) {
-          _bumpTasks('互動者已按讚貼文', 1);
-        }
+        // 任務池用的是「互動者已按讚貼文」。看今天按過幾則不同的貼文，
+        // 與 [_doneTodayFor] 補進度的算法一致；不看獎勵有沒有發（見 [_likedPostsToday]）。
+        _rollInteractionDay();
+        if (_likedPostsToday.add(p.id)) _bumpTasks('互動者已按讚貼文', 1);
       }
     }
     final liked = p.likedByMe;
@@ -11768,6 +11776,7 @@ class AppState extends ChangeNotifier {
     _taskScoredEvents.clear();
     _rollInteractionDay();
     _interactCounts.clear();
+    _likedPostsToday.clear();
     _rewardedRequests.removeWhere((k) => k.startsWith('Like:'));
     notifyListeners();
   }
@@ -11815,7 +11824,7 @@ class AppState extends ChangeNotifier {
       '使用者已完成訓練' ||
       '訓練已結算' =>
         lastTrainedDate == businessDate(now) ? 1 : 0,
-      '互動者已按讚貼文' => interactionsToday('Like'),
+      '互動者已按讚貼文' => _likedPostsToday.length,
       '互動者已留言' => interactionsToday('Comment'),
       '發文者已發布貼文' => interactionsToday('Post'),
       '發文者已分享訓練成果' => interactionsToday('Share'),
@@ -12677,10 +12686,14 @@ class AppState extends ChangeNotifier {
     _surveyAskSkippedAt = null;
   }
 
-  /// 今日互動計數歸零。
+  /// 今日互動計數歸零。連同任務用的兩份「今天」名單一起清 —— 換帳號時不能把上一個人
+  /// 今天按過的貼文、領過的任務分數帶給下一個人。
   void resetInteractionDay() {
     _interactDay = null;
     _interactCounts.clear();
+    _likedPostsToday.clear();
+    _taskScoredEvents.clear();
+    _taskScoredDay = null;
   }
 
   /// 師徒功能重新上鎖。

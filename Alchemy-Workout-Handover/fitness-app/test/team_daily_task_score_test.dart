@@ -128,6 +128,32 @@ void main() {
     expect(s.dailyTasks.first.progress, 1);
   });
 
+  test('以前（別天）按過讚的貼文，今天再按也要計進按讚任務（使用者 2026-10-17 回報卡在 2/3）', () {
+    final s = _state([('互動者已按讚貼文', 3)]);
+    final posts = _othersPosts(s);
+    expect(posts.length, greaterThanOrEqualTo(4));
+    // 前三則是更早以前按過、已經領過獎勵的：獎勵的去重名單是終身的（同一則只發一次）。
+    for (final p in posts.take(3)) {
+      s.rewardedRequests.add('Like:${p.id}');
+    }
+    for (final p in posts.take(4)) {
+      s.toggleLike(p);
+    }
+    expect(s.dailyTasks.first.progress, 3,
+        reason: '今天按了 4 則不同的貼文，任務要算 3/3；不能被「獎勵終身只發一次」拖住');
+    expect(_daily(s), 10);
+  });
+
+  test('換帳號歸零：不把上一個人今天按過的貼文與領過的任務分數帶給下一個人', () {
+    final s = _state([('互動者已按讚貼文', 1)]);
+    s.toggleLike(_othersPosts(s).first);
+    expect(s.likedPostsToday, isNotEmpty);
+    expect(s.taskScoredEvents, isNotEmpty);
+    s.resetToNewAccount();
+    expect(s.likedPostsToday, isEmpty);
+    expect(s.taskScoredEvents, isEmpty);
+  });
+
   test('按讚自己的貼文不算任務進度', () {
     final s = _state([('互動者已按讚貼文', 1)]);
     s.publishPost('今天練完了', PostVisibility.public);

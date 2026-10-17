@@ -226,6 +226,51 @@ void main() {
     });
   });
 
+  group('按讚任務看「今天按了幾則不同的貼文」，不看獎勵終身去重', () {
+    List<Post> others(AppState s) =>
+        s.posts.where((p) => !s.isMyPost(p)).toList();
+
+    test('先按了 3 則（其中有以前領過獎勵的），之後才重抽出按讚任務：直接 3/3 並補發', () {
+      final s = _state(['永遠不會發生的別件事'], filler: false);
+      final posts = others(s);
+      s.rewardedRequests.add('Like:${posts[0].id}'); // 更早以前按過
+      for (final p in posts.take(3)) {
+        s.toggleLike(p);
+      }
+      expect(_team(s), 0, reason: '當下沒有按讚任務，沒有任務分數');
+
+      // 重抽：全新的「按讚 3 則」任務物件，進度 0。
+      s.dailyTasks = [
+        DailyTask(name: '按讚 3 則貼文', sourceEvent: '互動者已按讚貼文', target: 3),
+        DailyTask(name: '墊底', sourceEvent: '永遠不會發生', target: 99),
+      ];
+      s.reconcileDailyTasks();
+      expect(s.dailyTasks.first.progress, 3,
+          reason: '今天按過 3 則不同的貼文（含一則以前領過獎勵的）→ 3/3');
+      expect(_team(s), 10);
+    });
+
+    test('今天按過的貼文清單跟著存檔：重開後補進度還在', () {
+      final before = _state(['永遠不會發生的別件事'], filler: false);
+      for (final p in others(before).take(2)) {
+        before.toggleLike(p);
+      }
+      final snap = jsonDecode(jsonEncode(before.toSnapshot()))
+          as Map<String, dynamic>;
+      final s = AppState();
+      s.applySnapshot(snap);
+      expect(s.likedPostsToday.length, 2);
+    });
+
+    test('換日清空', () {
+      final s = _state(['永遠不會發生的別件事'], filler: false);
+      s.toggleLike(others(s).first);
+      expect(s.likedPostsToday, isNotEmpty);
+      s.advanceDemoClock(const Duration(days: 1));
+      expect(s.likedPostsToday, isEmpty);
+    });
+  });
+
   test('換日清空：隔天同一件事可以再領', () {
     final s = _state(['使用者已簽到']);
     s.checkIn();

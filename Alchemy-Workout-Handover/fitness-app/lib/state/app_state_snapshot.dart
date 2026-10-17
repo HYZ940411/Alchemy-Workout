@@ -381,6 +381,7 @@ extension AppStateSnapshot on AppState {
         'taskScoredEvents': _taskScoredEvents.toList(),
         'interactDay': _iso(_interactDay),
         'interactCounts': {..._interactCounts},
+        'likedPostsToday': _likedPostsToday.toList(),
         'aiResetMonth': _iso(_aiResetMonth),
         'lastSnapshotOn': _iso(_lastSnapshotOn),
 
@@ -789,6 +790,9 @@ extension AppStateSnapshot on AppState {
             if (e.value is num) '${e.key}': (e.value as num).round(),
         });
     }
+    _likedPostsToday
+      ..clear()
+      ..addAll(strs('likedPostsToday'));
     _aiResetMonth = _date(j['aiResetMonth']);
     _lastSnapshotOn = _date(j['lastSnapshotOn']);
 
