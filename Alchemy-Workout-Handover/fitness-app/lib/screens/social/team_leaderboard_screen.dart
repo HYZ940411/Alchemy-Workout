@@ -10,9 +10,10 @@ import '../../widgets/common.dart';
 /// 兩個榜別衡量的是兩件事，故分數不合併、各自維護、各對應一種排行獎勵：
 /// **日常**＝成員的訓練努力程度，**限時**＝團隊的動員參與率。
 ///
-/// 榜單**只列同組別的隊伍**：日常分數維持加總、不改人均，
+/// **日常榜只列同組別的隊伍**：日常分數維持加總、不改人均，
 /// 小隊公平性改由依人數分級距分組承擔（3 / 4 / 5 人組各自排名）——
 /// 與個人排行榜的階級分組同一套設計語言，不另訂補償係數。
+/// **限時榜不分組**，所有符合資格的隊伍排同一張榜。
 class TeamLeaderboardScreen extends StatefulWidget {
   const TeamLeaderboardScreen({super.key});
 
@@ -29,6 +30,7 @@ class _TeamLeaderboardScreenState extends State<TeamLeaderboardScreen> {
     final s = AppScope.of(context);
     final mine = s.myTeamOnBoard;
     final g = group ?? mine?.groupSize ?? kTeamMinSize;
+    final grouped = isGroupedBoard(board);
     final ranked = teamRanking(s.boardTeams, board, g);
     final myPos = mine == null ? -1 : ranked.indexWhere((t) => t.id == mine.id);
     final gap = myPos < 0 ? null : gapToTopThree(ranked, myPos, board);
@@ -67,27 +69,28 @@ class _TeamLeaderboardScreenState extends State<TeamLeaderboardScreen> {
             ),
           ),
 
-          // 分組。只跟同組別的隊伍比，所以組別要看得見也選得動。
-          Container(
-            color: C.bgSurface,
-            padding: const EdgeInsets.fromLTRB(S.base, 0, S.base, S.md),
-            child: Row(
-              children: [
-                for (var n = kTeamMinSize; n <= kTeamCapacity; n++)
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                          right: n == kTeamCapacity ? 0 : S.sm),
-                      child: _Choice(
-                        label: '$n 人組',
-                        selected: g == n,
-                        onTap: () => setState(() => group = n),
+          // 分組。日常榜只跟同組別的隊伍比，所以組別要看得見也選得動；限時榜不分組。
+          if (grouped)
+            Container(
+              color: C.bgSurface,
+              padding: const EdgeInsets.fromLTRB(S.base, 0, S.base, S.md),
+              child: Row(
+                children: [
+                  for (var n = kTeamMinSize; n <= kTeamCapacity; n++)
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                            right: n == kTeamCapacity ? 0 : S.sm),
+                        child: _Choice(
+                          label: '$n 人組',
+                          selected: g == n,
+                          onTap: () => setState(() => group = n),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
 
           Expanded(
             child: ListView(
@@ -104,7 +107,7 @@ class _TeamLeaderboardScreenState extends State<TeamLeaderboardScreen> {
                   ),
 
                 // 自己的隊固定在最上面，捲多遠都看得到。
-                if (mine != null && myPos >= 0 && g == mine.groupSize) ...[
+                if (mine != null && myPos >= 0 && (!grouped || g == mine.groupSize)) ...[
                   _Row(
                     pos: myPos + 1,
                     team: mine,
@@ -115,7 +118,7 @@ class _TeamLeaderboardScreenState extends State<TeamLeaderboardScreen> {
                         : '距離前 3 還差 $gap 分',
                   ),
                   const SizedBox(height: S.md),
-                ] else if (mine != null && g != mine.groupSize)
+                ] else if (mine != null && grouped && g != mine.groupSize)
                   AppCard(
                     child: Text(
                       '你的隊在 ${mine.groupSize} 人組。'
@@ -125,9 +128,9 @@ class _TeamLeaderboardScreenState extends State<TeamLeaderboardScreen> {
                   ),
 
                 if (ranked.isEmpty)
-                  const EmptyState(
+                  EmptyState(
                     icon: Icons.groups_2_outlined,
-                    title: '這一組還沒有隊伍上榜',
+                    title: grouped ? '這一組還沒有隊伍上榜' : '還沒有隊伍上榜',
                     message: '本週期曾達 3 人的隊伍才會列入排名',
                   )
                 else

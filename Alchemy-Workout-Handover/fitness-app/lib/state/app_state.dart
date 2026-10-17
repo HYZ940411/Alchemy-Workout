@@ -2464,7 +2464,7 @@ class AppState extends ChangeNotifier {
             [for (final t in ranked) teamScoreOf(t, tb)]);
         final i = ranked.indexWhere((t) => t.id == mine.id);
         if (i < 0) return null;
-        group = '${mine.groupSize} 人組';
+        group = isGroupedBoard(tb) ? '${mine.groupSize} 人組' : '全部隊伍';
         subject = mine.name;
         place = places[i];
         score = teamScoreOf(mine, tb);

@@ -333,18 +333,25 @@ const teamBoardHints = <TeamBoard, String>{
   TeamBoard.timed: '完成限時任務的成員數 × 10 分，全員完成另加 50，衡量動員參與率',
 };
 
+/// 這個榜是不是依人數分組。**只有日常榜分組，限時榜不分**（使用者 2026-10-17 裁決，
+/// 照 02_Aggregate〈團隊限時排行獎勵已發放〉：限時分數已用「固定 10 分／人＋全員完成加碼 50」
+/// 收斂人數差距，既有裁決未替它另開分組，獎勵層沿用同一結論）。
+bool isGroupedBoard(TeamBoard b) => b == TeamBoard.daily;
+
 /// 依榜別與分組排出名次。
 ///
-/// **只跟同組別的隊伍比**：日常分數維持加總、不改人均，公平性改由
+/// **日常榜只跟同組別的隊伍比**：日常分數維持加總、不改人均，公平性改由
 /// 依人數分級距分組承擔（3 人組 / 4 人組 / 5 人組各自排名）——
 /// 與個人排行榜的階級分組同一套設計語言，不另訂補償係數。
+/// **限時榜不分組**，所有符合資格的隊伍排同一張榜，[groupSize] 被忽略。
 List<PublicTeam> teamRanking(
   List<PublicTeam> all,
   TeamBoard board,
   int groupSize,
 ) {
   final pool = all
-      .where((t) => t.rankEligible && t.groupSize == groupSize)
+      .where((t) =>
+          t.rankEligible && (!isGroupedBoard(board) || t.groupSize == groupSize))
       .toList()
     ..sort((a, b) {
       final s = _score(b, board).compareTo(_score(a, board));
