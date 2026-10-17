@@ -10,6 +10,7 @@ import 'data/auth.dart';
 import 'data/firestore_setup.dart';
 import 'widgets/sync_status_banner.dart';
 import 'data/platform_data.dart';
+import 'data/platform_cache.dart';
 import 'data/platform_data_firestore.dart';
 import 'data/follow_data.dart';
 import 'data/follow_data_firestore.dart';
@@ -107,7 +108,9 @@ Future<void> main() async {
   // 讀不到退回打包在本地的後備（[BE-12]）。
   runApp(FitnessApp(
     auth: auth,
-    platformData: FirestorePlatformData(),
+    // 平台資料有本機快取：版本沒變就不重讀那 600 多筆（Firestore 免費配額，見 platform_cache.dart）。
+    platformData: FirestorePlatformData(
+        cache: StorePlatformCache(platformCacheStore())),
     profileFor: (uid) => FirestorePublicProfile(uid: uid),
     followsFor: (uid) => FirestoreFollows(uid: uid),
     postsFor: (uid) => FirestorePosts(uid: uid),

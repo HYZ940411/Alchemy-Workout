@@ -33,6 +33,12 @@ def main():
     for collection, docs in data.items():
         total += upsert(db, collection, docs)
     print(f'共 upsert {total} 筆。')
+    # 換版本：App 的平台資料有本機快取，靠 platform_config/_meta 的 rev 判斷要不要重讀。
+    # 上傳了卻不換版本，已經有快取的裝置會一直拿舊的。
+    import time
+    db.collection('platform_config').document('_meta').set(
+        {'rev': str(time.time_ns() // 1000)})
+    print('已更新平台資料版本（platform_config/_meta）。')
 
 
 if __name__ == '__main__':

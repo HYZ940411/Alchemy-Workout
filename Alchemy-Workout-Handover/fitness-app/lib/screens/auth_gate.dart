@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../data/ai_suggestion.dart';
 import '../data/auth.dart';
 import '../data/platform_data.dart';
+import '../data/platform_data_firestore.dart' show PlatformRevisioned;
 import '../data/public_profile.dart';
 import '../data/follow_data.dart';
 import '../data/photo_data.dart';
@@ -504,6 +505,17 @@ class _AuthGateState extends State<AuthGate> {
           ? '是管理員（${widget.state.admin.scopes.length} 組權限）'
           : '一般使用者';
     });
+
+    // 雲端還沒有平台資料的版本標記就由管理員補一份 —— 沒有它所有裝置都只能整份重讀、
+    // 省不到 Firestore 免費配額。只有管理員寫得進去，所以放在知道身分之後。
+    final platformSrc = widget.platformData;
+    if (widget.state.isPlatformAdmin && platformSrc is PlatformRevisioned) {
+      final revisioned = platformSrc as PlatformRevisioned;
+      await step('平台資料版本', () async {
+        await revisioned.ensureRev();
+        return '已確認';
+      });
+    }
 
     // 自己的累計違規次數。**不在存檔裡，也不該在** —— 存檔是本人寫得動的，
     // 而處罰級距靠這個數字決定。

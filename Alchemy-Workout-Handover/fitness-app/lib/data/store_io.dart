@@ -17,6 +17,8 @@ Store createStore() => FileStore();
 /// 時候，回答「這台裝置登入過嗎」。
 Store createDeviceStore() => FileStore(fileName: 'device.json');
 
+Store createPlatformCacheStore() => FileStore(fileName: 'platform_cache.json');
+
 /// 本機檔案。寫在系統的「應用程式文件」目錄，重開機仍在。
 ///
 /// **先寫暫存檔再改名**：直接覆寫時，若寫到一半就被關掉，

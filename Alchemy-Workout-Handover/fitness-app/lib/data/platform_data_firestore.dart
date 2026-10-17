@@ -3,7 +3,15 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../domain/task_pool.dart';
 import '../mock/mock_admin.dart';
+import 'http_error.dart';
+import 'platform_cache.dart';
 import 'platform_data.dart';
+
+/// 能保證「雲端有版本標記」的來源。登入的管理員會呼叫它補上第一份版本。
+/// 獨立成一個介面，是為了不動 [PlatformDataSource]（測試裡有很多它的替身）。
+abstract interface class PlatformRevisioned {
+  Future<void> ensureRev();
+}
 
 /// Firestore 版的平台資料來源（[BE-12]）。
 ///
@@ -15,8 +23,25 @@ import 'platform_data.dart';
 /// 平行讀五個平台集合，逐筆反序列化。**任一類讀不到或格式不符，該類單獨
 /// 退回本地後備**（而非整份失敗）—— 離線能用、半上線也能用，與動作庫
 /// 「隨 App 打包、離線可用」的既有設計一致。
-class FirestorePlatformData implements PlatformDataSource {
+class FirestorePlatformData implements PlatformDataSource, PlatformRevisioned {
   final FirebaseFirestore _db;
+
+  /// 本機快取。空值＝不用快取，每次整份重讀（既有行為）。
+  final PlatformCache? cache;
+
+  /// 版本文件：`platform_config/_meta` 的 `rev`。放在 `platform_config` 底下，
+  /// 是因為那個集合「登入者可讀、管理員可寫」，不必動安全規則。
+  static const metaDoc = '_meta';
+
+  /// 換了就要換版本的集合 —— 快取裡存的那幾個。教官題庫不在快取裡（見 platform_cache.dart），所以不算。
+  static const _versioned = {
+    'exercises',
+    'plans',
+    'achievement_defs',
+    'daily_task_pool',
+    'platform_config',
+    'products',
+  };
 
   /// 讀不到時的後備來源。預設為打包在本地的那份。
   final PlatformDataSource fallback;
@@ -24,45 +49,123 @@ class FirestorePlatformData implements PlatformDataSource {
   FirestorePlatformData({
     FirebaseFirestore? firestore,
     this.fallback = const BundledPlatformData(),
+    this.cache,
   }) : _db = firestore ?? FirebaseFirestore.instance;
 
   @override
   Future<void> put(
-          String collection, String docId, Map<String, dynamic> data) =>
-      _db.collection(collection).doc(docId).set(data);
+      String collection, String docId, Map<String, dynamic> data) async {
+    await _db.collection(collection).doc(docId).set(data);
+    await _bumpRev(collection, docId);
+  }
 
   @override
-  Future<void> remove(String collection, String docId) =>
-      _db.collection(collection).doc(docId).delete();
+  Future<void> remove(String collection, String docId) async {
+    await _db.collection(collection).doc(docId).delete();
+    await _bumpRev(collection, docId);
+  }
+
+  DocumentReference<Map<String, dynamic>> get _meta =>
+      _db.collection('platform_config').doc(metaDoc);
+
+  String _newRev() => DateTime.now().microsecondsSinceEpoch.toString();
+
+  /// 讀版本。**沒有、讀不到、格式不對一律回空值**（呼叫端當作「不知道版本」，整份重讀）。
+  Future<String?> _readRev() async {
+    try {
+      final r = (await _meta.get()).data()?['rev'];
+      return r is String && r.isNotEmpty ? r : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 後台改了會進快取的集合，就換一個新版本，其他裝置下次載入才會重讀。
+  ///
+  /// 資料已經寫進去了才換版本；換版本失敗要**說出來** —— 否則管理員以為存好了，
+  /// 其他人卻會一直拿著舊的快取。
+  Future<void> _bumpRev(String collection, String docId) async {
+    if (!_versioned.contains(collection)) return;
+    if (collection == 'platform_config' && docId == metaDoc) return;
+    try {
+      await _meta.set({'rev': _newRev(), 'at': FieldValue.serverTimestamp()});
+    } catch (e) {
+      throw StateError('已寫入，但版本標記沒有更新，其他人要等下次更新才看得到'
+          '（${describeError(e)}）');
+    }
+  }
+
+  /// 雲端還沒有版本標記就補一份（只有管理員寫得進去）。
+  ///
+  /// 沒有版本標記，所有裝置都只能整份重讀；補上之後第一次載入會寫入各自的快取，
+  /// 之後才開始省讀取。已經有就不動 —— 不能每次登入都換版本，那等於沒有快取。
+  @override
+  Future<void> ensureRev() async {
+    if (await _readRev() != null) return;
+    await _meta.set({'rev': _newRev(), 'at': FieldValue.serverTimestamp()});
+  }
 
   @override
   Future<PlatformData> load() async {
     final bundle = await fallback.load();
     try {
-      final fetched = await Future.wait([
-        _db.collection('exercises').get(),
-        _db.collection('plans').get(),
-        _db.collection('achievement_defs').get(),
-        _db.collection('daily_task_pool').get(),
-        _db.collection('platform_config').get(),
-      ]);
-      // 商品單獨讀、單獨失敗：安全規則還沒放行 `products`（或這一類單獨出事）時，
-      // 不能把前面五類一起拖回後備 —— 那會讓所有使用者的動作庫、課表整份退回打包版。
-      List<AdminProduct> products;
-      try {
-        products = _mergeProducts(
-            await _db.collection('products').get(), bundle.products);
-      } catch (_) {
-        products = bundle.products;
+      // **先讀版本，再讀資料。** 反過來的話，讀完資料到讀版本之間若有人改了，
+      // 會把新版本標在舊資料上，下次就永遠不重讀。先讀版本最壞只是多重讀一次。
+      final rev = await _readRev();
+      final hit = rev == null ? null : await cache?.read();
+      PlatformData core;
+      if (hit != null && hit.rev == rev) {
+        core = hit.data; // 版本一樣：不讀那 600 多筆
+      } else {
+        final (data, complete) = await _fetchCore(bundle);
+        core = data;
+        // 只有**每一類都真的讀自雲端**才存。某一類讀失敗退回了打包資料的話，
+        // 把它存起來就是把後備資料當成這個版本的內容。
+        if (rev != null && complete) await cache?.write(rev, core);
       }
-      // 題庫與管理員專用的說明文件：各自單獨讀、單獨失敗。
-      // 非管理員讀不到 `exam_notes` 是正常的，不能因此連題目都拿不到。
+      // 題庫每次都讀：它有只有管理員讀得到的說明文件，不進共用的裝置快取。
       final exam = await loadExamBank(
         questions: () => _db.collection('exam_questions').get(),
         notes: () => _db.collection('exam_notes').get(),
         bundle: bundle.examQuestions,
       );
       return PlatformData(
+        exercises: core.exercises,
+        planSpecs: core.planSpecs,
+        achievements: core.achievements,
+        taskPool: core.taskPool,
+        config: core.config,
+        products: core.products,
+        examQuestions: exam,
+      );
+    } catch (_) {
+      // 連線或權限層級的整體失敗：整份退回後備，不擋使用者進場。
+      return bundle;
+    }
+  }
+
+  /// 讀五個平台集合與商品。回傳 (資料, 是不是每一類都讀自雲端)。
+  Future<(PlatformData, bool)> _fetchCore(PlatformData bundle) async {
+    final fetched = await Future.wait([
+      _db.collection('exercises').get(),
+      _db.collection('plans').get(),
+      _db.collection('achievement_defs').get(),
+      _db.collection('daily_task_pool').get(),
+      _db.collection('platform_config').get(),
+    ]);
+    // 商品單獨讀、單獨失敗：安全規則還沒放行 `products`（或這一類單獨出事）時，
+    // 不能把前面五類一起拖回後備 —— 那會讓所有使用者的動作庫、課表整份退回打包版。
+    var complete = true;
+    List<AdminProduct> products;
+    try {
+      products = _mergeProducts(
+          await _db.collection('products').get(), bundle.products);
+    } catch (_) {
+      products = bundle.products;
+      complete = false;
+    }
+    return (
+      PlatformData(
         exercises: _listOr(fetched[0], exerciseFromDoc, bundle.exercises),
         planSpecs: _listOr(fetched[1], planSpecFromDoc, bundle.planSpecs),
         achievements:
@@ -70,12 +173,9 @@ class FirestorePlatformData implements PlatformDataSource {
         taskPool: _listOr(fetched[3], taskPoolItemFromDoc, bundle.taskPool),
         config: _configOr(fetched[4], bundle.config),
         products: products,
-        examQuestions: exam,
-      );
-    } catch (_) {
-      // 連線或權限層級的整體失敗：整份退回後備，不擋使用者進場。
-      return bundle;
-    }
+      ),
+      complete,
+    );
   }
 
   /// 題庫：內建當底，雲端按 id 蓋上去；墓碑（`deleted`）把那題拿掉；

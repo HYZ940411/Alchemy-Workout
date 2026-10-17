@@ -45,6 +45,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// 那六支被抓到的當初看起來全都像前者。白名單最常見的失敗方式，
 /// 就是變成「測試紅了就加一行」的地方。
 const _allowed = <String, String>{
+  // 2026-10-17 QA-08 平台資料本機快取。它只被 `FirestorePlatformData`（lib/data 內）使用，
+  // 不經狀態層或畫面層，所以這道「呼叫端在 lib/state、lib/screens」的檢查看不到。
+  // 人工確認過：`FirestorePlatformData.load()` 呼叫 `cache?.read()`／`cache?.write()`，
+  // `main.dart` 傳入 `StorePlatformCache`；`platform_cache_test.dart` 驗命中與未命中。
+  'PlatformCache.read': '只被 FirestorePlatformData.load() 使用（lib/data 內）',
   // 以下四支是**已知漏接，不是「還沒做」** —— 見 PROGRESS.md 第 5 節 0d。
   //
   // 使用者 2026-09-24 選擇先修貼文那一組，並明示這一項不可遺忘。
@@ -92,6 +97,7 @@ const _ambiguous = <String, String>{
   //    進入檢查範圍。全部逐一人工確認過（下面各自註明行號來源）。
   //    在那之前它們**從頭到尾沒有被檢查過**。
   'PlatformDataSource.load': '`AuthGate._loadPlatformData()` → `applyPlatformData`',
+
 
   // ── 2026-09-28 `[BE-12]` 補上寫入那一半之後，`put`／`remove` 開始撞名。
   //    **前兩支是新增的，後兩支是被連累的** —— 它們在此之前名字唯一，

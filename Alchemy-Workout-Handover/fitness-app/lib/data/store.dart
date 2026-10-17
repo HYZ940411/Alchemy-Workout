@@ -19,6 +19,9 @@ Store defaultStore() => impl.createStore();
 /// 第一個感覺是「我以前註冊過卻忘了？」。
 Store deviceStore() => impl.createDeviceStore();
 
+/// 平台資料的本機快取（見 `platform_cache.dart`）。**不綁 uid**：平台資料是全站公用的。
+Store platformCacheStore() => impl.createPlatformCacheStore();
+
 /// 這台裝置成功登入過沒有。讀不出來一律當作沒有 ——
 /// 猜錯的方向要選傷害小的那一邊：對老手說「開始吧」只是囉嗦，
 /// 對新手說「歡迎回來」會讓他以為自己忘了舊帳號。

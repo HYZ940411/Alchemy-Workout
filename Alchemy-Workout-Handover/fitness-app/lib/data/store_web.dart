@@ -11,6 +11,8 @@ Store createStore() => WebStore();
 /// 時候，回答「這台裝置登入過嗎」。
 Store createDeviceStore() => WebStore(key: 'device.json');
 
+Store createPlatformCacheStore() => WebStore(key: 'platform_cache.json');
+
 /// 瀏覽器的 localStorage。
 ///
 /// 與 [FileStore] 是同一份契約的兩個實作，行為要一致 ——
