@@ -205,29 +205,10 @@ void main() {
       expect(s.myInstructor!.reputation, 137);
     });
 
-    testWidgets('畫面上寫的是 137，不是 0', (t) async {
-      t.view.physicalSize = const Size(393 * 3, 852 * 3);
-      t.view.devicePixelRatio = 3.0;
-      addTearDown(t.view.resetPhysicalSize);
-      addTearDown(t.view.resetDevicePixelRatio);
-
-      final s = apprentice();
-      await t.pumpWidget(AppScope(
-        state: s,
-        child: const MaterialApp(home: MentorScreen()),
-      ));
-      await t.pumpAndSettle();
-
-      final line = find.textContaining('教官聲望目前');
-      await t.scrollUntilVisible(line, 200,
-          scrollable: find.byType(Scrollable).first);
-
-      final text = t.widget<Text>(line).data!;
-      expect(text, contains('教官聲望目前 137'),
-          reason: '取的是我自己的欄位，而我不是教官 —— 永遠是 0');
-      expect(text, contains('帶徒上限 4 人'),
-          reason: '帶徒上限同理，那也是他的，不是我的');
-    });
+    // 原本這裡還有一條畫面測試，釘「本週互動摘要」那張卡寫的是『教官聲望目前 137、
+    // 帶徒上限 4 人』而不是 0。**2026-10-17 使用者要求把那行說明整段拿掉**（評分鈕併入同一列），
+    // 畫面上不再有這個數字，那條測試跟著移除。上面那條狀態層的前提仍釘著：
+    // 「教官的聲望」與「我自己的聲望」是兩個欄位。畫面日後若再放教官聲望，要取 `myInstructor`。
   });
 
   group('同型的其餘候選，逐一驗過', () {
