@@ -201,13 +201,18 @@ void main() {
       expect(t.timedCredited, {'b'});
     });
 
-    test('換月：不是疊在上個月上面', () async {
+    test('換月：不是疊在上個月上面，而且上個月的分數還留著（給月初結算讀）', () async {
       await makeTeam();
       await as('a').creditTimed('t1', 'a', '2026-10-20');
       await as('b').creditTimed('t1', 'b', '2026-11-10');
-      final t = (await as('a').myTeam())!;
-      expect(t.timedScore, 10);
-      expect(t.timedPeriod, '2026-11');
+      // 現在是 11 月：看到的「本月」是 11 月那一份。
+      final nov = (await FirestoreTeams(
+                  uid: 'a', firestore: db, clock: () => DateTime(2026, 11, 12))
+              .myTeam())!;
+      expect(nov.timedScore, 10);
+      expect(nov.timedPeriod, '2026-11');
+      expect(nov.timedByMonth, {'2026-10': 10, '2026-11': 10},
+          reason: '十月的 10 分沒有被十一月蓋掉 —— 管理員晚幾天按結算也讀得到');
     });
 
     test('重新分隊期（每月 1、2 日）不加分，但今日名單照記', () async {

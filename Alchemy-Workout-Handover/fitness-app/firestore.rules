@@ -210,8 +210,46 @@ service cloud.firestore {
                || (!samePeriod && after >= 0 && after <= 60);
       }
 
+      // 日常分數按月份分開存（`[QA-05]`，使用者裁決 D，2026-10-17）。
+      //
+      // **為什麼要按月份分開：** 管理員每月初按「結算上月團隊排行榜」，可能比月初晚好幾天。
+      // 分數若只有一個會被覆蓋的欄位，上個月的最終分數在他按按鈕之前就沒了。
+      // 按月份分開存之後沒有任何「換月重設」要做 —— 新的月份只是多一個鍵，舊的月份原封不動。
+      //
+      // 寫法：`contribByMonth.{月份}.{uid}`，月份取自同一次寫入帶的 `dailyPeriod`。
+      // 規則跟上面的 `contribOk()` 同一個精神：一次只能動一個月份、只能動自己那一格、只能往上。
+      // **同樣不是防作弊的完整防線**（分數仍由裝置算，要等 `[BE-07]`）。
+      function monthlyContribOk() {
+        let before = resource.data.get('contribByMonth', {});
+        let after = request.resource.data.get('contribByMonth', {});
+        let p = request.resource.data.get('dailyPeriod', '');
+        let months = after.diff(before).affectedKeys();
+        return months.size() == 0
+               || (months.hasOnly([p])
+                   && p.matches('^[0-9]{4}-[0-9]{2}$')
+                   && after[p].diff(before.get(p, {})).affectedKeys()
+                        .hasOnly([request.auth.uid])
+                   && after[p][request.auth.uid]
+                        >= before.get(p, {}).get(request.auth.uid, 0));
+      }
+
+      // 團隊限時分數按月份分開存：`timedByMonth.{月份}`，月份取自 `timedPeriod`。
+      // 跟 `timedScoreOk()` 一樣：只能往上、單次最多 +60。理由同上，上個月的分數要留著給結算讀。
+      function timedMonthOk() {
+        let before = resource.data.get('timedByMonth', {});
+        let after = request.resource.data.get('timedByMonth', {});
+        let p = request.resource.data.get('timedPeriod', '');
+        let months = after.diff(before).affectedKeys();
+        return months.size() == 0
+               || (months.hasOnly([p])
+                   && p.matches('^[0-9]{4}-[0-9]{2}$')
+                   && after[p] >= before.get(p, 0)
+                   && after[p] - before.get(p, 0) <= 60);
+      }
+
       allow update: if request.auth != null
                     && contribOk() && timedOk() && timedScoreOk()
+                    && monthlyContribOk() && timedMonthOk()
                     && (
                       // 隊員可以改隊伍（加人、踢人、改可見性、解散）
                       request.auth.uid in resource.data.memberUids

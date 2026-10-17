@@ -14,19 +14,24 @@ import 'package:fitness_app/data/team_data.dart';
 import 'package:fitness_app/data/team_data_firestore.dart';
 import 'package:fitness_app/domain/community.dart';
 
-/// 照 `timedScoreOk()` 的條件式寫的對照版。
+/// 照 `timedMonthOk()` 的條件式寫的對照版（`timedByMonth.{月份}`，月份取自 `timedPeriod`）。
 bool _ruleAllows({
-  required int beforeScore,
-  required String beforePeriod,
-  required int afterScore,
-  required String afterPeriod,
+  required Map<String, int> before,
+  required Map<String, int> after,
+  required String period,
 }) {
-  final samePeriod = afterPeriod == beforePeriod;
-  return afterScore == beforeScore ||
-      (samePeriod &&
-          afterScore > beforeScore &&
-          afterScore - beforeScore <= 60) ||
-      (!samePeriod && afterScore >= 0 && afterScore <= 60);
+  final keys = {...before.keys, ...after.keys};
+  final changed = {
+    for (final k in keys)
+      if (before[k] != after[k]) k,
+  };
+  if (changed.isEmpty) return true;
+  return changed.length == 1 &&
+      changed.contains(period) &&
+      RegExp(r'^[0-9]{4}-[0-9]{2}$').hasMatch(period) &&
+      after[period] != null &&
+      after[period]! >= (before[period] ?? 0) &&
+      after[period]! - (before[period] ?? 0) <= 60;
 }
 
 void main() {
@@ -55,6 +60,14 @@ void main() {
     test('真的掛進 allow update（只寫函式不掛等於沒有）', () {
       final upd = block.substring(block.indexOf('allow update'));
       expect(upd.substring(0, upd.indexOf('&& (')), contains('timedScoreOk()'));
+    });
+
+    test('有 timedMonthOk()：按月份分開存，單次上限 60、只能往上，並掛進 allow update', () {
+      expect(block, contains('function timedMonthOk()'));
+      expect(block, contains("'timedByMonth'"));
+      expect(block, contains(RegExp(r'after\[p\] - before\.get\(p, 0\) <= 60(?!\d)')));
+      final upd = block.substring(block.indexOf('allow update'));
+      expect(upd.substring(0, upd.indexOf('&& (')), contains('timedMonthOk()'));
     });
 
     test('沒有放寬原本的兩道（貢獻分數、完成名單）', () {
@@ -87,27 +100,25 @@ void main() {
       ),
     );
 
-    Future<(int, String)> read() async {
+    Future<(Map<String, int>, String)> read() async {
       final d = (await db.collection('teams').doc('t1').get()).data()!;
       return (
-        (d['timedScore'] as num?)?.round() ?? 0,
+        {
+          for (final e in ((d['timedByMonth'] as Map?) ?? const {}).entries)
+            e.key as String: (e.value as num).round(),
+        },
         (d['timedPeriod'] as String?) ?? '',
       );
     }
 
     Future<void> credit(String uid, String day) async {
-      final (bs, bp) = await read();
+      final (before, _) = await read();
       await as(uid).creditTimed('t1', uid, day);
-      final (as_, ap) = await read();
+      final (after, period) = await read();
       expect(
-        _ruleAllows(
-          beforeScore: bs,
-          beforePeriod: bp,
-          afterScore: as_,
-          afterPeriod: ap,
-        ),
+        _ruleAllows(before: before, after: after, period: period),
         isTrue,
-        reason: '$uid 於 $day：$bs/$bp → $as_/$ap 會被規則拒絕',
+        reason: '$uid 於 $day：$before → $after（期別 $period）會被規則拒絕',
       );
     }
 
@@ -116,7 +127,7 @@ void main() {
       for (var k = 0; k < 5; k++) {
         await credit('u$k', '2026-10-15');
       }
-      expect((await read()).$1, 5 * 10 + 50);
+      expect((await read()).$1['2026-10'], 5 * 10 + 50);
     });
 
     test('隔天、換月、第一次得分都過得了', () async {
@@ -124,56 +135,31 @@ void main() {
       await credit('u0', '2026-10-15'); // 第一次：空 → 有期別
       await credit('u1', '2026-10-16'); // 隔天
       await credit('u2', '2026-10-20'); // 同月
-      await credit('u0', '2026-11-10'); // 換月：分數重設
-      expect((await read()).$2, '2026-11');
+      await credit('u0', '2026-11-10'); // 換月：十一月多一個鍵，十月原封不動
+      final (byMonth, period) = await read();
+      expect(period, '2026-11');
+      expect(byMonth['2026-10'], 30, reason: '三人各一次、分散在不同天，所以沒有全員完成的加碼');
+      expect(byMonth['2026-11'], 10);
     });
 
-    test('對照版本身：一次加 61、往下改、改成幾萬都會被擋', () {
+    test('對照版本身：一次加 61、往下改、改成幾萬、動到別的月份都會被擋', () {
+      bool ok(Map<String, int> b, Map<String, int> a, String p) =>
+          _ruleAllows(before: b, after: a, period: p);
+      expect(ok({'2026-10': 100}, {'2026-10': 161}, '2026-10'), isFalse);
+      expect(ok({'2026-10': 100}, {'2026-10': 50}, '2026-10'), isFalse);
+      expect(ok({'2026-10': 0}, {'2026-10': 99999}, '2026-10'), isFalse);
+      expect(ok({'2026-10': 100}, {'2026-10': 160}, '2026-10'), isTrue);
+      // 帶的期別是十一月，卻去動十月 → 擋。
+      expect(ok({'2026-10': 100}, {'2026-10': 110}, '2026-11'), isFalse);
+      // 一次動兩個月份 → 擋。
       expect(
-        _ruleAllows(
-          beforeScore: 100,
-          beforePeriod: 'a',
-          afterScore: 161,
-          afterPeriod: 'a',
-        ),
-        isFalse,
-      );
-      expect(
-        _ruleAllows(
-          beforeScore: 100,
-          beforePeriod: 'a',
-          afterScore: 50,
-          afterPeriod: 'a',
-        ),
-        isFalse,
-      );
-      expect(
-        _ruleAllows(
-          beforeScore: 0,
-          beforePeriod: 'a',
-          afterScore: 99999,
-          afterPeriod: 'a',
-        ),
-        isFalse,
-      );
-      expect(
-        _ruleAllows(
-          beforeScore: 100,
-          beforePeriod: 'a',
-          afterScore: 99999,
-          afterPeriod: 'b',
-        ),
-        isFalse,
-      );
-      expect(
-        _ruleAllows(
-          beforeScore: 100,
-          beforePeriod: 'a',
-          afterScore: 160,
-          afterPeriod: 'a',
-        ),
-        isTrue,
-      );
+          ok({'2026-10': 1, '2026-11': 1}, {'2026-10': 2, '2026-11': 2}, '2026-11'),
+          isFalse);
+      // 把別的月份刪掉 → 擋。
+      expect(ok({'2026-10': 100, '2026-11': 5}, {'2026-11': 10}, '2026-11'),
+          isFalse);
+      // 月份格式不對 → 擋。
+      expect(ok({}, {'x': 10}, 'x'), isFalse);
     });
   });
 }

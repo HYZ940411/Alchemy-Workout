@@ -33,8 +33,14 @@ class FirestoreTeams implements TeamSource {
   final String uid;
   final FirebaseFirestore _db;
 
-  FirestoreTeams({required this.uid, FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+  /// 現在幾點。**決定「本月」是哪個月** —— 讀的時候挑本月那一份、寫的時候寫進本月。
+  /// 預設是真實時間；測試可以注入。
+  final DateTime Function() _clock;
+
+  FirestoreTeams(
+      {required this.uid, FirebaseFirestore? firestore, DateTime Function()? clock})
+      : _db = firestore ?? FirebaseFirestore.instance,
+        _clock = clock ?? DateTime.now;
 
   CollectionReference<Map<String, dynamic>> get _col => _db.collection('teams');
 
@@ -203,10 +209,11 @@ class FirestoreTeams implements TeamSource {
         for (final e in t.members.entries) e.key: _memberJson(e.value),
       },
       // 新隊從 0 起算 —— 你在上一支隊伍的貢獻留在上一支隊伍。
-      'contributions': <String, int>{},
+      // 分數按月份分開存（見 [CloudTeam.contribByMonth]）。
+      'contribByMonth': <String, dynamic>{},
+      'timedByMonth': <String, dynamic>{},
       'timedCredited': <String>[],
       'timedDay': '',
-      'timedScore': 0,
       'timedPeriod': '',
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -356,6 +363,23 @@ class FirestoreTeams implements TeamSource {
       );
     });
 
+    // 分數按月份分開存；上面的 contributions／timedScore 是「本月」那一份的視圖。
+    final period = teamMonthKey(_clock());
+    final byMonth = <String, Map<String, int>>{};
+    ((j['contribByMonth'] as Map?) ?? const {}).forEach((m, v) {
+      if (m is! String || v is! Map) return;
+      byMonth[m] = {
+        for (final e in v.entries)
+          if (e.key is String && e.value is num)
+            e.key as String: (e.value as num).round(),
+      };
+    });
+    final timedByMonth = <String, int>{
+      for (final e in ((j['timedByMonth'] as Map?) ?? const {}).entries)
+        if (e.key is String && e.value is num)
+          e.key as String: (e.value as num).round(),
+    };
+
     return CloudTeam(
       id: id,
       name: name,
@@ -365,19 +389,17 @@ class FirestoreTeams implements TeamSource {
       members: members,
       peakSize: j['peakSize'] is num ? (j['peakSize'] as num).round() : 0,
       disbanded: j['disbanded'] == true,
-      contributions: {
-        for (final e in ((j['contributions'] as Map?) ?? const {}).entries)
-          if (e.key is String && e.value is num)
-            e.key as String: (e.value as num).round(),
-      },
+      contributions: {...?byMonth[period]},
+      contribByMonth: byMonth,
+      timedByMonth: timedByMonth,
       timedCredited: {
         for (final v in (j['timedCredited'] as List? ?? const []))
           if (v is String) v,
       },
       timedDay: j['timedDay'] is String ? j['timedDay'] as String : '',
-      timedScore:
-          j['timedScore'] is num ? (j['timedScore'] as num).round() : 0,
-      timedPeriod: j['timedPeriod'] is String ? j['timedPeriod'] as String : '',
+      // 本月的限時分數；不是本月的就是 0，所以 [timedPeriod] 固定寫本月。
+      timedScore: timedByMonth[period] ?? 0,
+      timedPeriod: period,
     );
   }
 
@@ -385,11 +407,18 @@ class FirestoreTeams implements TeamSource {
   ///
   /// 後者是「讀—改—寫」，兩台裝置同時練完會丟掉一次；而且安全規則
   /// 只放行「自己那一格、而且往上」，整份覆寫寫不過去。
+  ///
+  /// **寫進本月那一格**：`contribByMonth.{yyyy-MM}.{uid}`，月份鍵同一次寫入也帶在 `dailyPeriod`
+  /// （安全規則靠它知道這次動的是哪個月）。舊的 `contributions` 欄位不再寫。
   @override
   Future<void> addScore(String teamId, String memberUid, int delta) async {
     if (delta == 0) return;
+    final period = teamMonthKey(_clock());
     await _col.doc(teamId).set({
-      'contributions': {memberUid: FieldValue.increment(delta)},
+      'contribByMonth': {
+        period: {memberUid: FieldValue.increment(delta)},
+      },
+      'dailyPeriod': period,
     }, SetOptions(merge: true));
   }
 
@@ -412,7 +441,8 @@ class FirestoreTeams implements TeamSource {
             }
           : <String>{};
       final already = before.contains(memberUid);
-      final updates = <String, dynamic>{};
+      // 鍵可能是 [FieldPath]（巢狀欄位的某一格），所以不能是 Map<String, dynamic>。
+      final updates = <Object, Object?>{};
       if (cloudDay == day) {
         updates['timedCredited'] = FieldValue.arrayUnion([memberUid]);
       } else {
@@ -438,13 +468,11 @@ class FirestoreTeams implements TeamSource {
         final allDone = members.isNotEmpty && members.every(after.contains);
         final delta = kTimedTaskPerMember + (allDone ? kTimedTaskAllBonus : 0);
         final period = dateOnly.substring(0, 7);
-        if (data['timedPeriod'] == period) {
-          updates['timedScore'] = FieldValue.increment(delta);
-        } else {
-          // 新的一個月：不是疊在上個月上面。
-          updates['timedScore'] = delta;
-          updates['timedPeriod'] = period;
-        }
+        // 月累計寫進 `timedByMonth.{yyyy-MM}`：新的一個月只是多一個鍵，上個月的原封不動
+        // （管理員按結算時要讀得到）。巢狀欄位的某一格要用 [FieldPath]，不能用 'a.b' 字串 ——
+        // 月份鍵 '2026-10' 不是合法的欄位名稱片段。
+        updates[FieldPath(['timedByMonth', period])] = FieldValue.increment(delta);
+        updates['timedPeriod'] = period;
       }
       tx.update(ref, updates);
       return null;

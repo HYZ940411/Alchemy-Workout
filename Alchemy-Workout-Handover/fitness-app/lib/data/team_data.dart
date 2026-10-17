@@ -45,6 +45,14 @@ class CloudTeam {
   final int timedScore;
   final String timedPeriod;
 
+  /// **按月份分開存的完整紀錄**（`[QA-05]`，使用者裁決 D，2026-10-17）。
+  ///
+  /// 上面的 [contributions]／[timedScore] 只是「本月」那一份的視圖（由資料層依月份挑出來），
+  /// 這兩個才是雲端真正存的東西：管理員每月初按「結算上月團隊排行榜」時，要讀得到**上個月**的最終分數。
+  /// 月份鍵見 [teamMonthKey]。沒有「換月重設」，新月份只是多一個鍵。
+  final Map<String, Map<String, int>> contribByMonth;
+  final Map<String, int> timedByMonth;
+
   const CloudTeam({
     required this.id,
     required this.name,
@@ -58,6 +66,8 @@ class CloudTeam {
     this.timedDay = '',
     this.timedScore = 0,
     this.timedPeriod = '',
+    this.contribByMonth = const {},
+    this.timedByMonth = const {},
   });
 
   bool get isFull => members.length >= capacity;

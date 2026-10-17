@@ -378,6 +378,15 @@ const int kRegroupDays = 2;
 
 bool inRegroupWindow(DateTime now) => now.day <= kRegroupDays;
 
+/// 團隊分數按月份分開存時用的月份鍵（`yyyy-MM`）。
+///
+/// **月份以 04:00 換日為界**，跟排行榜週期同一個時點：每月 1 日 04:00 前仍屬上個月。
+/// 少了這一步，1 日凌晨 00:00–03:59 的分數會被記進下個月，與結算算的週期對不上。
+String teamMonthKey(DateTime now) {
+  final d = now.hour < 4 ? now.subtract(const Duration(days: 1)) : now;
+  return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
+}
+
 /// 限時任務 —— 全平台統一，一個指派日只有一組（〈團隊任務流程〉）。
 /// 有效時窗為指派當日（當地 04:00 換日），隔日失效、不可補做。
 ///
