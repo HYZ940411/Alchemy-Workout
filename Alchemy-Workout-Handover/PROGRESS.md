@@ -1473,7 +1473,9 @@ firebase deploy --only hosting
      analyze 乾淨，全量 **3,064 passed**。
    - **還沒驗什麼：** 沒有真人在線上驗；沒有用真實雲端驗「隊伍載入後補發」的先後（測試用假的 `CloudTeam`）；
      換日重抽發生在 hydrate 之內時（`_finishHydration` 裡的 `resetDailyTasksIfDue`）補發仍會在隊伍載入前進行，
-     理論上那時新的一天還沒有任何已發生的事所以不會有分，但沒有單獨驗；**未部署**。
+     理論上那時新的一天還沒有任何已發生的事所以不會有分，但沒有單獨驗。
+   - **已部署（2026-10-17 台灣 17:35，使用者說「部署」）：** 戳記 583efdd（無 +dirty），含 3AS、3AU、3AV 全部；
+     線上 last-modified 09:34:53 GMT，線上 main.dart.js 含 `taskScoredEvents`。沒有動 firestore.rules。
 
 3AU. **2026-10-17 開發者模式「略過換隊冷卻」（`[QA-09]`，使用者選 A）**
 
