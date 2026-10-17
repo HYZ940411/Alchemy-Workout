@@ -1464,6 +1464,8 @@ firebase deploy --only hosting
      突變：畫面改回舊欄位、分組寫死 3、並列改成 i+1 三項轉紅；「去掉資格判斷」那項存活——
      因為 `teamRanking` 本來就把不合資格的隊排除，我的隊找不到就回 null，該判斷是重複防守，不是漏測。
    - **全量：** analyze 乾淨，**3,031 passed**。
+   - **已部署（2026-10-17 台灣 16:39，使用者回 A）：** `build_web.sh` 戳記 3b3bcff（無 +dirty），
+     `firebase deploy --only hosting` 完成，線上 last-modified 為 08:39:12 GMT。沒有動 firestore.rules。
    - **還沒驗什麼：** 沒有真人看過修好的畫面；真帳號的榜上只有「公開團隊清單」載入的別隊，
      清單載入不完整時名次會偏樂觀（見 QA-05）。
    - **未解（同一輪發現）：** `reconcileDailyTasks` 補滿進度時**不發個人分數**（任務重抽或還原時，今天早已發生的事
