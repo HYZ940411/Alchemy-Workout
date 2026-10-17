@@ -316,6 +316,24 @@ class InstructorApplyScreen extends StatelessWidget {
               },
             ),
           ),
+          // 測驗階段只有「作答」一顆，沒有地方可以略過 —— 測師徒的人過了初審就被卡住。
+          // 示範用捷徑，只給開發者模式；送出後仍要管理員核准。
+          if (s.developerMode &&
+              (s.instructorStage == InstructorStage.screenPassed ||
+                  s.instructorStage == InstructorStage.testing)) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                label: '（Demo）略過測驗，直接送人工審核',
+                kind: BtnKind.secondary,
+                onPressed: () {
+                  s.devSkipInstructorExam();
+                  showToast(context, '已送出，等管理員審核');
+                },
+              ),
+            ),
+          ],
           // 撤銷是管理員的 Command —— 這顆是示範用捷徑，只給開發者模式。
           if (s.isInstructor && s.developerMode) ...[
             const SizedBox(height: 10),

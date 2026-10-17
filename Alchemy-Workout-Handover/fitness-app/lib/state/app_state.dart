@@ -7082,6 +7082,25 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 測試用：**初審通過後略過教官測驗，直接送人工審核**（開發者模式才有效）。
+  ///
+  /// 初審通過（或已在作答階段）之後，畫面上只剩「作答教官測驗」—— 「推進到下一階段
+  /// （Demo）」只出現在其他階段，於是測師徒的人過了初審就被測驗擋住
+  /// （使用者 2026-10-17）。
+  ///
+  /// 走的是既有的 [advanceInstructorApplication]，也就是選擇題滿分送出、
+  /// 簡答題仍進管理員的人工審核佇列 —— **最後一步（核准）仍是管理員的 Command**，
+  /// 這裡不核准自己。
+  void devSkipInstructorExam() {
+    if (!developerMode) return;
+    if (instructorStage == InstructorStage.screenPassed) {
+      advanceInstructorApplication(); // → 作答中
+    }
+    if (instructorStage == InstructorStage.testing) {
+      advanceInstructorApplication(); // → 待人工審核（滿分送出）
+    }
+  }
+
   // ===========================================================================
   // 私訊
   // ===========================================================================
