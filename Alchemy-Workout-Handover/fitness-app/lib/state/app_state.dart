@@ -2125,7 +2125,12 @@ class AppState extends ChangeNotifier {
     }
 
     // 每日任務的「完成訓練」同樣不給 —— 見上方獎勵那一段的理由。
-    if (rewardable) _bumpTasks('使用者已完成訓練', 1);
+    if (rewardable) {
+      _bumpTasks('使用者已完成訓練', 1);
+      // 任務池用的是模型裡的名字「訓練已結算」。兩個名字都要推，
+      // 否則任務池抽到的訓練任務永遠不會完成（2026-10-17 團隊日常分數回報）。
+      _bumpTasks('訓練已結算', 1);
+    }
     final newly = _syncAchievements();
 
     final result = SettlementResult(
@@ -3863,7 +3868,15 @@ class AppState extends ChangeNotifier {
     if (p.likedByMe) {
       _bumpTasks('使用者已按讚', 1);
       // **自己的貼文不計**：對自身貼文的按讚與留言不發放任何獎勵。
-      if (!isMyPost(p)) _grantInteraction('Like', requestId: p.id);
+      if (!isMyPost(p)) {
+        final before = interactionsToday('Like');
+        _grantInteraction('Like', requestId: p.id);
+        // 任務池用的是「互動者已按讚貼文」。只在這一次真的算進當日互動時才推進
+        // —— 與 [_doneTodayFor] 補進度的算法一致，按讚→取消→再按不會灌水。
+        if (interactionsToday('Like') > before) {
+          _bumpTasks('互動者已按讚貼文', 1);
+        }
+      }
     }
     final liked = p.likedByMe;
     _pushSocial('按讚', (src, _) => src.setLike(p.id, liked: liked));
@@ -3880,7 +3893,10 @@ class AppState extends ChangeNotifier {
     final c = Comment(displayName, text.trim(), now, authorUid: myUid);
     p.comments.add(c);
     _pushSocial('留言', (src, uid) => src.addComment(p.id, c, authorUid: uid));
+    final before = interactionsToday('Comment');
     final exp = isMyPost(p) ? 0 : _grantInteraction('Comment');
+    // 任務池的「互動者已留言」：以前沒有任何地方推進它。算法同按讚。
+    if (interactionsToday('Comment') > before) _bumpTasks('互動者已留言', 1);
     _syncAchievements();
     notifyListeners();
     return exp;
@@ -3942,7 +3958,11 @@ class AppState extends ChangeNotifier {
     posts.insert(0, post);
     _pushSocial('分享成果貼文', (src, uid) => src.publish(post, authorUid: uid));
     _bumpTasks('使用者已發布貼文', 1);
+    final before = interactionsToday('Share');
     final exp = _grantInteraction('Share');
+    if (interactionsToday('Share') > before) {
+      _bumpTasks('發文者已分享訓練成果', 1);
+    }
     _syncAchievements();
     notifyListeners();
     return (post: post, exp: exp);
