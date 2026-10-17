@@ -1464,8 +1464,12 @@ firebase deploy --only hosting
      釘死舊係數數字 ×2、係數範圍上限 5→12（啞鈴小肌群新手每手 4 kg 需係數 10）、上斜／平板／下斜「係數不同」→「相同」（每類統一）。
      `flutter analyze lib test` 乾淨；全量 **2,981 passed**。
    - **還沒做／還沒驗：**
-     · **雲端還是舊值（網站已於 2026-10-17 部署 `45e5e08`）** —— 要使用者自己跑：先 `tools/backup_exercises.py`（唯讀；備份雲端 exercises ＋ 比對後台有沒有人改過，需要 `build/platform_defs_old.json` 舊種子）、再 `tools/upload_exercises_only.py --apply`、最後 `check_platform_data.py` 確認 exercises 一致 527；
-       上傳後用開發者模式確認線上讀到新值（目前開發者模式報告看不到動作庫來源與係數，要加才行）。
+     · **雲端已更新（2026-10-17 15:30 左右，使用者在終端機執行）：** 網站先部署 `45e5e08`；備份 `fitness-app/build/exercises_backup_20261017-153056.json`（124 KB，527 筆；
+       備份比對：與舊打包資料一致 527、後台改過 0）→ `upload_exercises_only.py --apply` → `check_platform_data.py`：**exercises 雲端 527／種子 527、一致 527**。
+       （同一次檢查看到 plans 30/31、daily_task_pool 缺 `tp4`、platform_config 8/11 —— 與這次無關，上傳腳本只寫 exercises。）
+       後台「設定平台動作」使用者看過係數（看到站姿划舉 · 啞鈴 ＝ 10，原因見盤點檔第 10 節末，裁決維持）。
+     · **使用者跳過了 6b（用新帳號練一場看分數）：** 回「就當有測驗，下一步呢？」。風險：沒有真人看過實際漲幅；
+       線上實際分數只有單元測試與資料比對的間接佐證。
      · **⚠️ 2026-10-17 12:40 上傳前備份被擋：Firestore 今日讀取 7.4 萬，超過 Spark 的 5 萬上限（`429 Quota exceeded`，重試 5 次仍失敗）。**
        額度台灣時間約 15:00 重置，重置後從 `backup_exercises.py` 重做。**未解的隱患（推論，未證實）：** 每次登入都整份讀平台資料
        （exercises 527＋plans 31＋achievement_defs 99＋daily_task_pool 7＋platform_config 11，另加商品與題庫），
