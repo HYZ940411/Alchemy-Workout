@@ -312,7 +312,7 @@ class PlatformConfig {
         label: '排行獎勵名次門檻',
         value: 10,
         unit: '名',
-        hint: '組內名次在此之內者才發放排行獎勵。四個排行榜共用同一張獎勵表。',
+        hint: '組內名次在此之內者才發放排行獎勵。只有兩個個人榜用這張表；兩個團隊榜用下面的百分比級距。',
       ),
       SettingParam(key: 'rank1Coin', label: '排行第 1 名金幣', value: 300, unit: '金幣'),
       SettingParam(key: 'rank1Exp', label: '排行第 1 名經驗值', value: 120, unit: 'EXP'),
@@ -322,6 +322,33 @@ class PlatformConfig {
       SettingParam(key: 'rank3Exp', label: '排行第 3 名經驗值', value: 50, unit: 'EXP'),
       SettingParam(key: 'rankRestCoin', label: '排行其餘名次金幣', value: 60, unit: '金幣'),
       SettingParam(key: 'rankRestExp', label: '排行其餘名次經驗值', value: 25, unit: 'EXP'),
+      // 兩個團隊榜的獎勵：百分比級距（規格〈團隊日常排行獎勵已發放〉〈團隊限時排行獎勵已發放〉）。
+      // 名次門檻依組內實際隊數計算，無條件進位、至少 1 隊。「其餘」只發給有參加的隊（本週期分數 > 0）。
+      SettingParam(
+        key: 'teamTier1Pct',
+        label: '團隊榜最高檔門檻（前幾 %）',
+        value: 5,
+        unit: '%',
+        hint: '三個門檻依序放大：最高檔 < 次高檔 < 第三檔。兩個團隊榜共用。',
+      ),
+      SettingParam(key: 'teamTier2Pct', label: '團隊榜次高檔門檻（前幾 %）', value: 20, unit: '%'),
+      SettingParam(key: 'teamTier3Pct', label: '團隊榜第三檔門檻（前幾 %）', value: 50, unit: '%'),
+      SettingParam(key: 'teamDailyT1Coin', label: '團隊日常榜最高檔金幣', value: 90, unit: '金幣'),
+      SettingParam(
+        key: 'teamDailyT1Ai',
+        label: '團隊日常榜最高檔 AI 點數',
+        value: 1,
+        unit: '點',
+        hint: 'AI 點數只發給最高檔，歸入永久點數餘額。',
+      ),
+      SettingParam(key: 'teamDailyT2Coin', label: '團隊日常榜次高檔金幣', value: 50, unit: '金幣'),
+      SettingParam(key: 'teamDailyT3Coin', label: '團隊日常榜第三檔金幣', value: 25, unit: '金幣'),
+      SettingParam(key: 'teamDailyT4Coin', label: '團隊日常榜其餘參與者金幣', value: 10, unit: '金幣'),
+      SettingParam(key: 'teamTimedT1Coin', label: '團隊限時榜最高檔金幣', value: 100, unit: '金幣'),
+      SettingParam(key: 'teamTimedT1Ai', label: '團隊限時榜最高檔 AI 點數', value: 2, unit: '點'),
+      SettingParam(key: 'teamTimedT2Coin', label: '團隊限時榜次高檔金幣', value: 55, unit: '金幣'),
+      SettingParam(key: 'teamTimedT3Coin', label: '團隊限時榜第三檔金幣', value: 25, unit: '金幣'),
+      SettingParam(key: 'teamTimedT4Coin', label: '團隊限時榜其餘參與者金幣', value: 10, unit: '金幣'),
       // 互動獎勵**只發經驗值，不發金幣**。四項上限為模型明訂的數字，
       // 經驗值數額模型未給，此處取一組不會讓互動蓋過訓練的值。
       SettingParam(key: 'capPost', label: '發文獎勵每日上限', value: 1, unit: '次'),
@@ -349,6 +376,19 @@ class PlatformConfig {
           v['rank2Coin']! < v['rank3Coin']! ||
           v['rank3Coin']! < v['rankRestCoin']!) {
         return '排行獎勵須隨名次遞減。';
+      }
+      if (!(v['teamTier1Pct']! >= 1 &&
+          v['teamTier1Pct']! < v['teamTier2Pct']! &&
+          v['teamTier2Pct']! < v['teamTier3Pct']! &&
+          v['teamTier3Pct']! <= 100)) {
+        return '團隊榜三個門檻須由小到大，且介於 1% 到 100%。';
+      }
+      for (final b in const ['Daily', 'Timed']) {
+        if (v['team${b}T1Coin']! < v['team${b}T2Coin']! ||
+            v['team${b}T2Coin']! < v['team${b}T3Coin']! ||
+            v['team${b}T3Coin']! < v['team${b}T4Coin']!) {
+          return '團隊榜獎勵須隨檔位遞減。';
+        }
       }
       return null;
     },

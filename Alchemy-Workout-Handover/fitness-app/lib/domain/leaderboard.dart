@@ -45,10 +45,17 @@ List<int> placesOf(List<int> scoresDesc) {
 class RankPrize {
   final int coins;
   final int exp;
-  const RankPrize(this.coins, this.exp);
 
-  bool get isEmpty => coins == 0 && exp == 0;
-  String get display => '金幣 $coins ＋ 經驗值 $exp';
+  /// AI 點數（永久餘額）。只有團隊榜最高檔有。
+  final int aiCredits;
+  const RankPrize(this.coins, this.exp, [this.aiCredits = 0]);
+
+  bool get isEmpty => coins == 0 && exp == 0 && aiCredits == 0;
+  String get display => [
+        if (coins > 0 || exp > 0 || aiCredits == 0) '金幣 $coins',
+        if (exp > 0) '經驗值 $exp',
+        if (aiCredits > 0) 'AI 點數 $aiCredits',
+      ].join(' ＋ ');
 }
 
 /// 獎勵名次的門檻與各級數額 —— 屬〈獎勵定義 Aggregate〉，由管理員維護。
@@ -64,6 +71,39 @@ RankPrize prizeFor(int place) {
     platformConfig.i('reward', 'rank${k}Coin'),
     platformConfig.i('reward', 'rank${k}Exp'),
   );
+}
+
+/// 團隊榜（日常／限時）的獎勵：**百分比級距**，不是名次制。
+///
+/// 規格：前 5%／前 20%／前 50%／其餘有參加的。名次門檻依組內實際隊數計算，
+/// **無條件進位、至少 1 隊**（10 隊的前 5% 進位為 1 隊）。「其餘」只發給
+/// 有參加的隊 —— 本週期分數 > 0；整個月一分都沒有的隊什麼都沒有。
+/// 同分並列同一名次，皆發該名次的獎勵（[place] 已經是並列處理過的名次）。
+///
+/// [teamsInGroup] 是同組參賽的隊數。數額與門檻都是平台參數。
+RankPrize teamPrizeFor(
+  Board board, {
+  required int place,
+  required int teamsInGroup,
+  required int score,
+}) {
+  assert(board == Board.teamDaily || board == Board.teamTimed);
+  if (score <= 0) return const RankPrize(0, 0);
+  int cut(String key) {
+    final pct = platformConfig.i('reward', key);
+    // 無條件進位。隊數 ≥ 1 且門檻 ≥ 1%（平台參數的不變條件擋著）時結果必定 ≥ 1，
+    // 所以「至少 1 隊」是進位自然成立的，不另外補一道。
+    return (teamsInGroup * pct + 99) ~/ 100;
+  }
+
+  final b = board == Board.teamDaily ? 'Daily' : 'Timed';
+  int coin(int tier) => platformConfig.i('reward', 'team${b}T${tier}Coin');
+  if (place <= cut('teamTier1Pct')) {
+    return RankPrize(coin(1), 0, platformConfig.i('reward', 'team${b}T1Ai'));
+  }
+  if (place <= cut('teamTier2Pct')) return RankPrize(coin(2), 0);
+  if (place <= cut('teamTier3Pct')) return RankPrize(coin(3), 0);
+  return RankPrize(coin(4), 0);
 }
 
 /// 一筆排行榜歷史紀錄（獨立 Aggregate）。

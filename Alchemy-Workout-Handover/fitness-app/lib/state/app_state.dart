@@ -2438,6 +2438,7 @@ class AppState extends ChangeNotifier {
     final String subject;
     final int place;
     final int score;
+    var teamsInGroup = 0;
 
     switch (board) {
       case Board.personalWeekly:
@@ -2467,9 +2468,14 @@ class AppState extends ChangeNotifier {
         subject = mine.name;
         place = places[i];
         score = teamScoreOf(mine, tb);
+        teamsInGroup = ranked.length;
     }
 
-    final prize = prizeFor(place);
+    // 團隊榜走百分比級距（規格），個人榜走名次制 —— 兩套表，不共用。
+    final prize = (board == Board.teamDaily || board == Board.teamTimed)
+        ? teamPrizeFor(board,
+            place: place, teamsInGroup: teamsInGroup, score: score)
+        : prizeFor(place);
     final row = LeaderboardHistory(
       board: board,
       periodFrom: from,
@@ -2490,6 +2496,7 @@ class AppState extends ChangeNotifier {
               '$group 第 $place 名',
           coins: prize.coins,
           exp: prize.exp,
+          aiCredits: prize.aiCredits,
           at: now,
         ),
       );
