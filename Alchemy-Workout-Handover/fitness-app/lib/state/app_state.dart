@@ -4533,6 +4533,9 @@ class AppState extends ChangeNotifier {
   /// 換隊冷卻剩餘。與重新分隊期並存不互相取代 ——
   /// 冷卻期防同一人反覆跳隊，重新分隊期給所有人一個對齊的換隊窗口。
   Duration get switchCooldownLeft {
+    // 測試用逃生門，見 [devSkipTeamCooldown]。冷卻的四個判斷點都讀這個 getter，
+    // 所以只擋這一處就全部跟著放行。
+    if (_skipTeamCooldown) return Duration.zero;
     if (teamLeftAt == null) return Duration.zero;
     final left =
         (_cooldownAtLeave ?? kTeamSwitchCooldown) - now.difference(teamLeftAt!);
@@ -12705,6 +12708,20 @@ class AppState extends ChangeNotifier {
   }
 
   bool get _skipMentorCooldown => developerMode && devSkipMentorCooldown;
+
+  /// 測試用：**退出團隊後立刻可以換隊**，不等換隊冷卻。
+  ///
+  /// 不改規格：預設關、不進存檔，而且只在開發者模式開著時才生效。
+  /// 理由同師徒的逃生門 —— 測的人一退隊就把自己鎖住。冷卻本身照常計時
+  /// （[teamLeftAt] 照記），關掉開關後剩餘時間照舊。
+  bool devSkipTeamCooldown = false;
+
+  void toggleDevSkipTeamCooldown() {
+    devSkipTeamCooldown = !devSkipTeamCooldown;
+    notifyListeners();
+  }
+
+  bool get _skipTeamCooldown => developerMode && devSkipTeamCooldown;
   /// 電子郵件。**選填** —— 第三方登入者於授權時帶入，手機註冊者可自願填寫。
   ///
   /// 僅供兩類通知使用：處罰與申訴結果、帳號刪除排程。

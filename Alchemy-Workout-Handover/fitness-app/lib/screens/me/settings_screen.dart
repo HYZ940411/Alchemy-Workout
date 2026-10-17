@@ -501,6 +501,36 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: S.base),
+            const SectionLabel('略過換隊冷卻', trailing: '開發者模式'),
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '退出團隊後本來要等冷卻才能加入別隊。開啟這個開關後，'
+                    '冷卻當作已結束，可以馬上換隊 —— 申請、接受邀請、隊長核准都放行。'
+                    '只在開發者模式有效，不進存檔；關掉後剩餘的冷卻時間照舊。',
+                    style: T.caption(),
+                  ),
+                  const SizedBox(height: S.md),
+                  AppButton(
+                    label: s.devSkipTeamCooldown
+                        ? '關閉：退隊後照規格等冷卻'
+                        : '開啟：退隊後立刻可換隊',
+                    kind: BtnKind.secondary,
+                    onPressed: () {
+                      s.toggleDevSkipTeamCooldown();
+                      showToast(
+                          context,
+                          s.devSkipTeamCooldown
+                              ? '已開啟，退隊後可立刻換隊'
+                              : '已關閉，恢復照規格等冷卻');
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: S.base),
             const SectionLabel('教官門檻', trailing: '開發者模式'),
             Panel(
               child: Column(
