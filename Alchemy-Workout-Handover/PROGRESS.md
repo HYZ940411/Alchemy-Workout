@@ -7961,6 +7961,7 @@ BDD 課程教材，與本 App 無關。讀它們只會浪費 context。
 | 2026-09-13 | `BE-12` 範圍：做動作庫/訓練計畫/平台設定/成就定義/獎勵定義/每日任務池 6 項；**商品延後**；獎勵定義併入 `platform_config` 的 `reward` 群組，不另立集合 | 使用者裁示。獎勵定義在現有程式碼裡大多已是 `reward` 群組的 `SettingParam`（`trainCoin`/`rank*` 等），另立集合等於製造第二份真相 |
 | 2026-09-13 | `BE-12` 上雲種子**取自打包在本地的 bundle，而非重跑 CSV** | 重跑 `import_exercises.py` 會因 `OVERRIDES` 鍵失配，把 15 個被 `ex('...')` 硬引用的友善動作 ID 換成 `pNNN` 並遺失校準值；committed `.g.dart` 才是正典，也正是 App 離線後備與測試夾具所用。由 `BundledPlatformData` 匯出保證三者一致 |
 | 2026-09-13 | `BE-12` 管理端寫入用 `firestore.rules` 的 custom claim 直接放行，不走 Cloud Functions | 平台設定類沒有跨文件金流不變條件，規則放行即足；續留 Spark 免費方案，與 `BE-10`（Blaze 延後）一致。符合 `Firestore-Schema設計.md` §7 |
+| 2026-10-19 | 管理員後台「評分彙總」**維持不分權限組**：任何生效中的管理員（有管理員標記且狀態為啟用）都能看，不綁內容審核／商品管理／平台設定 | 使用者裁決 A。它是唯讀的分析用途，沒有寫入風險；畫面、狀態層（`loadAdminRatings` 只查 `isPlatformAdmin`）、雲端規則（`experience_ratings` 只認 `isAdmin()`）現況本來就是這樣，規格〈Read Model：管理員評分彙總〉也只寫 Actor 是「管理員」。2026-10-19 查證確認，沒有改程式 |
 
 ---
 
