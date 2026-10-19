@@ -98,6 +98,10 @@ class SettlementResult {
 
   /// 這場有做的動作與完成組數（沒完成任何一組的不列）。分享成果卡用。
   final List<({String name, int sets})> exerciseSummary;
+
+  /// 這場為什麼完全沒發獎勵（沒完成任何一組、或不到 5 分鐘）。有發就是空值。
+  String? get noRewardReason =>
+      rewardWithheldReason(doneSets: doneSets, duration: duration);
   const SettlementResult({
     required this.plan,
     required this.kind,
@@ -2149,9 +2153,8 @@ class AppState extends ChangeNotifier {
     // 排行榜分數、每日任務的「完成訓練」計數一併不給 —— 那些同樣是
     // 獎勵。訓練紀錄本來就有「一組都沒完成不寫入」的判斷，不重複。
     final duration = now.difference(s.startedAt);
-    final tooShort = duration < kMinRewardedWorkout;
-    // 發獎勵比「算一次訓練」更嚴：還要滿 5 分鐘。
-    final rewardable = recorded && !tooShort;
+    // 發獎勵比「算一次訓練」更嚴：還要滿 5 分鐘。判準與結算畫面的說明共用 [isRewardable]。
+    final rewardable = isRewardable(doneSets: s.doneSets, duration: duration);
 
     _rollRewardCounters(today);
     final rewards = rewardable
