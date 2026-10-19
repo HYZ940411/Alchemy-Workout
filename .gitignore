@@ -12,6 +12,9 @@
 # （相對地 firebase_options.dart 與 google-services.json 裡的 apiKey
 #  只是識別碼，本來就會送給每一位訪客，那兩個是刻意進版控的。）
 *-firebase-adminsdk-*.json
+# 下載後被改過檔名的私鑰（例如 alchemy-workout-adminsdk.json）也要擋 ——
+# 上面那條只認 Firebase 預設檔名，2026-10-19 查到改名後的檔案不會被忽略。
+*adminsdk*.json
 *serviceAccountKey*.json
 .env
 .env.*

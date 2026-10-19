@@ -1485,6 +1485,10 @@ firebase deploy --only hosting
      另用假的帳號物件把整段互動流程跑了 8 種情形（授權、n 取消、全選、輸入錯誤重問、收回最後一位被拒、找不到帳號、只看名單、收回非管理員），結果都符合預期；那段是一次性檢查，沒進版控。
    - **還沒驗什麼：** **沒有對真實 Firebase 跑過**（需要服務帳戶金鑰，依規則由使用者在自己的終端機跑）。真實 `auth.list_users()`／`set_custom_user_claims` 的行為只照舊腳本已跑通的用法推論。
      `--list` 已由使用者在 2026-10-19 對真實專案跑成功（只列名單，輸出只有 `a94041198@gmail.com` 一位、三個權限組）。
+   - **金鑰防護（同日，使用者問「這樣安全嗎」）：** 查到使用者的金鑰檔名 `alchemy-workout-adminsdk.json`（放在 repo 之外的 `~/keys`）**不符合** `.gitignore` 的 `*-firebase-adminsdk-*.json`，
+     若不小心複製進專案資料夾會被 `git add` 提交。已在上層 `.gitignore` 補 `*adminsdk*.json`（使用者選 A），用 `git check-ignore` 驗過四種檔名都擋得住、現有被追蹤的檔案沒有誤傷。
+     版控歷史用 `git log -S"BEGIN PRIVATE KEY"` 搜過，沒有出現過私密金鑰。**沒有檢查 `~/keys` 裡檔案的權限（建議 `chmod 600`），也沒有確認這把金鑰在 Google Cloud 上的角色範圍。**
+     更安全的選項是不留金鑰檔、改用 Cloud Shell 的預設憑證（腳本支援，但沒有實測）。
 
 3BH. **2026-10-19 下肢啞鈴比例調整：20 個動作係數變了；深蹲與臀橋是「一顆」，字樣不再寫「每手」（3BG 的收尾，使用者選 A）**
 
