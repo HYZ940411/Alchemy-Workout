@@ -1,7 +1,7 @@
 // 啞鈴的重量要填「每手」，畫面要寫出來（使用者裁決，2026-10-17）。
 //
 // 相對強度係數是照單顆啞鈴的重量校準的（啞鈴臥推新手每手 14 kg ＝ C 級 294 分）。
-// 使用者若習慣填兩手加總，重量多一倍，分數直接爆表：啞鈴臥推 28 kg 算出來是 999。
+// 使用者若習慣填兩手加總，重量多一倍，分數直接爆表：啞鈴臥推兩手加總 32 kg（每手 16）算出來約 868（S 級；2026-10-19 重新校準前是 999）。
 // 這跟使用者最初不想要的「分數太高」是同一類問題，而且很容易發生 ——
 // 畫面上一個字也沒提示。所以「每手」要寫在填重量的地方。
 //
@@ -64,7 +64,7 @@ void main() {
   });
 
   group('不寫「每手」的後果就是這個', () {
-    test('啞鈴臥推填兩手加總 28 kg ＝ 868（S 級，2026-10-19 重新校準前是 999）；填每手 14 kg ＝ 294', () {
+    test('啞鈴臥推填兩手加總 32 kg ＝ 868（S 級）；填每手 16 kg ＝ 294（新手每手 16 kg，2026-10-19）', () {
       final e = _byName('板凳臥推 · 啞鈴');
       int score(double w) => measuredScore(
           weightKg: w,
@@ -72,9 +72,9 @@ void main() {
           relativeIntensity: e.relativeIntensity,
           bodyweightKg: 70,
           isMale: true);
-      expect(score(14), closeTo(294, 2));
-      expect(score(28), closeTo(868, 3));
-      expect(majorGradeOf(score(28)), 'S', reason: '新手一個動作就到 S，是填錯的後果');
+      expect(score(16), closeTo(294, 2));
+      expect(score(32), closeTo(868, 3));
+      expect(majorGradeOf(score(32)), 'S', reason: '新手一個動作就到 S，是填錯的後果');
     });
   });
 
