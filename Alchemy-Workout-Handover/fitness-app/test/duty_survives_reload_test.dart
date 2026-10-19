@@ -108,7 +108,8 @@ void main() {
       final t = MentorTask(id: 'mt-1', title: '練腿', detail: '');
       s.mentorTasks.add(t);
       expect(s.completeMentorTask(t), isTrue);
-      expect(t.state, MentorTaskState.done);
+      expect(t.state, MentorTaskState.submitted,
+          reason: '標記完成之後等教官發放，還不能領');
     });
   });
 }

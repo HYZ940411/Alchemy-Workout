@@ -376,9 +376,11 @@ class _Tasks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 已領取與已作廢（教官取消或關係解除）的不算進行中。
     final ongoing = state.mentorTasks
         .where((t) =>
             t.state != MentorTaskState.claimed &&
+            t.state != MentorTaskState.voided &&
             t.apprenticeUid == apprenticeUid)
         .toList();
     return Column(
@@ -390,20 +392,64 @@ class _Tasks extends StatelessWidget {
             padding: EdgeInsets.zero,
             child: Column(
               children: [
-                for (var i = 0; i < ongoing.length; i++)
+                for (var i = 0; i < ongoing.length; i++) ...[
                   ListRow(
                     title: ongoing[i].title,
-                    subtitle: ongoing[i].state == MentorTaskState.done
-                        ? '學徒已完成，待領取'
-                        : '已指派',
-                    showDivider: i != ongoing.length - 1,
+                    subtitle: switch (ongoing[i].state) {
+                      MentorTaskState.submitted => '學徒說做完了，等你發放獎勵',
+                      MentorTaskState.done => '已發放，等學徒領取',
+                      _ => '已指派，學徒還沒完成',
+                    },
+                    showDivider: false,
                     trailing: TagBadge(
-                      ongoing[i].state == MentorTaskState.done ? '已完成' : '進行中',
-                      borderColor: ongoing[i].state == MentorTaskState.done
-                          ? C.statusSuccess
-                          : C.lineDivider,
+                      switch (ongoing[i].state) {
+                        MentorTaskState.submitted => '待發放',
+                        MentorTaskState.done => '已發放',
+                        _ => '進行中',
+                      },
+                      borderColor: ongoing[i].state == MentorTaskState.assigned
+                          ? C.lineDivider
+                          : C.statusSuccess,
                     ),
                   ),
+                  // 已發放的獎勵已經放行，不能再取消。
+                  if (ongoing[i].state.isOpen)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(S.base, 0, S.base, S.md),
+                      child: Row(
+                        children: [
+                          if (ongoing[i].state == MentorTaskState.submitted) ...[
+                            Expanded(
+                              child: AppButton(
+                                label: '發放獎勵',
+                                onPressed: () {
+                                  final ok =
+                                      state.releaseMentorTaskReward(ongoing[i]);
+                                  showToast(
+                                      context,
+                                      ok
+                                          ? '已發放，學徒現在可以領取了'
+                                          : state.taskReviewBlockedReason(
+                                                  ongoing[i]) ??
+                                              '現在發放不了。');
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: S.md),
+                          ],
+                          Expanded(
+                            child: AppButton(
+                              label: '取消任務',
+                              kind: BtnKind.secondary,
+                              onPressed: () => _cancel(context, ongoing[i]),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (i != ongoing.length - 1)
+                    const Divider(height: 1, color: C.lineDivider),
+                ],
               ],
             ),
           ),
@@ -418,7 +464,22 @@ class _Tasks extends StatelessWidget {
     );
   }
 
-  /// 指派師徒任務。學徒完成後可領取獎勵，本頁只負責指派。
+  /// 取消任務：作廢、沒有獎勵、不能復原，所以先確認。
+  Future<void> _cancel(BuildContext context, MentorTask t) async {
+    final ok = await showAppDialog(
+      context,
+      title: '取消「${t.title}」？',
+      message: '取消後任務作廢，學徒拿不到獎勵，也不能復原。',
+      confirmLabel: '取消任務',
+      destructive: true,
+    );
+    if (ok != true || !context.mounted) return;
+    final done = state.cancelMentorTask(t);
+    showToast(
+        context, done ? '任務已取消' : state.taskReviewBlockedReason(t) ?? '現在取消不了。');
+  }
+
+  /// 指派師徒任務。學徒標記完成後要教官發放獎勵，學徒才可領取；本頁負責指派、發放與取消。
   Future<void> _assign(BuildContext context) async {
     final title = TextEditingController();
     final detail = TextEditingController();

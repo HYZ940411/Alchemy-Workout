@@ -107,6 +107,7 @@ void main() {
       var paid = 0;
       for (final t in s.mentorTasks) {
         s.completeMentorTask(t);
+        t.state = MentorTaskState.done; // 教官發放獎勵是另一端的動作；這裡要驗的是領取上限，直接放行。
         final r = s.claimMentorTask(t);
         if (r != null && r.exp > 0) paid++;
         expect(t.state, MentorTaskState.claimed);
