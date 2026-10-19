@@ -143,6 +143,25 @@ class SettlementRewards {
 /// 再結束也能領；只看時長的話，開著不動十分鐘也能領。
 const kMinRewardedWorkout = Duration(minutes: 5);
 
+/// 這場訓練發不發得出獎勵：至少完成一組，**且**滿 [kMinRewardedWorkout]。
+///
+/// 結算（`finishWorkout`）與結算畫面的說明共用這一個判準 ——
+/// 兩邊各寫一份的話，畫面會講出和實際不一樣的原因。
+bool isRewardable({required int doneSets, required Duration duration}) =>
+    doneSets > 0 && duration >= kMinRewardedWorkout;
+
+/// 這場為什麼完全沒發獎勵。發得出獎勵時回空值（被當日上限擋下的另有說明，不算在這裡）。
+///
+/// 以前不到 5 分鐘時，畫面寫的是「經驗值當日已發放」—— 原因講錯，
+/// 使用者（2026-10-19）以為是壞了。
+String? rewardWithheldReason({required int doneSets, required Duration duration}) {
+  if (doneSets <= 0) return '本場沒有完成任何一組，不發經驗值、金幣與排行榜分數';
+  if (duration < kMinRewardedWorkout) {
+    return '本場不到 ${kMinRewardedWorkout.inMinutes} 分鐘，不發經驗值、金幣與排行榜分數';
+  }
+  return null;
+}
+
 /// 訓練結算的三個數值指標，各自的規則不同：
 /// 能力值不受終止方式影響、經驗值固定 30、金幣與排行榜分數受完成度影響。
 SettlementRewards computeSettlement({

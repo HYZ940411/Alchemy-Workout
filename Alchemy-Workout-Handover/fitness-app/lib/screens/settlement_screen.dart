@@ -121,7 +121,9 @@ class SettlementScreen extends StatelessWidget {
                               color: AppColors.accent,
                               fontWeight: FontWeight.w800))
                     else
-                      Text('經驗值當日已發放', style: T.caption()),
+                      // 不到 5 分鐘（或一組都沒完成）時原因不是「當日已發放」。
+                      Text(r.noRewardReason != null ? '本場不發經驗值' : '經驗值當日已發放',
+                          style: T.caption()),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -139,7 +141,9 @@ class SettlementScreen extends StatelessWidget {
                   value: '+${r.rewards.coins}',
                   // 每日只發一次、以當日最高完成度為準。今天已經拿過的部分不會再發，
                   // 只補差額 —— 沒說清楚的話，同一天第二場看到 +0 會像是壞掉了。
-                  detail: r.rewards.coinsCapped
+                  detail: r.noRewardReason != null
+                      ? r.noRewardReason!
+                      : r.rewards.coinsCapped
                       ? '本場應得 ${r.rewards.coinsEntitled}，今日已發 '
                           '${r.rewards.coinsEntitled - r.rewards.coins}，'
                           '${r.rewards.coins == 0 ? '訓練獎勵每日只發一次' : '補發差額'}'
@@ -163,12 +167,12 @@ class SettlementScreen extends StatelessWidget {
                             ' × 課表來源 ${((planSourceFactor(r.plan.source) ?? 0) * 100).round()}%',
                   )
                 else
-                  const _RewardRow(
+                  _RewardRow(
                     icon: Icons.leaderboard_outlined,
                     color: AppColors.textFaint,
                     label: '個人排行榜分數',
                     value: '—',
-                    detail: '空白課表不計入個人排行榜分數',
+                    detail: r.noRewardReason ?? '空白課表不計入個人排行榜分數',
                   ),
               ],
             ),
