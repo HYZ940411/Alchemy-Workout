@@ -70,7 +70,7 @@ void main() {
         'squat': (0.8, 180),
         'deadlift': (0.6667, 180),
         'ohp': (1.3333, 120),
-        'lateral': (0.7064, 60),
+        'lateral': (0.5474, 60), // 2026-10-19 重新校準（基準值／映射係數）後：沒拿東西 ＝ 50 分 要重新換算
       };
       expected.forEach((id, v) {
         final e = ex(id);
