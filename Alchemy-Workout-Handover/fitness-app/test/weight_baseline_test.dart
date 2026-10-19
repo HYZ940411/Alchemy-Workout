@@ -315,9 +315,10 @@ void main() {
       expect(_measured(_byName('手臂繞圈')), closeTo(_scoreLow, _tolerance));
     });
 
-    test('徒手加外加負重：引體向上 +10 kg ≈ 429、深蹲 +10 kg ≈ 519（照槓鈴同樣的算法加上去）', () {
-      expect(_measured(_byName('引體向上'), weight: 10), closeTo(429, 3));
-      expect(_measured(_byName('深蹲'), weight: 10), closeTo(519, 3));
+    test('徒手加外加負重：引體向上 +10 kg ≈ 376、深蹲 +10 kg ≈ 431（照槓鈴同樣的算法加上去；'
+        '2026-10-19 重新校準前是 429／519）', () {
+      expect(_measured(_byName('引體向上'), weight: 10), closeTo(376, 3));
+      expect(_measured(_byName('深蹲'), weight: 10), closeTo(431, 3));
     });
   });
 

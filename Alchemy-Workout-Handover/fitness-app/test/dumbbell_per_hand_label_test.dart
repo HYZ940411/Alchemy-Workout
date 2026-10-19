@@ -64,7 +64,7 @@ void main() {
   });
 
   group('不寫「每手」的後果就是這個', () {
-    test('啞鈴臥推填兩手加總 28 kg ＝ 999；填每手 14 kg ＝ 294', () {
+    test('啞鈴臥推填兩手加總 28 kg ＝ 868（S 級，2026-10-19 重新校準前是 999）；填每手 14 kg ＝ 294', () {
       final e = _byName('板凳臥推 · 啞鈴');
       int score(double w) => measuredScore(
           weightKg: w,
@@ -73,7 +73,8 @@ void main() {
           bodyweightKg: 70,
           isMale: true);
       expect(score(14), closeTo(294, 2));
-      expect(score(28), 999);
+      expect(score(28), closeTo(868, 3));
+      expect(majorGradeOf(score(28)), 'S', reason: '新手一個動作就到 S，是填錯的後果');
     });
   });
 
