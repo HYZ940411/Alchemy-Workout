@@ -2100,6 +2100,12 @@ firebase deploy --only hosting
      - 登出後 `clearPersistence` 在「同一帳號還開著別的分頁」時會失敗（SDK 限制），那種情況清不掉，照樣重新載入。
      - 手機版沒測。
      - 離線時重新整理能不能進得去 App（規格：啟動需要網路）沒有處理，也沒有測。
+       **2026-10-19 使用者重測：離線按 F5 會進 Chrome 的小恐龍（頁面根本沒載入）。** 查到的原因：
+       ①線上 `flutter_service_worker.js` 只有 784 位元組，是 Flutter 3.44 的「自我解除註冊」空殼 —— App 殼層（index.html、main.dart.js、CanvasKit）沒有 Service Worker 快取；
+       ②`firebase.json` 對 `index.html`／`flutter_bootstrap.js`／`main.dart.js` 設 `Cache-Control: no-cache, no-store, must-revalidate`，瀏覽器也不會留。
+       所以「離線重新整理」在目前的建置下進不去，符合規格〈啟動需要網路〉，**不算回歸**，但這與上面 AH2 寫的「離線重新整理，App 進得去、值還在」互相矛盾 ——
+       我不知道當時的建置有什麼不同（AH2 的建置戳記 `0c5d285` 之後換過 Flutter 版本或標頭設定我沒查），**AH2 的那半句不能再當作成立**。
+       離線緩存實際成立的是：頁面已載入的狀態下斷網，資料寫入排進 IndexedDB、恢復網路後補送（這半 AH1 的提示、AH3 的登出仍適用）。
      - 登出時選「仍要登出」之後，沒送出的寫入在登出後可能因為沒有登入身分而被拒（會遺失），已用對話框告知，沒有替它保存。
 
 3AK. **2026-10-16 徒手動作加分過高：暫行體重係數（使用者裁決 B，止血）**
