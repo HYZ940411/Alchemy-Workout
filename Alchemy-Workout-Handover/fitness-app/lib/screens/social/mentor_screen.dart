@@ -790,6 +790,9 @@ class _TaskCard extends StatelessWidget {
                   const Pill('已作廢', color: AppColors.textFaint)
                 else if (task.state == MentorTaskState.claimed)
                   const Pill('已領取', color: AppColors.textFaint)
+                else if (task.state == MentorTaskState.submitted)
+                  // 學徒標記完成之後不能領 —— 要教官發放獎勵才行。
+                  const Pill('等教官發放', color: AppColors.textFaint)
                 else if (task.state == MentorTaskState.done)
                   GestureDetector(
                     onTap: () {
@@ -826,8 +829,9 @@ class _TaskCard extends StatelessWidget {
             ),
             // 學徒已評分該次師徒任務 → 教官聲望已變動。
             // 逐次問答不評分，尺度太敏感且多為兩端情緒樣本；改由任務評分承擔。
-            if (task.state != MentorTaskState.assigned &&
-                task.state != MentorTaskState.voided) ...[
+            // 教官發放獎勵之後才評得了（見 `rateMentorTask`）。
+            if (task.state == MentorTaskState.done ||
+                task.state == MentorTaskState.claimed) ...[
               const SizedBox(height: 10),
               Row(
                 children: [

@@ -6189,8 +6189,12 @@ class AppState extends ChangeNotifier {
       .length;
 
   /// 本週完成的任務數。
+  /// 學徒標記完成的次數。**教官取消（作廢）的不算** —— 標完成之後被取消，不是完成。
   int get weeklyCompleted => mentorTasks
-      .where((t) => t.doneAt != null && !t.doneAt!.isBefore(_mentorWeekStart))
+      .where((t) =>
+          t.doneAt != null &&
+          t.state != MentorTaskState.voided &&
+          !t.doneAt!.isBefore(_mentorWeekStart))
       .length;
   bool ratedThisWeek = false;
 
@@ -6416,11 +6420,55 @@ class AppState extends ChangeNotifier {
     if (mentorDisclaimerNeeded) return false;
     // 同上：已解除的關係不能再互動。未完成的任務本來就已作廢。
     if (mentorReleased) return false;
-    t.state = MentorTaskState.done;
+    // **標記完成不發獎勵，也還不能領。** 停在「等教官發放」，要教官按
+    // 「發放獎勵」（[releaseMentorTaskReward]）才變成可領取
+    //（使用者 2026-10-19：原本學徒自己標完成就能領，沒有任何人確認他真的做了）。
+    t.state = MentorTaskState.submitted;
     t.doneAt = now;
     _pushTask(t);
     notifyListeners();
     return true;
+  }
+
+  /// 教官發放獎勵 —— 學徒標記完成的任務，要教官確認之後才可領取。
+  ///
+  /// 這只是「放行」：經驗與金幣仍由學徒按「領取獎勵」時入帳（獎勵記在學徒自己的
+  /// 資料裡，教官這一端寫不進去），每週最多領 3 次的上限照舊。
+  ///
+  /// **只有教官能做，而且只能放行自己學徒的任務** —— `apprenticeUid == null` 的是
+  /// 指派給我自己的（我是學徒那一側），不能自己放行自己。
+  /// 回傳有沒有真的放行；原因見 [taskReviewBlockedReason]。
+  bool releaseMentorTaskReward(MentorTask t) {
+    if (taskReviewBlockedReason(t) != null) return false;
+    if (t.state != MentorTaskState.submitted) return false;
+    t.state = MentorTaskState.done;
+    _pushTask(t);
+    notifyListeners();
+    return true;
+  }
+
+  /// 教官取消任務 —— 已指派或學徒已標記完成（等發放）的任務都可以取消，取消後作廢、
+  /// 沒有獎勵。已發放或已領取的不能取消（獎勵已經放行，收不回來）。
+  bool cancelMentorTask(MentorTask t) {
+    if (taskReviewBlockedReason(t) != null) return false;
+    if (t.state != MentorTaskState.assigned &&
+        t.state != MentorTaskState.submitted) {
+      return false;
+    }
+    t.state = MentorTaskState.voided;
+    _pushTask(t);
+    notifyListeners();
+    return true;
+  }
+
+  /// 教官動不了這則任務的原因（發放獎勵、取消任務共用）。空值＝可以。
+  String? taskReviewBlockedReason(MentorTask t) {
+    if (!isInstructor) return '只有教官能發放獎勵或取消任務。';
+    // 指派給我自己的任務（我是學徒那一側）不是我的學徒的 —— 不能自己放行自己。
+    if (t.apprenticeUid == null) return '這則任務是指派給你的，不能自己發放。';
+    if (communityBlocked) return '社群功能已停權，不能發放獎勵或取消任務。';
+    if (instructorDutyNeeded) return '要先確認指導責任聲明，才能發放獎勵或取消任務。';
+    return null;
   }
 
   /// 師徒的週期計數器上次歸零所屬的週。空值表示尚未定基準。
@@ -6571,7 +6619,10 @@ class AppState extends ChangeNotifier {
     if (!isValidStars(stars)) return RateResult.rejected;
     // 沒有師徒關係就沒有可評的對象。
     if (myInstructor == null) return RateResult.rejected;
-    if (t.state == MentorTaskState.assigned) return RateResult.rejected;
+    // 教官發放獎勵之後才評得了：沒發放（已指派、等發放）或已作廢的都不評。
+    if (t.state != MentorTaskState.done && t.state != MentorTaskState.claimed) {
+      return RateResult.rejected;
+    }
     final first = t.rating == null;
     t.rating = stars;
     _pushTask(t);
@@ -6686,7 +6737,7 @@ class AppState extends ChangeNotifier {
     mentorRestoreProposedBy = null;
     // 未完成的師徒任務作廢（終止狀態）。
     for (final t in mentorTasks) {
-      if (t.state == MentorTaskState.assigned) {
+      if (t.state.isOpen) {
         t.state = MentorTaskState.voided;
       }
     }
@@ -6799,8 +6850,7 @@ class AppState extends ChangeNotifier {
     ));
     // 未完成的師徒任務作廢 —— 與學徒那一側同一條規則。
     for (final t in mentorTasks) {
-      if (t.apprenticeUid == apprenticeUid &&
-          t.state == MentorTaskState.assigned) {
+      if (t.apprenticeUid == apprenticeUid && t.state.isOpen) {
         t.state = MentorTaskState.voided;
       }
     }

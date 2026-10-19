@@ -356,6 +356,7 @@ void main() {
         final t = s.mentorTasks.firstWhere(
             (t) => t.state == MentorTaskState.assigned);
         s.completeMentorTask(t);
+        t.state = MentorTaskState.done; // 教官發放獎勵是另一端的動作；這裡要驗的是領取上限，直接放行。
         s.claimMentorTask(t);
       }
       expect(s.mentorRewardCapReached, isTrue);
@@ -363,12 +364,14 @@ void main() {
       var t = s.mentorTasks
           .firstWhere((t) => t.state == MentorTaskState.assigned);
       s.completeMentorTask(t);
+      t.state = MentorTaskState.done; // 教官已發放
       expect(s.claimMentorTask(t)!.coins, 0, reason: '本週已達上限');
 
       s.advanceDemoClock(const Duration(days: 8));
       s.assignMentorTask('下週的任務', '');
       t = s.mentorTasks.firstWhere((t) => t.state == MentorTaskState.assigned);
       s.completeMentorTask(t);
+      t.state = MentorTaskState.done; // 教官已發放
       expect(s.claimMentorTask(t)!.coins, greaterThan(0),
           reason: '跨週後上限重置 —— 否則週上限靜靜變成終身上限');
     });

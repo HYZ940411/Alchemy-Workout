@@ -669,9 +669,26 @@ class MentorQuestion {
   }) : id = id ?? 'q${at.microsecondsSinceEpoch}';
 }
 
-/// 師徒任務狀態。**已作廢為終止狀態** —— 師徒關係解除時，
+/// 師徒任務狀態。**已作廢為終止狀態** —— 師徒關係解除或教官取消時，
 /// 未完成的任務一律轉為已作廢。
-enum MentorTaskState { assigned, done, claimed, voided }
+///
+/// 流程：已指派 → 學徒標記完成 → [submitted]（等教官發放獎勵）→ 教官發放獎勵
+/// → [done]（學徒可領取）→ 學徒領取 → [claimed]。
+/// 教官可在已指派與 [submitted] 時取消任務 → [voided]。
+///
+/// **[done] 的意思是「教官已發放、學徒可領取」，不是「學徒說做完了」。**
+/// 加上 [submitted] 之前雲端已有 `done` 的舊任務，它們維持可領取，不用遷移。
+enum MentorTaskState {
+  assigned,
+  submitted,
+  done,
+  claimed,
+  voided;
+
+  /// 還沒走到終點、關係解除時要作廢的（已指派與等教官發放）。
+  /// 已發放（[done]）與已領取的獎勵已經放行，不作廢。
+  bool get isOpen => this == assigned || this == submitted;
+}
 
 class MentorTask {
   /// 任務的識別碼。
@@ -697,7 +714,8 @@ class MentorTask {
   /// 空值＝這則是加上這個欄位之前就存在的，不算進任何一週。
   DateTime? assignedAt;
 
-  /// 學徒完成的時點。完成數同樣數這個。
+  /// 學徒標記完成的時點（任務進入 [MentorTaskState.submitted] 的時點）。完成數同樣數這個。
+  /// **不是教官發放獎勵的時點。**
   DateTime? doneAt;
 
   MentorTask({

@@ -113,7 +113,10 @@ class FirestoreMentor implements MentorSource {
     // 「關係已解除，但任務還在指派中」這種學徒點得下去卻沒有教官的狀態。
     final open = await bond
         .collection('tasks')
-        .where('state', isEqualTo: MentorTaskState.assigned.name)
+        .where('state', whereIn: [
+          for (final s in MentorTaskState.values)
+            if (s.isOpen) s.name
+        ])
         .get();
 
     final batch = _db.batch();
