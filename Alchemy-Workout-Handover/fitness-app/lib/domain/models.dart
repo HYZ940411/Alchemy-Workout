@@ -61,6 +61,13 @@ class Exercise {
           ? kBodyweightFactorPullUp
           : kBodyweightFactorDefault);
 
+  /// 重量欄填的是「每手」重量嗎？啞鈴是 —— 使用者習慣的是啞鈴上寫的那個數字（單顆）。
+  ///
+  /// 相對強度係數是照單顆重量校準的（2026-10-17 使用者裁決：啞鈴填每手）；
+  /// 若填兩手加總，重量多一倍，分數直接爆表（啞鈴臥推 28 kg ＝ 999）。
+  /// 畫面要把「每手」寫出來，不然使用者無從知道。
+  bool get weightIsPerHand => equipment.split(' ＋ ').first.contains('啞鈴');
+
   /// 這個動作會出現在哪些肌群分頁。未指定訓練部位者退回所屬肌群。
   Set<Dim> get tabs => parts.isNotEmpty ? parts : (dim == null ? const {} : {dim!});
 

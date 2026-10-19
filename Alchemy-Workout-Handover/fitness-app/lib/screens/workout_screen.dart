@@ -365,14 +365,14 @@ class _AddSetsFormState extends State<_AddSetsForm> {
             // 重量為 0 的徒手動作：重量是外加負重，預設鎖著，開了開關才能調。
             if (widget.exercise.isBodyweight && !_loadOpen && _weight == 0)
               const _Row2(
-                label: '目標重量',
+                label: '目標重量', // 鎖著的一定是徒手動作，不會是啞鈴
                 value: '徒手',
                 onMinus: null,
                 onPlus: null,
               )
             else
               _Row2(
-                label: '目標重量',
+                label: widget.exercise.weightIsPerHand ? '每手重量' : '目標重量',
                 value: _weight == 0 ? '徒手' : '${_kgText(_weight)} kg',
                 onMinus: _weight >= 0.5
                     ? () => setState(() => _weight -= 0.5)
@@ -785,7 +785,7 @@ class _SetEditor extends StatelessWidget {
                     else
                     _StepperRow(
                       value: kgText(r.weight),
-                      unit: 'kg',
+                      unit: ex.weightIsPerHand ? 'kg／每手' : 'kg',
                       // 目標重量的精度是 0.5 公斤，步進就該是 0.5。
                       // 用 1 的話，30.5 一按就再也回不到 .5 的格子上。
                       onMinus: () =>
@@ -794,7 +794,7 @@ class _SetEditor extends StatelessWidget {
                           state.editCurrentSet(weight: r.weight + 0.5),
                       onTapValue: () => _askNumber(
                         context,
-                        title: '這一組的重量',
+                        title: ex.weightIsPerHand ? '這一組的重量（每手）' : '這一組的重量',
                         initial: kgText(r.weight),
                         unit: 'kg',
                         decimal: true,
