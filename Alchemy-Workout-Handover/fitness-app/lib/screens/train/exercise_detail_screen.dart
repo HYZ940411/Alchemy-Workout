@@ -99,7 +99,9 @@ class ExerciseDetailScreen extends StatelessWidget {
                       ? '估算 1RM 時以「體重 ＋ 負重」計算'
                       : exercise.weightIsPerHand
                           ? '重量請填每手的重量'
-                          : null,
+                          : exercise.weightIsSingleDumbbell
+                              ? '重量請填那一顆啞鈴的重量'
+                              : null,
               trailing: Text(
                   exercise.isBodyweight && !exercise.equipment.contains('彈力繩')
                       ? '是'
