@@ -46,19 +46,31 @@ WorkoutPlan _plan(Exercise e) => WorkoutPlan(
 
 void main() {
   group('哪些動作的重量是每手', () {
-    test('器材含啞鈴的都是（含「啞鈴 ＋ 平板椅」這種帶配件的）', () {
+    test('器材含啞鈴的：只拿一顆的（高腳杯深蹲、臀橋）填那一顆，其餘是每手（含「啞鈴 ＋ 平板椅」帶配件的）', () {
       final dumbbell = kPlatformExercises
-          .where((e) => e.equipment.split(' ＋ ').first.contains('啞鈴'));
+          .where((e) => e.equipment.split(' ＋ ').first.contains('啞鈴'))
+          .toList();
       expect(dumbbell.length, 75, reason: '動作庫的啞鈴動作數');
+      final single = dumbbell.where((e) => e.weightIsSingleDumbbell).toList();
+      expect({for (final e in single) e.name}, {
+        '相撲深蹲 · 啞鈴', '深蹲跳 · 啞鈴', '深蹲 · 啞鈴', '前蹲 · 啞鈴',
+        '板凳深蹲啞鈴 · 啞鈴', '臀橋 · 啞鈴',
+      });
       for (final e in dumbbell) {
-        expect(e.weightIsPerHand, isTrue, reason: e.name);
+        // 每個啞鈴動作剛好是其中一種，不會兩種都是、也不會都不是。
+        expect(e.weightIsPerHand != e.weightIsSingleDumbbell, isTrue, reason: e.name);
       }
+      expect(dumbbell.where((e) => e.weightIsPerHand).length, 69);
+      // 弓步、分腿蹲是兩手各一顆，名字裡的「蹲」不能讓它被當成一顆。
+      expect(_byName('分腿蹲 · 啞鈴').weightIsPerHand, isTrue);
+      expect(_byName('硬舉 · 啞鈴').weightIsPerHand, isTrue);
     });
 
     test('槓鈴、壺鈴、機械、繩索、彈力繩、徒手都不是', () {
       for (final e in kPlatformExercises) {
         if (e.equipment.split(' ＋ ').first.contains('啞鈴')) continue;
         expect(e.weightIsPerHand, isFalse, reason: '${e.name}（${e.equipment}）');
+        expect(e.weightIsSingleDumbbell, isFalse, reason: '${e.name}（${e.equipment}）');
       }
     });
   });
@@ -84,6 +96,14 @@ void main() {
       s.beginWorkout(_plan(_byName('板凳臥推 · 啞鈴')));
       await _openWorkout(t, s);
       expect(find.textContaining('每手'), findsWidgets);
+    });
+
+    testWidgets('訓練頁：高腳杯式深蹲（一顆啞鈴）寫「一顆」，不寫「每手」', (t) async {
+      final s = AppState();
+      s.beginWorkout(_plan(_byName('深蹲 · 啞鈴')));
+      await _openWorkout(t, s);
+      expect(find.textContaining('一顆'), findsWidgets);
+      expect(find.textContaining('每手'), findsNothing);
     });
 
     testWidgets('訓練頁：槓鈴動作不寫「每手」', (t) async {
@@ -127,6 +147,15 @@ void main() {
       await open('槓鈴日');
       expect(find.text('每手重量'), findsNothing);
       expect(find.text('目標重量'), findsOneWidget);
+
+      s.addPlan('深蹲日', [
+        PlanExercise(
+            exercise: _byName('深蹲 · 啞鈴'),
+            planned: const [PlannedSet(18, 10)]),
+      ]);
+      await open('深蹲日');
+      expect(find.text('啞鈴重量'), findsOneWidget, reason: '高腳杯式是一顆，不是每手');
+      expect(find.text('每手重量'), findsNothing);
     });
 
     testWidgets('動作詳情頁：彈力繩動作不再寫「徒手動作：是」，改說明不用填重量', (t) async {
@@ -163,6 +192,10 @@ void main() {
 
       await open(_byName('板凳臥推 · 啞鈴'));
       expect(find.text('重量請填每手的重量'), findsOneWidget);
+
+      await open(_byName('深蹲 · 啞鈴'));
+      expect(find.text('重量請填那一顆啞鈴的重量'), findsOneWidget);
+      expect(find.text('重量請填每手的重量'), findsNothing);
     });
   });
 }

@@ -66,7 +66,15 @@ class Exercise {
   /// 相對強度係數是照單顆重量校準的（2026-10-17 使用者裁決：啞鈴填每手）；
   /// 若填兩手加總，重量多一倍，分數直接爆表（啞鈴臥推 28 kg ＝ 999）。
   /// 畫面要把「每手」寫出來，不然使用者無從知道。
-  bool get weightIsPerHand => equipment.split(' ＋ ').first.contains('啞鈴');
+  bool get weightIsPerHand =>
+      equipment.split(' ＋ ').first.contains('啞鈴') && !weightIsSingleDumbbell;
+
+  /// 啞鈴動作裡**只拿一顆**的：高腳杯式深蹲（前蹲）、臀橋臀推（啞鈴放在髖部）。
+  /// 這種動作重量欄填「那一顆啞鈴的重量」，寫「每手」會誤導使用者
+  /// （2026-10-19 使用者裁決：下肢啞鈴比例調整時一併處理）。
+  bool get weightIsSingleDumbbell =>
+      equipment.split(' ＋ ').first.contains('啞鈴') &&
+      RegExp(r'深蹲|前蹲|臀橋|臀推').hasMatch(name);
 
   /// 這個動作會出現在哪些肌群分頁。未指定訓練部位者退回所屬肌群。
   Set<Dim> get tabs => parts.isNotEmpty ? parts : (dim == null ? const {} : {dim!});

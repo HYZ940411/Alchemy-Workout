@@ -276,6 +276,7 @@ class _ExerciseEditor extends StatelessWidget {
                 isCardio: item.isCardio,
                 bodyweight: item.exercise.isBodyweight,
                 perHand: item.exercise.weightIsPerHand,
+                singleDumbbell: item.exercise.weightIsSingleDumbbell,
                 onChanged: onChanged,
               ),
             ],
@@ -328,6 +329,9 @@ class _SetEditor extends StatelessWidget {
 
   /// 啞鈴：重量欄填每手重量。
   final bool perHand;
+
+  /// 只拿一顆啞鈴的動作（高腳杯式深蹲、臀橋）：填那一顆的重量。
+  final bool singleDumbbell;
   final VoidCallback onChanged;
   const _SetEditor({
     required this.index,
@@ -335,6 +339,7 @@ class _SetEditor extends StatelessWidget {
     required this.isCardio,
     required this.bodyweight,
     required this.perHand,
+    required this.singleDumbbell,
     required this.onChanged,
   });
 
@@ -384,7 +389,11 @@ class _SetEditor extends StatelessWidget {
                 )
               else
                 _Field(
-                  label: perHand ? '每手重量' : '目標重量',
+                  label: perHand
+                      ? '每手重量'
+                      : singleDumbbell
+                          ? '啞鈴重量'
+                          : '目標重量',
                   // float 精度 0.5 公斤，≥ 0；值為 0 代表徒手（自身體重）動作。
                   value: set.weight == 0 ? '徒手' : '${_kg(set.weight)} kg',
                   onMinus: set.weight - 0.5 >= 0

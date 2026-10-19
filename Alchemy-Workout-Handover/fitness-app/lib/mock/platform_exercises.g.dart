@@ -1061,7 +1061,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p138',
     name: '站姿單腳提踵 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 3.3333,
+    relativeIntensity: 2.5,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1077,7 +1077,7 @@ const kPlatformExercises = <Exercise>[
     name: '直腿硬舉 · 啞鈴',
     dim: Dim.back,
     parts: {Dim.back, Dim.legs},
-    relativeIntensity: 2.5,
+    relativeIntensity: 1.6667,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1093,7 +1093,7 @@ const kPlatformExercises = <Exercise>[
     name: '硬舉 · 啞鈴',
     dim: Dim.back,
     parts: {Dim.back, Dim.legs},
-    relativeIntensity: 2.5,
+    relativeIntensity: 1.6667,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1159,14 +1159,14 @@ const kPlatformExercises = <Exercise>[
     id: 'p151',
     name: '坐姿提踵 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 3.3333,
+    relativeIntensity: 2.5,
     equipment: '啞鈴 ＋ 平板椅',
   ),
   Exercise(
     id: 'p152',
     name: '相撲深蹲 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.2222,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1226,21 +1226,21 @@ const kPlatformExercises = <Exercise>[
     id: 'p160',
     name: '踏板上站姿提踵 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 3.3333,
+    relativeIntensity: 2.5,
     equipment: '啞鈴 ＋ 踏板',
   ),
   Exercise(
     id: 'p161',
     name: '深蹲跳 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.2222,
     equipment: '啞鈴',
   ),
   Exercise(
     id: 'p162',
     name: '臀橋 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 2.5,
+    relativeIntensity: 1.6667,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1254,7 +1254,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p164',
     name: '深蹲 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.2222,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1353,7 +1353,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p177',
     name: '前蹲 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.2222,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1361,14 +1361,14 @@ const kPlatformExercises = <Exercise>[
     name: '羅馬尼亞硬舉 · 啞鈴',
     dim: Dim.back,
     parts: {Dim.back, Dim.legs},
-    relativeIntensity: 2.5,
+    relativeIntensity: 1.6667,
     equipment: '啞鈴',
   ),
   Exercise(
     id: 'p179',
     name: '屈膝弓箭步 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1403,7 +1403,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p184',
     name: '弓箭步 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1432,7 +1432,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p188',
     name: '反向弓箭步 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -2034,7 +2034,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p262',
     name: '分腿蹲 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -2087,7 +2087,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p269',
     name: '側弓箭步 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -2095,14 +2095,14 @@ const kPlatformExercises = <Exercise>[
     name: '單腳硬舉 · 啞鈴',
     dim: Dim.back,
     parts: {Dim.back, Dim.legs},
-    relativeIntensity: 2.5,
+    relativeIntensity: 1.6667,
     equipment: '啞鈴',
   ),
   Exercise(
     id: 'p271',
     name: '登階 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴 ＋ 平板椅',
   ),
   Exercise(
@@ -2138,7 +2138,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p276',
     name: '板凳深蹲啞鈴 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.2222,
     equipment: '啞鈴 ＋ 平板椅',
   ),
   Exercise(
@@ -2162,7 +2162,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p279',
     name: '保加利亞分腿蹲 · 啞鈴',
     dim: Dim.legs,
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴 ＋ 平板椅',
   ),
   Exercise(
