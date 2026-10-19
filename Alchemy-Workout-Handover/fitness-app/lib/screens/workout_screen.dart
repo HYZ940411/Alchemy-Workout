@@ -12,6 +12,7 @@ import '../domain/community.dart';
 import 'ai/ai_adjust_screen.dart';
 import 'train/create_exercise_screen.dart';
 import 'train/equipment_unlock_sheet.dart';
+import 'train/exercise_detail_screen.dart';
 import 'train/exercise_picker.dart';
 import 'train/rest_countdown.dart';
 import 'settlement_screen.dart';
@@ -210,6 +211,10 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
                 totalSeconds: s.restTotalSeconds,
                 onFinished: s.endRestByTimer,
                 onSkip: s.skipRest,
+                // 接下來要做的動作；清單空（空白課表剛開始）時沒有。
+                onInfo: pe == null
+                    ? null
+                    : () => openExerciseInfo(context, pe.exercise),
               ),
             ),
         ],
@@ -603,6 +608,15 @@ class _CurrentExercise extends StatelessWidget {
                   ],
                 ),
               ),
+              // 動作說明：訓練中也要看得到，不必先退出訓練（使用者 2026-10-19 回報）。
+              // 開的是一般的詳情頁，疊在訓練頁上面，返回就回到原來那一組。
+              IconButton(
+                key: const ValueKey('exercise-info-current'),
+                tooltip: '動作說明',
+                onPressed: () => openExerciseInfo(context, pe.exercise),
+                icon: const Icon(Icons.info_outline_rounded,
+                    color: AppColors.cool, size: Sz.iconDefault),
+              ),
             ],
           ),
           // 已被替換的標示：可展開檢視原動作，還原入口位於此
@@ -718,6 +732,13 @@ class _CurrentExercise extends StatelessWidget {
   static String _num(double v) =>
       v == v.roundToDouble() ? '${v.round()}' : '$v';
 }
+
+/// 訓練中開動作說明。**疊在訓練頁上面**，不結束、不暫停訓練；返回就回到原來那一組。
+@visibleForTesting
+Future<void> openExerciseInfo(BuildContext context, Exercise e) =>
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => ExerciseDetailScreen(exercise: e)),
+    );
 
 /// 步進器（§8.11）—— 全 App 最高頻的操作。
 ///
@@ -1092,12 +1113,27 @@ class _ExerciseRow extends StatelessWidget {
     child: Row(
       children: [
         Expanded(
-          child: Text(
-            pe.exercise.name,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
-              color: isCurrent ? AppColors.text : AppColors.textDim,
+          // 點動作名稱看說明 —— 下一個動作怎麼做，不必等輪到它才知道。
+          child: GestureDetector(
+            key: ValueKey('exercise-info-$exerciseIndex'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => openExerciseInfo(context, pe.exercise),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    pe.exercise.name,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
+                      color: isCurrent ? AppColors.text : AppColors.textDim,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.info_outline_rounded,
+                    size: 14, color: AppColors.textFaint),
+              ],
             ),
           ),
         ),

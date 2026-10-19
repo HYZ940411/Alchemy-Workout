@@ -28,12 +28,17 @@ class RestCountdownScreen extends StatefulWidget {
   /// 使用者按跳過 —— 由使用者觸發的「組間休息已結束」。
   final VoidCallback onSkip;
 
+  /// 看接下來這個動作的說明。**不結束休息**：說明頁疊在上面，返回時倒數還在走。
+  /// 空值＝不顯示按鈕（休息時最有空讀說明，卻是全屏蓋住訓練頁的時候 —— 2026-10-19 使用者回報）。
+  final VoidCallback? onInfo;
+
   const RestCountdownScreen({
     super.key,
     required this.endsAt,
     required this.totalSeconds,
     required this.onFinished,
     required this.onSkip,
+    this.onInfo,
   });
 
   @override
@@ -118,6 +123,18 @@ class _RestCountdownScreenState extends State<RestCountdownScreen> {
                 ),
               ),
               const Spacer(),
+              if (widget.onInfo != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    key: restInfoKey,
+                    label: '看這個動作的說明',
+                    kind: BtnKind.secondary,
+                    onPressed: widget.onInfo,
+                  ),
+                ),
+                const SizedBox(height: S.sm),
+              ],
               SizedBox(
                 width: double.infinity,
                 child: AppButton(
@@ -140,6 +157,9 @@ const Key restRingKey = Key('rest-ring');
 
 /// 倒數的大數字。見上方註解：不可用字面值定位。
 const Key restSecondsKey = Key('rest-seconds');
+
+/// 休息畫面的「看這個動作的說明」鈕。
+const Key restInfoKey = Key('rest-info');
 
 /// 圓環直徑 240px、線寬 8px（§8.10）。
 const double _ringDiameter = 240.0;
