@@ -1839,6 +1839,10 @@ firebase deploy --only hosting
      手機版的檔案快取沒在真機上跑；`ensureRev` 在真實專案（規則）下管理員寫不寫得進 `platform_config/_meta`
      只靠規則文字推論（`platform_config` 是「登入者可讀、管理員可寫」）；部署後第一次載入還是整份讀。
      **也還沒解決：** 配額今天已經用完，部署與驗證要等重置（台灣約 15:00）。
+   - **使用者實測（2026-10-19，Chrome DevTools）：** 雲端 `platform_config/_meta` 存在，`rev` ＝ `1792225792901000`（換算為 2026-10-17 16:29:52），
+     瀏覽器 Local Storage 的 `platform_cache.json` 的 `rev` **完全相同** —— 這台裝置的快取在運作、登入時只讀 `_meta` 一筆。
+     （用量降了多少仍沒量：Console 用量頁的逐日對照受每天登入人數影響，不公平。）
+     動作權重那邊的 `upload_exercises_only.py` 已改成上傳後換版本（3AO 的收尾）。
 
 3AO. **2026-10-17 動作權重統一：每類「新手做 10 下」落在固定分數（`[QA-04]` ②③處理；使用者逐類裁決）**
 
