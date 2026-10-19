@@ -1100,7 +1100,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p143',
     name: '坐姿上舉 · 啞鈴',
     dim: Dim.shoulders,
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴 ＋ 平板椅',
   ),
   Exercise(
@@ -1181,7 +1181,7 @@ const kPlatformExercises = <Exercise>[
     name: '下斜板凳臥推 · 啞鈴',
     dim: Dim.chest,
     parts: {Dim.arms, Dim.shoulders, Dim.chest},
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.5,
     equipment: '啞鈴 ＋ 下斜板凳',
   ),
   Exercise(
@@ -1219,7 +1219,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p159',
     name: '聳肩 · 啞鈴',
     dim: Dim.back,
-    relativeIntensity: 2.5,
+    relativeIntensity: 2.0,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1293,7 +1293,7 @@ const kPlatformExercises = <Exercise>[
     id: 'p169',
     name: '上舉 · 啞鈴',
     dim: Dim.shoulders,
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -1301,7 +1301,7 @@ const kPlatformExercises = <Exercise>[
     name: '上斜板凳握推 · 啞鈴',
     dim: Dim.chest,
     parts: {Dim.arms, Dim.shoulders, Dim.chest},
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.5,
     equipment: '啞鈴 ＋ 上斜板凳',
   ),
   Exercise(
@@ -2057,7 +2057,7 @@ const kPlatformExercises = <Exercise>[
     name: '伏地挺身划船 · 啞鈴',
     dim: Dim.chest,
     parts: {Dim.arms, Dim.shoulders, Dim.back, Dim.chest},
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.5,
     equipment: '啞鈴',
   ),
   Exercise(
@@ -2146,7 +2146,7 @@ const kPlatformExercises = <Exercise>[
     name: '板凳臥推(窄距) · 啞鈴',
     dim: Dim.chest,
     parts: {Dim.arms, Dim.shoulders, Dim.chest},
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.5,
     equipment: '啞鈴 ＋ 平板椅',
   ),
   Exercise(
@@ -2154,7 +2154,7 @@ const kPlatformExercises = <Exercise>[
     name: '板凳臥推 · 啞鈴',
     dim: Dim.chest,
     parts: {Dim.arms, Dim.shoulders, Dim.chest},
-    relativeIntensity: 2.8571,
+    relativeIntensity: 2.5,
     defaultRestSeconds: 120,
     equipment: '啞鈴 ＋ 平板椅',
   ),
@@ -2170,7 +2170,7 @@ const kPlatformExercises = <Exercise>[
     name: '阿諾推舉 · 啞鈴',
     dim: Dim.shoulders,
     parts: {Dim.arms, Dim.shoulders},
-    relativeIntensity: 4.0,
+    relativeIntensity: 3.3333,
     equipment: '啞鈴 ＋ 平板椅',
   ),
   Exercise(
