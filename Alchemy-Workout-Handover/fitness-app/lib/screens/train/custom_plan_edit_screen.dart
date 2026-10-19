@@ -275,6 +275,7 @@ class _ExerciseEditor extends StatelessWidget {
                 set: set,
                 isCardio: item.isCardio,
                 bodyweight: item.exercise.isBodyweight,
+                perHand: item.exercise.weightIsPerHand,
                 onChanged: onChanged,
               ),
             ],
@@ -324,12 +325,16 @@ class _SetEditor extends StatelessWidget {
   final DraftSet set;
   final bool isCardio;
   final bool bodyweight;
+
+  /// 啞鈴：重量欄填每手重量。
+  final bool perHand;
   final VoidCallback onChanged;
   const _SetEditor({
     required this.index,
     required this.set,
     required this.isCardio,
     required this.bodyweight,
+    required this.perHand,
     required this.onChanged,
   });
 
@@ -372,14 +377,14 @@ class _SetEditor extends StatelessWidget {
               // 重量為 0 的徒手動作：重量是外加負重，預設鎖著，開了開關才能調。
               if (bodyweight && set.weight == 0 && !set.loadOpen)
                 const _Field(
-                  label: '目標重量',
+                  label: '目標重量', // 鎖著的一定是徒手動作，不會是啞鈴
                   value: '徒手',
                   onMinus: null,
                   onPlus: null,
                 )
               else
                 _Field(
-                  label: '目標重量',
+                  label: perHand ? '每手重量' : '目標重量',
                   // float 精度 0.5 公斤，≥ 0；值為 0 代表徒手（自身體重）動作。
                   value: set.weight == 0 ? '徒手' : '${_kg(set.weight)} kg',
                   onMinus: set.weight - 0.5 >= 0

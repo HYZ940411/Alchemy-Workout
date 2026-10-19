@@ -89,12 +89,21 @@ class ExerciseDetailScreen extends StatelessWidget {
               ),
             ),
             ListRow(title: '所需器材', trailing: Text(exercise.equipment, style: T.body(color: C.textSecondary))),
+            // 彈力繩動作在資料裡標成徒手型（重量欄鎖住、不用猜公斤數），
+            // 但使用者看到「徒手動作：是」會困惑 —— 他手上明明有一條彈力繩。
             ListRow(
               title: '徒手動作',
-              subtitle: exercise.isBodyweight
-                  ? '估算 1RM 時以「體重 ＋ 負重」計算'
-                  : null,
-              trailing: Text(exercise.isBodyweight ? '是' : '否',
+              subtitle: exercise.equipment.contains('彈力繩')
+                  ? '彈力繩動作不用填重量，分數固定'
+                  : exercise.isBodyweight
+                      ? '估算 1RM 時以「體重 ＋ 負重」計算'
+                      : exercise.weightIsPerHand
+                          ? '重量請填每手的重量'
+                          : null,
+              trailing: Text(
+                  exercise.isBodyweight && !exercise.equipment.contains('彈力繩')
+                      ? '是'
+                      : '否',
                   style: T.body(color: C.textSecondary)),
             ),
           ]),
