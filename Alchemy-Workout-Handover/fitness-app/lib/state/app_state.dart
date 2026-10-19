@@ -12525,6 +12525,7 @@ class AppState extends ChangeNotifier {
     myTeam = null;
     teamJoinedAt = null;
     teamLeftAt = null;
+    _cooldownAtLeave = null;
     sentApplications.clear();
     publicTeams = [];
     disbandedTeams.clear();
@@ -12693,6 +12694,7 @@ class AppState extends ChangeNotifier {
     // 加入／退出的時戳也要清 —— 新帳號沒有換隊冷卻，也沒有誤入窗口。
     teamJoinedAt = null;
     teamLeftAt = null;
+    _cooldownAtLeave = null;
     inbox.clear();
     myTeam = null;
     myInstructor = null;

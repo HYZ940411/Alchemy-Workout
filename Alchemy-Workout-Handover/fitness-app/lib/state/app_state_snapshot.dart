@@ -488,6 +488,11 @@ extension AppStateSnapshot on AppState {
 
         // --- 改名（階段五）---
         'lastRenamedAt': _iso(lastRenamedAt),
+        // 換隊冷卻（`[QA-09]`，使用者裁決 A，2026-10-19）。以前只存在記憶體，重新整理就歸零，
+        // 等於冷卻擋不住換隊。存「退出的時戳」和「退出當下鎖住的冷卻長度（秒）」，
+        // 剩餘時間仍由它們推導（見 `switchCooldownLeft`），不存會漂移的倒數值。
+        'teamLeftAt': _iso(teamLeftAt),
+        'teamCooldownSecs': _cooldownAtLeave?.inSeconds,
         'formerNames': formerNames,
 
         // --- 關注 ---
@@ -967,6 +972,10 @@ extension AppStateSnapshot on AppState {
         : platformPlans.where((p) => p.id == planId).firstOrNull;
 
     lastRenamedAt = _date(pick<String>('lastRenamedAt'));
+    teamLeftAt = _date(pick<String>('teamLeftAt'));
+    final cooldownSecs = pick<num>('teamCooldownSecs');
+    _cooldownAtLeave =
+        cooldownSecs == null ? null : Duration(seconds: cooldownSecs.round());
     if (pick<List>('formerNames') != null) {
       formerNames
         ..clear()
