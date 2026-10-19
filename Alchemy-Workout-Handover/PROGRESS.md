@@ -1494,7 +1494,12 @@ firebase deploy --only hosting
      `dumbbell_per_hand_label_test`（28 kg 兩手加總 999 → 868）、`first_session_test`（27.5 kg × 8 @65 kg 10 → 116 分）、
      `platform_exercises_test`（側平舉係數 0.7064 → 0.5474）、`weight_baseline_test`（引體向上 +10 kg 429 → 376、深蹲 +10 kg 519 → 431）。
    - **驗證：** 四次突變（基準值退回 27.6、映射係數退回 23.6、`WK_BAND` 沿用舊值、`WK_LOW` 沿用舊值）全部轉紅。`flutter analyze lib test` 乾淨；全量 **3,193 passed**。
-   - **⚠️ 上線要三步一起（尚未做）：** ① 網站部署（新預設值） ② **雲端動作庫上傳**（91 個係數：82 ＋ 啞鈴上肢推 9；`backup_exercises.py` → `upload_exercises_only.py --apply`，上傳會自動換版本）
+   - **已上線（2026-10-19 晚，使用者在終端機／後台執行，網站由 CC 部署）：** ① 備份 `fitness-app/build/exercises_backup_20261019-215233.json`（及上傳前最新一份）→
+     `upload_exercises_only.py --apply`：527 筆、已更新 `_meta.rev`；`check_platform_data.py`：**exercises 雲端 527／種子 527、一致 527**。
+     ② 使用者在後台「設定能力值參數」改基準值 19.54、映射係數 14.33（回報「完成」；`platform_config` 一致數仍為 8、多一份 `_meta`，**Console 直接看 `ability.params` 的步驟使用者沒有回報**）。
+     ③ 網站部署戳記 `287bf9b`（獨立分支 `deploy-weight-label`；analyze 乾淨、全量 3,148 passed、建置 exit 0；不含 QA-05 階段二／三、無規則變動）。
+     使用者接著問「能把目前使用者的能力值都重算一次嗎」—— **沒有做**，見下。
+   - **⚠️ 上線要三步一起（已做完，以下為當時的說明）：** ① 網站部署（新預設值） ② **雲端動作庫上傳**（91 個係數：82 ＋ 啞鈴上肢推 9；`backup_exercises.py` → `upload_exercises_only.py --apply`，上傳會自動換版本）
      ③ **後台「設定能力值參數」改兩個值**（基準值 19.54、映射係數 14.33）—— **雲端 `platform_config` 的值會蓋過程式預設值**，不改的話線上還是舊刻度；後台存檔會自動換版本。
      三步之間會有短暫不一致（例如動作庫是新的、參數還是舊的，彈力繩與沒拿東西的分數會偏低），盡量連著做。
    - **還沒做／還沒驗：** 尚未部署／上傳／改後台；沒有真人驗過新刻度；只用 70 kg 與 80 kg 男性算過，女性沒驗；
