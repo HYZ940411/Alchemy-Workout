@@ -7,6 +7,7 @@
 //  ④ 被攔截後的「申訴」按鈕按了沒反應；資料模型有「內容攔截」這種申訴，
 //     卻沒有任何程式能建立它。而且 `upholdAppeal` 不分對象一律撤銷處罰、
 //     退違規次數 —— 內容攔截的申訴成立，會把申訴人別的處罰一併撤掉。
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_app/data/appeal_data.dart';
@@ -17,6 +18,7 @@ import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/domain/clock.dart';
 import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/rewards.dart';
+import 'package:fitness_app/screens/social/blocked_dialog.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 class _Appeals implements AppealSource {
@@ -384,6 +386,75 @@ void main() {
 
       expect(s.lastBlocked, isNull);
       expect(s.screenContent('某段原文詐騙'), FilterVerdict.blocked);
+    });
+  });
+
+  blockedDialogTests();
+}
+
+// 攔截彈窗的「申訴」按鈕（畫面層）。
+//
+// 2026-10-20 使用者實測：按「申訴」沒反應。原因是線上跑的是舊建置 ——
+// 舊版那顆按鈕的回傳值被丟掉。這條把畫面層釘住：按下去要真的走到
+// 理由輸入框、送出後要真的送到雲端，而不只是狀態層對。
+void blockedDialogTests() {
+  group('④ 攔截彈窗的申訴按鈕（畫面）', () {
+    Future<void> open(WidgetTester tester, AppState s) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) => TextButton(
+                onPressed: () =>
+                    showBlockedDialog(c, s, kind: BlockedKind.post),
+                child: const Text('go'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('按「申訴」→ 理由輸入框 → 送出 → 申訴上雲', (tester) async {
+      final s = _user();
+      final src = _Appeals();
+      s.appealSource = src;
+      s.publishPost('加賴買藥', PostVisibility.public);
+
+      await open(tester, s);
+      expect(find.text('內容已攔截'), findsOneWidget);
+
+      await tester.tap(find.text('申訴'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('申訴這次攔截'),
+        findsOneWidget,
+        reason: '按「申訴」要接到理由輸入框，不能什麼都不發生',
+      );
+
+      await tester.enterText(find.byType(TextField), '我是在勸大家不要');
+      await tester.tap(find.text('送出申訴'));
+      await tester.pumpAndSettle();
+
+      expect(src.filed, hasLength(1));
+      expect(src.filed.single.reason, '我是在勸大家不要');
+      expect(src.filed.single.content, '加賴買藥');
+    });
+
+    testWidgets('按「我知道了」→ 不申訴', (tester) async {
+      final s = _user();
+      final src = _Appeals();
+      s.appealSource = src;
+      s.publishPost('加賴買藥', PostVisibility.public);
+
+      await open(tester, s);
+      await tester.tap(find.text('我知道了'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('申訴這次攔截'), findsNothing);
+      expect(src.filed, isEmpty);
     });
   });
 }
