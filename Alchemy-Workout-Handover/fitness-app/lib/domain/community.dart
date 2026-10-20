@@ -519,6 +519,12 @@ const int kMentorTaskExp = 20;
 const int kMentorTaskCoin = 15;
 const int kMentorTaskRewardWeeklyCap = 3;
 
+/// 教官也有獎勵：學徒**領取成功**時，教官同步得到經驗值與金幣（數字可調）。
+/// 沒有自己的週上限 —— 跟著學徒的 [kMentorTaskRewardWeeklyCap]：
+/// 學徒那次被擋掉（`MentorTask.rewarded` 為否），教官也不發。
+const int kMentorInstructorExp = 10; // 可調
+const int kMentorInstructorCoin = 8; // 可調
+
 /// 師徒任務評分 1~5 星對應的聲望變動。
 const kMentorTaskReputationDelta = <int>[-1, 0, 1, 2, 3];
 
@@ -733,6 +739,11 @@ class MentorTask {
   /// **不是教官發放獎勵的時點。**
   DateTime? doneAt;
 
+  /// 學徒領取時**真的入帳**了（沒被每週 3 次的上限擋掉）。
+  /// 教官的獎勵就看這個：教官端讀到「已領取且 [rewarded]」才發，
+  /// 所以學徒沒領、或那次超過上限，教官都不會多拿。
+  bool rewarded;
+
   MentorTask({
     required this.title,
     required this.detail,
@@ -743,6 +754,7 @@ class MentorTask {
     this.rating,
     this.assignedAt,
     this.doneAt,
+    this.rewarded = false,
   }) : id = id ?? 't${title.hashCode}';
 }
 

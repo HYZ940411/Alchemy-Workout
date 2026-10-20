@@ -633,6 +633,9 @@ extension AppStateSnapshot on AppState {
         // 教官每重開一次 App 聲望就再加一次。
         'creditedTaskRatings': creditedTaskRatings.toList(),
         'creditedWeeklyRatings': creditedWeeklyRatings.toList(),
+        'creditedInstructorRewards': creditedInstructorRewards.toList(),
+        'instructorRewardUnseenExp': instructorRewardUnseen.exp,
+        'instructorRewardUnseenCoins': instructorRewardUnseen.coins,
 
         // --- 師徒的週期計數器 ---
         // 一併存檔，否則重開 App 就等於過了一個新的週 ——
@@ -1197,6 +1200,15 @@ extension AppStateSnapshot on AppState {
         ..clear()
         ..addAll(strs('creditedTaskRatings'));
     }
+    if (pick<List>('creditedInstructorRewards') != null) {
+      creditedInstructorRewards
+        ..clear()
+        ..addAll(strs('creditedInstructorRewards'));
+    }
+    instructorRewardUnseen = (
+      exp: intOf('instructorRewardUnseenExp', 0),
+      coins: intOf('instructorRewardUnseenCoins', 0),
+    );
     if (pick<List>('creditedWeeklyRatings') != null) {
       creditedWeeklyRatings
         ..clear()
