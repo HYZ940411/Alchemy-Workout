@@ -1510,7 +1510,13 @@ firebase deploy --only hosting
    - **既有失敗，不是本項造成：** `appeal_queue_test.dart`「送出申訴要上雲」兩條，原因查明 —— 測試把處罰時間寫死 2026-09-20，
      今天（2026-10-20）已滿 30 天，`canAppealAt` 正確地拒絕。是**測試的時間炸彈**，不是產品問題；修法是把 `issuedAt` 改成相對今天。
      依守則「改測試讓它過」要先問，所以**沒改**。
-   - **全量測試：3,257 passed、2 failed**（就是上面那兩條既有失敗）。`flutter analyze lib test` 乾淨。
+   - **全量測試：3,257 passed**（上面那兩條既有失敗隨後已修，改成相對日期；修完只單獨跑過該檔，全量沒再跑）。`flutter analyze lib test` 乾淨。
+   - **部署用分支（2026-10-20，已建置、未部署）：** 線上現行版本是 `211788a`（從線上 `main.dart.js` 的建置戳記確認），
+     它不在主線（`11246022`）上，主線比它多 47 筆，直接從主線部署會蓋掉它。所以另開 **`deploy-content-filter`**（`7e09100`），
+     疊在 `211788a` 上，只含本項的程式與測試（不含 PROGRESS、追蹤清單；程式自動合併無衝突，只有 PROGRESS 衝突，已排除）。
+     該分支 analyze 乾淨、全量 **3,206 passed**；`build_web.sh` 建置成功，戳記 `7e09100 10-20 15:38`（無 `+dirty`），
+     `firestore.rules`／索引／`firebase.json` 與線上版相同，**只需 hosting**。**未部署**，等使用者在 `fitness-app/` 執行
+     `firebase deploy --only hosting`。**之後任何人部署都要疊在 `deploy-content-filter` 上**，否則會蓋掉這一項與師徒任務發放獎勵。
 
 3BK. **2026-10-19 師徒任務：學徒標記完成後要教官「發放獎勵」才可領；教官可取消任務（使用者要求，選 A+B 的合併做法）**
 
