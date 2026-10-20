@@ -58,8 +58,13 @@ Future<void> _mineMenu(
             title: '編輯貼文',
             onTap: () async {
               Navigator.of(sheetContext).pop();
-              await editTextDialog(
-                  context, '編輯貼文', p.text, (v) => s.editPost(p, v));
+              await editTextDialog(context, '編輯貼文', p.text, (v) {
+                if (s.screenContent(v) == FilterVerdict.blocked) {
+                  showToast(context, '內容含明顯違規字詞，無法儲存');
+                  return false;
+                }
+                return s.editPost(p, v);
+              });
             },
           ),
           ListRow(

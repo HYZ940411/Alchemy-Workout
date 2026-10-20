@@ -21,6 +21,7 @@ import 'package:fitness_app/data/appeal_data.dart';
 import 'package:fitness_app/data/punishment_data.dart';
 import 'package:fitness_app/data/violation_data.dart';
 import 'package:fitness_app/domain/admin.dart';
+import 'package:fitness_app/domain/clock.dart';
 import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/state/app_state.dart';
 
@@ -45,6 +46,9 @@ class _FakeAppeals implements AppealSource {
   Future<void> judge(String id,
           {required bool upheld, required String handlerName}) async =>
       verdicts.add((id, upheld, handlerName));
+
+  @override
+  Future<List<String>> approvedBlockedTexts(String uid) async => const [];
 }
 
 class _FakePunishments implements PunishmentSource {
@@ -72,6 +76,10 @@ class _FakeViolations implements ViolationSource {
   @override
   Future<int> increment(String uid, {required String name}) async => 1;
 }
+
+/// 處罰時間要相對於「今天」。曾經寫死 2026-09-20，滿 30 天那天
+/// `canAppealAt` 正確地拒絕申訴，兩條測試就無故轉紅。
+DateTime _tenDaysAgo() => appNow().subtract(const Duration(days: 10));
 
 typedef _Wired = ({
   AppState s,
@@ -120,7 +128,7 @@ void main() {
   group('送出申訴要上雲', () {
     test('申訴寫進雲端，案件 ID 帶著處罰的時戳', () {
       final a = _admin();
-      final issuedAt = DateTime(2026, 9, 20);
+      final issuedAt = _tenDaysAgo();
       a.s.punishment = Punishment(
         kind: PunishmentKind.communitySuspended,
         reason: '不實內容',
@@ -150,7 +158,7 @@ void main() {
         kind: PunishmentKind.warning,
         reason: '',
         evidence: '',
-        issuedAt: DateTime(2026, 9, 20),
+        issuedAt: _tenDaysAgo(),
         violationCount: 1,
         nextConsequence: '',
       );

@@ -31,6 +31,9 @@ class CloudAppeal {
   /// 從受處罰到提出申訴隔了幾天。管理端排序與判斷用。
   final int daysSinceIncident;
 
+  /// 被攔截的原文。只有內容攔截的申訴有；管理員要看得到攔下的是什麼。
+  final String? content;
+
   final CaseState state;
   final String? handlerName;
 
@@ -43,6 +46,7 @@ class CloudAppeal {
     required this.reason,
     required this.filedAt,
     required this.daysSinceIncident,
+    this.content,
     this.state = CaseState.pending,
     this.handlerName,
   });
@@ -58,4 +62,11 @@ abstract class AppealSource {
   /// 寫回裁決。[upheld] 為真＝申訴成立、處罰撤銷。
   Future<void> judge(String id,
       {required bool upheld, required String handlerName});
+
+  /// 我的內容攔截申訴中，**已成立**的那些原文。
+  ///
+  /// 申訴成立的後果是「該內容得以原文發布」—— 當事人的裝置要知道哪些
+  /// 原文已被管理員放行，下次送出才不會再被同一道過濾擋下。
+  /// 預設空清單：不接雲端的測試與示範走這條。
+  Future<List<String>> approvedBlockedTexts(String uid) async => const [];
 }

@@ -176,6 +176,11 @@ class AppealCase {
   final String reason;
   final DateTime filedAt;
   final int daysSinceIncident;
+
+  /// 當時被攔截的原文。**只有內容攔截的申訴有。**
+  /// 規格：「申訴時管理員須看得到當時攔截的是什麼」——
+  /// 攔截的內容沒有寫進任何 Aggregate，不帶在申訴上就沒有人看得到。
+  final String? content;
   CaseState state;
   String? handlerName;
   AppealCase({
@@ -187,6 +192,7 @@ class AppealCase {
     required this.reason,
     required this.filedAt,
     required this.daysSinceIncident,
+    this.content,
     this.state = CaseState.pending,
     this.handlerName,
   });

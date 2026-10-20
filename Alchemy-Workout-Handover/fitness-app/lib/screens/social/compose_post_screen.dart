@@ -6,6 +6,7 @@ import '../../domain/community.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
 import '../../widgets/image_picker_sheet.dart';
+import 'blocked_dialog.dart';
 
 /// 發文（〈發文與互動流程〉）
 ///
@@ -192,14 +193,8 @@ class _ComposePostScreenState extends State<ComposePostScreen> {
                           // 明顯違規：當場攔截，不寫入任何 Aggregate
                           setState(() => errorText =
                               '內容含有違規字詞，已被攔截。修改後可重新送出，次數不限。');
-                          await showAppDialog(
-                            context,
-                            title: '內容已攔截',
-                            message: '此內容判定為明顯違規，未發布，'
-                                '也不發放任何互動獎勵。你可以修改後重送，或提出申訴。',
-                            confirmLabel: '我知道了',
-                            cancelLabel: '申訴',
-                          );
+                          await showBlockedDialog(context, s,
+                              kind: BlockedKind.post);
                         case FilterVerdict.flagged:
                           // 疑似違規：照常發布並自動送審
                           setState(() => errorText = null);

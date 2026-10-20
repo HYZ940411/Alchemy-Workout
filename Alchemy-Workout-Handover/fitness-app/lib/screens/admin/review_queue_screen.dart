@@ -381,6 +381,8 @@ class _AppealTab extends StatelessWidget {
                   _Row(label: '距事發天數', value: '${c.daysSinceIncident} 天'),
                   if (c.handlerName != null)
                     _Row(label: '處理中的管理員', value: c.handlerName!),
+                  // 內容攔截的申訴：管理員要看得到當時被攔下的是什麼。
+                  if (c.content != null) _Row(label: '被攔截的原文', value: c.content!),
                   const SizedBox(height: S.sm),
                   Container(
                     width: double.infinity,

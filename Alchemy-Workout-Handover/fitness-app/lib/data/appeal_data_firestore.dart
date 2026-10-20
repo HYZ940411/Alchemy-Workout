@@ -27,6 +27,7 @@ class FirestoreAppeals implements AppealSource {
       'reason': a.reason,
       'filedAt': Timestamp.fromDate(a.filedAt),
       'daysSinceIncident': a.daysSinceIncident,
+      if (a.content != null) 'content': a.content,
       // 管理端掃「還沒處理的」用這個欄位。
       'state': CaseState.pending.name,
       'createdAt': FieldValue.serverTimestamp(),
@@ -60,6 +61,20 @@ class FirestoreAppeals implements AppealSource {
     });
   }
 
+  @override
+  Future<List<String>> approvedBlockedTexts(String uid) async {
+    // 只查申訴人一個條件，其餘在這裡濾：不新增複合查詢（不必宣告索引），
+    // 安全規則那一側看的是 `appellantUid == auth.uid`，查詢本身已限定、讀得動。
+    // 一個人的申訴不會多，濾掉的量可以忽略。
+    final snap = await _col.where('appellantUid', isEqualTo: uid).get();
+    return [
+      for (final d in snap.docs)
+        if (d.data()['target'] == AppealTarget.blockedContent.name &&
+            d.data()['state'] == CaseState.upheld.name)
+          if (d.data()['content'] case final String t when t.isNotEmpty) t,
+    ];
+  }
+
   CloudAppeal? _appealOf(String id, Map<String, dynamic> j) {
     final uid = j['appellantUid'];
     final filedAt = j['filedAt'];
@@ -79,6 +94,7 @@ class FirestoreAppeals implements AppealSource {
       reason: j['reason'] as String? ?? '',
       filedAt: filedAt.toDate(),
       daysSinceIncident: (j['daysSinceIncident'] as num?)?.toInt() ?? 0,
+      content: j['content'] as String?,
       state: CaseState.values.where((v) => v.name == j['state']).firstOrNull ??
           CaseState.pending,
       handlerName: j['handlerName'] as String?,
