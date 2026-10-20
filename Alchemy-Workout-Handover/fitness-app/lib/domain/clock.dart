@@ -33,3 +33,12 @@ DateTime businessDate(DateTime now) {
   final s = now.subtract(const Duration(hours: 4));
   return DateTime(s.year, s.month, s.day);
 }
+
+/// 這一刻所屬日曆週的起點（週一，日期不含時分）。週界是週一 04:00 ——
+/// 與週排行榜（`periodOf`）同一條，建立在 [businessDate] 之上。
+///
+/// 能力值的每週升格上限用它判斷「這一週」；以日期為鍵，同一週的任何時刻都算出同一個值。
+DateTime businessWeekStart(DateTime now) {
+  final d = businessDate(now);
+  return DateTime(d.year, d.month, d.day - (d.weekday - DateTime.monday));
+}

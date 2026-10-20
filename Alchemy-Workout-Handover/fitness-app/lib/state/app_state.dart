@@ -201,6 +201,10 @@ class AppState extends ChangeNotifier {
   final Map<Dim, int> pending = {for (final d in Dim.values) d: 0};
   final Set<Dim> trainedDims = {...Dim.values};
 
+  /// 每週升格上限的基準：各維「這一週是哪一週」與「這週開始時的點數」。
+  /// 沒有紀錄（舊存檔、新的一週）就以當前點數為基準。見 [applySessionGain]。
+  final Map<Dim, ({DateTime week, int base})> weekGain = {};
+
   /// 能力值日快照 —— **每日一筆，於日界保存當下六維值**。
   /// 它是能力值的關聯 Aggregate（一對多），不是欄位。
   ///
@@ -2051,13 +2055,18 @@ class AppState extends ChangeNotifier {
     }
 
     final gains = <Dim, int>{};
+    final weekStart = businessWeekStart(now);
     bestByDim.forEach((d, measured) {
+      final rec = weekGain[d];
+      final base = (rec != null && rec.week == weekStart) ? rec.base : points[d]!;
       final g = applySessionGain(
         current: points[d]!,
         measured: measured,
         pending: pending[d]!,
         isFirstSessionForDim: !trainedDims.contains(d),
+        weekBase: base,
       );
+      weekGain[d] = (week: weekStart, base: base);
       points[d] = g.newPoints;
       pending[d] = g.newPending;
       trainedDims.add(d);
@@ -12623,6 +12632,7 @@ class AppState extends ChangeNotifier {
     // —— 首場可直接跳到實測值（上限 450），非首場只能爬到下一個節點的上緣。
     // 實測 296 分的第一場，會因此只給到 69。
     trainedDims.clear();
+    weekGain.clear();
     for (final d in Dim.values) {
       points[d] = initialOf(d);
       pending[d] = 0;

@@ -192,11 +192,17 @@ class AbilityGain {
 /// 一、首次封頂：該維第一次訓練封頂於 450 點。
 /// 二、其後每場最多前進一個小節點，落點取「下一節點上緣」與「實測值」之較小者。
 /// 三、超額部分記入待兌現實測值；本場實測值達當前點數 80% 以上時自動補一格。
+/// 四、每週上限（2026-10-20）：[weekBase] 為本日曆週開始時該維的點數，
+///    本週點數最多升到「[weekBase] 所在節點的下一個節點上緣」。
+///    「每場一格」只限制每一場，不限制一天幾場；這條按時間限制。
+///    同一週內可以分幾場補到上限，不是第一次升格後就鎖住。首次訓練不受此限。
+///    為空代表沒有本週基準（舊存檔、或本週第一場），以當前點數為基準。
 AbilityGain applySessionGain({
   required int current,
   required int measured,
   required int pending,
   required bool isFirstSessionForDim,
+  int? weekBase,
 }) {
   if (isFirstSessionForDim) {
     final capped = math.min(measured, kFirstTimeCap);
@@ -214,10 +220,15 @@ AbilityGain applySessionGain({
   final catchUpEligible = measured >= (current * kCatchUpRatio);
   final target = math.max(measured, catchUpEligible ? pending : 0);
 
-  final idx = nodeIndexOf(current);
-  final nextUpper = idx >= kNodes.length - 1 ? kMaxPoints : kNodes[idx + 1].upper;
+  int nextUpperOf(int p) {
+    final i = nodeIndexOf(p);
+    return i >= kNodes.length - 1 ? kMaxPoints : kNodes[i + 1].upper;
+  }
 
-  var np = math.max(current, math.min(nextUpper, target));
+  // 每場一格與每週一格取較小者。
+  final ceiling = math.min(nextUpperOf(current), nextUpperOf(weekBase ?? current));
+
+  var np = math.max(current, math.min(ceiling, target));
   np = np.clamp(kInitialPoints, kMaxPoints);
 
   // 保留較高的實測水準作為下一場的追趕目標，追平後歸零。
