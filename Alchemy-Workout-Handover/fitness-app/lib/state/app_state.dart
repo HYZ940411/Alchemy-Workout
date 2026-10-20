@@ -86,6 +86,10 @@ class SettlementResult {
   /// 本次各維的**實測分數**。沒有提升時，唯一能回答「差多少」的就是它 ——
   /// 只說「未推進任何維度」，使用者看到的就是一個沒反應的畫面。
   final Map<Dim, int> measured;
+
+  /// 這場實測本來能升得更高、卻被每週上限擋住的維度（首次訓練不算）。
+  /// 結算畫面據此講「本週已升到上限」，而不是「點數只在超越紀錄時上升」。
+  final Set<Dim> weekCapped;
   final int doneSets;
   final int plannedSets;
   final Duration duration;
@@ -109,6 +113,7 @@ class SettlementResult {
     required this.gains,
     required this.pointsAfter,
     required this.measured,
+    this.weekCapped = const {},
     required this.doneSets,
     required this.plannedSets,
     required this.duration,
@@ -2056,6 +2061,7 @@ class AppState extends ChangeNotifier {
     }
 
     final gains = <Dim, int>{};
+    final weekCapped = <Dim>{};
     final weekStart = businessWeekStart(now);
     bestByDim.forEach((d, measured) {
       final rec = weekGain[d];
@@ -2072,6 +2078,7 @@ class AppState extends ChangeNotifier {
       pending[d] = g.newPending;
       trainedDims.add(d);
       if (g.delta > 0) gains[d] = g.delta;
+      if (g.cappedByWeek) weekCapped.add(d);
     });
 
     // --- 退步計時器：被訓練的維度重設計時，累積退步量歸零 ---
@@ -2209,6 +2216,7 @@ class AppState extends ChangeNotifier {
       gains: gains,
       pointsAfter: Map.of(points),
       measured: Map.of(bestByDim),
+      weekCapped: weekCapped,
       doneSets: s.doneSets,
       plannedSets: s.plannedSets,
       duration: duration,

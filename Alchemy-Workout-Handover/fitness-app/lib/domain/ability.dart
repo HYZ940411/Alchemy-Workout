@@ -178,25 +178,42 @@ class AbilityGain {
   final int newPending; // 待兌現實測值
   final bool cappedByFirstTime;
   final bool advancedByCatchUp;
+
+  /// 本場實測（含待兌現補格）本來可以升得更高，被每週上限擋住了。首次訓練不算。
+  final bool cappedByWeek;
   const AbilityGain({
     required this.newPoints,
     required this.delta,
     required this.newPending,
     this.cappedByFirstTime = false,
     this.advancedByCatchUp = false,
+    this.cappedByWeek = false,
   });
+}
+
+/// 每週能補多少：離滿分（[kMaxPoints]）還剩多少的 30%。
+/// 分數越高離滿分越近，每週能補的越少 —— 曲線形，沒有等級邊界的斷層。
+/// 使用者 2026-10-20 裁決（30%／40%／50% 三選一，選 30%）；寫死，不做平台參數。
+const double kWeeklyGainRatio = 0.30;
+
+/// 每週至少補這麼多分，否則接近滿分時永遠差一點點升不上去。
+const int kWeeklyGainFloor = 10;
+
+/// 本週開始時是 [base] 分，這週最多能升到幾分。
+int weeklyCeilingOf(int base) {
+  final room = math.max(kWeeklyGainFloor, ((kMaxPoints - base) * kWeeklyGainRatio).round());
+  return math.min(kMaxPoints, base + room);
 }
 
 /// 一場訓練對單一維度的提升。
 ///
 /// 一、首次封頂：該維第一次訓練封頂於 450 點。
-/// 二、其後每場最多前進一個小節點，落點取「下一節點上緣」與「實測值」之較小者。
-/// 三、超額部分記入待兌現實測值；本場實測值達當前點數 80% 以上時自動補一格。
-/// 四、每週上限（2026-10-20）：[weekBase] 為本日曆週開始時該維的點數，
-///    本週點數最多升到「[weekBase] 所在節點的下一個節點上緣」。
-///    「每場一格」只限制每一場，不限制一天幾場；這條按時間限制。
+/// 二、〔2026-10-20 取代原「每場最多前進一個小節點」〕每週上限：[weekBase] 為本日曆週開始時
+///    該維的點數，本週點數最多升到 [weeklyCeilingOf]。每場不再另設上限 ——
+///    原本的每場上限不限制一天幾場，擋不住連開刷分，改由時間單獨承擔。
 ///    同一週內可以分幾場補到上限，不是第一次升格後就鎖住。首次訓練不受此限。
 ///    為空代表沒有本週基準（舊存檔、或本週第一場），以當前點數為基準。
+/// 三、超額部分記入待兌現實測值；本場實測值達當前點數 80% 以上時，待兌現的也一併計入。
 AbilityGain applySessionGain({
   required int current,
   required int measured,
@@ -220,16 +237,11 @@ AbilityGain applySessionGain({
   final catchUpEligible = measured >= (current * kCatchUpRatio);
   final target = math.max(measured, catchUpEligible ? pending : 0);
 
-  int nextUpperOf(int p) {
-    final i = nodeIndexOf(p);
-    return i >= kNodes.length - 1 ? kMaxPoints : kNodes[i + 1].upper;
-  }
+  final ceiling = weeklyCeilingOf(weekBase ?? current);
 
-  // 每場一格與每週一格取較小者。
-  final ceiling = math.min(nextUpperOf(current), nextUpperOf(weekBase ?? current));
-
-  var np = math.max(current, math.min(ceiling, target));
-  np = np.clamp(kInitialPoints, kMaxPoints);
+  // 沒有每週上限時本來能升到哪裡 —— 用來判斷「是不是被每週上限擋住」。
+  final uncapped = math.max(current, math.min(kMaxPoints, target)).clamp(kInitialPoints, kMaxPoints);
+  final np = math.max(current, math.min(ceiling, target)).clamp(kInitialPoints, kMaxPoints);
 
   // 保留較高的實測水準作為下一場的追趕目標，追平後歸零。
   final carried = math.max(pending, measured);
@@ -238,5 +250,6 @@ AbilityGain applySessionGain({
     delta: np - current,
     newPending: carried > np ? carried : 0,
     advancedByCatchUp: catchUpEligible && pending > current && measured <= current,
+    cappedByWeek: np < uncapped,
   );
 }

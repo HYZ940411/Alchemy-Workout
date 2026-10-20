@@ -43,17 +43,19 @@ void main() {
           reason: '首場直接對齊實測值；走成非首場只會給到 69');
     });
 
-    test('第二場之後才受節點上緣限制', () {
+    test('第二場之後才受每週上限限制', () {
+      // 〔2026-10-20：原「受節點上緣限制」改為每週上限；實測改 999，296 在上限 307 之內不會被擋。〕
       final s = AppState()..resetToNewAccount();
       s.trainedDims.add(Dim.chest);
       final g = applySessionGain(
         current: s.points[Dim.chest]!,
-        measured: 296,
+        measured: 999,
         pending: 0,
         isFirstSessionForDim: false,
       );
-      expect(g.newPoints, lessThan(296),
-          reason: '非首場一次只跨一個節點 —— 這條規則本身是對的');
+      expect(g.newPoints, weeklyCeilingOf(s.points[Dim.chest]!),
+          reason: '非首場受每週上限 —— 首場才直接對齊實測值');
+      expect(g.newPoints, lessThan(999));
     });
   });
 
