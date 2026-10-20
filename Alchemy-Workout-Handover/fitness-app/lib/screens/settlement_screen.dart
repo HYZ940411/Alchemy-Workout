@@ -319,6 +319,8 @@ class _AbilityGains extends StatelessWidget {
   Widget build(BuildContext context) {
     final gained = Dim.values.where((d) => (result.gains[d] ?? 0) > 0).toList();
     final rest = Dim.values.where((d) => (result.gains[d] ?? 0) == 0).toList();
+    final capped = Dim.values.where(result.weekCapped.contains).toList();
+    final cappedNames = capped.map((d) => dimNames[d]!).join('、');
 
     return Panel(
       padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
@@ -327,7 +329,10 @@ class _AbilityGains extends StatelessWidget {
         children: [
           if (gained.isEmpty) ...[
             Text(
-              '本次訓練未推進任何維度 —— 點數只在超越自身紀錄時上升。',
+              capped.isEmpty
+                  ? '本次訓練未推進任何維度 —— 點數只在超越自身紀錄時上升。'
+                  // 實測明明比點數高卻沒升：原句會自相矛盾，講真正的原因。
+                  : '$cappedNames本週已升到上限，這次的表現已記下。下週再練$cappedNames，就能繼續往上。',
               style: T.body(color: C.textSecondary),
             ),
             // **講出差多少**。只說「未推進」，畫面看起來就是沒反應，

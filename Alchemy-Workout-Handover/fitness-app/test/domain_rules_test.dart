@@ -91,22 +91,25 @@ void main() {
       expect(g.cappedByFirstTime, isTrue);
     });
 
-    test('二、其後每場最多前進一個節點，落點取下一節點上緣與實測值之較小者', () {
-      // 450 (B) 的下一節點為 B+，上緣 584；實測 750 → 取 584
+    test('二、其後受每週上限：本週開始點數 ＋ 30% ×（999 − 該點數），落點取上限與實測值之較小者', () {
+      // 〔2026-10-20 取代原「每場最多前進一個節點」，見 03_能力值.md〈每週升格上限〉〕
+      // 450 的本週上限 ＝ 450 ＋ round(0.3 × 549) ＝ 615；實測 750 → 取 615
       final g = applySessionGain(
           current: 450, measured: 750, pending: 750, isFirstSessionForDim: false);
-      expect(g.newPoints, 584);
+      expect(g.newPoints, 615);
 
-      // 實測值低於上緣時取實測值
+      // 實測值低於上限時取實測值
       final g2 = applySessionGain(
           current: 450, measured: 500, pending: 0, isFirstSessionForDim: false);
       expect(g2.newPoints, 500);
     });
 
-    test('模型舉例：實測 A+ 750 者自 450 起 5 次歸位', () {
+    test('實測 750 者自 450 起，每週一次、4 次歸位', () {
+      // 每次呼叫代表新的一週（沒有本週基準，以當前點數為基準）。
+      // 〔原「每場一個節點」是 5 次：450 → 584 → 649 → 714 → 750；改每週曲線後是 4 次。〕
       var cur = 10, pending = 0;
       final path = <int>[];
-      for (var i = 0; i < 5; i++) {
+      for (var i = 0; i < 4; i++) {
         final g = applySessionGain(
           current: cur,
           measured: 750,
@@ -117,7 +120,7 @@ void main() {
         pending = g.newPending;
         path.add(cur);
       }
-      expect(path, [450, 584, 649, 714, 750]);
+      expect(path, [450, 615, 730, 750]);
     });
 
     test('三、實測值未達當前點數 80% 者本場不補格', () {
@@ -128,10 +131,11 @@ void main() {
       expect(g.newPending, 750); // 待兌現保留
     });
 
-    test('三、實測值達 80% 以上者自動補一格', () {
+    test('三、實測值達 80% 以上者自動補到本週上限', () {
+      // 584 的本週上限 ＝ 584 ＋ round(0.3 × 415 ＝ 124.5 → 125) ＝ 709；待兌現 750 超過上限 → 補到 709
       final g = applySessionGain(
           current: 584, measured: 500, pending: 750, isFirstSessionForDim: false);
-      expect(g.newPoints, 649); // 前進一個節點 B++
+      expect(g.newPoints, 709);
     });
   });
 
