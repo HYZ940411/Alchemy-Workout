@@ -191,6 +191,7 @@ class FirestoreStore implements Store {
         'points',
         'pending',
         'trainedDims',
+        'weekGain',
         'snapshots',
         'decayTimers',
       ]),

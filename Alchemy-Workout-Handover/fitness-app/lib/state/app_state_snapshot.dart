@@ -332,6 +332,10 @@ extension AppStateSnapshot on AppState {
         'points': {for (final e in points.entries) e.key.name: e.value},
         'pending': {for (final e in pending.entries) e.key.name: e.value},
         'trainedDims': [for (final d in trainedDims) d.name],
+        'weekGain': {
+          for (final e in weekGain.entries)
+            e.key.name: {'week': _iso(e.value.week), 'base': e.value.base},
+        },
         'snapshots': {
           for (final e in snapshots.entries)
             '${e.key}': {for (final p in e.value.entries) p.key.name: p.value},
@@ -719,6 +723,20 @@ extension AppStateSnapshot on AppState {
       trainedDims
         ..clear()
         ..addAll(Dim.values.where((d) => dims.contains(d.name)));
+    }
+
+    // 每週升格上限的基準。舊存檔沒有這個欄位 —— 讀不到就當作本週還沒開始。
+    final wg = pick<Map>('weekGain');
+    if (wg != null) {
+      weekGain.clear();
+      for (final d in Dim.values) {
+        final m = wg[d.name];
+        if (m is! Map) continue;
+        final week = _date(m['week']);
+        final base = m['base'];
+        if (week == null || base is! num) continue;
+        weekGain[d] = (week: week, base: base.round());
+      }
     }
 
     final snaps = pick<Map>('snapshots');
