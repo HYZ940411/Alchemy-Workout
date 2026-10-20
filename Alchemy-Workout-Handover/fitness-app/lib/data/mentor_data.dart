@@ -87,6 +87,9 @@ class CloudMentorTask {
   final DateTime? assignedAt;
   final DateTime? doneAt;
 
+  /// 學徒領取時真的入帳（沒被每週上限擋掉）。教官獎勵看這個。
+  final bool rewarded;
+
   const CloudMentorTask({
     required this.id,
     required this.title,
@@ -96,6 +99,7 @@ class CloudMentorTask {
     this.rating,
     this.assignedAt,
     this.doneAt,
+    this.rewarded = false,
   });
 }
 

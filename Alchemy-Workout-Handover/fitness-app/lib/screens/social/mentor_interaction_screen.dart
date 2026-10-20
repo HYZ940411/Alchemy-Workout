@@ -383,8 +383,26 @@ class _Tasks extends StatelessWidget {
             t.state != MentorTaskState.voided &&
             t.apprenticeUid == apprenticeUid)
         .toList();
+    final got = state.instructorRewardUnseen;
     return Column(
       children: [
+        if (got.exp > 0 || got.coins > 0) ...[
+          AppCard(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('學徒已領取，你獲得 經驗值 ${got.exp}、金幣 ${got.coins}',
+                      style: T.body()),
+                ),
+                TextButton(
+                  onPressed: state.acknowledgeInstructorReward,
+                  child: const Text('知道了'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: S.md),
+        ],
         if (ongoing.isEmpty)
           AppCard(child: Text('沒有進行中的任務。', style: T.body()))
         else
@@ -428,7 +446,9 @@ class _Tasks extends StatelessWidget {
                                   showToast(
                                       context,
                                       ok
-                                          ? '已發放，學徒現在可以領取了'
+                                          ? '已發放，學徒領取後你會獲得 '
+                                              '經驗值 $kMentorInstructorExp、'
+                                              '金幣 $kMentorInstructorCoin'
                                           : state.taskReviewBlockedReason(
                                                   ongoing[i]) ??
                                               '現在發放不了。');

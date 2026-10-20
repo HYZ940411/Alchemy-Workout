@@ -5639,6 +5639,7 @@ class AppState extends ChangeNotifier {
         rating: t.rating,
         assignedAt: t.assignedAt,
         doneAt: t.doneAt,
+        rewarded: t.rewarded,
       );
 
   /// 學徒這一側動了任務（完成、領獎、評分）—— 掛在我與教官那段關係下。
@@ -5760,6 +5761,7 @@ class AppState extends ChangeNotifier {
           rating: t.rating,
           assignedAt: t.assignedAt,
           doneAt: t.doneAt,
+          rewarded: t.rewarded,
         );
         if (at >= 0) {
           mentorTasks[at] = m;
@@ -5767,6 +5769,7 @@ class AppState extends ChangeNotifier {
           mentorTasks.add(m);
         }
         _creditTaskRating(m, apprenticeUid);
+        _creditInstructorReward(m, apprenticeUid);
       }
     } catch (e) {
       // 讀不到就維持現狀 —— 一次網路失敗不該把畫面上的任務清空。
@@ -5888,6 +5891,7 @@ class AppState extends ChangeNotifier {
           rating: t.rating,
           assignedAt: t.assignedAt,
           doneAt: t.doneAt,
+          rewarded: t.rewarded,
         );
         if (at >= 0) {
           mentorTasks[at] = m;
@@ -6551,8 +6555,10 @@ class AppState extends ChangeNotifier {
   ({int exp, int coins})? claimMentorTask(MentorTask t) {
     if (t.state != MentorTaskState.done) return null;
     t.state = MentorTaskState.claimed;
+    // 教官的獎勵看這個旗標，所以要在推上雲端**之前**定下來：被週上限擋掉的不標。
+    t.rewarded = !mentorRewardCapReached;
     _pushTask(t);
-    if (mentorRewardCapReached) {
+    if (!t.rewarded) {
       notifyListeners();
       return (exp: 0, coins: 0);
     }
@@ -6581,10 +6587,41 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// 教官端：學徒領取成功的任務，教官也得到經驗值與金幣（[kMentorInstructorExp]、
+  /// [kMentorInstructorCoin]）。學徒那次被週上限擋掉（[MentorTask.rewarded] 為否）就不發。
+  ///
+  /// 學徒的領取發生在學徒的裝置上，教官要等讀回雲端才看得到，所以在這裡入帳；
+  /// 以「關係／任務」記帳，重讀、重開 App 都不會重複發（同 [creditedTaskRatings]）。
+  void _creditInstructorReward(MentorTask t, String apprenticeUid) {
+    if (t.state != MentorTaskState.claimed || !t.rewarded) return;
+    final key = '${mentorBondIdFor(apprenticeUid)}/${t.id}';
+    if (!creditedInstructorRewards.add(key)) return;
+    totalExp += kMentorInstructorExp;
+    coins += kMentorInstructorCoin;
+    instructorRewardUnseen = (
+      exp: instructorRewardUnseen.exp + kMentorInstructorExp,
+      coins: instructorRewardUnseen.coins + kMentorInstructorCoin,
+    );
+    _syncAchievements();
+  }
+
+  /// 已經發過教官獎勵的任務（鍵為 `關係 id/任務 id`）。進存檔 ——
+  /// 記的是「這筆帳算過了」，不然重開 App 會再發一次。
+  final Set<String> creditedInstructorRewards = {};
+
+  /// 已入帳、教官還沒按「知道了」的教官獎勵，給師徒互動頁顯示「你獲得…」。
+  ({int exp, int coins}) instructorRewardUnseen = (exp: 0, coins: 0);
+
+  void acknowledgeInstructorReward() {
+    instructorRewardUnseen = (exp: 0, coins: 0);
+    notifyListeners();
+  }
+
   /// 教官發放獎勵 —— 學徒標記完成的任務，要教官確認之後才可領取。
   ///
-  /// 這只是「放行」：經驗與金幣仍由學徒按「領取獎勵」時入帳（獎勵記在學徒自己的
-  /// 資料裡，教官這一端寫不進去），每週最多領 3 次的上限照舊。
+  /// 這只是「放行」：學徒的經驗與金幣仍由學徒按「領取獎勵」時入帳（獎勵記在學徒自己的
+  /// 資料裡，教官這一端寫不進去），每週最多領 3 次的上限照舊。教官自己的獎勵要等學徒
+  /// 領取成功才發，見 [_creditInstructorReward]。
   ///
   /// **只有教官能做，而且只能放行自己學徒的任務** —— `apprenticeUid == null` 的是
   /// 指派給我自己的（我是學徒那一側），不能自己放行自己。

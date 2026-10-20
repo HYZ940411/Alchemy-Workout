@@ -258,6 +258,7 @@ class FirestoreMentor implements MentorSource {
       if (t.rating != null) 'rating': t.rating,
       if (t.assignedAt != null) 'assignedAt': Timestamp.fromDate(t.assignedAt!),
       if (t.doneAt != null) 'doneAt': Timestamp.fromDate(t.doneAt!),
+      if (t.rewarded) 'rewarded': true,
     });
     await _touchBond(bondId);
   }
@@ -433,6 +434,7 @@ class FirestoreMentor implements MentorSource {
           ? (j['assignedAt'] as Timestamp).toDate()
           : null,
       doneAt: j['doneAt'] is Timestamp ? (j['doneAt'] as Timestamp).toDate() : null,
+      rewarded: j['rewarded'] == true,
     );
   }
 
