@@ -18,13 +18,15 @@ import 'package:fitness_app/domain/commerce.dart';
 import 'package:fitness_app/domain/clock.dart';
 import 'package:fitness_app/domain/community.dart';
 import 'package:fitness_app/domain/rewards.dart';
+import 'package:fitness_app/domain/social.dart';
 import 'package:fitness_app/screens/social/blocked_dialog.dart';
 import 'package:fitness_app/state/app_state.dart';
 
 class _Appeals implements AppealSource {
   final List<CloudAppeal> filed = [];
   final List<(String, bool)> verdicts = [];
-  List<String> approved = [];
+  List<ApprovedBlock> approved = [];
+  int approvedReads = 0;
 
   @override
   Future<void> file(CloudAppeal a) async => filed.add(a);
@@ -37,7 +39,10 @@ class _Appeals implements AppealSource {
     required String handlerName,
   }) async => verdicts.add((id, upheld));
   @override
-  Future<List<String>> approvedBlockedTexts(String uid) async => approved;
+  Future<List<ApprovedBlock>> approvedBlockedTexts(String uid) async {
+    approvedReads++;
+    return approved;
+  }
 }
 
 class _Punishments implements PunishmentSource {
@@ -361,7 +366,8 @@ void main() {
 
     test('申訴人在別的裝置：登入時把已放行的原文讀回來', () async {
       final s = _user();
-      final src = _Appeals()..approved = ['不要用類固醇，加賴問我'];
+      final src = _Appeals()
+        ..approved = [const ApprovedBlock('a1', '不要用類固醇，加賴問我')];
       s.appealSource = src;
       expect(s.screenContent('不要用類固醇，加賴問我'), FilterVerdict.blocked);
 
@@ -375,9 +381,71 @@ void main() {
       expect(s.posts.first.text, '不要用類固醇，加賴問我');
     });
 
+    test('申訴成立 → 申訴人收到一則 App 內通知', () async {
+      final s = _user();
+      s.appealSource = _Appeals()
+        ..approved = [const ApprovedBlock('u-me__blocked__1', '不要用類固醇，加賴問我')];
+      final before = s.notifications.length;
+
+      await s.loadMyApprovedTexts();
+
+      expect(s.notifications.length, before + 1);
+      final n = s.notifications.first;
+      expect(n.kind, NotifyKind.inApp);
+      expect(n.title, '你的申訴成立了');
+      expect(n.body, contains('不要用類固醇，加賴問我'));
+      expect(n.read, isFalse, reason: '要有紅點，使用者才注意得到');
+    });
+
+    test('同一筆成立只通知一次，重新讀取、重新登入都不再發', () async {
+      final s = _user();
+      s.appealSource = _Appeals()
+        ..approved = [const ApprovedBlock('u-me__blocked__1', '不要用類固醇，加賴問我')];
+      await s.loadMyApprovedTexts();
+      await s.loadMyApprovedTexts();
+      expect(
+        s.notifications.where((n) => n.id == 'n-appeal-u-me__blocked__1'),
+        hasLength(1),
+      );
+
+      // 通知會進存檔：換一個新的 AppState 讀回存檔，仍不再發。
+      final reloaded = _user()..appealSource = s.appealSource;
+      expect(reloaded.applySnapshot(s.toSnapshot()), isTrue);
+      await reloaded.loadMyApprovedTexts();
+      expect(
+        reloaded.notifications.where(
+          (n) => n.id == 'n-appeal-u-me__blocked__1',
+        ),
+        hasLength(1),
+      );
+    });
+
+    test('沒有成立的申訴就沒有通知', () async {
+      final s = _user();
+      s.appealSource = _Appeals();
+      final before = s.notifications.length;
+      await s.loadMyApprovedTexts();
+      expect(s.notifications.length, before);
+    });
+
+    test('順帶重讀最多每 5 分鐘一次，不然每個即時訊號都多一筆查詢', () async {
+      addTearDown(resetAppClock);
+      final s = _user();
+      final src = _Appeals();
+      s.appealSource = src;
+
+      await s.refreshInbound();
+      await s.refreshInbound();
+      expect(src.approvedReads, 1);
+
+      appClockOffset = const Duration(minutes: 6);
+      await s.refreshInbound();
+      expect(src.approvedReads, 2);
+    });
+
     test('登出（endSession）後放行清單與最近攔截一併清掉', () async {
       final s = _user();
-      final src = _Appeals()..approved = ['某段原文詐騙'];
+      final src = _Appeals()..approved = [const ApprovedBlock('a2', '某段原文詐騙')];
       s.appealSource = src;
       await s.loadMyApprovedTexts();
       s.publishPost('賣藥', PostVisibility.public);

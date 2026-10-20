@@ -48,7 +48,8 @@ class _FakeAppeals implements AppealSource {
       verdicts.add((id, upheld, handlerName));
 
   @override
-  Future<List<String>> approvedBlockedTexts(String uid) async => const [];
+  Future<List<ApprovedBlock>> approvedBlockedTexts(String uid) async =>
+      const [];
 }
 
 class _FakePunishments implements PunishmentSource {

@@ -62,7 +62,7 @@ class FirestoreAppeals implements AppealSource {
   }
 
   @override
-  Future<List<String>> approvedBlockedTexts(String uid) async {
+  Future<List<ApprovedBlock>> approvedBlockedTexts(String uid) async {
     // 只查申訴人一個條件，其餘在這裡濾：不新增複合查詢（不必宣告索引），
     // 安全規則那一側看的是 `appellantUid == auth.uid`，查詢本身已限定、讀得動。
     // 一個人的申訴不會多，濾掉的量可以忽略。
@@ -71,7 +71,8 @@ class FirestoreAppeals implements AppealSource {
       for (final d in snap.docs)
         if (d.data()['target'] == AppealTarget.blockedContent.name &&
             d.data()['state'] == CaseState.upheld.name)
-          if (d.data()['content'] case final String t when t.isNotEmpty) t,
+          if (d.data()['content'] case final String t when t.isNotEmpty)
+            ApprovedBlock(d.id, t),
     ];
   }
 
