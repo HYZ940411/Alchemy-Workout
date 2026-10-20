@@ -52,6 +52,17 @@ class CloudAppeal {
   });
 }
 
+/// 一筆「申訴成立、已放行」的內容攔截申訴。
+class ApprovedBlock {
+  /// 申訴案件的 ID。通知靠它去重 —— 同一筆成立只通知一次。
+  final String appealId;
+
+  /// 被放行的原文。
+  final String text;
+
+  const ApprovedBlock(this.appealId, this.text);
+}
+
 abstract class AppealSource {
   /// 送出一筆申訴。**同一筆處罰只有一筆** —— 由文件 ID 保證。
   Future<void> file(CloudAppeal a);
@@ -68,5 +79,6 @@ abstract class AppealSource {
   /// 申訴成立的後果是「該內容得以原文發布」—— 當事人的裝置要知道哪些
   /// 原文已被管理員放行，下次送出才不會再被同一道過濾擋下。
   /// 預設空清單：不接雲端的測試與示範走這條。
-  Future<List<String>> approvedBlockedTexts(String uid) async => const [];
+  Future<List<ApprovedBlock>> approvedBlockedTexts(String uid) async =>
+      const [];
 }

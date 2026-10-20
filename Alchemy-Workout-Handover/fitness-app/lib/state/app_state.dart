@@ -3400,6 +3400,15 @@ class AppState extends ChangeNotifier {
     final uid = myUid;
     if (uid == null) return;
 
+    // 內容攔截的申訴若已成立，申訴人要收到通知。最多每 5 分鐘問一次 ——
+    // 這支會被每一次即時訊號觸發，不節流的話每次都多一筆查詢。
+    final checked = _approvedCheckedAt;
+    if (appealSource != null &&
+        (checked == null ||
+            now.difference(checked) >= const Duration(minutes: 5))) {
+      await loadMyApprovedTexts();
+    }
+
     final chats = chatSource;
     if (chats != null) {
       try {
@@ -3810,6 +3819,9 @@ class AppState extends ChangeNotifier {
     return FilterVerdict.pass;
   }
 
+  /// 上一次向雲端問「有沒有新放行的原文」的時間。節流用，見 [refreshInbound]。
+  DateTime? _approvedCheckedAt;
+
   /// 申訴成立、已被放行的原文。**不進存檔**（存檔是本人寫得動的，
   /// 放進去等於自己能放行自己）—— 登入時向雲端問，見 [loadMyApprovedTexts]。
   final Set<String> _approvedTexts = {};
@@ -3877,15 +3889,37 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  /// 把「申訴成立、已放行」的原文讀回來。登入時呼叫一次。
+  /// 把「申訴成立、已放行」的原文讀回來。登入時呼叫，之後每隔一陣子順帶再讀。
+  ///
+  /// 新成立的申訴發一則 App 內通知 —— 申訴人不知道管理員已經判了，
+  /// 就不知道可以重發。通知 ID 帶著申訴案件 ID，**同一筆只通知一次**
+  /// （通知會進存檔，重新登入不會再發）。
   Future<void> loadMyApprovedTexts() async {
     final src = appealSource;
     final uid = myUid;
     if (src == null || uid == null) return;
     try {
+      final found = await src.approvedBlockedTexts(uid);
+      _approvedCheckedAt = now;
       _approvedTexts
         ..clear()
-        ..addAll(await src.approvedBlockedTexts(uid));
+        ..addAll(found.map((a) => a.text.trim()));
+      for (final a in found) {
+        final id = 'n-appeal-${a.appealId}';
+        if (notifications.any((n) => n.id == id)) continue;
+        final shown = a.text.length > 20 ? '${a.text.substring(0, 20)}…' : a.text;
+        notifications.insert(
+          0,
+          AppNotification(
+            id: id,
+            sourceEvent: '內容攔截申訴已成立',
+            title: '你的申訴成立了',
+            body: '「$shown」已經放行，可以重新發布這段原文。',
+            at: now,
+            kind: NotifyKind.inApp,
+          ),
+        );
+      }
       notifyListeners();
     } catch (_) {
       // 讀不到就維持現狀 —— 往「照常過濾」的方向錯，不會放行任何東西。
@@ -12762,6 +12796,7 @@ class AppState extends ChangeNotifier {
     blockedUntil = null;
     lastBlocked = null;
     _approvedTexts.clear();
+    _approvedCheckedAt = null;
 
     // 商店與帳務。
     orders = [];
