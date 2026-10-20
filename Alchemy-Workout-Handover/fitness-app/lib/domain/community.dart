@@ -29,6 +29,30 @@ const postVisibilityNames = <PostVisibility, String>{
 /// 發布前的內容過濾判定（App Store 1.2 要求）—— 三值。
 enum FilterVerdict { pass, blocked, flagged }
 
+enum BlockedKind { post, comment, message }
+
+const blockedKindNames = <BlockedKind, String>{
+  BlockedKind.post: '貼文',
+  BlockedKind.comment: '留言',
+  BlockedKind.message: '私訊',
+};
+
+/// 最近一次被攔截的內容（Event「內容已攔截」）。
+///
+/// 被攔下的內容不寫入任何 Aggregate，但申訴時管理員要看得到當時攔的是什麼，
+/// 所以裝置上留這一筆，申訴時才帶得出原文。只留最近一次 ——
+/// 「不服」是剛被擋下的當下才會有的事，重送新內容就換成新的一筆。
+class BlockedAttempt {
+  final BlockedKind kind;
+  final String text;
+  final DateTime at;
+
+  /// 這一次攔截已經申訴過了。同一次攔截限申訴一次。
+  bool appealed = false;
+
+  BlockedAttempt(this.kind, this.text, this.at);
+}
+
 
 class Comment {
   /// 留言的識別碼。管理員下架違規留言時以此定位 ——

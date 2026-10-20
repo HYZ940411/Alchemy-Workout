@@ -6,6 +6,7 @@ import '../../design/tokens.dart';
 import '../../domain/community.dart';
 import '../../state/app_state.dart';
 import '../../widgets/common.dart';
+import 'blocked_dialog.dart';
 import 'post_menu.dart';
 import '../me/profile_screen.dart';
 import 'social_lock.dart';
@@ -260,7 +261,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 const SizedBox(width: S.md),
                 _Send(
                   enabled: ctrl.text.trim().isNotEmpty,
-                  onTap: () {
+                  onTap: () async {
                     // 停權中的社群互動要說得出理由 —— 靜靜地什麼都不發生，
                     // 使用者只會以為 App 壞了。
                     final blocked = s.communityBlockedReason;
@@ -270,7 +271,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     }
                     // 留言同樣先過自動過濾 —— 明顯違規當場攔截。
                     if (s.screenContent(ctrl.text) == FilterVerdict.blocked) {
-                      showToast(context, '留言含明顯違規內容，已攔截');
+                      s.noteBlocked(BlockedKind.comment, ctrl.text);
+                      await showBlockedDialog(context, s,
+                          kind: BlockedKind.comment);
                       return;
                     }
                     if (socialLocked(context, '留言')) return;
@@ -311,8 +314,13 @@ Future<void> _commentMenu(
             title: '編輯留言',
             onTap: () async {
               Navigator.of(sheetContext).pop();
-              await editTextDialog(context, '編輯留言', c.text,
-                  (v) => s.editComment(c, v));
+              await editTextDialog(context, '編輯留言', c.text, (v) {
+                if (s.screenContent(v) == FilterVerdict.blocked) {
+                  showToast(context, '留言含明顯違規內容，無法儲存');
+                  return false;
+                }
+                return s.editComment(c, v);
+              });
             },
           ),
           ListRow(

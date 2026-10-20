@@ -5,6 +5,7 @@ import '../../domain/admin.dart';
 import '../../design/skeleton.dart';
 import '../../state/app_state.dart';
 import '../../widgets/load_boundary.dart';
+import 'blocked_dialog.dart';
 import 'find_people_screen.dart';
 import 'report_sheet.dart';
 import '../../theme.dart';
@@ -411,7 +412,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     // 被攔截時**不清空輸入框** —— 訊息沒送出去，
                     // 把使用者剛打的字清掉等於連內容都拿不回來。
                     if (v == FilterVerdict.blocked) {
-                      showToast(context, '這則訊息含明顯違規內容，未送出。');
+                      showBlockedDialog(context, s, kind: BlockedKind.message);
                       return;
                     }
                     // 送上雲是即發即忘的，失敗會晚一點才回來 ——

@@ -540,6 +540,15 @@ class _AuthGateState extends State<AuthGate> {
       });
     }
 
+    // 內容攔截的申訴若已成立，那段原文管理員已放行 —— 要讀回來，
+    // 下次送出才不會被同一道過濾再擋一次。
+    if (widget.state.appealSource != null) {
+      await step('已放行的原文', () async {
+        await widget.state.loadMyApprovedTexts();
+        return '完成';
+      });
+    }
+
     // 我自己那一筆教官申請的裁決。**每個人都要跑，不只管理員。**
     //
     // `instructorStage` 不進存檔，而裁決只寫在雲端那份文件上 ——

@@ -3792,11 +3792,95 @@ class AppState extends ChangeNotifier {
   /// 發布前的內容過濾（App Store 1.2）——判定三值。
   /// Demo：以關鍵字模擬，實際由系統的自動過濾執行。
   FilterVerdict screenContent(String text) {
+    // 申訴成立的原文：管理員已放行，過濾不再攔它（「得以原文發布」）。
+    if (_approvedTexts.contains(text.trim())) return FilterVerdict.pass;
     const blocked = ['詐騙', '賣藥', '加賴'];
     const flagged = ['類固醇', '禁藥'];
     if (blocked.any(text.contains)) return FilterVerdict.blocked;
     if (flagged.any(text.contains)) return FilterVerdict.flagged;
     return FilterVerdict.pass;
+  }
+
+  /// 申訴成立、已被放行的原文。**不進存檔**（存檔是本人寫得動的，
+  /// 放進去等於自己能放行自己）—— 登入時向雲端問，見 [loadMyApprovedTexts]。
+  final Set<String> _approvedTexts = {};
+
+  /// 最近一次被攔截的內容。畫面上的「申訴」按鈕靠它帶出原文。
+  BlockedAttempt? lastBlocked;
+
+  /// 記下一次內容攔截（Event「內容已攔截」）。
+  ///
+  /// 社群功能停權造成的拒絕不算 —— 那不是內容的問題，申訴也沒有意義，
+  /// 該走的是對處罰的申訴。
+  void noteBlocked(BlockedKind kind, String text) {
+    lastBlocked = BlockedAttempt(kind, text.trim(), now);
+  }
+
+  /// 使用者不服攔截而申訴。回傳 true 表示已送出。
+  ///
+  /// 比照處罰的申訴：同一次攔截限申訴一次、期限 30 天（自攔截起算）。
+  /// 申訴成立的後果是「該內容得以原文發布」，不撤銷任何處罰、不動違規次數
+  /// （攔截本來就沒有施加處罰）。
+  bool fileBlockedAppeal(String reason) {
+    final b = lastBlocked;
+    if (b == null || b.appealed) return false;
+    final at = now;
+    final days = at.difference(b.at).inDays;
+    if (days >= 30) return false;
+    b.appealed = true;
+
+    // 案件 ID 帶著攔截的時戳 —— 同一次攔截只有一筆，靠主鍵保證，
+    // 與處罰的申訴同一個手法。
+    final uid = myUid;
+    final id = uid == null
+        ? newId('AP-')
+        : '${uid}__blocked__${b.at.millisecondsSinceEpoch}';
+    final subject = '${blockedKindNames[b.kind]!}遭自動攔截';
+    appeals.add(AppealCase(
+      id: id,
+      appellant: displayName,
+      appellantUid: uid,
+      target: AppealTarget.blockedContent,
+      subject: subject,
+      reason: reason,
+      filedAt: at,
+      daysSinceIncident: days,
+      content: b.text,
+    ));
+    if (appealSource case final src?) {
+      if (uid != null) {
+        src
+            .file(CloudAppeal(
+              id: id,
+              appellantUid: uid,
+              appellantName: displayName,
+              target: AppealTarget.blockedContent,
+              subject: subject,
+              reason: reason,
+              filedAt: at,
+              daysSinceIncident: days,
+              content: b.text,
+            ))
+            .catchError((Object e) => reportSync('申訴', '送不出去：$e'));
+      }
+    }
+    notifyListeners();
+    return true;
+  }
+
+  /// 把「申訴成立、已放行」的原文讀回來。登入時呼叫一次。
+  Future<void> loadMyApprovedTexts() async {
+    final src = appealSource;
+    final uid = myUid;
+    if (src == null || uid == null) return;
+    try {
+      _approvedTexts
+        ..clear()
+        ..addAll(await src.approvedBlockedTexts(uid));
+      notifyListeners();
+    } catch (_) {
+      // 讀不到就維持現狀 —— 往「照常過濾」的方向錯，不會放行任何東西。
+    }
   }
 
   /// 發布貼文。回傳過濾判定：
@@ -3808,7 +3892,10 @@ class AppState extends ChangeNotifier {
   }) {
     if (communityBlocked) return FilterVerdict.blocked;
     final v = screenContent(text);
-    if (v == FilterVerdict.blocked) return v;
+    if (v == FilterVerdict.blocked) {
+      noteBlocked(BlockedKind.post, text);
+      return v;
+    }
     final post = Post(
       id: newId('p'),
       author: displayName,
@@ -3963,11 +4050,20 @@ class AppState extends ChangeNotifier {
     // 社群功能停權（與永久停權）者不得執行社群互動 Command。
     if (communityBlocked) return 0;
     if (text.trim().isEmpty) return 0;
+    // 明顯違規者不寫入。畫面通常已先擋下並提供申訴，這裡是最後一道 ——
+    // 其他呼叫端繞過畫面時，狀態層自己也不放行。
+    final verdict = screenContent(text);
+    if (verdict == FilterVerdict.blocked) {
+      noteBlocked(BlockedKind.comment, text);
+      return 0;
+    }
     // **帶上 uid。** 雲端那一側本來就在存它，本機這一份漏了 ——
     // 於是離線建立的留言讀回來之前都認不出是誰的。
     final c = Comment(displayName, text.trim(), now, authorUid: myUid);
     p.comments.add(c);
     _pushSocial('留言', (src, uid) => src.addComment(p.id, c, authorUid: uid));
+    // 疑似違規者照常留言，並自動開立檢舉案件（內容已標記待審）。
+    if (verdict == FilterVerdict.flagged) _flagComment(c);
     final before = interactionsToday('Comment');
     final exp = isMyPost(p) ? 0 : _grantInteraction('Comment');
     // 任務池的「互動者已留言」：以前沒有任何地方推進它。算法同按讚。
@@ -4032,6 +4128,8 @@ class AppState extends ChangeNotifier {
     );
     posts.insert(0, post);
     _pushSocial('分享成果貼文', (src, uid) => src.publish(post, authorUid: uid));
+    // 只標 pendingReview 不開案的話，這則分享永遠不會有人審。
+    if (post.pendingReview) _flagPost(post);
     _bumpTasks('使用者已發布貼文', 1);
     final before = interactionsToday('Share');
     final exp = _grantInteraction('Share');
@@ -4072,9 +4170,15 @@ class AppState extends ChangeNotifier {
   bool editPost(Post p, String text) {
     if (!isMyPost(p) || p.deleted || text.trim().isEmpty) return false;
     if (text.trim() == p.text) return false;
+    // 編輯後的內容同樣要過內容過濾 —— 否則先發正常內容、再改成違規字詞，
+    // 整道過濾就形同虛設。明顯違規者拒絕這次編輯（原文保留），
+    // 疑似違規者照常存、同時自動開案。
+    final verdict = screenContent(text);
+    if (verdict == FilterVerdict.blocked) return false;
     p.edits.add((p.text, now));
     p.text = text.trim();
     notifyListeners();
+    if (verdict == FilterVerdict.flagged) _flagPost(p);
     // **在此之前這一行不存在。** `PostSource.updatePostText` 早就寫好了，
     // Firestore 的實作也完整，就是沒有人呼叫 —— 於是編輯只改記憶體，
     // 重新整理變回舊內容，別人從頭到尾看到的是原版。
@@ -4117,9 +4221,13 @@ class AppState extends ChangeNotifier {
   bool editComment(Comment c, String text) {
     if (!isMyComment(c) || c.deleted || text.trim().isEmpty) return false;
     if (text.trim() == c.text) return false;
+    // 規則同 [editPost]。
+    final verdict = screenContent(text);
+    if (verdict == FilterVerdict.blocked) return false;
     c.edits.add((c.text, now));
     c.text = text.trim();
     notifyListeners();
+    if (verdict == FilterVerdict.flagged) _flagComment(c);
     _pushSocial('編輯留言', (src, _) => src.updateCommentText(_postIdOf(c), c));
     return true;
   }
@@ -7375,6 +7483,7 @@ class AppState extends ChangeNotifier {
     final v = screenContent(body);
     if (v == FilterVerdict.blocked) {
       // 被攔截的私訊不寫入，對話的最後訊息時戳不變。
+      noteBlocked(BlockedKind.message, body);
       return v;
     }
 
@@ -7448,6 +7557,24 @@ class AppState extends ChangeNotifier {
   ///
   /// 與使用者檢舉走同一個佇列，以「來源」欄位區分 ——
   /// 管理員審視的是同一件事：這則內容有沒有違規。
+  /// 疑似違規的貼文自動開案。發布與編輯共用。
+  void _flagPost(Post p) => _openAutoFlagCase(
+        targetKey: reportKey(ReportTarget.post, p.id),
+        target: ReportTarget.post,
+        content: p.text,
+        accused: displayName,
+        accusedUid: myUid,
+      );
+
+  /// 疑似違規的留言自動開案。留言與編輯共用。
+  void _flagComment(Comment c) => _openAutoFlagCase(
+        targetKey: reportKey(ReportTarget.comment, c.id),
+        target: ReportTarget.comment,
+        content: c.text,
+        accused: displayName,
+        accusedUid: myUid,
+      );
+
   void _openAutoFlagCase({
     required String targetKey,
     required ReportTarget target,
@@ -9776,6 +9903,7 @@ class AppState extends ChangeNotifier {
         reason: a.reason,
         filedAt: a.filedAt,
         daysSinceIncident: a.daysSinceIncident,
+        content: a.content,
         // 已在審視中的不要被重讀打回待審 —— 管理員可能正開著它。
         state: at >= 0 ? appeals[at].state : a.state,
         handlerName: at >= 0 ? appeals[at].handlerName : a.handlerName,
@@ -10297,6 +10425,19 @@ class AppState extends ChangeNotifier {
     c.handlerName = null;
     _pushAppealVerdict(c, upheld: true);
 
+    // 內容攔截的申訴：後果是「該內容得以原文發布」，**不是**撤銷處罰。
+    // 攔截本來就沒有施加處罰、沒有記違規點 —— 照下面處罰那一段跑的話，
+    // 會把申訴人別的處罰一併撤掉、違規次數退一次。
+    if (c.target == AppealTarget.blockedContent) {
+      final text = c.content;
+      // 申訴人若就在這台裝置上，立刻放行；否則他登入時由雲端讀回。
+      if (text != null && c.appellant == displayName) {
+        _approvedTexts.add(text.trim());
+      }
+      notifyListeners();
+      return;
+    }
+
     // **後果要傳到當事人。** 撤銷處罰與退回違規次數都是改別人的文件，
     // 而那兩份都是管理員可寫、當事人唯讀 —— 在此之前這整段只在
     // `c.appellant == displayName` 時跑，也就是只撤銷得了自己的處罰。
@@ -10365,6 +10506,11 @@ class AppState extends ChangeNotifier {
     c.state = CaseState.dismissed;
     c.handlerName = null;
     _pushAppealVerdict(c, upheld: false);
+    // 內容攔截的申訴與處罰無關，不動處罰的申訴狀態。
+    if (c.target == AppealTarget.blockedContent) {
+      notifyListeners();
+      return;
+    }
     if (c.appellant == displayName) {
       punishment?.appealState = AppealState.dismissed;
       _email('申訴已駁回', '你的申訴經審視不成立，原處罰維持不變。');
@@ -12605,6 +12751,8 @@ class AppState extends ChangeNotifier {
     punishment = null;
     myViolations = 0;
     blockedUntil = null;
+    lastBlocked = null;
+    _approvedTexts.clear();
 
     // 商店與帳務。
     orders = [];
