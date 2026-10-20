@@ -1540,6 +1540,17 @@ firebase deploy --only hosting
      `firestore.rules`／索引／`firebase.json` 與線上版相同，**只需 hosting**。**未部署**，等使用者在 `fitness-app/` 執行
      `firebase deploy --only hosting`。**之後任何人部署都要疊在 `deploy-content-filter` 上**，否則會蓋掉這一項與師徒任務發放獎勵。
 
+   - **部署被另一個 Session 蓋掉（2026-10-20，同日稍晚）：** 使用者部署 `deploy-content-filter`（`7e09100`，約 15:4x）之後，
+     另一個 Session 在 16:37 部署了 `deploy-weekly-cap`（`dc7509f`，能力值每週升格上限，疊在 `211788a` 上、**不含**本項），線上因此退回沒有本項的版本。
+     使用者在那之後測「按申訴」得到 **B（沒反應）** —— 測到的是舊版（舊的那顆按鈕回傳值被丟掉），**不是本項的錯**；測試 1 的 A 新舊版長得一樣，不能算數。
+     線上戳記 `dc7509f 10-20 16:36` 與 `git merge-base --is-ancestor 715e8d0 dc7509f` 皆確認 `dc7509f` 不含本項。
+     **改疊在 `dc7509f` 上重做：** 分支 **`deploy-content-filter-2`**（`ac99abe`）= `deploy-weekly-cap` + 本項程式與測試 + 下一條的修正。
+     analyze 乾淨、全量 **3,221 passed**；`build_web.sh` 建置成功，戳記 `ac99abe 10-20 16:46`，產物含申訴案件 ID 格式 `__blocked__`（線上 `dc7509f` 沒有）。
+     規則／索引與 `dc7509f` 相同，只需 hosting。**未部署（待使用者執行）。**
+     使用者決定本 Session 為主、其他 Session 暫由使用者自己用；**之後任何人部署都要疊在 `deploy-content-filter-2` 上**，否則又會蓋掉。
+   - **補畫面測試時抓到我自己的 bug：** 申訴理由框送出後我立刻 `dispose()` 輸入框的 controller，但彈窗關閉動畫還在用它，
+     會拋「用了已釋放的 controller」（先前只有狀態層測試，沒有畫面層，所以漏了）。已移除提早釋放（處罰申訴那頁本來也不釋放）。
+     新增 2 條畫面測試（`moderation_gaps_test.dart` 增為 24 條）；突變（申訴按鈕不接）轉紅。
 3BK. **2026-10-19 師徒任務：學徒標記完成後要教官「發放獎勵」才可領；教官可取消任務（使用者要求，選 A+B 的合併做法）**
 
    - **使用者問的：** 「標記完成」是誰按的？有沒有防亂標？**查證：** 學徒自己按，教官沒有確認步驟（規格如此）。
