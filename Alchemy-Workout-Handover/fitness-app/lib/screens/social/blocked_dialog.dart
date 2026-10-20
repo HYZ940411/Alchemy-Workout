@@ -56,7 +56,8 @@ Future<void> showBlockedDialog(
     ),
   );
   final reason = controller.text.trim();
-  controller.dispose();
+  // 這裡不 dispose：彈窗關閉動畫還在跑，輸入框仍在使用這個 controller，
+  // 提早釋放會在動畫期間拋「用了已釋放的 controller」。處罰申訴那一頁同樣不釋放。
   if (ok != true || !context.mounted) return;
 
   final sent = s.fileBlockedAppeal(reason.isEmpty ? '（未填理由）' : reason);
