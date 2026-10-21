@@ -608,6 +608,12 @@ extension AppStateSnapshot on AppState {
               }
             : null,
         'timedClaimedOn': timedRewardClaimed ? _timedStamp() : null,
+        // 存的是「寫這份存檔時的重置代數」。上面兩個旗標比對的識別是 `日期#代數`，
+        // 而登入時**先讀存檔、後讀雲端的代數**：讀存檔那一刻本機代數還是 0，識別只剩日期，
+        // 跟存檔裡的 `日期#代數` 對不上，完成與已領都被當成別輪的丟掉 —— 重新整理就能再領一次
+        // （2026-10-21 使用者回報）。所以代數要跟著旗標一起存、先還原。
+        // 雲端代數晚到時會再比一次：換了（管理員又重置過）才歸零，沒換就維持。
+        'timedEpoch': timedEpoch,
 
         // --- 進行中的訓練 ---
         //
@@ -1146,6 +1152,10 @@ extension AppStateSnapshot on AppState {
 
     // 今日限時任務。只認**今天**的 —— 存檔裡是昨天的就是失效了。
     // 存的是當時用的鍵（uid），不在這裡重算：載入時 `myUid` 可能還沒設上。
+    // 先還原代數，下面比對識別才會用同一把尺。舊存檔沒有這個欄位＝0，跟以前一樣。
+    // **已經知道代數（不是 0）就不動** —— 雲端的是權威，存檔裡的可能是舊的；
+    // 代數只會變大（每次重置換一個新的），所以「不是 0」就代表已經從雲端讀到過。
+    if (timedEpoch == 0) timedEpoch = intOf('timedEpoch', 0);
     final timedDone = pick<Map>('timedDone');
     if (timedDone != null &&
         timedDone['day'] == _timedStamp() &&
