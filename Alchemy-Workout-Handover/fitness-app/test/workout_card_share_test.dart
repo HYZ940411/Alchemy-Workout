@@ -362,6 +362,46 @@ void main() {
           reason: '不縮小的話數字會被截掉，畫面上只剩半個數字');
     });
 
+    testWidgets('品牌列：「健金術」與「階級提升」徽章同一行時至少隔一格間距', (t) async {
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      t.view.devicePixelRatio = 1.0;
+      const card = WorkoutCard(
+        planName: '推日：胸肩三頭',
+        volumeKg: 1920,
+        doneSets: 4,
+        plannedSets: 13,
+        durationMinutes: 15,
+        streakDays: 1,
+        exercises: [],
+        rankFrom: 64,
+        rankTo: 67,
+        abilityGains: {},
+        achievements: [],
+      );
+      var sameRow = 0;
+      // 掃過各種螢幕寬度：兩者剛好塞滿一行、中間沒縫的那個寬度一定會被掃到。
+      for (var w = 260.0; w <= 460.0; w += 1) {
+        t.view.physicalSize = Size(w, 2400);
+        await t.pumpWidget(const MaterialApp(
+          home: Scaffold(body: SingleChildScrollView(child: WorkoutCardView(card: card))),
+        ));
+        final brand = t.getRect(find
+            .ancestor(of: find.text('健金術'), matching: find.byType(Row))
+            .first);
+        final badge = t.getRect(find
+            .ancestor(
+                of: find.textContaining('階級提升'), matching: find.byType(Container))
+            .first);
+        if ((brand.center.dy - badge.center.dy).abs() < brand.height) {
+          sameRow++;
+          expect(badge.left - brand.right, greaterThanOrEqualTo(8 - 0.01),
+              reason: '寬度 $w：品牌與徽章貼在一起了');
+        }
+      }
+      expect(sameRow, greaterThan(0), reason: '掃描範圍內要有「同一行」的情形，否則測不到東西');
+    });
+
     testWidgets('分享對話框先預覽要發出去的那張卡', (t) async {
       t.view.physicalSize = const Size(393 * 3, 2400 * 3);
       t.view.devicePixelRatio = 3.0;

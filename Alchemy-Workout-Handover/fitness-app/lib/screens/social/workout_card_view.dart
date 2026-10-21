@@ -73,9 +73,11 @@ class WorkoutCardView extends StatelessWidget {
         children: [
           // 品牌列：左邊品牌，右邊（有升階時）金色的升階徽章。
           // 用 Wrap：窄螢幕上放不下就讓徽章換到下一行，不爆版。
+          // spacing 是同一行內兩者的最小間距；沒有它，剛好塞滿一行時兩者會貼在一起。
           Wrap(
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: S.sm,
             runSpacing: S.sm,
             children: [
               Row(
